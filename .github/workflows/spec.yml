@@ -1,0 +1,28 @@
+name: Spec Conformance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "spec/**"
+  pull_request:
+    paths:
+      - "spec/**"
+
+# When the spec changes, verify all implementations still conform.
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - run: cargo test --all-features
+        working-directory: rust
+
+  # Future language jobs:
+  # python:
+  # go:
+  # typescript:
