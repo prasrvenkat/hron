@@ -143,6 +143,9 @@ jobs:
     name: Publish hron-wasm to npm
     needs: create-draft-release
     runs-on: ubuntu-latest
+    # npm OIDC trusted publishing — no secrets needed, provenance included automatically
+    permissions:
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -163,15 +166,16 @@ jobs:
         working-directory: rust/wasm
 
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         working-directory: rust/wasm/pkg
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-ts:
     name: Publish hron-ts to npm
     needs: create-draft-release
     runs-on: ubuntu-latest
+    # npm OIDC trusted publishing — no secrets needed, provenance included automatically
+    permissions:
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -185,22 +189,16 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Build and publish
-        run: pnpm install --frozen-lockfile && pnpm build && pnpm publish --access public --no-git-checks
+        run: pnpm install --frozen-lockfile && pnpm build && pnpm publish --access public --no-git-checks --provenance
         working-directory: ts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-dart:
     name: Publish to pub.dev
     needs: create-draft-release
     runs-on: ubuntu-latest
-    # pub.dev automated publishing uses OIDC — no secrets needed.
-    # Requires one-time setup: go to https://pub.dev/packages/hron/admin,
-    # enable "Automated publishing", and add this repo as a trusted publisher
-    # with tag pattern "v*". First publish must be done locally (`dart pub publish`)
-    # to claim the package name before automated publishing can be enabled.
+    # pub.dev OIDC automated publishing — no secrets needed
     permissions:
-      id-token: write # required for pub.dev OIDC token exchange
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
