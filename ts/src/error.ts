@@ -58,7 +58,9 @@ export class HronError extends Error {
       let out = `error: ${this.message}\n`;
       out += `  ${this.input}\n`;
       const padding = " ".repeat(this.span.start + 2);
-      const underline = "^".repeat(Math.max(this.span.end - this.span.start, 1));
+      const underline = "^".repeat(
+        Math.max(this.span.end - this.span.start, 1),
+      );
       out += padding + underline;
       if (this.suggestion) {
         out += ` try: "${this.suggestion}"`;

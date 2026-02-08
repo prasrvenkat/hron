@@ -2,6 +2,7 @@
 
 import { Temporal } from "@js-temporal/polyfill";
 import type {
+  DateSpec,
   DayFilter,
   Exception,
   MonthName,
@@ -13,7 +14,6 @@ import type {
   UntilSpec,
   Weekday,
   YearTarget,
-  DateSpec,
 } from "./ast.js";
 import {
   expandMonthTarget,
@@ -98,11 +98,7 @@ function nthWeekdayOfMonth(
   return d;
 }
 
-function lastWeekdayInMonth(
-  year: number,
-  month: number,
-  weekday: Weekday,
-): PD {
+function lastWeekdayInMonth(year: number, month: number, weekday: Weekday): PD {
   const targetDow = weekdayNameToNumber(weekday);
   let d = lastDayOfMonth(year, month);
   while (d.dayOfWeek !== targetDow) {
@@ -113,7 +109,10 @@ function lastWeekdayInMonth(
 
 const EPOCH_MONDAY: PD = Temporal.PlainDate.from("1970-01-05");
 const EPOCH_DATE: PD = Temporal.PlainDate.from("1970-01-01");
-const MIDNIGHT: Temporal.PlainTime = Temporal.PlainTime.from({ hour: 0, minute: 0 });
+const MIDNIGHT: Temporal.PlainTime = Temporal.PlainTime.from({
+  hour: 0,
+  minute: 0,
+});
 
 function weeksBetween(a: PD, b: PD): number {
   const days = a.until(b, { largestUnit: "days" }).days;
@@ -125,7 +124,7 @@ function daysBetween(a: PD, b: PD): number {
 }
 
 function monthsBetweenYM(a: PD, b: PD): number {
-  return (b.year * 12 + b.month) - (a.year * 12 + a.month);
+  return b.year * 12 + b.month - (a.year * 12 + a.month);
 }
 
 /** Euclidean modulo (always non-negative). */
@@ -193,7 +192,11 @@ function nextDuringMonth(date: PD, during: MonthName[]): PD {
     }
   }
   // Wrap to first month of next year
-  return Temporal.PlainDate.from({ year: date.year + 1, month: months[0], day: 1 });
+  return Temporal.PlainDate.from({
+    year: date.year + 1,
+    month: months[0],
+    day: 1,
+  });
 }
 
 function resolveUntil(until: UntilSpec, now: ZDT): PD {
@@ -203,11 +206,14 @@ function resolveUntil(until: UntilSpec, now: ZDT): PD {
   const year = now.toPlainDate().year;
   for (const y of [year, year + 1]) {
     try {
-      const d = Temporal.PlainDate.from({
-        year: y,
-        month: monthNumber(until.month),
-        day: until.day,
-      }, { overflow: "reject" });
+      const d = Temporal.PlainDate.from(
+        {
+          year: y,
+          month: monthNumber(until.month),
+          day: until.day,
+        },
+        { overflow: "reject" },
+      );
       if (Temporal.PlainDate.compare(d, now.toPlainDate()) >= 0) {
         return d;
       }
@@ -215,11 +221,14 @@ function resolveUntil(until: UntilSpec, now: ZDT): PD {
       // Invalid date, try next year
     }
   }
-  return Temporal.PlainDate.from({
-    year: year + 1,
-    month: monthNumber(until.month),
-    day: until.day,
-  }, { overflow: "reject" });
+  return Temporal.PlainDate.from(
+    {
+      year: year + 1,
+      month: monthNumber(until.month),
+      day: until.day,
+    },
+    { overflow: "reject" },
+  );
 }
 
 function earliestFutureAtTimes(
@@ -233,7 +242,10 @@ function earliestFutureAtTimes(
     const t = toPlainTime(tod);
     const candidate = atTimeOnDate(date, t, tz);
     if (Temporal.ZonedDateTime.compare(candidate, now) > 0) {
-      if (best === null || Temporal.ZonedDateTime.compare(candidate, best) < 0) {
+      if (
+        best === null ||
+        Temporal.ZonedDateTime.compare(candidate, best) < 0
+      ) {
         best = candidate;
       }
     }
@@ -243,10 +255,7 @@ function earliestFutureAtTimes(
 
 // --- Public API ---
 
-export function nextFrom(
-  schedule: ScheduleData,
-  now: ZDT,
-): ZDT | null {
+export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   const tz = resolveTz(schedule.timezone);
 
   const untilDate = schedule.until ? resolveUntil(schedule.until, now) : null;
@@ -284,12 +293,8 @@ export function nextFrom(
 
     // Apply except filter
     if (hasExceptions && isExceptedParsed(cDate!, parsedExceptions)) {
-      const nextDay = cDate!.add({ days: 1 });
-      current = atTimeOnDate(
-        nextDay,
-        MIDNIGHT,
-        tz,
-      ).subtract({ seconds: 1 });
+      const nextDay = cDate?.add({ days: 1 });
+      current = atTimeOnDate(nextDay, MIDNIGHT, tz).subtract({ seconds: 1 });
       continue;
     }
 
@@ -307,7 +312,14 @@ function nextExpr(
 ): ZDT | null {
   switch (expr.type) {
     case "dayRepeat":
-      return nextDayRepeat(expr.interval, expr.days, expr.times, tz, anchor, now);
+      return nextDayRepeat(
+        expr.interval,
+        expr.days,
+        expr.times,
+        tz,
+        anchor,
+        now,
+      );
     case "intervalRepeat":
       return nextIntervalRepeat(
         expr.interval,
@@ -319,23 +331,48 @@ function nextExpr(
         now,
       );
     case "weekRepeat":
-      return nextWeekRepeat(expr.interval, expr.days, expr.times, tz, anchor, now);
+      return nextWeekRepeat(
+        expr.interval,
+        expr.days,
+        expr.times,
+        tz,
+        anchor,
+        now,
+      );
     case "monthRepeat":
-      return nextMonthRepeat(expr.interval, expr.target, expr.times, tz, anchor, now);
+      return nextMonthRepeat(
+        expr.interval,
+        expr.target,
+        expr.times,
+        tz,
+        anchor,
+        now,
+      );
     case "ordinalRepeat":
-      return nextOrdinalRepeat(expr.interval, expr.ordinal, expr.day, expr.times, tz, anchor, now);
+      return nextOrdinalRepeat(
+        expr.interval,
+        expr.ordinal,
+        expr.day,
+        expr.times,
+        tz,
+        anchor,
+        now,
+      );
     case "singleDate":
       return nextSingleDate(expr.date, expr.times, tz, now);
     case "yearRepeat":
-      return nextYearRepeat(expr.interval, expr.target, expr.times, tz, anchor, now);
+      return nextYearRepeat(
+        expr.interval,
+        expr.target,
+        expr.times,
+        tz,
+        anchor,
+        now,
+      );
   }
 }
 
-export function nextNFrom(
-  schedule: ScheduleData,
-  now: ZDT,
-  n: number,
-): ZDT[] {
+export function nextNFrom(schedule: ScheduleData, now: ZDT, n: number): ZDT[] {
   const results: ZDT[] = [];
   let current = now;
   for (let i = 0; i < n; i++) {
@@ -382,7 +419,8 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
       const fromMinutes = from.hour * 60 + from.minute;
       const toMinutes = to.hour * 60 + to.minute;
       const currentMinutes = zdt.hour * 60 + zdt.minute;
-      if (currentMinutes < fromMinutes || currentMinutes > toMinutes) return false;
+      if (currentMinutes < fromMinutes || currentMinutes > toMinutes)
+        return false;
       const diff = currentMinutes - fromMinutes;
       const step = unit === "min" ? interval : interval * 60;
       return diff >= 0 && diff % step === 0;
@@ -544,16 +582,13 @@ function nextDayRepeat(
   }
 
   // Interval > 1: day intervals only apply to DayFilter::Every
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_DATE;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
 
   // Find the next aligned day >= today
   const offset = daysBetween(anchorDate, date);
   const remainder = euclideanMod(offset, interval);
-  let alignedDate = remainder === 0
-    ? date
-    : date.add({ days: interval - remainder });
+  let alignedDate =
+    remainder === 0 ? date : date.add({ days: interval - remainder });
 
   for (let i = 0; i < 400; i++) {
     const candidate = earliestFutureAtTimes(alignedDate, times, tz, now);
@@ -588,16 +623,15 @@ function nextIntervalRepeat(
 
     const sameDay =
       Temporal.PlainDate.compare(date, nowInTz.toPlainDate()) === 0;
-    const nowMinutes = sameDay
-      ? nowInTz.hour * 60 + nowInTz.minute
-      : -1;
+    const nowMinutes = sameDay ? nowInTz.hour * 60 + nowInTz.minute : -1;
 
     let nextSlot: number;
     if (nowMinutes < fromMinutes) {
       nextSlot = fromMinutes;
     } else {
       const elapsed = nowMinutes - fromMinutes;
-      nextSlot = fromMinutes + (Math.floor(elapsed / stepMinutes) + 1) * stepMinutes;
+      nextSlot =
+        fromMinutes + (Math.floor(elapsed / stepMinutes) + 1) * stepMinutes;
     }
 
     if (nextSlot <= toMinutes) {
@@ -625,9 +659,7 @@ function nextWeekRepeat(
   now: ZDT,
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_MONDAY;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_MONDAY;
 
   const date = nowInTz.toPlainDate();
 
@@ -685,9 +717,7 @@ function nextMonthRepeat(
   let year = nowInTz.year;
   let month = nowInTz.month;
 
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_DATE;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
   const maxIter = interval > 1 ? 24 * interval : 24;
 
   for (let i = 0; i < maxIter; i++) {
@@ -764,9 +794,7 @@ function nextOrdinalRepeat(
   let year = nowInTz.year;
   let month = nowInTz.month;
 
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_DATE;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
   const maxIter = interval > 1 ? 24 * interval : 24;
 
   for (let i = 0; i < maxIter; i++) {
@@ -824,11 +852,14 @@ function nextSingleDate(
     for (let y = 0; y < 8; y++) {
       const year = startYear + y;
       try {
-        const date = Temporal.PlainDate.from({
-          year,
-          month: monthNumber(dateSpec.month),
-          day: dateSpec.day,
-        }, { overflow: "reject" });
+        const date = Temporal.PlainDate.from(
+          {
+            year,
+            month: monthNumber(dateSpec.month),
+            day: dateSpec.day,
+          },
+          { overflow: "reject" },
+        );
         const candidate = earliestFutureAtTimes(date, times, tz, now);
         if (candidate) return candidate;
       } catch {
@@ -873,11 +904,14 @@ function nextYearRepeat(
     switch (target.type) {
       case "date":
         try {
-          targetDate = Temporal.PlainDate.from({
-            year,
-            month: monthNumber(target.month),
-            day: target.day,
-          }, { overflow: "reject" });
+          targetDate = Temporal.PlainDate.from(
+            {
+              year,
+              month: monthNumber(target.month),
+              day: target.day,
+            },
+            { overflow: "reject" },
+          );
         } catch {
           continue;
         }
@@ -900,11 +934,14 @@ function nextYearRepeat(
         break;
       case "dayOfMonth":
         try {
-          targetDate = Temporal.PlainDate.from({
-            year,
-            month: monthNumber(target.month),
-            day: target.day,
-          }, { overflow: "reject" });
+          targetDate = Temporal.PlainDate.from(
+            {
+              year,
+              month: monthNumber(target.month),
+              day: target.day,
+            },
+            { overflow: "reject" },
+          );
         } catch {
           continue;
         }

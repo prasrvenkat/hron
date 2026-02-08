@@ -1,12 +1,11 @@
 // hron-js — Public API
 
-import { Temporal } from "@js-temporal/polyfill";
+import type { Temporal } from "@js-temporal/polyfill";
 import type { ScheduleData, ScheduleExpr } from "./ast.js";
-import { parse } from "./parser.js";
+import { fromCron, toCron } from "./cron.js";
 import { display } from "./display.js";
-import { nextFrom, nextNFrom, matches } from "./eval.js";
-import { toCron, fromCron } from "./cron.js";
-import { HronError } from "./error.js";
+import { matches, nextFrom, nextNFrom } from "./eval.js";
+import { parse } from "./parser.js";
 
 export class Schedule {
   private data: ScheduleData;
@@ -41,10 +40,7 @@ export class Schedule {
   }
 
   /** Compute the next `n` occurrences after `now`. */
-  nextNFrom(
-    now: Temporal.ZonedDateTime,
-    n: number,
-  ): Temporal.ZonedDateTime[] {
+  nextNFrom(now: Temporal.ZonedDateTime, n: number): Temporal.ZonedDateTime[] {
     return nextNFrom(this.data, now, n);
   }
 
@@ -74,23 +70,23 @@ export class Schedule {
   }
 }
 
-// Re-exports
-export { HronError } from "./error.js";
-export type { Span, HronErrorKind } from "./error.js";
+export { Temporal } from "@js-temporal/polyfill";
 export type {
+  DateSpec,
+  DayFilter,
+  DayOfMonthSpec,
+  Exception,
+  IntervalUnit,
+  MonthName,
+  MonthTarget,
+  OrdinalPosition,
   ScheduleData,
   ScheduleExpr,
   TimeOfDay,
-  DayFilter,
-  DayOfMonthSpec,
-  MonthTarget,
-  YearTarget,
-  DateSpec,
-  Exception,
   UntilSpec,
   Weekday,
-  MonthName,
-  IntervalUnit,
-  OrdinalPosition,
+  YearTarget,
 } from "./ast.js";
-export { Temporal } from "@js-temporal/polyfill";
+export type { HronErrorKind, Span } from "./error.js";
+// Re-exports
+export { HronError } from "./error.js";

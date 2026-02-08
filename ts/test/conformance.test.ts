@@ -1,9 +1,9 @@
 // Conformance test runner — drives all tests from spec/tests.json.
 
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Temporal } from "@js-temporal/polyfill";
+import { describe, expect, it } from "vitest";
 import { Schedule } from "../src/index.js";
 
 const specPath = resolve(__dirname, "../../spec/tests.json");
@@ -106,7 +106,7 @@ describe("eval", () => {
               expect(result).toBeNull();
             } else {
               expect(result).not.toBeNull();
-              expect(result!.toString()).toBe(tc.next);
+              expect(result?.toString()).toBe(tc.next);
             }
           }
 
@@ -114,7 +114,7 @@ describe("eval", () => {
           if ("next_date" in tc) {
             const result = schedule.nextFrom(now);
             expect(result).not.toBeNull();
-            expect(result!.toPlainDate().toString()).toBe(tc.next_date);
+            expect(result?.toPlainDate().toString()).toBe(tc.next_date);
           }
 
           // next_n (list of timestamps)

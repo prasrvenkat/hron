@@ -1,9 +1,9 @@
 // Hand-rolled recursive descent parser for hron expressions.
 
 import type {
+  DateSpec,
   DayFilter,
   DayOfMonthSpec,
-  DateSpec,
   Exception,
   IntervalUnit,
   MonthName,
@@ -18,7 +18,7 @@ import type {
 } from "./ast.js";
 import { newScheduleData, parseMonthName, parseWeekday } from "./ast.js";
 import { HronError, type Span } from "./error.js";
-import { tokenize, type Token, type TokenKind } from "./lexer.js";
+import { type Token, type TokenKind, tokenize } from "./lexer.js";
 
 class Parser {
   private tokens: Token[];
@@ -68,10 +68,7 @@ class Parser {
     return HronError.parse(message, span, this.input);
   }
 
-  consumeKind(
-    expected: string,
-    check: (k: TokenKind) => boolean,
-  ): Token {
+  consumeKind(expected: string, check: (k: TokenKind) => boolean): Token {
     const span = this.currentSpan();
     const tok = this.peek();
     if (tok && check(tok.kind)) {
@@ -426,9 +423,7 @@ class Parser {
         (k as { type: "monthName"; name: string }).name,
       )!;
       this.advance();
-      const day = this.parseDayNumber(
-        "expected day number after month name",
-      );
+      const day = this.parseDayNumber("expected day number after month name");
       target = { type: "date", month, day };
     } else {
       throw this.error(
@@ -552,9 +547,7 @@ class Parser {
         (k as { type: "monthName"; name: string }).name,
       )!;
       this.advance();
-      const day = this.parseDayNumber(
-        "expected day number after month name",
-      );
+      const day = this.parseDayNumber("expected day number after month name");
       return { type: "named", month, day };
     }
     throw this.error(
@@ -669,7 +662,11 @@ class Parser {
     const span = this.currentSpan();
     const k = this.peekKind();
     if (k?.type === "time") {
-      const { hour, minute } = k as { type: "time"; hour: number; minute: number };
+      const { hour, minute } = k as {
+        type: "time";
+        hour: number;
+        minute: number;
+      };
       this.advance();
       return { hour, minute };
     }

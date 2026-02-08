@@ -29,7 +29,6 @@ export type TokenKind =
   | { type: "monthName"; name: string }
   | { type: "ordinal"; name: string }
   | { type: "intervalUnit"; unit: string }
-
   | { type: "number"; value: number }
   | { type: "ordinalNumber"; value: number }
   | { type: "time"; hour: number; minute: number }
@@ -70,7 +69,10 @@ class Lexer {
 
       if (ch === ",") {
         this.pos++;
-        tokens.push({ kind: { type: "comma" }, span: { start, end: this.pos } });
+        tokens.push({
+          kind: { type: "comma" },
+          span: { start, end: this.pos },
+        });
         continue;
       }
 
@@ -181,7 +183,7 @@ class Lexer {
     }
 
     const num = parseInt(digits, 10);
-    if (isNaN(num)) {
+    if (Number.isNaN(num)) {
       throw HronError.lex(
         "invalid number",
         { start, end: this.pos },
@@ -192,7 +194,12 @@ class Lexer {
     // Check for ordinal suffix: st, nd, rd, th
     if (this.pos + 1 < this.input.length) {
       const suffix = this.input.slice(this.pos, this.pos + 2).toLowerCase();
-      if (suffix === "st" || suffix === "nd" || suffix === "rd" || suffix === "th") {
+      if (
+        suffix === "st" ||
+        suffix === "nd" ||
+        suffix === "rd" ||
+        suffix === "th"
+      ) {
         this.pos += 2;
         return {
           kind: { type: "ordinalNumber", value: num },

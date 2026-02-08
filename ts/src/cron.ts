@@ -159,7 +159,7 @@ export function fromCron(cron: string): ScheduleData {
   // Minute interval: */N
   if (minuteField.startsWith("*/")) {
     const interval = parseInt(minuteField.slice(2), 10);
-    if (isNaN(interval)) throw HronError.cron("invalid minute interval");
+    if (Number.isNaN(interval)) throw HronError.cron("invalid minute interval");
 
     let fromHour = 0;
     let toHour = 23;
@@ -170,11 +170,11 @@ export function fromCron(cron: string): ScheduleData {
       const [start, end] = hourField.split("-");
       fromHour = parseInt(start, 10);
       toHour = parseInt(end, 10);
-      if (isNaN(fromHour) || isNaN(toHour))
+      if (Number.isNaN(fromHour) || Number.isNaN(toHour))
         throw HronError.cron("invalid hour range");
     } else {
       const h = parseInt(hourField, 10);
-      if (isNaN(h)) throw HronError.cron("invalid hour");
+      if (Number.isNaN(h)) throw HronError.cron("invalid hour");
       fromHour = h;
       toHour = h;
     }
@@ -197,7 +197,7 @@ export function fromCron(cron: string): ScheduleData {
   // Hour interval: 0 */N
   if (hourField.startsWith("*/") && minuteField === "0") {
     const interval = parseInt(hourField.slice(2), 10);
-    if (isNaN(interval)) throw HronError.cron("invalid hour interval");
+    if (Number.isNaN(interval)) throw HronError.cron("invalid hour interval");
     if (domField === "*" && dowField === "*") {
       const expr: ScheduleExpr = {
         type: "intervalRepeat",
@@ -213,10 +213,11 @@ export function fromCron(cron: string): ScheduleData {
 
   // Standard time-based cron
   const minute = parseInt(minuteField, 10);
-  if (isNaN(minute))
+  if (Number.isNaN(minute))
     throw HronError.cron(`invalid minute field: ${minuteField}`);
   const hour = parseInt(hourField, 10);
-  if (isNaN(hour)) throw HronError.cron(`invalid hour field: ${hourField}`);
+  if (Number.isNaN(hour))
+    throw HronError.cron(`invalid hour field: ${hourField}`);
   const time = { hour, minute };
 
   // DOM-based (monthly)
@@ -226,7 +227,7 @@ export function fromCron(cron: string): ScheduleData {
     }
     const dayNums = domField.split(",").map((s) => {
       const n = parseInt(s, 10);
-      if (isNaN(n))
+      if (Number.isNaN(n))
         throw HronError.cron(`invalid DOM field: ${domField}`);
       return n;
     });
@@ -265,7 +266,7 @@ function parseCronDow(field: string): DayFilter {
 
   const nums = field.split(",").map((s) => {
     const n = parseInt(s, 10);
-    if (isNaN(n)) throw HronError.cron(`invalid DOW field: ${field}`);
+    if (Number.isNaN(n)) throw HronError.cron(`invalid DOW field: ${field}`);
     return n;
   });
 
