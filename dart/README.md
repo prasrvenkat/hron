@@ -4,11 +4,8 @@ Native Dart implementation of [hron](https://github.com/prasrvenkat/hron) — hu
 
 ## Install
 
-Add to your `pubspec.yaml`:
-
-```yaml
-dependencies:
-  hron: ^0.1.0
+```sh
+dart pub add hron
 ```
 
 ## Usage
@@ -44,20 +41,6 @@ void main() {
   print(schedule.toString());
 }
 ```
-
-## Architecture
-
-Pipeline: `lexer.dart` → `parser.dart` → `eval.dart`
-
-| Module | Purpose |
-|--------|---------|
-| `ast.dart` | `ScheduleData` with `ScheduleExpr` (7 variants) + shared modifiers |
-| `lexer.dart` | Tokenizer |
-| `parser.dart` | Hand-rolled recursive descent, follows `spec/grammar.ebnf` |
-| `eval.dart` | `nextFrom`, `nextNFrom`, `matches` via `timezone` package |
-| `cron.dart` | Bidirectional cron conversion (expressible subset only) |
-| `display.dart` | Canonical string rendering that roundtrips with parse |
-| `error.dart` | Error types with source spans |
 
 ## Timezone Support
 

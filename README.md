@@ -8,17 +8,43 @@ every weekday at 9:00 except dec 25, jan 1 until 2027-12-31 in America/New_York
 
 hron is a language specification with native implementations for multiple programming languages. It handles everything cron can do and more: multi-week intervals, ordinal weekdays, yearly schedules, exception dates, end dates, and IANA timezone support with full DST awareness.
 
+## Try It
+
+```sh
+cargo install hron-cli
+```
+
+```sh
+$ hron "every weekday at 9:00 in America/New_York"
+2026-02-09T09:00:00-05:00[America/New_York]
+
+$ hron "every weekday at 9:00" -n 3
+2026-02-09T09:00:00+00:00[UTC]
+2026-02-10T09:00:00+00:00[UTC]
+2026-02-11T09:00:00+00:00[UTC]
+
+$ hron "every day at 9:00" --to-cron
+0 9 * * *
+
+$ hron --from-cron "*/30 * * * *"
+every 30 min from 00:00 to 23:59
+
+$ hron --explain "0 9 * * 1-5"
+every weekday at 09:00
+```
+
+See [`hron-cli`](rust/hron-cli/) for all options.
+
 ## Packages
 
-| Language | Package | Registry | Source |
-|----------|---------|----------|--------|
-| Rust | `hron` | crates.io | [rust/hron/](rust/hron/) |
-| Rust CLI | `hron-cli` | crates.io | [rust/hron-cli/](rust/hron-cli/) |
-| JS/TS (WASM) | `hron-wasm` | npm | [rust/wasm/](rust/wasm/) |
-| JS/TS (native) | `hron-js` | npm | [ts/](ts/) |
-| Dart/Flutter | `hron` | pub.dev | [dart/](dart/) |
+| Language | Package | Registry |
+|----------|---------|----------|
+| Rust | [`hron`](rust/hron/) | crates.io |
+| JS/TS (native) | [`hron-js`](ts/) | npm |
+| JS/TS (WASM) | [`hron-wasm`](rust/wasm/) | npm |
+| Dart/Flutter | [`hron`](dart/) | pub.dev |
 
-> **Note:** The JS/TS native package (`hron-js`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`@hron/hron-wasm`).
+> **Note:** The JS/TS native package (`hron-js`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`hron-wasm`).
 
 ## Expression Syntax
 
@@ -76,7 +102,6 @@ every year on the last friday of december at 17:00
 ```
 on feb 14 at 9:00
 on 2026-03-15 at 14:30
-on next monday at 9:00
 ```
 
 ### Modifiers
@@ -118,7 +143,7 @@ Expressions that go beyond cron's capabilities (multi-week intervals, ordinals, 
 
 ## Conformance Spec
 
-The [spec/](spec/) directory contains the language-agnostic conformance test suite (`tests.json`) and formal grammar (`grammar.ebnf`). All language implementations must pass the conformance tests.
+The [spec/](spec/) directory contains the language-agnostic conformance test suite (`tests.json`) and formal grammar (`grammar.ebnf`). The grammar is a reference specification — all parsers are hand-written [recursive descent](https://en.wikipedia.org/wiki/Recursive_descent_parser), not generated from the EBNF. All language implementations must pass the conformance tests.
 
 ## Development
 
