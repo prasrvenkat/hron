@@ -2,9 +2,13 @@
 name = "hron-wasm"
 version = "0.1.0"
 edition = "2021"
-description = "WASM bindings for hron — cron for humans"
+description = "WASM bindings for hron — human-readable cron"
 license = "MIT"
+keywords = ["cron", "schedule", "wasm", "human-readable"]
+categories = ["wasm", "date-and-time"]
 repository = "https://github.com/prasrvenkat/hron"
+homepage = "https://github.com/prasrvenkat/hron"
+readme = "README.md"
 
 [lib]
 crate-type = ["cdylib"]

@@ -632,17 +632,6 @@ TZDateTime? _nextSingleDate(
     return null;
   }
 
-  // relative
-  final rel = dateSpec as RelativeDate;
-  final targetDow = rel.weekday.number;
-  var date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day)
-      .add(const Duration(days: 1));
-  for (var i = 0; i < 7; i++) {
-    if (_dayOfWeek(date) == targetDow) {
-      return _earliestFutureAtTimes(date, times, loc, now);
-    }
-    date = date.add(const Duration(days: 1));
-  }
   return null;
 }
 

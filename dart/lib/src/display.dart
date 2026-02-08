@@ -78,10 +78,8 @@ String _displaySingleDate(SingleDate expr) {
   final date = expr.date;
   if (date is NamedDate) {
     dateStr = '${date.month.name} ${date.day}';
-  } else if (date is IsoDate) {
-    dateStr = date.date;
   } else {
-    dateStr = 'next ${(date as RelativeDate).weekday.name}';
+    dateStr = (date as IsoDate).date;
   }
   return 'on $dateStr at ${_formatTimeList(expr.times)}';
 }

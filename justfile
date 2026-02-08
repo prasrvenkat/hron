@@ -101,7 +101,7 @@ publish-ts:
 
 # Build and publish WASM package to npm
 publish-wasm:
-    cd rust/wasm && wasm-pack build --scope hron --release
+    cd rust/wasm && wasm-pack build --release
     cd rust/wasm/pkg && npm publish --access public
 
 # Create a git tag via GitHub API (verified)

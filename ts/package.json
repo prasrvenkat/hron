@@ -40,6 +40,10 @@
     "url": "https://github.com/prasrvenkat/hron",
     "directory": "ts"
   },
+  "homepage": "https://github.com/prasrvenkat/hron",
+  "bugs": {
+    "url": "https://github.com/prasrvenkat/hron/discussions"
+  },
   "keywords": [
     "cron",
     "schedule",

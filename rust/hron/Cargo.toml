@@ -2,11 +2,14 @@
 name = "hron"
 version = "0.1.0"
 edition = "2021"
-description = "Human-readable cron"
+description = "Human-readable cron — scheduling expressions that are a superset of what cron can express"
 license = "MIT"
 keywords = ["cron", "schedule", "datetime", "recurring", "calendar"]
 categories = ["date-and-time", "parsing"]
 repository = "https://github.com/prasrvenkat/hron"
+homepage = "https://github.com/prasrvenkat/hron"
+documentation = "https://docs.rs/hron"
+readme = "README.md"
 
 [features]
 default = ["serde"]

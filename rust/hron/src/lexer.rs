@@ -44,9 +44,6 @@ pub enum TokenKind {
     // Interval units
     IntervalUnit(String), // "min", "mins", "minute", "minutes", "hour", "hours", "hr", "hrs"
 
-    // "next" keyword (for relative dates)
-    Next,
-
     // Literals
     Number(u32),
     OrdinalNumber(u32), // 1st, 2nd, 3rd, 15th — the number part
@@ -269,7 +266,6 @@ impl<'a> Lexer<'a> {
             "of" => TokenKind::Of,
             "the" => TokenKind::The,
             "last" => TokenKind::Last,
-            "next" => TokenKind::Next,
             "except" => TokenKind::Except,
             "until" => TokenKind::Until,
             "starting" => TokenKind::Starting,

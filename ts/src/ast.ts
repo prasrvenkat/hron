@@ -76,8 +76,7 @@ export type YearTarget =
 
 export type DateSpec =
   | { type: "named"; month: MonthName; day: number }
-  | { type: "iso"; date: string }
-  | { type: "relative"; weekday: Weekday };
+  | { type: "iso"; date: string };
 
 // --- Exception ---
 

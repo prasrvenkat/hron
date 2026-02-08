@@ -357,7 +357,6 @@ impl OrdinalPosition {
 pub enum DateSpec {
     Named { month: MonthName, day: u8 },
     Iso(String),
-    Relative(Weekday),
 }
 
 /// Month name.

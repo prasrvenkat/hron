@@ -139,8 +139,8 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  publish-npm:
-    name: Publish to npm
+  publish-wasm:
+    name: Publish hron-wasm to npm
     needs: create-draft-release
     runs-on: ubuntu-latest
     steps:
@@ -152,19 +152,41 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM package
-        run: wasm-pack build --scope hron --release
+        run: wasm-pack build --release
         working-directory: rust/wasm
 
       - name: Publish to npm
         run: npm publish --access public
         working-directory: rust/wasm/pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-ts:
+    name: Publish hron-js to npm
+    needs: create-draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Build and publish
+        run: pnpm install --frozen-lockfile && pnpm build && pnpm publish --access public --no-git-checks
+        working-directory: ts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -179,6 +201,8 @@ jobs:
         with:
           sdk: stable
 
+      # TODO(pras): verify pub.dev auth — PUB_TOKEN may not work directly.
+      # See https://dart.dev/tools/pub/automated-publishing for GitHub Actions setup.
       - name: Publish to pub.dev
         run: cd dart && dart pub publish --force
         env:
@@ -186,7 +210,7 @@ jobs:
 
   publish-release:
     name: Publish Release
-    needs: [create-tag, upload-assets, publish-crates, publish-npm, publish-dart]
+    needs: [create-tag, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

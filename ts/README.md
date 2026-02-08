@@ -36,23 +36,9 @@ const fromCron = Schedule.fromCron("0 9 * * *");
 console.log(schedule.toString());
 ```
 
-## Architecture
-
-Pipeline: `lexer.ts` → `parser.ts` → `eval.ts`
-
-| Module | Purpose |
-|--------|---------|
-| `ast.ts` | `ScheduleData` with `ScheduleExpr` (7 variants) + shared modifiers |
-| `lexer.ts` | Tokenizer |
-| `parser.ts` | Hand-rolled recursive descent, follows `spec/grammar.ebnf` |
-| `eval.ts` | `nextFrom`, `nextNFrom`, `matches` via Temporal API |
-| `cron.ts` | Bidirectional cron conversion (expressible subset only) |
-| `display.ts` | Canonical string rendering that roundtrips with parse |
-| `error.ts` | Error types with source spans |
-
 ## Temporal Polyfill
 
-This package uses the [Temporal API](https://tc39.es/proposal-temporal/) via `@js-temporal/polyfill`. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical use cases, consider the WASM package (`@hron/hron-wasm`).
+This package uses the [Temporal API](https://tc39.es/proposal-temporal/) via `@js-temporal/polyfill`. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical use cases, consider the WASM package (`hron-wasm`).
 
 ## Tests
 

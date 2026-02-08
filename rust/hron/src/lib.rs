@@ -155,9 +155,6 @@ impl Serialize for Schedule {
                     ast::DateSpec::Named { month, day } => {
                         map.serialize_entry("date", &format!("{} {}", month.as_str(), day))?;
                     }
-                    ast::DateSpec::Relative(d) => {
-                        map.serialize_entry("date", &format!("next {}", d.as_str()))?;
-                    }
                 }
                 map.serialize_entry("times", times)?;
             }

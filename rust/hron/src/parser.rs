@@ -664,26 +664,9 @@ impl<'a> Parser<'a> {
                 };
                 Ok(DateSpec::Named { month, day })
             }
-            Some(TokenKind::Next) => {
-                self.advance();
-                match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::DayName(name)) => {
-                        let d = parse_weekday(name).unwrap();
-                        self.advance();
-                        Ok(DateSpec::Relative(d))
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        Err(self.error("expected day name after 'next'".into(), span))
-                    }
-                }
-            }
             _ => {
                 let span = self.current_span();
-                Err(self.error(
-                    "expected date (ISO date, month name, or 'next')".into(),
-                    span,
-                ))
+                Err(self.error("expected date (ISO date or month name)".into(), span))
             }
         }
     }
@@ -1070,17 +1053,6 @@ mod tests {
                         minute: 30
                     }]
                 );
-            }
-            _ => panic!("expected SingleDate"),
-        }
-    }
-
-    #[test]
-    fn test_parse_single_date_relative() {
-        let s = parse("on next monday at 9:00").unwrap();
-        match &s.expr {
-            ScheduleExpr::SingleDate { date, .. } => {
-                assert_eq!(*date, DateSpec::Relative(Weekday::Monday));
             }
             _ => panic!("expected SingleDate"),
         }
