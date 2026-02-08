@@ -1,9 +1,14 @@
+use std::sync::LazyLock;
+
 use jiff::civil::{Date, Time};
 use jiff::tz::TimeZone;
 use jiff::Zoned;
 
 use crate::ast::*;
 use crate::error::ScheduleError;
+
+/// Epoch anchor for multi-week intervals: Monday 1970-01-05.
+static EPOCH_MONDAY: LazyLock<Date> = LazyLock::new(|| Date::new(1970, 1, 5).unwrap());
 
 /// Resolve the timezone for a schedule, falling back to system local.
 fn resolve_tz(tz: &Option<String>) -> Result<TimeZone, ScheduleError> {
@@ -96,15 +101,50 @@ fn last_weekday_in_month(year: i16, month: i8, weekday: Weekday) -> Date {
     d
 }
 
-/// Epoch anchor for multi-week intervals: Monday 1970-01-05.
-fn epoch_monday() -> Date {
-    Date::new(1970, 1, 5).unwrap()
-}
-
 /// Count ISO weeks between two dates.
 fn weeks_between(a: Date, b: Date) -> i64 {
     let span = a.until(b).unwrap();
     span.get_days() as i64 / 7
+}
+
+/// Pre-parsed exception data to avoid re-parsing ISO strings on every check.
+struct ParsedExceptions {
+    named: Vec<(u8, u8)>, // (month_number, day)
+    iso_dates: Vec<Date>,
+}
+
+impl ParsedExceptions {
+    fn from_exceptions(exceptions: &[Exception]) -> Self {
+        let mut named = Vec::new();
+        let mut iso_dates = Vec::new();
+        for exc in exceptions {
+            match exc {
+                Exception::Named { month, day } => {
+                    named.push((month.number(), *day));
+                }
+                Exception::Iso(s) => {
+                    if let Ok(d) = s.parse::<Date>() {
+                        iso_dates.push(d);
+                    }
+                }
+            }
+        }
+        ParsedExceptions { named, iso_dates }
+    }
+
+    fn is_excepted(&self, date: Date) -> bool {
+        for &(m, d) in &self.named {
+            if date.month() == m as i8 && date.day() == d as i8 {
+                return true;
+            }
+        }
+        for &exc_date in &self.iso_dates {
+            if date == exc_date {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Check if a date matches any exception.
@@ -136,6 +176,22 @@ fn matches_during(date: Date, during: &[MonthName]) -> bool {
     }
     let m = date.month() as u8;
     during.iter().any(|mn| mn.number() == m)
+}
+
+/// Find the 1st of the next valid `during` month after `date`.
+fn next_during_month(date: Date, during: &[MonthName]) -> Date {
+    let current_month = date.month() as u8;
+    let mut months: Vec<u8> = during.iter().map(|mn| mn.number()).collect();
+    months.sort();
+
+    // Find first month > current_month
+    for &m in &months {
+        if m > current_month {
+            return Date::new(date.year(), m as i8, 1).unwrap();
+        }
+    }
+    // Wrap to first month of next year
+    Date::new(date.year() + 1, months[0] as i8, 1).unwrap()
 }
 
 /// Resolve an UntilSpec to a concrete Date.
@@ -194,8 +250,10 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
         None => None,
     };
 
+    let parsed_exceptions = ParsedExceptions::from_exceptions(&schedule.except);
     let has_exceptions = !schedule.except.is_empty();
     let has_during = !schedule.during.is_empty();
+    let needs_tz_conversion = until_date.is_some() || has_during || has_exceptions;
 
     // Retry loop for exceptions and during filter: if candidate is filtered, skip and retry
     let mut current = now.clone();
@@ -207,44 +265,41 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
             None => return Ok(None),
         };
 
+        // Convert to target tz once for all filter checks
+        let c_date = if needs_tz_conversion {
+            Some(candidate.with_time_zone(tz.clone()).date())
+        } else {
+            None
+        };
+
         // Apply until filter
         if let Some(ref until) = until_date {
-            let candidate_in_tz = candidate.with_time_zone(tz.clone());
-            if candidate_in_tz.date() > *until {
+            if c_date.unwrap() > *until {
                 return Ok(None);
             }
         }
 
         // Apply during filter
-        if has_during {
-            let candidate_in_tz = candidate.with_time_zone(tz.clone());
-            if !matches_during(candidate_in_tz.date(), &schedule.during) {
-                // Advance past this day and retry
-                let next_day = candidate_in_tz
-                    .date()
-                    .tomorrow()
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-                current = at_time_on_date(next_day, Time::new(0, 0, 0, 0).unwrap(), &tz)?
-                    .checked_add(jiff::Span::new().seconds(-1))
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-                continue;
-            }
+        if has_during && !matches_during(c_date.unwrap(), &schedule.during) {
+            // Skip ahead to 1st of next valid during month
+            let skip_to = next_during_month(c_date.unwrap(), &schedule.during);
+            current = at_time_on_date(skip_to, Time::new(0, 0, 0, 0).unwrap(), &tz)?
+                .checked_add(jiff::Span::new().seconds(-1))
+                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+            continue;
         }
 
         // Apply except filter
-        if has_exceptions {
-            let candidate_in_tz = candidate.with_time_zone(tz.clone());
-            if is_excepted(candidate_in_tz.date(), &schedule.except) {
-                // Advance past this day and retry
-                let next_day = candidate_in_tz
-                    .date()
-                    .tomorrow()
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-                current = at_time_on_date(next_day, Time::new(0, 0, 0, 0).unwrap(), &tz)?
-                    .checked_add(jiff::Span::new().seconds(-1))
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-                continue;
-            }
+        if has_exceptions && parsed_exceptions.is_excepted(c_date.unwrap()) {
+            // Advance past this day and retry
+            let next_day = c_date
+                .unwrap()
+                .tomorrow()
+                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+            current = at_time_on_date(next_day, Time::new(0, 0, 0, 0).unwrap(), &tz)?
+                .checked_add(jiff::Span::new().seconds(-1))
+                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+            continue;
         }
 
         return Ok(Some(candidate));
@@ -391,7 +446,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             if !time_matches {
                 return Ok(false);
             }
-            let anchor_date = schedule.anchor.unwrap_or_else(epoch_monday);
+            let anchor_date = schedule.anchor.unwrap_or(*EPOCH_MONDAY);
             let weeks = weeks_between(anchor_date, date);
             Ok(weeks >= 0 && weeks % (*interval as i64) == 0)
         }
@@ -583,6 +638,8 @@ fn next_interval_repeat(
         IntervalUnit::Hours => interval as i64 * 60,
     };
 
+    let from_minutes = from_t.hour() as i64 * 60 + from_t.minute() as i64;
+    let to_minutes = to_t.hour() as i64 * 60 + to_t.minute() as i64;
     let mut date = now_in_tz.date();
 
     // Search up to 400 days forward (covers weekday gaps, etc.)
@@ -596,20 +653,28 @@ fn next_interval_repeat(
             }
         }
 
-        // Generate occurrences within the window for this day
-        let from_minutes = from_t.hour() as i64 * 60 + from_t.minute() as i64;
-        let to_minutes = to_t.hour() as i64 * 60 + to_t.minute() as i64;
-        let mut current_minutes = from_minutes;
+        // Compute the next valid slot
+        let now_minutes = if date == now_in_tz.date() {
+            now_in_tz.time().hour() as i64 * 60 + now_in_tz.time().minute() as i64
+        } else {
+            -1 // Future day: any slot from `from` is valid
+        };
 
-        while current_minutes <= to_minutes {
-            let h = (current_minutes / 60) as i8;
-            let m = (current_minutes % 60) as i8;
+        let next_slot = if now_minutes < from_minutes {
+            from_minutes
+        } else {
+            let elapsed = now_minutes - from_minutes;
+            from_minutes + (elapsed / step_minutes + 1) * step_minutes
+        };
+
+        if next_slot <= to_minutes {
+            let h = (next_slot / 60) as i8;
+            let m = (next_slot % 60) as i8;
             let t = Time::new(h, m, 0, 0).unwrap();
             let candidate = at_time_on_date(date, t, tz)?;
             if candidate > *now {
                 return Ok(Some(candidate));
             }
-            current_minutes += step_minutes;
         }
 
         date = date
@@ -629,24 +694,62 @@ fn next_week_repeat(
     now: &Zoned,
 ) -> Result<Option<Zoned>, ScheduleError> {
     let now_in_tz = now.with_time_zone(tz.clone());
-    let anchor_date = anchor.unwrap_or_else(epoch_monday);
+    let anchor_date = anchor.unwrap_or(*EPOCH_MONDAY);
 
-    let mut date = now_in_tz.date();
+    let date = now_in_tz.date();
 
-    // Search up to 1000 days forward
-    for _ in 0..1000 {
-        let wd = Weekday::from_jiff(date.weekday());
-        if days.contains(&wd) {
-            // Check week alignment
-            let weeks = weeks_between(anchor_date, date);
-            if weeks >= 0 && weeks % (interval as i64) == 0 {
-                if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
+    // Sort target DOWs by number for earliest-first matching
+    let mut sorted_days: Vec<Weekday> = days.to_vec();
+    sorted_days.sort_by_key(|d| d.to_jiff().to_monday_one_offset());
+
+    // Find Monday of current week and Monday of anchor week
+    let dow_offset = date.weekday().to_monday_one_offset() as i64 - 1;
+    let current_monday = date
+        .checked_add(jiff::Span::new().days(-dow_offset))
+        .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+
+    let anchor_dow_offset = anchor_date.weekday().to_monday_one_offset() as i64 - 1;
+    let anchor_monday = anchor_date
+        .checked_add(jiff::Span::new().days(-anchor_dow_offset))
+        .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+
+    let mut cur_monday = current_monday;
+
+    // Loop up to 54 iterations (covers >1 year for any interval)
+    for _ in 0..54 {
+        let weeks = weeks_between(anchor_monday, cur_monday);
+
+        // Skip weeks before anchor
+        if weeks < 0 {
+            let skip = (-weeks + interval as i64 - 1) / interval as i64;
+            cur_monday = cur_monday
+                .checked_add(jiff::Span::new().days(skip * interval as i64 * 7))
+                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+            continue;
+        }
+
+        if weeks % (interval as i64) == 0 {
+            // Aligned week — try each target DOW
+            for wd in &sorted_days {
+                let day_offset = wd.to_jiff().to_monday_one_offset() as i64 - 1;
+                let target_date = cur_monday
+                    .checked_add(jiff::Span::new().days(day_offset))
+                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+                if let Some(candidate) = earliest_future_at_times(target_date, times, tz, now)? {
                     return Ok(Some(candidate));
                 }
             }
         }
-        date = date
-            .tomorrow()
+
+        // Skip to next aligned week
+        let remainder = weeks % (interval as i64);
+        let skip_weeks = if remainder == 0 {
+            interval as i64
+        } else {
+            interval as i64 - remainder
+        };
+        cur_monday = cur_monday
+            .checked_add(jiff::Span::new().days(skip_weeks * 7))
             .map_err(|e| ScheduleError::eval(format!("{e}")))?;
     }
 

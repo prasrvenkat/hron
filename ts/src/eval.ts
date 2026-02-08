@@ -111,9 +111,8 @@ function lastWeekdayInMonth(
   return d;
 }
 
-function epochMonday(): PD {
-  return Temporal.PlainDate.from("1970-01-05");
-}
+const EPOCH_MONDAY: PD = Temporal.PlainDate.from("1970-01-05");
+const MIDNIGHT: Temporal.PlainTime = Temporal.PlainTime.from({ hour: 0, minute: 0 });
 
 function weeksBetween(a: PD, b: PD): number {
   const days = a.until(b, { largestUnit: "days" }).days;
@@ -136,9 +135,51 @@ function isExcepted(date: PD, exceptions: Exception[]): boolean {
   return false;
 }
 
+interface ParsedExceptions {
+  named: Array<{ month: number; day: number }>;
+  isoDates: PD[];
+}
+
+function parseExceptions(exceptions: Exception[]): ParsedExceptions {
+  const named: Array<{ month: number; day: number }> = [];
+  const isoDates: PD[] = [];
+  for (const exc of exceptions) {
+    if (exc.type === "named") {
+      named.push({ month: monthNumber(exc.month), day: exc.day });
+    } else {
+      isoDates.push(Temporal.PlainDate.from(exc.date));
+    }
+  }
+  return { named, isoDates };
+}
+
+function isExceptedParsed(date: PD, parsed: ParsedExceptions): boolean {
+  for (const n of parsed.named) {
+    if (date.month === n.month && date.day === n.day) return true;
+  }
+  for (const d of parsed.isoDates) {
+    if (Temporal.PlainDate.compare(date, d) === 0) return true;
+  }
+  return false;
+}
+
 function matchesDuring(date: PD, during: MonthName[]): boolean {
   if (during.length === 0) return true;
   return during.some((mn) => monthNumber(mn) === date.month);
+}
+
+/** Find the 1st of the next valid `during` month after `date`. */
+function nextDuringMonth(date: PD, during: MonthName[]): PD {
+  const currentMonth = date.month;
+  const months = during.map((mn) => monthNumber(mn)).sort((a, b) => a - b);
+
+  for (const m of months) {
+    if (m > currentMonth) {
+      return Temporal.PlainDate.from({ year: date.year, month: m, day: 1 });
+    }
+  }
+  // Wrap to first month of next year
+  return Temporal.PlainDate.from({ year: date.year + 1, month: months[0], day: 1 });
 }
 
 function resolveUntil(until: UntilSpec, now: ZDT): PD {
@@ -196,8 +237,10 @@ export function nextFrom(
 
   const untilDate = schedule.until ? resolveUntil(schedule.until, now) : null;
 
+  const parsedExceptions = parseExceptions(schedule.except);
   const hasExceptions = schedule.except.length > 0;
   const hasDuring = schedule.during.length > 0;
+  const needsTzConversion = untilDate !== null || hasDuring || hasExceptions;
 
   let current = now;
   for (let i = 0; i < 1000; i++) {
@@ -205,42 +248,35 @@ export function nextFrom(
 
     if (candidate === null) return null;
 
+    // Convert to target tz once for all filter checks
+    const cDate = needsTzConversion
+      ? candidate.withTimeZone(tz).toPlainDate()
+      : null;
+
     // Apply until filter
     if (untilDate) {
-      const candidateInTz = candidate.withTimeZone(tz);
-      if (
-        Temporal.PlainDate.compare(candidateInTz.toPlainDate(), untilDate) > 0
-      ) {
+      if (Temporal.PlainDate.compare(cDate!, untilDate) > 0) {
         return null;
       }
     }
 
     // Apply during filter
-    if (hasDuring) {
-      const candidateInTz = candidate.withTimeZone(tz);
-      if (!matchesDuring(candidateInTz.toPlainDate(), schedule.during)) {
-        const nextDay = candidateInTz.toPlainDate().add({ days: 1 });
-        current = atTimeOnDate(
-          nextDay,
-          Temporal.PlainTime.from({ hour: 0, minute: 0 }),
-          tz,
-        ).subtract({ seconds: 1 });
-        continue;
-      }
+    if (hasDuring && !matchesDuring(cDate!, schedule.during)) {
+      // Skip ahead to 1st of next valid during month
+      const skipTo = nextDuringMonth(cDate!, schedule.during);
+      current = atTimeOnDate(skipTo, MIDNIGHT, tz).subtract({ seconds: 1 });
+      continue;
     }
 
     // Apply except filter
-    if (hasExceptions) {
-      const candidateInTz = candidate.withTimeZone(tz);
-      if (isExcepted(candidateInTz.toPlainDate(), schedule.except)) {
-        const nextDay = candidateInTz.toPlainDate().add({ days: 1 });
-        current = atTimeOnDate(
-          nextDay,
-          Temporal.PlainTime.from({ hour: 0, minute: 0 }),
-          tz,
-        ).subtract({ seconds: 1 });
-        continue;
-      }
+    if (hasExceptions && isExceptedParsed(cDate!, parsedExceptions)) {
+      const nextDay = cDate!.add({ days: 1 });
+      current = atTimeOnDate(
+        nextDay,
+        MIDNIGHT,
+        tz,
+      ).subtract({ seconds: 1 });
+      continue;
     }
 
     return candidate;
@@ -336,7 +372,7 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
       if (!timeMatches(times)) return false;
       const anchorDate = schedule.anchor
         ? Temporal.PlainDate.from(schedule.anchor)
-        : epochMonday();
+        : EPOCH_MONDAY;
       const weeks = weeksBetween(anchorDate, date);
       return weeks >= 0 && weeks % interval === 0;
     }
@@ -465,6 +501,8 @@ function nextIntervalRepeat(
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
   const stepMinutes = unit === "min" ? interval : interval * 60;
+  const fromMinutes = from.hour * 60 + from.minute;
+  const toMinutes = to.hour * 60 + to.minute;
 
   let date = nowInTz.toPlainDate();
 
@@ -474,19 +512,28 @@ function nextIntervalRepeat(
       continue;
     }
 
-    const fromMinutes = from.hour * 60 + from.minute;
-    const toMinutes = to.hour * 60 + to.minute;
-    let currentMinutes = fromMinutes;
+    const sameDay =
+      Temporal.PlainDate.compare(date, nowInTz.toPlainDate()) === 0;
+    const nowMinutes = sameDay
+      ? nowInTz.hour * 60 + nowInTz.minute
+      : -1;
 
-    while (currentMinutes <= toMinutes) {
-      const h = Math.floor(currentMinutes / 60);
-      const m = currentMinutes % 60;
+    let nextSlot: number;
+    if (nowMinutes < fromMinutes) {
+      nextSlot = fromMinutes;
+    } else {
+      const elapsed = nowMinutes - fromMinutes;
+      nextSlot = fromMinutes + (Math.floor(elapsed / stepMinutes) + 1) * stepMinutes;
+    }
+
+    if (nextSlot <= toMinutes) {
+      const h = Math.floor(nextSlot / 60);
+      const m = nextSlot % 60;
       const t = Temporal.PlainTime.from({ hour: h, minute: m });
       const candidate = atTimeOnDate(date, t, tz);
       if (Temporal.ZonedDateTime.compare(candidate, now) > 0) {
         return candidate;
       }
-      currentMinutes += stepMinutes;
     }
 
     date = date.add({ days: 1 });
@@ -506,20 +553,47 @@ function nextWeekRepeat(
   const nowInTz = now.withTimeZone(tz);
   const anchorDate = anchor
     ? Temporal.PlainDate.from(anchor)
-    : epochMonday();
+    : EPOCH_MONDAY;
 
-  let date = nowInTz.toPlainDate();
+  const date = nowInTz.toPlainDate();
 
-  for (let d = 0; d < 1000; d++) {
-    const dow = date.dayOfWeek;
-    if (days.some((day) => weekdayNameToNumber(day) === dow)) {
-      const weeks = weeksBetween(anchorDate, date);
-      if (weeks >= 0 && weeks % interval === 0) {
-        const candidate = earliestFutureAtTimes(date, times, tz, now);
+  // Sort target DOWs by number for earliest-first matching
+  const sortedDays = [...days].sort(
+    (a, b) => weekdayNameToNumber(a) - weekdayNameToNumber(b),
+  );
+
+  // Find Monday of current week and Monday of anchor week
+  const dowOffset = date.dayOfWeek - 1;
+  let currentMonday = date.subtract({ days: dowOffset });
+
+  const anchorDowOffset = anchorDate.dayOfWeek - 1;
+  const anchorMonday = anchorDate.subtract({ days: anchorDowOffset });
+
+  // Loop up to 54 iterations (covers >1 year for any interval)
+  for (let i = 0; i < 54; i++) {
+    const weeks = weeksBetween(anchorMonday, currentMonday);
+
+    // Skip weeks before anchor
+    if (weeks < 0) {
+      const skip = Math.ceil(-weeks / interval);
+      currentMonday = currentMonday.add({ days: skip * interval * 7 });
+      continue;
+    }
+
+    if (weeks % interval === 0) {
+      // Aligned week — try each target DOW
+      for (const wd of sortedDays) {
+        const dayOffset = weekdayNameToNumber(wd) - 1;
+        const targetDate = currentMonday.add({ days: dayOffset });
+        const candidate = earliestFutureAtTimes(targetDate, times, tz, now);
         if (candidate) return candidate;
       }
     }
-    date = date.add({ days: 1 });
+
+    // Skip to next aligned week
+    const remainder = weeks % interval;
+    const skipWeeks = remainder === 0 ? interval : interval - remainder;
+    currentMonday = currentMonday.add({ days: skipWeeks * 7 });
   }
 
   return null;
