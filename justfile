@@ -1,11 +1,15 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust
+test-all: test-rust test-ts
 
 # Rust tests
 test-rust:
     cd rust && cargo test --workspace --all-features
+
+# TypeScript tests
+test-ts:
+    cd ts && pnpm install --frozen-lockfile && pnpm test
 
 # Rust build
 build-rust:
@@ -23,6 +27,7 @@ stamp-versions:
     sed -i 's/hron = { path = "..\/hron", version = "[^"]*"/hron = { path = "..\/hron", version = "{{version}}"/' rust/hron-cli/Cargo.toml
     sed -i 's/hron = { path = "..\/hron", version = "[^"]*"/hron = { path = "..\/hron", version = "{{version}}"/' rust/wasm/Cargo.toml
     cd rust && cargo generate-lockfile
+    cd ts && sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' package.json
 
 # Create a release PR: just release 1.2.3
 release new_version:
@@ -59,7 +64,7 @@ release new_version:
 
     # Create release branch, commit, push, open PR
     git checkout -b "release/v{{new_version}}"
-    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock
+    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json
     git commit -m "release: v{{new_version}}"
     git push -u origin "release/v{{new_version}}"
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
@@ -80,6 +85,10 @@ publish-crates: publish-hron
     @echo "Waiting 30s for crates.io index..."
     sleep 30
     just publish-cli
+
+# Build and publish native TS package to npm
+publish-ts:
+    cd ts && pnpm install --frozen-lockfile && pnpm build && pnpm publish --access public --no-git-checks
 
 # Build and publish WASM package to npm
 publish-wasm:

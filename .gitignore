@@ -20,5 +20,10 @@ dist/
 .vscode/
 *.swp
 
+# Node / TypeScript
+node_modules/
+ts/dist/
+*.tsbuildinfo
+
 # OS
 .DS_Store
