@@ -13,7 +13,7 @@ dist/
 .venv/
 
 # Go (future)
-bin/
+/bin/
 
 # IDE
 .idea/

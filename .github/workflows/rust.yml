@@ -22,6 +22,7 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           install_args: rust
+      - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
         working-directory: rust
       - run: cargo clippy --all-features -- -D warnings
