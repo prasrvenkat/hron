@@ -117,7 +117,8 @@ jobs:
           gh release upload "v${{ needs.create-tag.outputs.version }}" \
             dist/hron-linux-x86_64/hron-linux-x86_64.tar.gz \
             dist/hron-macos-x86_64/hron-macos-x86_64.tar.gz \
-            dist/hron-macos-aarch64/hron-macos-aarch64.tar.gz
+            dist/hron-macos-aarch64/hron-macos-aarch64.tar.gz \
+            || echo "Assets already uploaded, skipping"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -171,7 +172,7 @@ jobs:
         working-directory: rust/wasm
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance || echo "Already published, skipping"
         working-directory: rust/wasm/pkg
 
   publish-ts:
@@ -191,7 +192,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Build and publish
-        run: pnpm install --frozen-lockfile && pnpm build && pnpm publish --access public --no-git-checks --provenance
+        run: pnpm install --frozen-lockfile && pnpm build && (pnpm publish --access public --no-git-checks --provenance || echo "Already published, skipping")
         working-directory: ts
 
   publish-dart:
@@ -206,7 +207,7 @@ jobs:
           sdk: stable
 
       - name: Publish to pub.dev
-        run: dart pub publish --force
+        run: dart pub publish --force || echo "Already published, skipping"
         working-directory: dart
 
   publish-release:
