@@ -293,7 +293,7 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
 
     // Apply except filter
     if (hasExceptions && isExceptedParsed(cDate!, parsedExceptions)) {
-      const nextDay = cDate?.add({ days: 1 });
+      const nextDay = cDate!.add({ days: 1 });
       current = atTimeOnDate(nextDay, MIDNIGHT, tz).subtract({ seconds: 1 });
       continue;
     }
