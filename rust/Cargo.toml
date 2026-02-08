@@ -1,0 +1,32 @@
+[package]
+name = "hron"
+version = "0.1.0"
+edition = "2021"
+description = "Human-readable cron"
+license = "MIT"
+keywords = ["cron", "schedule", "datetime", "recurring", "calendar"]
+categories = ["date-and-time", "command-line-utilities", "parsing"]
+
+[lib]
+name = "hron"
+
+[[bin]]
+name = "hron"
+path = "src/bin/hron.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli", "serde"]
+cli = ["dep:clap", "serde"]
+serde = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+jiff = "0.2"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+serde_json = "1"
