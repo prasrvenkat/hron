@@ -1,0 +1,52 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "rust/**"
+      - "spec/**"
+      - ".tool-versions"
+  pull_request:
+    paths:
+      - "rust/**"
+      - "spec/**"
+      - ".tool-versions"
+
+jobs:
+  check:
+    name: Format & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --all --check
+        working-directory: rust
+      - run: cargo clippy --workspace --all-features -- -D warnings
+        working-directory: rust
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - run: cargo test --workspace --all-features
+        working-directory: rust
+
+  wasm:
+    name: WASM Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo build --target wasm32-unknown-unknown
+        working-directory: rust/wasm

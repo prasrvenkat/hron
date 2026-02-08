@@ -1,0 +1,3 @@
+[workspace]
+members = ["hron", "hron-cli", "wasm"]
+resolver = "2"

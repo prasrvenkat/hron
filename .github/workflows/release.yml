@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  create-tag:
+    name: Create Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag does not exist
+        run: |
+          if gh api repos/${{ github.repository }}/git/refs/tags/v${{ steps.version.outputs.version }} >/dev/null 2>&1; then
+            echo "Error: tag v${{ steps.version.outputs.version }} already exists"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create tag via API
+        run: |
+          gh api repos/${{ github.repository }}/git/refs \
+            -f "ref=refs/tags/v${{ steps.version.outputs.version }}" \
+            -f "sha=${{ github.sha }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-draft-release:
+    name: Create Draft Release
+    needs: create-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create draft release
+        run: |
+          gh release create "v${{ needs.create-tag.outputs.version }}" \
+            --draft \
+            --generate-notes \
+            --title "v${{ needs.create-tag.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-binaries:
+    name: Build (${{ matrix.target }})
+    needs: create-draft-release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact: hron-linux-x86_64
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            artifact: hron-macos-x86_64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            artifact: hron-macos-aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+
+      - name: Build release binary
+        run: cargo build --release --package hron-cli
+        working-directory: rust
+
+      - name: Package artifact
+        run: |
+          mkdir staging
+          cp rust/target/release/hron staging/
+          tar -czf ${{ matrix.artifact }}.tar.gz -C staging hron
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+  upload-assets:
+    name: Upload Release Assets
+    needs: [create-tag, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Upload assets to release
+        run: |
+          gh release upload "v${{ needs.create-tag.outputs.version }}" \
+            dist/hron-linux-x86_64/hron-linux-x86_64.tar.gz \
+            dist/hron-macos-x86_64/hron-macos-x86_64.tar.gz \
+            dist/hron-macos-aarch64/hron-macos-aarch64.tar.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: create-draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+
+      - name: Publish hron
+        run: cargo publish --package hron
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish hron-cli
+        run: cargo publish --package hron-cli
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: create-draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package
+        run: wasm-pack build --scope hron --release
+        working-directory: rust/wasm
+
+      - name: Publish to npm
+        run: npm publish --access public
+        working-directory: rust/wasm/pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-release:
+    name: Publish Release
+    needs: [create-tag, upload-assets, publish-crates, publish-npm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Un-draft release
+        run: gh release edit "v${{ needs.create-tag.outputs.version }}" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

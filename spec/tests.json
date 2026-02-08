@@ -1,0 +1,1483 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "hron conformance test suite. All eval tests use now=2026-02-06T12:00:00+00:00[UTC] (Friday) unless overridden per-test.",
+  "now": "2026-02-06T12:00:00+00:00[UTC]",
+
+  "_eval_assertion_types": {
+    "next": "Full timestamp of the next occurrence from now. null means no future occurrence exists.",
+    "next_date": "Date-only (YYYY-MM-DD) of the next occurrence. Implementations should call next_from(now) and compare only the date component.",
+    "next_n": "Array of full timestamps for N consecutive occurrences. N defaults to the array length; if next_n_count is provided, request that many and compare the returned array.",
+    "next_n_count": "How many occurrences to request from next_n_from(). Defaults to next_n array length if omitted.",
+    "next_n_length": "Expected number of results when exact timestamps are not specified (use instead of next_n when only the count matters).",
+    "matches": "Boolean: does the expression match the given datetime? Tests are in eval.matches section with 'datetime' and 'expected' fields."
+  },
+
+  "_behavioral_notes": {
+    "time_boundary": "next_from uses strict greater-than (>). If now equals an occurrence time exactly, that occurrence is skipped.",
+    "week_repeat_default_anchor": "When no 'starting' clause is given, week_repeat uses epoch Monday (1970-01-05) as the anchor for computing week parity.",
+    "day_skip": "If a month doesn't have the requested day (e.g., Feb 30), that month is skipped entirely.",
+    "named_date_recurrence": "Named exceptions (e.g., 'except dec 25') recur every year. ISO exceptions (e.g., 'except 2026-12-25') apply to that one date only.",
+    "cron_limitations": "from_cron only supports comma-separated DOM values (not ranges like 1-5), and only recognizes 1-5 as weekday and 0,6 as weekend for DOW ranges."
+  },
+
+  "parse": {
+    "description": "Parse roundtrip tests. Input parses successfully; canonical is the expected Display output. parse(input).to_string() == canonical, and parse(canonical).to_string() == canonical.",
+
+    "day_repeat": {
+      "tests": [
+        { "name": "every_day", "input": "every day at 09:00", "canonical": "every day at 09:00" },
+        { "name": "every_day_no_leading_zero", "input": "every day at 9:00", "canonical": "every day at 09:00" },
+        { "name": "every_day_midnight", "input": "every day at 00:00", "canonical": "every day at 00:00" },
+        { "name": "every_day_end_of_day", "input": "every day at 23:59", "canonical": "every day at 23:59" },
+        { "name": "weekday", "input": "every weekday at 9:00", "canonical": "every weekday at 09:00" },
+        { "name": "weekday_plural", "input": "every weekdays at 9:00", "canonical": "every weekday at 09:00" },
+        { "name": "weekend", "input": "every weekend at 10:00", "canonical": "every weekend at 10:00" },
+        { "name": "weekend_plural", "input": "every weekends at 10:00", "canonical": "every weekend at 10:00" },
+        { "name": "monday", "input": "every monday at 9:00", "canonical": "every monday at 09:00" },
+        { "name": "tuesday", "input": "every tuesday at 14:30", "canonical": "every tuesday at 14:30" },
+        { "name": "wednesday", "input": "every wednesday at 10:00", "canonical": "every wednesday at 10:00" },
+        { "name": "thursday", "input": "every thursday at 11:15", "canonical": "every thursday at 11:15" },
+        { "name": "friday", "input": "every friday at 17:00", "canonical": "every friday at 17:00" },
+        { "name": "saturday", "input": "every saturday at 08:00", "canonical": "every saturday at 08:00" },
+        { "name": "sunday", "input": "every sunday at 10:00", "canonical": "every sunday at 10:00" },
+        { "name": "short_mon", "input": "every mon at 9:00", "canonical": "every monday at 09:00" },
+        { "name": "short_tue", "input": "every tue at 9:00", "canonical": "every tuesday at 09:00" },
+        { "name": "short_wed", "input": "every wed at 9:00", "canonical": "every wednesday at 09:00" },
+        { "name": "short_thu", "input": "every thu at 9:00", "canonical": "every thursday at 09:00" },
+        { "name": "short_fri", "input": "every fri at 9:00", "canonical": "every friday at 09:00" },
+        { "name": "short_sat", "input": "every sat at 9:00", "canonical": "every saturday at 09:00" },
+        { "name": "short_sun", "input": "every sun at 9:00", "canonical": "every sunday at 09:00" },
+        { "name": "multi_day_mon_wed_fri", "input": "every mon, wed, fri at 9:00", "canonical": "every monday, wednesday, friday at 09:00" },
+        { "name": "multi_day_tue_thu", "input": "every tue, thu at 14:00", "canonical": "every tuesday, thursday at 14:00" },
+        { "name": "multi_time_two", "input": "every day at 9:00, 17:00", "canonical": "every day at 09:00, 17:00" },
+        { "name": "multi_time_three", "input": "every day at 9:00, 12:00, 17:00", "canonical": "every day at 09:00, 12:00, 17:00" },
+        { "name": "multi_time_weekday", "input": "every weekday at 9:00, 12:00, 17:00", "canonical": "every weekday at 09:00, 12:00, 17:00" },
+        { "name": "multi_time_weekend", "input": "every weekend at 10:00, 14:00", "canonical": "every weekend at 10:00, 14:00" },
+        { "name": "multi_time_specific_day", "input": "every monday at 9:00, 13:00", "canonical": "every monday at 09:00, 13:00" },
+        { "name": "multi_time_multi_day", "input": "every mon, wed, fri at 9:00, 17:00", "canonical": "every monday, wednesday, friday at 09:00, 17:00" }
+      ]
+    },
+
+    "interval_repeat": {
+      "tests": [
+        { "name": "30_min", "input": "every 30 min from 09:00 to 17:00", "canonical": "every 30 min from 09:00 to 17:00" },
+        { "name": "45_min", "input": "every 45 min from 09:00 to 17:00", "canonical": "every 45 min from 09:00 to 17:00" },
+        { "name": "15_min", "input": "every 15 min from 08:00 to 20:00", "canonical": "every 15 min from 08:00 to 20:00" },
+        { "name": "1_minute", "input": "every 1 minute from 09:00 to 09:30", "canonical": "every 1 minute from 09:00 to 09:30" },
+        { "name": "2_hours", "input": "every 2 hours from 08:00 to 20:00", "canonical": "every 2 hours from 08:00 to 20:00" },
+        { "name": "1_hour", "input": "every 1 hour from 00:00 to 23:59", "canonical": "every 1 hour from 00:00 to 23:59" },
+        { "name": "30_min_full_day", "input": "every 30 min from 00:00 to 23:59", "canonical": "every 30 min from 00:00 to 23:59" },
+        { "name": "on_weekdays", "input": "every 45 min from 09:00 to 17:00 on weekdays", "canonical": "every 45 min from 09:00 to 17:00 on weekday" },
+        { "name": "on_weekends", "input": "every 30 min from 10:00 to 18:00 on weekends", "canonical": "every 30 min from 10:00 to 18:00 on weekend" },
+        { "name": "on_specific_days", "input": "every 30 min from 09:00 to 17:00 on mon, wed, fri", "canonical": "every 30 min from 09:00 to 17:00 on monday, wednesday, friday" },
+        { "name": "unit_mins", "input": "every 10 mins from 09:00 to 17:00", "canonical": "every 10 min from 09:00 to 17:00" },
+        { "name": "unit_minutes", "input": "every 20 minutes from 09:00 to 17:00", "canonical": "every 20 min from 09:00 to 17:00" },
+        { "name": "unit_hr", "input": "every 3 hr from 06:00 to 18:00", "canonical": "every 3 hours from 06:00 to 18:00" },
+        { "name": "unit_hrs", "input": "every 4 hrs from 00:00 to 23:59", "canonical": "every 4 hours from 00:00 to 23:59" }
+      ]
+    },
+
+    "week_repeat": {
+      "tests": [
+        { "name": "every_2_weeks", "input": "every 2 weeks on monday at 9:00", "canonical": "every 2 weeks on monday at 09:00" },
+        { "name": "every_3_weeks", "input": "every 3 weeks on friday at 15:00", "canonical": "every 3 weeks on friday at 15:00" },
+        { "name": "every_4_weeks_multi_day", "input": "every 4 weeks on mon, wed at 10:00", "canonical": "every 4 weeks on monday, wednesday at 10:00" },
+        { "name": "multi_time", "input": "every 2 weeks on monday at 9:00, 17:00", "canonical": "every 2 weeks on monday at 09:00, 17:00" },
+        { "name": "multi_time_three", "input": "every 3 weeks on friday at 9:00, 12:00, 17:00", "canonical": "every 3 weeks on friday at 09:00, 12:00, 17:00" }
+      ]
+    },
+
+    "month_repeat": {
+      "tests": [
+        { "name": "1st", "input": "every month on the 1st at 9:00", "canonical": "every month on the 1st at 09:00" },
+        { "name": "2nd", "input": "every month on the 2nd at 9:00", "canonical": "every month on the 2nd at 09:00" },
+        { "name": "3rd", "input": "every month on the 3rd at 9:00", "canonical": "every month on the 3rd at 09:00" },
+        { "name": "15th", "input": "every month on the 15th at 9:00", "canonical": "every month on the 15th at 09:00" },
+        { "name": "11th", "input": "every month on the 11th at 9:00", "canonical": "every month on the 11th at 09:00" },
+        { "name": "12th", "input": "every month on the 12th at 9:00", "canonical": "every month on the 12th at 09:00" },
+        { "name": "13th", "input": "every month on the 13th at 9:00", "canonical": "every month on the 13th at 09:00" },
+        { "name": "21st", "input": "every month on the 21st at 9:00", "canonical": "every month on the 21st at 09:00" },
+        { "name": "22nd", "input": "every month on the 22nd at 9:00", "canonical": "every month on the 22nd at 09:00" },
+        { "name": "23rd", "input": "every month on the 23rd at 9:00", "canonical": "every month on the 23rd at 09:00" },
+        { "name": "31st", "input": "every month on the 31st at 9:00", "canonical": "every month on the 31st at 09:00" },
+        { "name": "multi_day_1st_15th", "input": "every month on the 1st, 15th at 9:00", "canonical": "every month on the 1st, 15th at 09:00" },
+        { "name": "multi_day_three", "input": "every month on the 1st, 10th, 20th at 12:00", "canonical": "every month on the 1st, 10th, 20th at 12:00" },
+        { "name": "last_day", "input": "every month on the last day at 17:00", "canonical": "every month on the last day at 17:00" },
+        { "name": "last_weekday", "input": "every month on the last weekday at 15:00", "canonical": "every month on the last weekday at 15:00" },
+        { "name": "multi_time_1st", "input": "every month on the 1st at 9:00, 17:00", "canonical": "every month on the 1st at 09:00, 17:00" },
+        { "name": "multi_time_multi_day", "input": "every month on the 1st, 15th at 9:00, 17:00", "canonical": "every month on the 1st, 15th at 09:00, 17:00" },
+        { "name": "day_range_simple", "input": "every month on the 1st to 5th at 9:00", "canonical": "every month on the 1st to 5th at 09:00" },
+        { "name": "day_range_mixed_with_single", "input": "every month on the 1st to 3rd, 15th at 9:00", "canonical": "every month on the 1st to 3rd, 15th at 09:00" },
+        { "name": "day_range_large", "input": "every month on the 10th to 20th at 12:00", "canonical": "every month on the 10th to 20th at 12:00" },
+        { "name": "day_range_single_then_range", "input": "every month on the 1st, 10th to 15th at 9:00", "canonical": "every month on the 1st, 10th to 15th at 09:00" },
+        { "name": "day_range_multiple_ranges", "input": "every month on the 1st to 5th, 10th to 15th at 9:00", "canonical": "every month on the 1st to 5th, 10th to 15th at 09:00" },
+        { "name": "day_range_multi_time", "input": "every month on the 1st to 5th at 9:00, 17:00", "canonical": "every month on the 1st to 5th at 09:00, 17:00" },
+        { "name": "day_range_full_month", "input": "every month on the 1st to 31st at 9:00", "canonical": "every month on the 1st to 31st at 09:00" }
+      ]
+    },
+
+    "ordinal_repeat": {
+      "tests": [
+        { "name": "first_monday", "input": "first monday of every month at 10:00", "canonical": "first monday of every month at 10:00" },
+        { "name": "second_tuesday", "input": "second tuesday of every month at 14:30", "canonical": "second tuesday of every month at 14:30" },
+        { "name": "third_wednesday", "input": "third wednesday of every month at 09:00", "canonical": "third wednesday of every month at 09:00" },
+        { "name": "fourth_thursday", "input": "fourth thursday of every month at 11:00", "canonical": "fourth thursday of every month at 11:00" },
+        { "name": "fifth_friday", "input": "fifth friday of every month at 16:00", "canonical": "fifth friday of every month at 16:00" },
+        { "name": "last_friday", "input": "last friday of every month at 16:00", "canonical": "last friday of every month at 16:00" },
+        { "name": "last_sunday", "input": "last sunday of every month at 08:00", "canonical": "last sunday of every month at 08:00" },
+        { "name": "first_saturday", "input": "first saturday of every month at 10:00", "canonical": "first saturday of every month at 10:00" },
+        { "name": "multi_time_first_monday", "input": "first monday of every month at 10:00, 14:00", "canonical": "first monday of every month at 10:00, 14:00" },
+        { "name": "multi_time_last_friday", "input": "last friday of every month at 9:00, 17:00", "canonical": "last friday of every month at 09:00, 17:00" }
+      ]
+    },
+
+    "single_date": {
+      "tests": [
+        { "name": "named_date", "input": "on feb 14 at 9:00", "canonical": "on feb 14 at 09:00" },
+        { "name": "named_date_long_month", "input": "on february 14 at 9:00", "canonical": "on feb 14 at 09:00" },
+        { "name": "iso_date", "input": "on 2026-03-15 at 14:30", "canonical": "on 2026-03-15 at 14:30" },
+        { "name": "next_monday", "input": "on next monday at 9:00", "canonical": "on next monday at 09:00" },
+        { "name": "next_friday", "input": "on next friday at 17:00", "canonical": "on next friday at 17:00" },
+        { "name": "dec_25", "input": "on dec 25 at 00:00", "canonical": "on dec 25 at 00:00" },
+        { "name": "jan_1", "input": "on jan 1 at 00:00", "canonical": "on jan 1 at 00:00" },
+        { "name": "apr_15", "input": "on april 15 at 09:00", "canonical": "on apr 15 at 09:00" },
+        { "name": "aug_1", "input": "on august 1 at 00:00", "canonical": "on aug 1 at 00:00" },
+        { "name": "oct_31", "input": "on october 31 at 17:00", "canonical": "on oct 31 at 17:00" },
+        { "name": "multi_time_named", "input": "on feb 14 at 9:00, 18:00", "canonical": "on feb 14 at 09:00, 18:00" },
+        { "name": "multi_time_iso", "input": "on 2026-03-15 at 9:00, 12:00, 17:00", "canonical": "on 2026-03-15 at 09:00, 12:00, 17:00" }
+      ]
+    },
+
+    "year_repeat": {
+      "tests": [
+        { "name": "dec_25", "input": "every year on dec 25 at 00:00", "canonical": "every year on dec 25 at 00:00" },
+        { "name": "dec_25_long_month", "input": "every year on december 25 at 00:00", "canonical": "every year on dec 25 at 00:00" },
+        { "name": "jul_4", "input": "every year on jul 4 at 12:00", "canonical": "every year on jul 4 at 12:00" },
+        { "name": "ordinal_first_monday_march", "input": "every year on the first monday of march at 10:00", "canonical": "every year on the first monday of mar at 10:00" },
+        { "name": "ordinal_last_friday_december", "input": "every year on the last friday of december at 17:00", "canonical": "every year on the last friday of dec at 17:00" },
+        { "name": "ordinal_third_thursday_november", "input": "every year on the third thursday of november at 12:00", "canonical": "every year on the third thursday of nov at 12:00" },
+        { "name": "day_of_month_15th_march", "input": "every year on the 15th of march at 09:00", "canonical": "every year on the 15th of mar at 09:00" },
+        { "name": "day_of_month_1st_january", "input": "every year on the 1st of january at 00:00", "canonical": "every year on the 1st of jan at 00:00" },
+        { "name": "last_weekday_december", "input": "every year on the last weekday of december at 17:00", "canonical": "every year on the last weekday of dec at 17:00" },
+        { "name": "last_weekday_june", "input": "every year on the last weekday of june at 15:00", "canonical": "every year on the last weekday of jun at 15:00" },
+        { "name": "multi_time_dec_25", "input": "every year on dec 25 at 0:00, 12:00", "canonical": "every year on dec 25 at 00:00, 12:00" },
+        { "name": "multi_time_ordinal", "input": "every year on the first monday of march at 10:00, 14:00", "canonical": "every year on the first monday of mar at 10:00, 14:00" }
+      ]
+    },
+
+    "except_clause": {
+      "tests": [
+        { "name": "single_named", "input": "every weekday at 9:00 except dec 25", "canonical": "every weekday at 09:00 except dec 25" },
+        { "name": "multiple_named", "input": "every weekday at 9:00 except dec 25, jan 1", "canonical": "every weekday at 09:00 except dec 25, jan 1" },
+        { "name": "iso_date", "input": "every weekday at 9:00 except 2026-07-04", "canonical": "every weekday at 09:00 except 2026-07-04" },
+        { "name": "mixed_named_and_iso", "input": "every weekday at 9:00 except dec 25, 2026-07-04, jan 1", "canonical": "every weekday at 09:00 except dec 25, 2026-07-04, jan 1" },
+        { "name": "on_day_repeat", "input": "every day at 09:00 except dec 25", "canonical": "every day at 09:00 except dec 25" },
+        { "name": "on_month_repeat", "input": "every month on the 1st at 09:00 except jan 1", "canonical": "every month on the 1st at 09:00 except jan 1" },
+        { "name": "on_interval_repeat", "input": "every 30 min from 09:00 to 17:00 except 2026-07-04", "canonical": "every 30 min from 09:00 to 17:00 except 2026-07-04" },
+        { "name": "on_week_repeat", "input": "every 2 weeks on monday at 9:00 except dec 25", "canonical": "every 2 weeks on monday at 09:00 except dec 25" },
+        { "name": "on_ordinal_repeat", "input": "first monday of every month at 10:00 except jan 1", "canonical": "first monday of every month at 10:00 except jan 1" },
+        { "name": "on_single_date", "input": "on feb 14 at 9:00 except 2026-02-14", "canonical": "on feb 14 at 09:00 except 2026-02-14" },
+        { "name": "on_year_repeat", "input": "every year on dec 25 at 00:00 except 2026-12-25", "canonical": "every year on dec 25 at 00:00 except 2026-12-25" },
+        { "name": "multi_time_with_except", "input": "every day at 9:00, 17:00 except dec 25", "canonical": "every day at 09:00, 17:00 except dec 25" },
+        { "name": "day_range_with_except", "input": "every month on the 1st to 5th at 9:00 except jan 1", "canonical": "every month on the 1st to 5th at 09:00 except jan 1" }
+      ]
+    },
+
+    "until_clause": {
+      "tests": [
+        { "name": "iso_date", "input": "every day at 09:00 until 2026-12-31", "canonical": "every day at 09:00 until 2026-12-31" },
+        { "name": "named_date", "input": "every weekday at 09:00 until dec 31", "canonical": "every weekday at 09:00 until dec 31" },
+        { "name": "on_interval", "input": "every 30 min from 09:00 to 17:00 until 2026-06-30", "canonical": "every 30 min from 09:00 to 17:00 until 2026-06-30" },
+        { "name": "on_week_repeat", "input": "every 2 weeks on monday at 9:00 until 2026-12-31", "canonical": "every 2 weeks on monday at 09:00 until 2026-12-31" },
+        { "name": "on_month_repeat", "input": "every month on the 1st at 09:00 until 2026-12-31", "canonical": "every month on the 1st at 09:00 until 2026-12-31" },
+        { "name": "on_ordinal_repeat", "input": "first monday of every month at 10:00 until 2026-12-31", "canonical": "first monday of every month at 10:00 until 2026-12-31" },
+        { "name": "on_year_repeat", "input": "every year on dec 25 at 00:00 until 2030-12-31", "canonical": "every year on dec 25 at 00:00 until 2030-12-31" },
+        { "name": "multi_time_with_until", "input": "every day at 9:00, 17:00 until 2026-12-31", "canonical": "every day at 09:00, 17:00 until 2026-12-31" },
+        { "name": "day_range_with_until", "input": "every month on the 1st to 5th at 9:00 until 2026-12-31", "canonical": "every month on the 1st to 5th at 09:00 until 2026-12-31" }
+      ]
+    },
+
+    "starting_clause": {
+      "tests": [
+        { "name": "week_repeat", "input": "every 2 weeks on monday at 9:00 starting 2026-01-05", "canonical": "every 2 weeks on monday at 09:00 starting 2026-01-05" },
+        { "name": "day_repeat", "input": "every day at 09:00 starting 2026-03-01", "canonical": "every day at 09:00 starting 2026-03-01" },
+        { "name": "multi_time_with_starting", "input": "every 2 weeks on monday at 9:00, 17:00 starting 2026-01-05", "canonical": "every 2 weeks on monday at 09:00, 17:00 starting 2026-01-05" },
+        { "name": "during_with_starting", "input": "every 2 weeks on monday at 9:00 starting 2026-01-05 during jan, mar", "canonical": "every 2 weeks on monday at 09:00 starting 2026-01-05 during jan, mar" }
+      ]
+    },
+
+    "during_clause": {
+      "tests": [
+        { "name": "single_month", "input": "every day at 9:00 during jan", "canonical": "every day at 09:00 during jan" },
+        { "name": "two_months", "input": "every weekday at 9:00 during jan, jun", "canonical": "every weekday at 09:00 during jan, jun" },
+        { "name": "five_months", "input": "every day at 9:00 during jan, mar, jun, sep, dec", "canonical": "every day at 09:00 during jan, mar, jun, sep, dec" },
+        { "name": "long_month_name", "input": "every day at 9:00 during january", "canonical": "every day at 09:00 during jan" },
+        { "name": "long_month_names_multiple", "input": "every day at 9:00 during january, february, march", "canonical": "every day at 09:00 during jan, feb, mar" },
+        { "name": "on_interval", "input": "every 30 min from 9:00 to 17:00 during jan", "canonical": "every 30 min from 09:00 to 17:00 during jan" },
+        { "name": "on_month_repeat", "input": "every month on the 1st at 9:00 during jan, jul", "canonical": "every month on the 1st at 09:00 during jan, jul" },
+        { "name": "on_ordinal_repeat", "input": "first monday of every month at 10:00 during mar", "canonical": "first monday of every month at 10:00 during mar" },
+        { "name": "on_week_repeat", "input": "every 2 weeks on monday at 9:00 during jan", "canonical": "every 2 weeks on monday at 09:00 during jan" },
+        { "name": "on_year_repeat", "input": "every year on dec 25 at 0:00 during dec", "canonical": "every year on dec 25 at 00:00 during dec" },
+        { "name": "multi_time_with_during", "input": "every day at 9:00, 17:00 during jan, jun", "canonical": "every day at 09:00, 17:00 during jan, jun" },
+        { "name": "day_range_with_during", "input": "every month on the 1st to 5th at 9:00 during jan, jul", "canonical": "every month on the 1st to 5th at 09:00 during jan, jul" }
+      ]
+    },
+
+    "timezone_clause": {
+      "tests": [
+        { "name": "america_vancouver", "input": "every weekday at 9:00 in America/Vancouver", "canonical": "every weekday at 09:00 in America/Vancouver" },
+        { "name": "utc", "input": "every day at 09:00 in UTC", "canonical": "every day at 09:00 in UTC" },
+        { "name": "europe_london", "input": "on 2026-03-15 at 14:30 in Europe/London", "canonical": "on 2026-03-15 at 14:30 in Europe/London" },
+        { "name": "europe_berlin", "input": "every 30 min from 09:00 to 17:00 in Europe/Berlin", "canonical": "every 30 min from 09:00 to 17:00 in Europe/Berlin" },
+        { "name": "asia_tokyo", "input": "every 2 weeks on monday at 9:00 in Asia/Tokyo", "canonical": "every 2 weeks on monday at 09:00 in Asia/Tokyo" },
+        { "name": "america_chicago", "input": "every month on the 1st at 9:00 in America/Chicago", "canonical": "every month on the 1st at 09:00 in America/Chicago" },
+        { "name": "australia_sydney", "input": "first monday of every month at 10:00 in Australia/Sydney", "canonical": "first monday of every month at 10:00 in Australia/Sydney" },
+        { "name": "america_new_york", "input": "every year on dec 25 at 00:00 in America/New_York", "canonical": "every year on dec 25 at 00:00 in America/New_York" }
+      ]
+    },
+
+    "combined_clauses": {
+      "tests": [
+        { "name": "except_and_timezone", "input": "every weekday at 9:00 except dec 25 in UTC", "canonical": "every weekday at 09:00 except dec 25 in UTC" },
+        { "name": "except_and_until", "input": "every weekday at 9:00 except dec 25 until 2027-12-31", "canonical": "every weekday at 09:00 except dec 25 until 2027-12-31" },
+        { "name": "until_and_timezone", "input": "every day at 09:00 until 2026-12-31 in UTC", "canonical": "every day at 09:00 until 2026-12-31 in UTC" },
+        { "name": "all_clauses", "input": "every weekday at 9:00 except dec 25 until 2027-12-31 starting 2026-01-01 in UTC", "canonical": "every weekday at 09:00 except dec 25 until 2027-12-31 starting 2026-01-01 in UTC" },
+        { "name": "all_clauses_multi_except", "input": "every weekday at 9:00 except dec 25, jan 1 until 2027-12-31 starting 2026-01-01 in America/New_York", "canonical": "every weekday at 09:00 except dec 25, jan 1 until 2027-12-31 starting 2026-01-01 in America/New_York" },
+        { "name": "starting_and_timezone", "input": "every 2 weeks on monday at 9:00 starting 2026-01-05 in UTC", "canonical": "every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC" },
+        { "name": "multi_time_except_timezone", "input": "every day at 9:00, 17:00 except dec 25 in UTC", "canonical": "every day at 09:00, 17:00 except dec 25 in UTC" },
+        { "name": "during_and_timezone", "input": "every day at 9:00 during feb in UTC", "canonical": "every day at 09:00 during feb in UTC" },
+        { "name": "except_during_timezone", "input": "every weekday at 9:00 except dec 25 during jan, dec in UTC", "canonical": "every weekday at 09:00 except dec 25 during jan, dec in UTC" },
+        { "name": "until_during_timezone", "input": "every day at 9:00 until 2027-12-31 during jan, jun in UTC", "canonical": "every day at 09:00 until 2027-12-31 during jan, jun in UTC" },
+        { "name": "multi_time_during_timezone", "input": "every day at 9:00, 17:00 during jan, jun in UTC", "canonical": "every day at 09:00, 17:00 during jan, jun in UTC" },
+        { "name": "day_range_during_timezone", "input": "every month on the 1st to 5th at 9:00 during jan in UTC", "canonical": "every month on the 1st to 5th at 09:00 during jan in UTC" },
+        { "name": "day_range_multi_time_during_timezone", "input": "every month on the 1st to 5th at 9:00, 17:00 during jan in UTC", "canonical": "every month on the 1st to 5th at 09:00, 17:00 during jan in UTC" },
+        { "name": "all_clauses_with_during", "input": "every weekday at 9:00 except dec 25 until 2027-12-31 starting 2026-01-01 during jan, dec in America/New_York", "canonical": "every weekday at 09:00 except dec 25 until 2027-12-31 starting 2026-01-01 during jan, dec in America/New_York" },
+        { "name": "multi_time_all_clauses_with_during", "input": "every weekday at 9:00, 17:00 except dec 25 until 2027-12-31 starting 2026-01-01 during jan, dec in UTC", "canonical": "every weekday at 09:00, 17:00 except dec 25 until 2027-12-31 starting 2026-01-01 during jan, dec in UTC" },
+        { "name": "day_range_all_clauses", "input": "every month on the 1st to 15th at 9:00 except jan 1 until 2027-12-31 during jan, jul in UTC", "canonical": "every month on the 1st to 15th at 09:00 except jan 1 until 2027-12-31 during jan, jul in UTC" },
+        { "name": "day_range_multi_time_all_clauses", "input": "every month on the 1st to 15th at 9:00, 17:00 except jan 1 until 2027-12-31 during jan, jul in UTC", "canonical": "every month on the 1st to 15th at 09:00, 17:00 except jan 1 until 2027-12-31 during jan, jul in UTC" }
+      ]
+    },
+
+    "case_insensitivity": {
+      "tests": [
+        { "name": "mixed_case_keywords", "input": "Every Weekday At 9:00", "canonical": "every weekday at 09:00" },
+        { "name": "upper_case_month", "input": "on DEC 25 at 00:00", "canonical": "on dec 25 at 00:00" },
+        { "name": "upper_case_day", "input": "every MONDAY at 9:00", "canonical": "every monday at 09:00" },
+        { "name": "mixed_case_multi_time", "input": "Every Day At 9:00, 17:00", "canonical": "every day at 09:00, 17:00" },
+        { "name": "mixed_case_during", "input": "Every Day At 9:00 During JAN", "canonical": "every day at 09:00 during jan" }
+      ]
+    }
+  },
+
+  "parse_errors": {
+    "description": "Inputs that must fail to parse.",
+
+    "tests": [
+      { "name": "empty_input", "input": "", "description": "empty input" },
+      { "name": "gibberish", "input": "hello", "description": "gibberish" },
+      { "name": "incomplete_every", "input": "every", "description": "incomplete expression" },
+      { "name": "missing_time", "input": "every day", "description": "missing time" },
+      { "name": "invalid_hour", "input": "every day at 25:00", "description": "invalid hour" },
+      { "name": "invalid_minute", "input": "every day at 09:60", "description": "invalid minute" },
+      { "name": "unknown_keyword", "input": "every blorp at 09:00", "description": "unknown keyword" },
+      { "name": "incomplete_except", "input": "every day at 09:00 except", "description": "incomplete except clause" },
+      { "name": "incomplete_until", "input": "every day at 09:00 until", "description": "incomplete until clause" },
+      { "name": "incomplete_starting", "input": "every day at 09:00 starting", "description": "incomplete starting clause" },
+      { "name": "incomplete_timezone", "input": "every day at 09:00 in", "description": "incomplete timezone clause" },
+      { "name": "in_before_except", "input": "every day at 09:00 in UTC except dec 25", "description": "wrong clause order: in before except" },
+      { "name": "until_before_except", "input": "every day at 09:00 until 2026-12-31 except dec 25", "description": "wrong clause order: until before except" },
+      { "name": "in_before_until", "input": "every day at 09:00 in UTC until 2026-12-31", "description": "wrong clause order: in before until" },
+      { "name": "incomplete_during", "input": "every day at 09:00 during", "description": "incomplete during clause" },
+      { "name": "during_before_except", "input": "every day at 09:00 during jan except dec 25", "description": "wrong clause order: during before except" },
+      { "name": "during_before_until", "input": "every day at 09:00 during jan until 2027-12-31", "description": "wrong clause order: during before until" },
+      { "name": "in_before_during", "input": "every day at 09:00 in UTC during jan", "description": "wrong clause order: in before during" }
+    ]
+  },
+
+  "eval": {
+    "description": "Evaluation tests. Each test specifies an expression, an optional 'now' override (defaults to top-level now), and the expected next occurrence(s). Dates use ISO 8601 format.",
+
+    "day_repeat": {
+      "tests": [
+        {
+          "name": "time_already_passed",
+          "expression": "every day at 09:00 in UTC",
+          "description": "time already passed today, next is tomorrow",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "time_not_passed",
+          "expression": "every day at 15:00 in UTC",
+          "description": "time hasn't passed today",
+          "next": "2026-02-06T15:00:00+00:00[UTC]"
+        },
+        {
+          "name": "weekday_from_friday",
+          "expression": "every weekday at 9:00 in UTC",
+          "description": "Friday 09:00 passed, next weekday is Monday",
+          "next_date": "2026-02-09"
+        },
+        {
+          "name": "weekend_from_friday",
+          "expression": "every weekend at 10:00 in UTC",
+          "description": "next weekend day is Saturday",
+          "next_date": "2026-02-07"
+        },
+        {
+          "name": "monday",
+          "expression": "every monday at 9:00 in UTC",
+          "next_date": "2026-02-09"
+        },
+        {
+          "name": "multi_day_from_friday",
+          "expression": "every mon, wed, fri at 9:00 in UTC",
+          "description": "Friday 09:00 passed, next is Monday",
+          "next_date": "2026-02-09"
+        },
+        {
+          "name": "friday_future_time",
+          "expression": "every friday at 15:00 in UTC",
+          "description": "today is Friday, 15:00 hasn't passed",
+          "next_date": "2026-02-06"
+        },
+        {
+          "name": "saturday_from_friday",
+          "expression": "every saturday at 10:00 in UTC",
+          "next_date": "2026-02-07"
+        },
+        {
+          "name": "exact_time_boundary",
+          "expression": "every day at 12:00 in UTC",
+          "description": "now is exactly 12:00 UTC; strict greater-than means this is treated as passed, next is tomorrow",
+          "next": "2026-02-07T12:00:00+00:00[UTC]"
+        }
+      ]
+    },
+
+    "interval_repeat": {
+      "tests": [
+        {
+          "name": "45min_mid_window",
+          "expression": "every 45 min from 09:00 to 17:00 in UTC",
+          "description": "now 12:00, next = 12:45",
+          "next": "2026-02-06T12:45:00+00:00[UTC]"
+        },
+        {
+          "name": "30min_full_day",
+          "expression": "every 30 min from 00:00 to 23:59 in UTC",
+          "next": "2026-02-06T12:30:00+00:00[UTC]"
+        },
+        {
+          "name": "2_hours_full_day",
+          "expression": "every 2 hours from 00:00 to 23:59 in UTC",
+          "description": "steps: 0,2,4,6,8,10,12,14... next > 12:00 is 14:00",
+          "next": "2026-02-06T14:00:00+00:00[UTC]"
+        },
+        {
+          "name": "on_weekdays",
+          "expression": "every 45 min from 09:00 to 17:00 on weekdays in UTC",
+          "description": "Friday, within window",
+          "next": "2026-02-06T12:45:00+00:00[UTC]"
+        },
+        {
+          "name": "15min_mid_window",
+          "expression": "every 15 min from 09:00 to 17:00 in UTC",
+          "next": "2026-02-06T12:15:00+00:00[UTC]"
+        },
+        {
+          "name": "window_ended_today",
+          "expression": "every 30 min from 09:00 to 12:00 in UTC",
+          "description": "window ended for today, next = tomorrow",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "weekend_filter",
+          "expression": "every 30 min from 09:00 to 17:00 on weekend in UTC",
+          "description": "today is Friday, weekend filter pushes to Saturday",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "window_start_before",
+          "expression": "every 30 min from 09:00 to 17:00 in UTC",
+          "description": "just before window start, first occurrence is 09:00",
+          "now": "2026-02-06T08:59:59+00:00[UTC]",
+          "next": "2026-02-06T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "window_start_exact",
+          "expression": "every 30 min from 09:00 to 17:00 in UTC",
+          "description": "exactly at window start 09:00; strict greater-than skips to 09:30",
+          "now": "2026-02-06T09:00:00+00:00[UTC]",
+          "next": "2026-02-06T09:30:00+00:00[UTC]"
+        },
+        {
+          "name": "window_end_boundary",
+          "expression": "every 30 min from 09:00 to 17:00 in UTC",
+          "description": "near window end, 17:00 is last valid occurrence",
+          "now": "2026-02-06T16:59:00+00:00[UTC]",
+          "next": "2026-02-06T17:00:00+00:00[UTC]"
+        }
+      ]
+    },
+
+    "month_repeat": {
+      "tests": [
+        {
+          "name": "1st_passed",
+          "expression": "every month on the 1st at 9:00 in UTC",
+          "description": "Feb 1 passed, next = Mar 1",
+          "next_date": "2026-03-01"
+        },
+        {
+          "name": "15th_upcoming",
+          "expression": "every month on the 15th at 9:00 in UTC",
+          "next_date": "2026-02-15"
+        },
+        {
+          "name": "multi_day_1st_15th",
+          "expression": "every month on the 1st, 15th at 9:00 in UTC",
+          "next_date": "2026-02-15"
+        },
+        {
+          "name": "last_day_february",
+          "expression": "every month on the last day at 17:00 in UTC",
+          "description": "last day of Feb 2026 = Feb 28",
+          "next_date": "2026-02-28"
+        },
+        {
+          "name": "last_weekday_february",
+          "expression": "every month on the last weekday at 15:00 in UTC",
+          "description": "Feb 28 is Saturday, last weekday = Friday Feb 27",
+          "next_date": "2026-02-27"
+        },
+        {
+          "name": "skip_31st_february",
+          "expression": "every month on the 31st at 09:00 in UTC",
+          "description": "Feb has no 31st, skip to March 31",
+          "next_date": "2026-03-31"
+        },
+        {
+          "name": "skip_30th_february",
+          "expression": "every month on the 30th at 09:00 in UTC",
+          "description": "Feb has no 30th, skip to March 30",
+          "next_date": "2026-03-30"
+        }
+      ]
+    },
+
+    "ordinal_repeat": {
+      "tests": [
+        {
+          "name": "first_monday",
+          "expression": "first monday of every month at 10:00 in UTC",
+          "description": "Feb first Monday (Feb 2) passed, next = Mar 2",
+          "next_date": "2026-03-02"
+        },
+        {
+          "name": "last_friday",
+          "expression": "last friday of every month at 16:00 in UTC",
+          "next_date": "2026-02-27"
+        },
+        {
+          "name": "second_tuesday",
+          "expression": "second tuesday of every month at 14:30 in UTC",
+          "next_date": "2026-02-10"
+        },
+        {
+          "name": "third_wednesday",
+          "expression": "third wednesday of every month at 09:00 in UTC",
+          "next_date": "2026-02-18"
+        },
+        {
+          "name": "fourth_thursday",
+          "expression": "fourth thursday of every month at 11:00 in UTC",
+          "next_date": "2026-02-26"
+        },
+        {
+          "name": "fifth_friday_skips_months",
+          "expression": "fifth friday of every month at 16:00 in UTC",
+          "description": "Feb/Mar/Apr have no 5th Friday, May 29 does",
+          "next_date": "2026-05-29"
+        }
+      ]
+    },
+
+    "week_repeat": {
+      "tests": [
+        {
+          "name": "biweekly_with_anchor",
+          "expression": "every 2 weeks on monday at 9:00 starting 2026-02-02 in UTC",
+          "description": "anchor Feb 2, next after Feb 6 = Feb 16",
+          "next_n": [
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-16T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "triweekly",
+          "expression": "every 3 weeks on friday at 15:00 starting 2026-01-02 in UTC",
+          "description": "3-week cycle: Jan 2 anchor, next Fridays: Jan 23, Feb 13, Mar 6",
+          "next_date": "2026-02-13"
+        },
+        {
+          "name": "biweekly_multi_day",
+          "expression": "every 2 weeks on mon, wed at 10:00 starting 2026-02-02 in UTC",
+          "description": "multi-day within biweekly cycle",
+          "next_n": [
+            "2026-02-16T10:00:00+00:00[UTC]",
+            "2026-02-18T10:00:00+00:00[UTC]",
+            "2026-03-02T10:00:00+00:00[UTC]",
+            "2026-03-04T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "biweekly_no_anchor",
+          "expression": "every 2 weeks on monday at 9:00 in UTC",
+          "description": "no starting clause: default anchor is epoch Monday (1970-01-05). Week parity from epoch determines which Mondays fire.",
+          "next_n": [
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-16T09:00:00+00:00[UTC]",
+            "2026-03-30T09:00:00+00:00[UTC]"
+          ]
+        }
+      ]
+    },
+
+    "single_date": {
+      "tests": [
+        {
+          "name": "iso_date_future",
+          "expression": "on 2026-03-15 at 14:30 in UTC",
+          "next": "2026-03-15T14:30:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_date_past",
+          "expression": "on 2020-01-01 at 00:00 in UTC",
+          "description": "past date returns no result",
+          "next": null
+        },
+        {
+          "name": "named_date_upcoming",
+          "expression": "on feb 14 at 9:00 in UTC",
+          "next_date": "2026-02-14"
+        },
+        {
+          "name": "named_date_passed_this_year",
+          "expression": "on jan 1 at 9:00 in UTC",
+          "description": "Jan 1 passed this year, next = next year",
+          "next_date": "2027-01-01"
+        },
+        {
+          "name": "next_monday",
+          "expression": "on next monday at 9:00 in UTC",
+          "description": "today is Friday Feb 6, next Monday = Feb 9",
+          "next_date": "2026-02-09"
+        },
+        {
+          "name": "next_saturday",
+          "expression": "on next saturday at 10:00 in UTC",
+          "next_date": "2026-02-07"
+        },
+        {
+          "name": "next_same_weekday",
+          "expression": "on next friday at 14:00 in UTC",
+          "description": "today is Friday; 'next friday' means next week's Friday, not today",
+          "next": "2026-02-13T14:00:00+00:00[UTC]"
+        }
+      ]
+    },
+
+    "year_repeat": {
+      "tests": [
+        {
+          "name": "dec_25",
+          "expression": "every year on dec 25 at 00:00 in UTC",
+          "next_date": "2026-12-25"
+        },
+        {
+          "name": "jul_4",
+          "expression": "every year on jul 4 at 12:00 in UTC",
+          "next_date": "2026-07-04"
+        },
+        {
+          "name": "jan_1_passed",
+          "expression": "every year on jan 1 at 00:00 in UTC",
+          "description": "Jan 1 passed, next year",
+          "next_date": "2027-01-01"
+        },
+        {
+          "name": "ordinal_first_monday_march",
+          "expression": "every year on the first monday of march at 10:00 in UTC",
+          "next_date": "2026-03-02"
+        },
+        {
+          "name": "ordinal_third_thursday_november",
+          "expression": "every year on the third thursday of november at 12:00 in UTC",
+          "description": "Thanksgiving 2026",
+          "next_date": "2026-11-19"
+        },
+        {
+          "name": "day_of_month_15th_march",
+          "expression": "every year on the 15th of march at 09:00 in UTC",
+          "next_date": "2026-03-15"
+        },
+        {
+          "name": "last_weekday_december",
+          "expression": "every year on the last weekday of december at 17:00 in UTC",
+          "description": "Dec 31, 2026 is Thursday",
+          "next_date": "2026-12-31"
+        },
+        {
+          "name": "last_friday_december",
+          "expression": "every year on the last friday of december at 17:00 in UTC",
+          "description": "last Friday of Dec 2026 = Dec 25",
+          "next_date": "2026-12-25"
+        },
+        {
+          "name": "three_consecutive_years",
+          "expression": "every year on dec 25 at 00:00 in UTC",
+          "description": "3 consecutive years",
+          "next_n": [
+            "2026-12-25T00:00:00+00:00[UTC]",
+            "2027-12-25T00:00:00+00:00[UTC]",
+            "2028-12-25T00:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "feb_29_leap_year",
+          "expression": "every year on feb 29 at 09:00 in UTC",
+          "description": "next leap year is 2028",
+          "next_date": "2028-02-29"
+        }
+      ]
+    },
+
+    "except": {
+      "tests": [
+        {
+          "name": "skip_christmas",
+          "expression": "every weekday at 09:00 except dec 25, jan 1 in UTC",
+          "description": "Dec 25 (Friday) is excepted, next = Dec 28 (Monday)",
+          "now": "2026-12-24T20:00:00+00:00[UTC]",
+          "next_date": "2026-12-28"
+        },
+        {
+          "name": "skip_iso_date",
+          "expression": "every day at 09:00 except 2026-02-07 in UTC",
+          "description": "Feb 7 excepted, next = Feb 8",
+          "next_date": "2026-02-08"
+        },
+        {
+          "name": "skip_consecutive_dates",
+          "expression": "every day at 09:00 except 2026-02-07, 2026-02-08 in UTC",
+          "description": "skip consecutive excepted dates",
+          "next_date": "2026-02-09"
+        },
+        {
+          "name": "recurring_named_exception",
+          "expression": "every day at 09:00 except jan 1 in UTC",
+          "description": "named exceptions recur every year",
+          "now": "2026-12-31T10:00:00+00:00[UTC]",
+          "next_date": "2027-01-02"
+        },
+        {
+          "name": "iso_exception_one_year",
+          "expression": "every year on dec 25 at 00:00 except 2026-12-25 in UTC",
+          "description": "ISO exception skips one specific year",
+          "next_date": "2027-12-25"
+        },
+        {
+          "name": "named_exception_all_occurrences",
+          "expression": "every year on jan 1 at 00:00 except jan 1 in UTC",
+          "description": "named exception matches every occurrence, no results",
+          "next_n_count": 5,
+          "next_n": []
+        },
+        {
+          "name": "interval_day_excepted",
+          "expression": "every 30 min from 09:00 to 17:00 except 2026-02-06 in UTC",
+          "description": "entire day excepted, next = tomorrow 09:00",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "ordinal_skip_months",
+          "expression": "first monday of every month at 10:00 except 2026-03-02 in UTC",
+          "description": "skip Mar 2, get Apr/May/Jun first Mondays",
+          "next_n": [
+            "2026-04-06T10:00:00+00:00[UTC]",
+            "2026-05-04T10:00:00+00:00[UTC]",
+            "2026-06-01T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "month_repeat_skip",
+          "expression": "every month on the 1st at 09:00 except 2026-03-01 in UTC",
+          "description": "Mar 1 excepted, skip from Feb to Apr",
+          "next_n": [
+            "2026-04-01T09:00:00+00:00[UTC]",
+            "2026-05-01T09:00:00+00:00[UTC]",
+            "2026-06-01T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "week_repeat_skip",
+          "expression": "every 2 weeks on monday at 9:00 except 2026-02-16 starting 2026-02-02 in UTC",
+          "description": "Feb 16 excepted, next after Feb 6 = Mar 2",
+          "next_date": "2026-03-02"
+        },
+        {
+          "name": "single_date_named_skip",
+          "expression": "on feb 14 at 9:00 except 2026-02-14 in UTC",
+          "description": "this year excepted, next = 2027",
+          "next_date": "2027-02-14"
+        }
+      ]
+    },
+
+    "until": {
+      "tests": [
+        {
+          "name": "limits_results",
+          "expression": "every day at 09:00 until 2026-02-10 in UTC",
+          "description": "limited to 4 results (Feb 7-10)",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "past_until_no_results",
+          "expression": "every day at 09:00 until 2026-02-05 in UTC",
+          "description": "until already passed, no results",
+          "next": null
+        },
+        {
+          "name": "named_until_date",
+          "expression": "every day at 09:00 until feb 10 in UTC",
+          "description": "named until date",
+          "next_n_count": 10,
+          "next_n_length": 4
+        },
+        {
+          "name": "yearly_with_until",
+          "expression": "every year on dec 25 at 00:00 until 2028-12-31 in UTC",
+          "description": "yearly with until",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-12-25T00:00:00+00:00[UTC]",
+            "2027-12-25T00:00:00+00:00[UTC]",
+            "2028-12-25T00:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "ordinal_with_until",
+          "expression": "first monday of every month at 10:00 until 2026-06-01 in UTC",
+          "description": "ordinal with until",
+          "next_n_count": 10,
+          "next_n_length": 4
+        },
+        {
+          "name": "monthly_with_until",
+          "expression": "every month on the 15th at 09:00 until 2026-04-15 in UTC",
+          "description": "monthly with until",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-15T09:00:00+00:00[UTC]",
+            "2026-03-15T09:00:00+00:00[UTC]",
+            "2026-04-15T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "interval_with_until",
+          "expression": "every 2 hours from 08:00 to 20:00 until 2026-02-07 in UTC",
+          "description": "interval with until: today and tomorrow only",
+          "next": "2026-02-06T14:00:00+00:00[UTC]"
+        },
+        {
+          "name": "week_repeat_with_until",
+          "expression": "every 2 weeks on monday at 9:00 until 2026-04-01 starting 2026-02-02 in UTC",
+          "description": "biweekly with until: Feb 16, Mar 2, Mar 16, Mar 30 all <= Apr 1",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-16T09:00:00+00:00[UTC]",
+            "2026-03-30T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "single_date_named_with_until",
+          "expression": "on feb 14 at 9:00 until 2027-12-31 in UTC",
+          "description": "named date with until: fires 2026 and 2027",
+          "next_n_count": 5,
+          "next_n": [
+            "2026-02-14T09:00:00+00:00[UTC]",
+            "2027-02-14T09:00:00+00:00[UTC]"
+          ]
+        }
+      ]
+    },
+
+    "except_and_until": {
+      "tests": [
+        {
+          "name": "combined",
+          "expression": "every day at 09:00 except 2026-02-08 until 2026-02-10 in UTC",
+          "description": "Feb 7, skip 8, Feb 9, Feb 10",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "during_except_until_triple",
+          "expression": "every day at 09:00 except 2026-02-10 until 2026-02-15 during feb in UTC",
+          "description": "triple modifier: during=feb, except=Feb 10, until=Feb 15. Results: Feb 7-9, 11-15",
+          "next_n_count": 20,
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-11T09:00:00+00:00[UTC]",
+            "2026-02-12T09:00:00+00:00[UTC]",
+            "2026-02-13T09:00:00+00:00[UTC]",
+            "2026-02-14T09:00:00+00:00[UTC]",
+            "2026-02-15T09:00:00+00:00[UTC]"
+          ]
+        }
+      ]
+    },
+
+    "n_occurrences": {
+      "tests": [
+        {
+          "name": "five_weekdays",
+          "expression": "every weekday at 9:00 in UTC",
+          "next_n": [
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]",
+            "2026-02-11T09:00:00+00:00[UTC]",
+            "2026-02-12T09:00:00+00:00[UTC]",
+            "2026-02-13T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "five_first_mondays",
+          "expression": "first monday of every month at 10:00 in UTC",
+          "next_n": [
+            "2026-03-02T10:00:00+00:00[UTC]",
+            "2026-04-06T10:00:00+00:00[UTC]",
+            "2026-05-04T10:00:00+00:00[UTC]",
+            "2026-06-01T10:00:00+00:00[UTC]",
+            "2026-07-06T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "three_monthly",
+          "expression": "every month on the 15th at 09:00 in UTC",
+          "next_n": [
+            "2026-02-15T09:00:00+00:00[UTC]",
+            "2026-03-15T09:00:00+00:00[UTC]",
+            "2026-04-15T09:00:00+00:00[UTC]"
+          ]
+        }
+      ]
+    },
+
+    "multi_time": {
+      "tests": [
+        {
+          "name": "picks_later_today",
+          "expression": "every day at 09:00, 17:00 in UTC",
+          "description": "09:00 passed, 17:00 hasn't yet",
+          "next": "2026-02-06T17:00:00+00:00[UTC]"
+        },
+        {
+          "name": "both_passed_next_day",
+          "expression": "every day at 09:00, 11:00 in UTC",
+          "description": "both times passed today, next is tomorrow earliest",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "three_times_picks_last",
+          "expression": "every day at 09:00, 12:00, 17:00 in UTC",
+          "description": "09:00 and 12:00 passed (exact match is not future), next = 17:00",
+          "next": "2026-02-06T17:00:00+00:00[UTC]"
+        },
+        {
+          "name": "weekday_filter",
+          "expression": "every weekday at 09:00, 17:00 in UTC",
+          "description": "Friday, 09:00 passed, 17:00 hasn't",
+          "next": "2026-02-06T17:00:00+00:00[UTC]"
+        },
+        {
+          "name": "interleaving_n_occurrences",
+          "expression": "every day at 09:00, 17:00 in UTC",
+          "description": "4 occurrences interleaving times",
+          "next_n": [
+            "2026-02-06T17:00:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-07T17:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "month_repeat",
+          "expression": "every month on the 1st at 09:00, 17:00 in UTC",
+          "description": "Feb 1 passed entirely, next = Mar 1 at 09:00",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "ordinal_repeat",
+          "expression": "first monday of every month at 10:00, 14:00 in UTC",
+          "description": "Feb first Monday (Feb 2) passed, next = Mar 2 at 10:00",
+          "next": "2026-03-02T10:00:00+00:00[UTC]"
+        },
+        {
+          "name": "year_repeat",
+          "expression": "every year on dec 25 at 00:00, 12:00 in UTC",
+          "description": "Dec 25 not yet, next = Dec 25 at 00:00 (earliest)",
+          "next": "2026-12-25T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "single_date_first_time",
+          "expression": "on 2026-03-15 at 09:00, 17:00 in UTC",
+          "description": "single date with two times, first time wins",
+          "next": "2026-03-15T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "single_date_both_times",
+          "expression": "on 2026-03-15 at 09:00, 17:00 in UTC",
+          "description": "single date multi-time generates both occurrences",
+          "next_n": [
+            "2026-03-15T09:00:00+00:00[UTC]",
+            "2026-03-15T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "with_except",
+          "expression": "every day at 09:00, 17:00 except 2026-02-07 in UTC",
+          "description": "multi-time with except: skip Feb 7 entirely",
+          "next_n": [
+            "2026-02-06T17:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-08T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "week_repeat",
+          "expression": "every 2 weeks on monday at 09:00, 17:00 starting 2026-02-02 in UTC",
+          "description": "week repeat + multi-time: interleaved across bi-weekly Mondays",
+          "next_n": [
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-02-16T17:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-02T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "with_until",
+          "expression": "every day at 09:00, 17:00 until 2026-02-08 in UTC",
+          "description": "multi-time with until: 5 occurrences then stops",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-06T17:00:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-07T17:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-08T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "with_during_current_month",
+          "expression": "every day at 09:00, 17:00 during feb in UTC",
+          "description": "multi-time + during: 09:00 passed, 17:00 in Feb",
+          "next": "2026-02-06T17:00:00+00:00[UTC]"
+        },
+        {
+          "name": "with_during_wrong_month",
+          "expression": "every day at 09:00, 17:00 during mar in UTC",
+          "description": "multi-time + during wrong month: skip to Mar",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-01T17:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-02T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "day_range_during",
+          "expression": "every month on the 1st to 3rd at 09:00 during mar, jun in UTC",
+          "description": "day range + during: Mar 1-3 then Jun 1-3",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-06-01T09:00:00+00:00[UTC]",
+            "2026-06-02T09:00:00+00:00[UTC]",
+            "2026-06-03T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "day_range_multi_time_during",
+          "expression": "every month on the 1st to 3rd at 09:00, 17:00 during mar in UTC",
+          "description": "triple combo: day range + multi-time + during",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-01T17:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-02T17:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-03-03T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "during_except_multi_time",
+          "expression": "every day at 09:00, 17:00 except 2026-03-15 during mar in UTC",
+          "description": "during + except + multi-time: skip Mar 15 entirely",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-01T17:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-02T17:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-03-03T17:00:00+00:00[UTC]"
+          ]
+        }
+      ]
+    },
+
+    "during": {
+      "tests": [
+        {
+          "name": "current_month",
+          "expression": "every day at 09:00 during feb in UTC",
+          "description": "February is current month, next = tomorrow",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "wrong_month_skip",
+          "expression": "every day at 09:00 during mar in UTC",
+          "description": "Feb excluded, skips to March",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "multi_month_skip",
+          "expression": "every day at 09:00 during jan, mar in UTC",
+          "description": "Feb excluded, next = Mar 1",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "weekday_filter",
+          "expression": "every weekday at 09:00 during feb in UTC",
+          "description": "Feb active, Friday 09:00 passed, next weekday = Mon",
+          "next": "2026-02-09T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "with_until",
+          "expression": "every day at 09:00 until 2026-02-10 during feb in UTC",
+          "description": "limited by both during and until",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "multi_month_n_occurrences",
+          "expression": "every day at 09:00 during jan, mar in UTC",
+          "description": "skips Feb entirely, 3 occurrences from Mar",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "with_except",
+          "expression": "every weekday at 09:00 except 2026-03-02 during mar in UTC",
+          "description": "during + except: skip Mar 2 (Monday)",
+          "next_n": [
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-03-04T09:00:00+00:00[UTC]",
+            "2026-03-05T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "interval_current_month",
+          "expression": "every 30 min from 09:00 to 17:00 during feb in UTC",
+          "description": "interval + during: current month active",
+          "next": "2026-02-06T12:30:00+00:00[UTC]"
+        },
+        {
+          "name": "interval_wrong_month",
+          "expression": "every 30 min from 09:00 to 17:00 during mar in UTC",
+          "description": "interval + during: wrong month, skip to Mar",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "month_repeat",
+          "expression": "every month on the 1st at 09:00 during mar, jun in UTC",
+          "description": "monthly + during: Feb excluded, next = Mar 1",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "ordinal_repeat",
+          "expression": "first monday of every month at 10:00 during mar in UTC",
+          "description": "ordinal + during: Feb excluded, first Monday of Mar = Mar 2",
+          "next_date": "2026-03-02"
+        },
+        {
+          "name": "year_repeat_matching",
+          "expression": "every year on dec 25 at 00:00 during dec in UTC",
+          "description": "yearly + during dec: Dec 25 is in December, matches",
+          "next_date": "2026-12-25"
+        },
+        {
+          "name": "year_repeat_never_fires",
+          "expression": "every year on jul 4 at 12:00 during jan in UTC",
+          "description": "yearly + during wrong month: Jul 4 not in Jan, never fires",
+          "next_n_count": 3,
+          "next_n": []
+        },
+        {
+          "name": "week_repeat",
+          "expression": "every 2 weeks on monday at 09:00 starting 2026-02-02 during mar in UTC",
+          "description": "week repeat + during: Feb excluded, next anchor-aligned Monday in Mar",
+          "next_date": "2026-03-02"
+        },
+        {
+          "name": "single_date_matching_month",
+          "expression": "on feb 14 at 9:00 during feb in UTC",
+          "description": "named date in matching month: fires normally",
+          "next_date": "2026-02-14"
+        },
+        {
+          "name": "single_date_wrong_month",
+          "expression": "on feb 14 at 9:00 during mar in UTC",
+          "description": "named date in wrong month: never fires",
+          "next_n_count": 3,
+          "next_n": []
+        }
+      ]
+    },
+
+    "day_ranges": {
+      "tests": [
+        {
+          "name": "range_passed_next_month",
+          "expression": "every month on the 1st to 5th at 09:00 in UTC",
+          "description": "Feb 1-5 passed (now Feb 6), next = Mar 1",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "range_within_current_month",
+          "expression": "every month on the 1st to 15th at 09:00 in UTC",
+          "description": "Feb 6 09:00 passed, next = Feb 7",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "range_mixed_with_single",
+          "expression": "every month on the 1st to 3rd, 15th at 09:00 in UTC",
+          "description": "Feb 1-3 passed, next = Feb 15",
+          "next": "2026-02-15T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "n_occurrences_spanning_months",
+          "expression": "every month on the 1st to 5th at 09:00 in UTC",
+          "description": "n occurrences spanning months",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-03-04T09:00:00+00:00[UTC]",
+            "2026-03-05T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "with_multi_time",
+          "expression": "every month on the 1st to 5th at 09:00, 17:00 in UTC",
+          "description": "day range + multi-time: 5 days x 2 times",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-01T17:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-02T17:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "with_except",
+          "expression": "every month on the 1st to 5th at 09:00 except 2026-03-01 in UTC",
+          "description": "day range + except: Mar 1 skipped, next = Mar 2",
+          "next": "2026-03-02T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "with_until",
+          "expression": "every month on the 1st to 5th at 09:00 until 2026-04-05 in UTC",
+          "description": "day range + until: Mar 1-5 + Apr 1-5 = 10 results",
+          "next_n_count": 20,
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-03-04T09:00:00+00:00[UTC]",
+            "2026-03-05T09:00:00+00:00[UTC]",
+            "2026-04-01T09:00:00+00:00[UTC]",
+            "2026-04-02T09:00:00+00:00[UTC]",
+            "2026-04-03T09:00:00+00:00[UTC]",
+            "2026-04-04T09:00:00+00:00[UTC]",
+            "2026-04-05T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "with_during",
+          "expression": "every month on the 1st to 5th at 09:00 during mar in UTC",
+          "description": "day range + during: only March, 5 results then year boundary",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-03-04T09:00:00+00:00[UTC]",
+            "2026-03-05T09:00:00+00:00[UTC]"
+          ]
+        }
+      ]
+    },
+
+    "matches": {
+      "description": "Tests for the matches(datetime) function. Each entry has an expression and a datetime; 'expected' is true/false.",
+      "tests": [
+        { "name": "weekday_monday", "expression": "every weekday at 09:00 in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": true, "description": "Monday 09:00" },
+        { "name": "weekday_saturday_no_match", "expression": "every weekday at 09:00 in UTC", "datetime": "2026-02-07T09:00:00+00:00[UTC]", "expected": false, "description": "Saturday 09:00" },
+        { "name": "wrong_time", "expression": "every day at 09:00 in UTC", "datetime": "2026-02-09T10:00:00+00:00[UTC]", "expected": false, "description": "wrong time" },
+        { "name": "interval_match", "expression": "every 30 min from 09:00 to 17:00 in UTC", "datetime": "2026-02-09T10:30:00+00:00[UTC]", "expected": true, "description": "interval match at 10:30" },
+        { "name": "interval_no_match", "expression": "every 30 min from 09:00 to 17:00 in UTC", "datetime": "2026-02-09T10:15:00+00:00[UTC]", "expected": false, "description": "interval no match at 10:15" },
+        { "name": "monthly_match", "expression": "every month on the 1st at 09:00 in UTC", "datetime": "2026-03-01T09:00:00+00:00[UTC]", "expected": true, "description": "monthly match" },
+        { "name": "monthly_wrong_day", "expression": "every month on the 1st at 09:00 in UTC", "datetime": "2026-03-02T09:00:00+00:00[UTC]", "expected": false, "description": "monthly wrong day" },
+        { "name": "yearly_match", "expression": "every year on dec 25 at 00:00 in UTC", "datetime": "2026-12-25T00:00:00+00:00[UTC]", "expected": true, "description": "yearly match" },
+        { "name": "yearly_wrong_day", "expression": "every year on dec 25 at 00:00 in UTC", "datetime": "2026-12-24T00:00:00+00:00[UTC]", "expected": false, "description": "yearly wrong day" },
+        { "name": "ordinal_first_monday", "expression": "first monday of every month at 10:00 in UTC", "datetime": "2026-03-02T10:00:00+00:00[UTC]", "expected": true, "description": "ordinal match first monday" },
+        { "name": "ordinal_wrong_week", "expression": "first monday of every month at 10:00 in UTC", "datetime": "2026-03-09T10:00:00+00:00[UTC]", "expected": false, "description": "ordinal wrong week" },
+        { "name": "ordinal_last_friday_match", "expression": "last friday of every month at 16:00 in UTC", "datetime": "2026-02-27T16:00:00+00:00[UTC]", "expected": true, "description": "ordinal match last friday" },
+        { "name": "ordinal_last_friday_wrong_week", "expression": "last friday of every month at 16:00 in UTC", "datetime": "2026-02-20T16:00:00+00:00[UTC]", "expected": false, "description": "ordinal wrong week" },
+        { "name": "week_repeat_match", "expression": "every 2 weeks on monday at 9:00 starting 2026-02-02 in UTC", "datetime": "2026-02-16T09:00:00+00:00[UTC]", "expected": true, "description": "week repeat match" },
+        { "name": "week_repeat_wrong_week", "expression": "every 2 weeks on monday at 9:00 starting 2026-02-02 in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": false, "description": "week repeat wrong week" },
+        { "name": "single_date_match", "expression": "on 2026-03-15 at 14:30 in UTC", "datetime": "2026-03-15T14:30:00+00:00[UTC]", "expected": true, "description": "single date match" },
+        { "name": "single_date_wrong_day", "expression": "on 2026-03-15 at 14:30 in UTC", "datetime": "2026-03-16T14:30:00+00:00[UTC]", "expected": false, "description": "single date wrong day" },
+        { "name": "single_named_date_match", "expression": "on feb 14 at 9:00 in UTC", "datetime": "2026-02-14T09:00:00+00:00[UTC]", "expected": true, "description": "single named date match" },
+        { "name": "excepted_date_no_match", "expression": "every weekday at 09:00 except dec 25 in UTC", "datetime": "2026-12-25T09:00:00+00:00[UTC]", "expected": false, "description": "excepted date does not match" },
+        { "name": "non_excepted_date_match", "expression": "every weekday at 09:00 except dec 25 in UTC", "datetime": "2026-12-28T09:00:00+00:00[UTC]", "expected": true, "description": "non-excepted date matches" },
+        { "name": "before_until_match", "expression": "every day at 09:00 until 2026-02-10 in UTC", "datetime": "2026-02-08T09:00:00+00:00[UTC]", "expected": true, "description": "before until matches" },
+        { "name": "after_until_no_match", "expression": "every day at 09:00 until 2026-02-10 in UTC", "datetime": "2026-02-11T09:00:00+00:00[UTC]", "expected": false, "description": "after until does not match" },
+
+        { "name": "multi_time_second", "expression": "every day at 09:00, 17:00 in UTC", "datetime": "2026-02-09T17:00:00+00:00[UTC]", "expected": true, "description": "multi-time matches second time" },
+        { "name": "multi_time_first", "expression": "every day at 09:00, 17:00 in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": true, "description": "multi-time matches first time" },
+        { "name": "multi_time_no_match", "expression": "every day at 09:00, 17:00 in UTC", "datetime": "2026-02-09T12:00:00+00:00[UTC]", "expected": false, "description": "multi-time no match at unlisted time" },
+
+        { "name": "during_matching_month", "expression": "every day at 09:00 during feb in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": true, "description": "during: matching month" },
+        { "name": "during_wrong_month", "expression": "every day at 09:00 during mar in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": false, "description": "during: wrong month" },
+        { "name": "during_right_month_wrong_time", "expression": "every day at 09:00 during feb in UTC", "datetime": "2026-02-09T10:00:00+00:00[UTC]", "expected": false, "description": "during: right month wrong time" },
+
+        { "name": "day_range_in_range", "expression": "every month on the 1st to 5th at 09:00 in UTC", "datetime": "2026-03-03T09:00:00+00:00[UTC]", "expected": true, "description": "day range: day 3 in 1-5" },
+        { "name": "day_range_outside", "expression": "every month on the 1st to 5th at 09:00 in UTC", "datetime": "2026-03-06T09:00:00+00:00[UTC]", "expected": false, "description": "day range: day 6 outside 1-5" },
+        { "name": "day_range_start_boundary", "expression": "every month on the 1st to 5th at 09:00 in UTC", "datetime": "2026-03-01T09:00:00+00:00[UTC]", "expected": true, "description": "day range: start boundary" },
+        { "name": "day_range_end_boundary", "expression": "every month on the 1st to 5th at 09:00 in UTC", "datetime": "2026-03-05T09:00:00+00:00[UTC]", "expected": true, "description": "day range: end boundary" },
+
+        { "name": "multi_time_during_match", "expression": "every day at 09:00, 17:00 during feb in UTC", "datetime": "2026-02-09T17:00:00+00:00[UTC]", "expected": true, "description": "multi-time + during: right month, second time" },
+        { "name": "multi_time_during_wrong_month", "expression": "every day at 09:00, 17:00 during feb in UTC", "datetime": "2026-03-01T09:00:00+00:00[UTC]", "expected": false, "description": "multi-time + during: wrong month" },
+        { "name": "multi_time_during_wrong_time", "expression": "every day at 09:00, 17:00 during feb in UTC", "datetime": "2026-02-09T12:00:00+00:00[UTC]", "expected": false, "description": "multi-time + during: right month, wrong time" },
+
+        { "name": "day_range_multi_time_match", "expression": "every month on the 1st to 5th at 09:00, 17:00 in UTC", "datetime": "2026-03-03T17:00:00+00:00[UTC]", "expected": true, "description": "day range + multi-time: day in range, second time" },
+        { "name": "day_range_multi_time_wrong_time", "expression": "every month on the 1st to 5th at 09:00, 17:00 in UTC", "datetime": "2026-03-03T12:00:00+00:00[UTC]", "expected": false, "description": "day range + multi-time: day in range, wrong time" },
+        { "name": "day_range_multi_time_outside", "expression": "every month on the 1st to 5th at 09:00, 17:00 in UTC", "datetime": "2026-03-06T09:00:00+00:00[UTC]", "expected": false, "description": "day range + multi-time: day outside range" },
+
+        { "name": "day_range_during_match", "expression": "every month on the 1st to 5th at 09:00 during mar in UTC", "datetime": "2026-03-03T09:00:00+00:00[UTC]", "expected": true, "description": "day range + during: right month, day in range" },
+        { "name": "day_range_during_wrong_month", "expression": "every month on the 1st to 5th at 09:00 during mar in UTC", "datetime": "2026-02-03T09:00:00+00:00[UTC]", "expected": false, "description": "day range + during: wrong month" }
+      ]
+    },
+
+    "leap_year": {
+      "tests": [
+        {
+          "name": "feb_29_next_leap_year",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "next leap year is 2028",
+          "next_date": "2028-02-29"
+        }
+      ]
+    },
+
+    "dst_spring_forward": {
+      "description": "Spring forward: March 8, 2026 at 2:00 AM America/New_York. Clocks jump to 3:00 AM. Times 2:00-2:59 do not exist.",
+      "tests": [
+        {
+          "name": "nonexistent_time_pushed_forward",
+          "expression": "every day at 02:30 in America/New_York",
+          "description": "non-existent time pushed forward to 3:30 AM EDT",
+          "now": "2026-03-07T23:00:00-05:00[America/New_York]",
+          "next": "2026-03-08T03:30:00-04:00[America/New_York]"
+        },
+        {
+          "name": "resumes_normally_next_day",
+          "expression": "every day at 02:30 in America/New_York",
+          "description": "resumes normally the next day",
+          "now": "2026-03-07T23:00:00-05:00[America/New_York]",
+          "next_n": [
+            "2026-03-08T03:30:00-04:00[America/New_York]",
+            "2026-03-09T02:30:00-04:00[America/New_York]",
+            "2026-03-10T02:30:00-04:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "interval_skips_gap",
+          "expression": "every 30 min from 01:00 to 04:00 in America/New_York",
+          "description": "interval skips gap: 1:00, 1:30, then jumps to 3:00",
+          "now": "2026-03-08T00:30:00-05:00[America/New_York]",
+          "next_n": [
+            "2026-03-08T01:00:00-05:00[America/New_York]",
+            "2026-03-08T01:30:00-05:00[America/New_York]",
+            "2026-03-08T03:00:00-04:00[America/New_York]",
+            "2026-03-08T03:30:00-04:00[America/New_York]",
+            "2026-03-08T04:00:00-04:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "weekday_across_spring_forward",
+          "expression": "every weekday at 02:30 in America/New_York",
+          "description": "March 8 is Sunday (not weekday), March 9 Monday normal 2:30 AM EDT",
+          "now": "2026-03-06T03:00:00-05:00[America/New_York]",
+          "next_date": "2026-03-09"
+        }
+      ]
+    },
+
+    "dst_fall_back": {
+      "description": "Fall back: November 1, 2026 at 2:00 AM America/New_York. Clocks fall back to 1:00 AM. Times 1:00-1:59 occur twice.",
+      "tests": [
+        {
+          "name": "ambiguous_time_first_occurrence",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "ambiguous time resolved to first occurrence (EDT -04:00)",
+          "now": "2026-10-31T23:00:00-04:00[America/New_York]",
+          "next": "2026-11-01T01:30:00-04:00[America/New_York]"
+        },
+        {
+          "name": "offset_changes_across_fall_back",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "offset changes from EDT to EST across fall-back",
+          "now": "2026-10-31T23:00:00-04:00[America/New_York]",
+          "next_n": [
+            "2026-11-01T01:30:00-04:00[America/New_York]",
+            "2026-11-02T01:30:00-05:00[America/New_York]",
+            "2026-11-03T01:30:00-05:00[America/New_York]"
+          ]
+        }
+      ]
+    }
+  },
+
+  "cron": {
+    "to_cron": {
+      "description": "hron expression to 5-field cron string.",
+      "tests": [
+        { "name": "every_day", "hron": "every day at 9:00", "cron": "0 9 * * *" },
+        { "name": "weekday", "hron": "every weekday at 9:00", "cron": "0 9 * * 1-5" },
+        { "name": "weekend", "hron": "every weekend at 10:00", "cron": "0 10 * * 0,6" },
+        { "name": "monday", "hron": "every monday at 9:00", "cron": "0 9 * * 1" },
+        { "name": "friday", "hron": "every friday at 17:00", "cron": "0 17 * * 5" },
+        { "name": "mon_wed_fri", "hron": "every mon, wed, fri at 9:00", "cron": "0 9 * * 1,3,5" },
+        { "name": "tue_thu", "hron": "every tue, thu at 14:00", "cron": "0 14 * * 2,4" },
+        { "name": "sunday", "hron": "every sunday at 08:00", "cron": "0 8 * * 0" },
+        { "name": "saturday", "hron": "every saturday at 10:00", "cron": "0 10 * * 6" },
+        { "name": "30min_full_day", "hron": "every 30 min from 00:00 to 23:59", "cron": "*/30 * * * *" },
+        { "name": "15min_full_day", "hron": "every 15 min from 00:00 to 23:59", "cron": "*/15 * * * *" },
+        { "name": "2hr_full_day", "hron": "every 2 hours from 00:00 to 23:59", "cron": "0 */2 * * *" },
+        { "name": "1hr_full_day", "hron": "every 1 hour from 00:00 to 23:59", "cron": "0 */1 * * *" },
+        { "name": "month_1st", "hron": "every month on the 1st at 9:00", "cron": "0 9 1 * *" },
+        { "name": "month_15th", "hron": "every month on the 15th at 9:00", "cron": "0 9 15 * *" },
+        { "name": "month_1st_15th", "hron": "every month on the 1st, 15th at 9:00", "cron": "0 9 1,15 * *" },
+        { "name": "month_midnight", "hron": "every month on the 1st at 00:00", "cron": "0 0 1 * *" },
+        { "name": "day_range_1_to_5", "hron": "every month on the 1st to 5th at 9:00", "cron": "0 9 1,2,3,4,5 * *" },
+        { "name": "day_range_mixed", "hron": "every month on the 1st to 3rd, 15th at 9:00", "cron": "0 9 1,2,3,15 * *" },
+        { "name": "day_range_10_to_15", "hron": "every month on the 10th to 15th at 12:00", "cron": "0 12 10,11,12,13,14,15 * *" }
+      ]
+    },
+
+    "to_cron_errors": {
+      "description": "Expressions that cannot be converted to cron.",
+      "tests": [
+        { "name": "partial_day_interval", "hron": "every 45 min from 09:00 to 17:00", "description": "partial-day interval" },
+        { "name": "interval_with_day_filter", "hron": "every 45 min from 09:00 to 17:00 on weekdays", "description": "interval with day filter" },
+        { "name": "multi_week", "hron": "every 2 weeks on monday at 9:00", "description": "multi-week interval" },
+        { "name": "last_day", "hron": "every month on the last day at 17:00", "description": "last day of month" },
+        { "name": "last_weekday", "hron": "every month on the last weekday at 15:00", "description": "last weekday" },
+        { "name": "ordinal", "hron": "first monday of every month at 10:00", "description": "ordinal weekday" },
+        { "name": "ordinal_last", "hron": "last friday of every month at 16:00", "description": "ordinal last" },
+        { "name": "yearly", "hron": "every year on dec 25 at 00:00", "description": "yearly" },
+        { "name": "single_date", "hron": "on 2026-03-15 at 14:30", "description": "single date" },
+        { "name": "except_clause", "hron": "every weekday at 9:00 except dec 25", "description": "except clause" },
+        { "name": "until_clause", "hron": "every day at 9:00 until 2026-12-31", "description": "until clause" },
+        { "name": "multi_time_day", "hron": "every day at 9:00, 17:00", "description": "multi-time day repeat" },
+        { "name": "multi_time_weekday", "hron": "every weekday at 9:00, 17:00", "description": "multi-time weekday repeat" },
+        { "name": "multi_time_month", "hron": "every month on the 1st at 9:00, 17:00", "description": "multi-time month repeat" },
+        { "name": "during_single", "hron": "every day at 9:00 during jan", "description": "during clause single" },
+        { "name": "during_multiple", "hron": "every weekday at 9:00 during jan, jun", "description": "during clause multiple" },
+        { "name": "day_range_multi_time", "hron": "every month on the 1st to 5th at 9:00, 17:00", "description": "day range + multi-time" },
+        { "name": "day_range_during", "hron": "every month on the 1st to 5th at 9:00 during jan", "description": "day range + during" }
+      ]
+    },
+
+    "from_cron": {
+      "description": "5-field cron string to hron canonical form.",
+      "tests": [
+        { "name": "every_day", "cron": "0 9 * * *", "hron": "every day at 09:00" },
+        { "name": "weekday", "cron": "0 9 * * 1-5", "hron": "every weekday at 09:00" },
+        { "name": "weekend", "cron": "0 10 * * 0,6", "hron": "every weekend at 10:00" },
+        { "name": "specific_day", "cron": "30 14 * * 1", "hron": "every monday at 14:30" },
+        { "name": "monthly", "cron": "0 9 1 * *", "hron": "every month on the 1st at 09:00" },
+        { "name": "monthly_multi_day", "cron": "0 9 1,15 * *", "hron": "every month on the 1st, 15th at 09:00" },
+        { "name": "interval_minutes", "cron": "*/30 * * * *", "hron": "every 30 min from 00:00 to 23:59" },
+        { "name": "interval_hours", "cron": "0 */2 * * *", "hron": "every 2 hours from 00:00 to 23:59" },
+        { "name": "interval_with_hour_range", "cron": "*/15 9-17 * * *", "hron": "every 15 min from 09:00 to 17:00" },
+        { "name": "multiple_weekdays", "cron": "0 9 * * 1,3,5", "hron": "every monday, wednesday, friday at 09:00" },
+        { "name": "midnight", "cron": "0 0 * * *", "hron": "every day at 00:00" }
+      ]
+    },
+
+    "from_cron_errors": {
+      "description": "Invalid cron expressions that must fail.",
+      "tests": [
+        { "name": "too_few_fields", "cron": "0 9 * *", "description": "too few fields" },
+        { "name": "too_many_fields", "cron": "0 9 * * * *", "description": "too many fields" },
+        { "name": "dom_range_unsupported", "cron": "0 9 1-5 * *", "description": "DOM ranges not supported, use comma-separated" },
+        { "name": "dow_range_non_standard", "cron": "0 9 * * 2-4", "description": "only 1-5 (weekday) DOW range recognized" },
+        { "name": "invalid_dow_number", "cron": "0 9 * * 8", "description": "DOW must be 0-7" }
+      ]
+    },
+
+    "roundtrip": {
+      "description": "hron -> cron -> hron roundtrip. The cron produced from the first hron should, when converted back, produce the same cron again.",
+      "tests": [
+        { "name": "every_day", "hron": "every day at 9:00" },
+        { "name": "weekday", "hron": "every weekday at 9:00" },
+        { "name": "weekend", "hron": "every weekend at 10:00" },
+        { "name": "monthly", "hron": "every month on the 1st at 9:00" },
+        { "name": "interval_30min", "hron": "every 30 min from 00:00 to 23:59" },
+        { "name": "specific_day", "hron": "every monday at 14:30" },
+        { "name": "monthly_multi_day", "hron": "every month on the 1st, 15th at 9:00" },
+        { "name": "day_range", "hron": "every month on the 1st to 5th at 9:00" },
+        { "name": "day_range_mixed", "hron": "every month on the 1st to 3rd, 15th at 9:00" }
+      ]
+    }
+  }
+}
