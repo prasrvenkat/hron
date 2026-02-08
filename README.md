@@ -18,6 +18,8 @@ hron is a language specification with native implementations for multiple progra
 | JS/TS (native) | `hron-js` | npm | [ts/](ts/) |
 | Dart/Flutter | `hron` | pub.dev | [dart/](dart/) |
 
+> **Note:** The JS/TS native package (`hron-js`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`@hron/hron-wasm`).
+
 ## Expression Syntax
 
 ### Daily
