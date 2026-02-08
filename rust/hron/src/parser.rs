@@ -666,10 +666,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let span = self.current_span();
-                Err(self.error(
-                    "expected date (ISO date or month name)".into(),
-                    span,
-                ))
+                Err(self.error("expected date (ISO date or month name)".into(), span))
             }
         }
     }

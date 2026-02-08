@@ -4,6 +4,7 @@ target/
 **/*.rs.bk
 *.pdb
 **/mutants.out*/
+rust/wasm/pkg/
 
 # Python (future)
 __pycache__/
