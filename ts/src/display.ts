@@ -79,10 +79,8 @@ function displayExpr(expr: ScheduleExpr): string {
       let dateStr: string;
       if (expr.date.type === "named") {
         dateStr = `${expr.date.month} ${expr.date.day}`;
-      } else if (expr.date.type === "iso") {
-        dateStr = expr.date.date;
       } else {
-        dateStr = `next ${expr.date.weekday}`;
+        dateStr = expr.date.date;
       }
       return `on ${dateStr} at ${formatTimeList(expr.times)}`;
     }

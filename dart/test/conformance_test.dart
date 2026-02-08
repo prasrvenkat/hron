@@ -95,8 +95,9 @@ void main() {
         final tests = sectionData['tests'] as List<dynamic>;
         for (final tc in tests) {
           final name = (tc['name'] ?? tc['input']) as String;
+          final input = tc['input'] as String;
           test(name, () {
-            final schedule = Schedule.parse(tc['input'] as String);
+            final schedule = Schedule.parse(input);
             final display = schedule.toString();
             expect(display, equals(tc['canonical']));
 
@@ -153,8 +154,9 @@ void main() {
         final tests = sectionData['tests'] as List<dynamic>;
         for (final tc in tests) {
           final name = (tc['name'] ?? tc['expression']) as String;
+          final expr = tc['expression'] as String;
           test(name, () {
-            final schedule = Schedule.parse(tc['expression'] as String);
+            final schedule = Schedule.parse(expr);
             final now = tc.containsKey('now')
                 ? parseZoned(tc['now'] as String)
                 : defaultNow;

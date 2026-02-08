@@ -69,10 +69,9 @@ last_target    = "last" , ( "day" | "weekday" ) ;
 
 (* --- Date targets (for "on" expressions) --- *)
 
-date_target    = named_date | iso_date | relative_date ;
+date_target    = named_date | iso_date ;
 named_date     = month_name , number ;
 iso_date       = YYYY , "-" , MM , "-" , DD ;
-relative_date  = "next" , day_name ;
 
 month_name     = "january" | "february" | "march" | "april" | "may" | "june"
                | "july" | "august" | "september" | "october" | "november" | "december"

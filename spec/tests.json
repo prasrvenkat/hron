@@ -136,8 +136,6 @@
         { "name": "named_date", "input": "on feb 14 at 9:00", "canonical": "on feb 14 at 09:00" },
         { "name": "named_date_long_month", "input": "on february 14 at 9:00", "canonical": "on feb 14 at 09:00" },
         { "name": "iso_date", "input": "on 2026-03-15 at 14:30", "canonical": "on 2026-03-15 at 14:30" },
-        { "name": "next_monday", "input": "on next monday at 9:00", "canonical": "on next monday at 09:00" },
-        { "name": "next_friday", "input": "on next friday at 17:00", "canonical": "on next friday at 17:00" },
         { "name": "dec_25", "input": "on dec 25 at 00:00", "canonical": "on dec 25 at 00:00" },
         { "name": "jan_1", "input": "on jan 1 at 00:00", "canonical": "on jan 1 at 00:00" },
         { "name": "apr_15", "input": "on april 15 at 09:00", "canonical": "on apr 15 at 09:00" },
@@ -568,23 +566,6 @@
           "expression": "on jan 1 at 9:00 in UTC",
           "description": "Jan 1 passed this year, next = next year",
           "next_date": "2027-01-01"
-        },
-        {
-          "name": "next_monday",
-          "expression": "on next monday at 9:00 in UTC",
-          "description": "today is Friday Feb 6, next Monday = Feb 9",
-          "next_date": "2026-02-09"
-        },
-        {
-          "name": "next_saturday",
-          "expression": "on next saturday at 10:00 in UTC",
-          "next_date": "2026-02-07"
-        },
-        {
-          "name": "next_same_weekday",
-          "expression": "on next friday at 14:00 in UTC",
-          "description": "today is Friday; 'next friday' means next week's Friday, not today",
-          "next": "2026-02-13T14:00:00+00:00[UTC]"
         }
       ]
     },

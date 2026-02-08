@@ -112,9 +112,6 @@ impl fmt::Display for ScheduleExpr {
                     DateSpec::Iso(d) => {
                         write!(f, "{d}")?;
                     }
-                    DateSpec::Relative(day) => {
-                        write!(f, "next {}", day.as_str())?;
-                    }
                 }
                 write!(f, " at ")?;
                 write_time_list(f, times)?;

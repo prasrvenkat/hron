@@ -456,19 +456,8 @@ class _Parser {
       final day = _parseDayNumber('expected day number after month name');
       return NamedDate(month, day);
     }
-    if (k is NextToken) {
-      advance();
-      final next = peekKind();
-      if (next is DayNameToken) {
-        final weekday = next.name;
-        advance();
-        return RelativeDate(weekday);
-      }
-      throw error("expected day name after 'next'", currentSpan());
-    }
-
     throw error(
-      "expected date (ISO date, month name, or 'next')",
+      'expected date (ISO date or month name)',
       currentSpan(),
     );
   }

@@ -225,11 +225,6 @@ class IsoDate extends DateSpec {
   IsoDate(this.date);
 }
 
-class RelativeDate extends DateSpec {
-  final Weekday weekday;
-  RelativeDate(this.weekday);
-}
-
 // --- Exception spec ---
 
 sealed class ExceptionSpec {}

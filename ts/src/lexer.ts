@@ -29,7 +29,7 @@ export type TokenKind =
   | { type: "monthName"; name: string }
   | { type: "ordinal"; name: string }
   | { type: "intervalUnit"; unit: string }
-  | { type: "next" }
+
   | { type: "number"; value: number }
   | { type: "ordinalNumber"; value: number }
   | { type: "time"; hour: number; minute: number }
@@ -241,7 +241,6 @@ const KEYWORD_MAP: Record<string, TokenKind> = {
   of: { type: "of" },
   the: { type: "the" },
   last: { type: "last" },
-  next: { type: "next" },
   except: { type: "except" },
   until: { type: "until" },
   starting: { type: "starting" },

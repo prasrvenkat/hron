@@ -24,7 +24,6 @@ class WeekdayKeyToken extends TokenKind {}
 class WeekendKeyToken extends TokenKind {}
 class WeeksToken extends TokenKind {}
 class MonthToken extends TokenKind {}
-class NextToken extends TokenKind {}
 class CommaToken extends TokenKind {}
 
 class DayNameToken extends TokenKind {
@@ -252,7 +251,6 @@ String tokenKindType(TokenKind kind) => switch (kind) {
       WeekendKeyToken() => 'weekend',
       WeeksToken() => 'weeks',
       MonthToken() => 'month',
-      NextToken() => 'next',
       CommaToken() => 'comma',
       DayNameToken() => 'dayName',
       MonthNameToken() => 'monthName',
@@ -275,7 +273,6 @@ final _keywordMap = <String, TokenKind>{
   'of': OfToken(),
   'the': TheToken(),
   'last': LastToken(),
-  'next': NextToken(),
   'except': ExceptToken(),
   'until': UntilToken(),
   'starting': StartingToken(),

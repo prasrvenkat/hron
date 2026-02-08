@@ -530,21 +530,8 @@ class Parser {
       );
       return { type: "named", month, day };
     }
-    if (k?.type === "next") {
-      this.advance();
-      const next = this.peekKind();
-      if (next?.type === "dayName") {
-        const weekday = parseWeekday(
-          (next as { type: "dayName"; name: string }).name,
-        )! as Weekday;
-        this.advance();
-        return { type: "relative", weekday };
-      }
-      throw this.error("expected day name after 'next'", this.currentSpan());
-    }
-
     throw this.error(
-      "expected date (ISO date, month name, or 'next')",
+      "expected date (ISO date or month name)",
       this.currentSpan(),
     );
   }

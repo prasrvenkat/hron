@@ -518,7 +518,6 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                 DateSpec::Named { month, day } => {
                     Ok(date.month() == month.number() as i8 && date.day() == *day as i8)
                 }
-                DateSpec::Relative(_) => Ok(false),
             }
         }
         ScheduleExpr::YearRepeat { target, times } => {
@@ -878,22 +877,6 @@ fn next_single_date(
                         return Ok(Some(candidate));
                     }
                 }
-            }
-            Ok(None)
-        }
-        DateSpec::Relative(weekday) => {
-            let target_wd = weekday.to_jiff();
-            let mut date = now_in_tz
-                .date()
-                .tomorrow()
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            for _ in 0..7 {
-                if date.weekday() == target_wd {
-                    return earliest_future_at_times(date, times, tz, now);
-                }
-                date = date
-                    .tomorrow()
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
             }
             Ok(None)
         }

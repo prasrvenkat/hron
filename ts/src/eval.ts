@@ -722,15 +722,6 @@ function nextSingleDate(
     return null;
   }
 
-  // relative
-  const targetDow = weekdayNameToNumber(dateSpec.weekday);
-  let date = nowInTz.toPlainDate().add({ days: 1 });
-  for (let i = 0; i < 7; i++) {
-    if (date.dayOfWeek === targetDow) {
-      return earliestFutureAtTimes(date, times, tz, now);
-    }
-    date = date.add({ days: 1 });
-  }
   return null;
 }
 
