@@ -3,11 +3,11 @@
 import type {
   DayFilter,
   DayOfMonthSpec,
+  IntervalUnit,
   ScheduleData,
   ScheduleExpr,
   TimeOfDay,
   Weekday,
-  IntervalUnit,
 } from "./ast.js";
 
 /** Render a schedule as its canonical string form. */
@@ -38,7 +38,7 @@ export function display(schedule: ScheduleData): string {
   }
 
   if (schedule.during.length > 0) {
-    out += " during " + schedule.during.join(", ");
+    out += ` during ${schedule.during.join(", ")}`;
   }
 
   if (schedule.timezone) {

@@ -1,6 +1,6 @@
 {
   "name": "hron-ts",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Human-readable cron — native TypeScript implementation",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -24,12 +24,15 @@
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/ test/",
+    "lint:fix": "biome check --write src/ test/"
   },
   "dependencies": {
     "@js-temporal/polyfill": "^0.5.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

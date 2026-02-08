@@ -108,7 +108,12 @@ export type ScheduleExpr =
       days: Weekday[];
       times: TimeOfDay[];
     }
-  | { type: "monthRepeat"; interval: number; target: MonthTarget; times: TimeOfDay[] }
+  | {
+      type: "monthRepeat";
+      interval: number;
+      target: MonthTarget;
+      times: TimeOfDay[];
+    }
   | {
       type: "ordinalRepeat";
       interval: number;
@@ -117,7 +122,12 @@ export type ScheduleExpr =
       times: TimeOfDay[];
     }
   | { type: "singleDate"; date: DateSpec; times: TimeOfDay[] }
-  | { type: "yearRepeat"; interval: number; target: YearTarget; times: TimeOfDay[] };
+  | {
+      type: "yearRepeat";
+      interval: number;
+      target: YearTarget;
+      times: TimeOfDay[];
+    };
 
 // --- Schedule (top-level) ---
 

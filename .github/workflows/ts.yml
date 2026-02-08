@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: cd ts && pnpm install --frozen-lockfile
 
+      - name: Lint & Format
+        run: cd ts && pnpm lint
+
       - name: Typecheck
         run: cd ts && pnpm typecheck
 
