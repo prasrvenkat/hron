@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "CLI for hron — human-readable cron"
 license = "MIT"
+keywords = ["cron", "schedule", "cli", "human-readable"]
+categories = ["command-line-utilities", "date-and-time"]
 repository = "https://github.com/prasrvenkat/hron"
+homepage = "https://github.com/prasrvenkat/hron"
+readme = "README.md"
 
 [[bin]]
 name = "hron"

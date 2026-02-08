@@ -2,12 +2,14 @@ name: hron
 description: Human-readable cron — scheduling expressions that are a superset of what cron can express.
 version: 0.1.0
 repository: https://github.com/prasrvenkat/hron
+homepage: https://github.com/prasrvenkat/hron
 publisher: prasrvenkat.dev
 topics:
   - cron
   - scheduler
   - scheduling
   - human-readable
+  - hron
 
 environment:
   sdk: ^3.6.0
