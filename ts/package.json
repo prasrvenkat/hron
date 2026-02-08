@@ -1,5 +1,5 @@
 {
-  "name": "hron-js",
+  "name": "hron-ts",
   "version": "0.1.0",
   "description": "Human-readable cron — native TypeScript implementation",
   "type": "module",
