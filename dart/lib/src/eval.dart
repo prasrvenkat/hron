@@ -80,7 +80,7 @@ DateTime _lastWeekdayInMonth(int year, int month, Weekday weekday) {
   return d;
 }
 
-DateTime _epochMonday() => DateTime.utc(1970, 1, 5);
+final DateTime _epochMonday = DateTime.utc(1970, 1, 5);
 
 int _weeksBetween(DateTime a, DateTime b) {
   final days = b.difference(a).inDays;
@@ -104,9 +104,57 @@ bool _isExcepted(DateTime date, List<ExceptionSpec> exceptions) {
   return false;
 }
 
+class _ParsedExceptions {
+  final List<(int, int)> named; // (month_number, day)
+  final List<DateTime> isoDates;
+
+  _ParsedExceptions(this.named, this.isoDates);
+
+  factory _ParsedExceptions.from(List<ExceptionSpec> exceptions) {
+    final named = <(int, int)>[];
+    final isoDates = <DateTime>[];
+    for (final exc in exceptions) {
+      if (exc is NamedException) {
+        named.add((exc.month.number, exc.day));
+      } else {
+        isoDates.add(_parseIsoDateUtc((exc as IsoException).date));
+      }
+    }
+    return _ParsedExceptions(named, isoDates);
+  }
+
+  bool isExcepted(DateTime date) {
+    for (final (m, d) in named) {
+      if (date.month == m && date.day == d) return true;
+    }
+    for (final excDate in isoDates) {
+      if (date.year == excDate.year &&
+          date.month == excDate.month &&
+          date.day == excDate.day) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
 bool _matchesDuring(DateTime date, List<MonthName> during) {
   if (during.isEmpty) return true;
   return during.any((mn) => mn.number == date.month);
+}
+
+/// Find the 1st of the next valid `during` month after `date`.
+DateTime _nextDuringMonth(DateTime date, List<MonthName> during) {
+  final currentMonth = date.month;
+  final months = during.map((mn) => mn.number).toList()..sort();
+
+  for (final m in months) {
+    if (m > currentMonth) {
+      return DateTime.utc(date.year, m, 1);
+    }
+  }
+  // Wrap to first month of next year
+  return DateTime.utc(date.year + 1, months[0], 1);
 }
 
 DateTime _resolveUntil(UntilSpec until, TZDateTime now) {
@@ -154,8 +202,11 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
   final untilDate =
       schedule.until != null ? _resolveUntil(schedule.until!, now) : null;
 
+  final parsedExceptions = _ParsedExceptions.from(schedule.except);
   final hasExceptions = schedule.except.isNotEmpty;
   final hasDuring = schedule.during.isNotEmpty;
+  final needsTzConversion =
+      untilDate != null || hasDuring || hasExceptions;
 
   var current = now;
   for (var i = 0; i < 1000; i++) {
@@ -163,35 +214,33 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
 
     if (candidate == null) return null;
 
+    // Convert to target tz once for all filter checks
+    DateTime? cDate;
+    if (needsTzConversion) {
+      final cInTz = TZDateTime.from(candidate, loc);
+      cDate = DateTime.utc(cInTz.year, cInTz.month, cInTz.day);
+    }
+
     // Apply until filter
     if (untilDate != null) {
-      final cInTz = TZDateTime.from(candidate, loc);
-      final cDate = DateTime.utc(cInTz.year, cInTz.month, cInTz.day);
-      if (cDate.isAfter(untilDate)) return null;
+      if (cDate!.isAfter(untilDate)) return null;
     }
 
     // Apply during filter
-    if (hasDuring) {
-      final cInTz = TZDateTime.from(candidate, loc);
-      if (!_matchesDuring(cInTz, schedule.during)) {
-        final nextDay = DateTime.utc(cInTz.year, cInTz.month, cInTz.day)
-            .add(const Duration(days: 1));
-        current = TZDateTime(loc, nextDay.year, nextDay.month, nextDay.day)
-            .subtract(const Duration(seconds: 1));
-        continue;
-      }
+    if (hasDuring && !_matchesDuring(cDate!, schedule.during)) {
+      // Skip ahead to 1st of next valid during month
+      final skipTo = _nextDuringMonth(cDate, schedule.during);
+      current = TZDateTime(loc, skipTo.year, skipTo.month, skipTo.day)
+          .subtract(const Duration(seconds: 1));
+      continue;
     }
 
     // Apply except filter
-    if (hasExceptions) {
-      final cInTz = TZDateTime.from(candidate, loc);
-      if (_isExcepted(cInTz, schedule.except)) {
-        final nextDay = DateTime.utc(cInTz.year, cInTz.month, cInTz.day)
-            .add(const Duration(days: 1));
-        current = TZDateTime(loc, nextDay.year, nextDay.month, nextDay.day)
-            .subtract(const Duration(seconds: 1));
-        continue;
-      }
+    if (hasExceptions && parsedExceptions.isExcepted(cDate!)) {
+      final nextDay = cDate.add(const Duration(days: 1));
+      current = TZDateTime(loc, nextDay.year, nextDay.month, nextDay.day)
+          .subtract(const Duration(seconds: 1));
+      continue;
     }
 
     return candidate;
@@ -280,7 +329,7 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       if (!timeMatches(times)) return false;
       final anchorDate = schedule.anchor != null
           ? _parseIsoDateUtc(schedule.anchor!)
-          : _epochMonday();
+          : _epochMonday;
       final weeks = _weeksBetween(anchorDate, date);
       return weeks >= 0 && weeks % interval == 0;
 
@@ -392,6 +441,8 @@ TZDateTime? _nextIntervalRepeat(
     TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
   final stepMinutes = unit == IntervalUnit.min ? interval : interval * 60;
+  final fromMinutes = from.hour * 60 + from.minute;
+  final toMinutes = to.hour * 60 + to.minute;
 
   var date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
@@ -401,18 +452,27 @@ TZDateTime? _nextIntervalRepeat(
       continue;
     }
 
-    final fromMinutes = from.hour * 60 + from.minute;
-    final toMinutes = to.hour * 60 + to.minute;
-    var currentMinutes = fromMinutes;
+    final sameDay = date.year == nowInTz.year &&
+        date.month == nowInTz.month &&
+        date.day == nowInTz.day;
+    final nowMinutes =
+        sameDay ? nowInTz.hour * 60 + nowInTz.minute : -1;
 
-    while (currentMinutes <= toMinutes) {
-      final h = currentMinutes ~/ 60;
-      final m = currentMinutes % 60;
+    int nextSlot;
+    if (nowMinutes < fromMinutes) {
+      nextSlot = fromMinutes;
+    } else {
+      final elapsed = nowMinutes - fromMinutes;
+      nextSlot = fromMinutes + (elapsed ~/ stepMinutes + 1) * stepMinutes;
+    }
+
+    if (nextSlot <= toMinutes) {
+      final h = nextSlot ~/ 60;
+      final m = nextSlot % 60;
       final candidate = _atTimeOnDate(date, h, m, loc);
       if (candidate.isAfter(now)) {
         return candidate;
       }
-      currentMinutes += stepMinutes;
     }
 
     date = date.add(const Duration(days: 1));
@@ -425,20 +485,45 @@ TZDateTime? _nextWeekRepeat(int interval, List<Weekday> days,
     List<TimeOfDay> times, Location loc, String? anchor, TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
   final anchorDate =
-      anchor != null ? _parseIsoDateUtc(anchor) : _epochMonday();
+      anchor != null ? _parseIsoDateUtc(anchor) : _epochMonday;
 
-  var date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
+  final date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
-  for (var d = 0; d < 1000; d++) {
-    final dow = _dayOfWeek(date);
-    if (days.any((day) => day.number == dow)) {
-      final weeks = _weeksBetween(anchorDate, date);
-      if (weeks >= 0 && weeks % interval == 0) {
-        final candidate = _earliestFutureAtTimes(date, times, loc, now);
+  // Sort target DOWs by number for earliest-first matching
+  final sortedDays = [...days]..sort((a, b) => a.number.compareTo(b.number));
+
+  // Find Monday of current week and Monday of anchor week
+  final dowOffset = date.weekday - 1;
+  var currentMonday = date.subtract(Duration(days: dowOffset));
+
+  final anchorDowOffset = anchorDate.weekday - 1;
+  final anchorMonday = anchorDate.subtract(Duration(days: anchorDowOffset));
+
+  // Loop up to 54 iterations (covers >1 year for any interval)
+  for (var i = 0; i < 54; i++) {
+    final weeks = _weeksBetween(anchorMonday, currentMonday);
+
+    // Skip weeks before anchor
+    if (weeks < 0) {
+      final skip = (-weeks + interval - 1) ~/ interval;
+      currentMonday = currentMonday.add(Duration(days: skip * interval * 7));
+      continue;
+    }
+
+    if (weeks % interval == 0) {
+      // Aligned week — try each target DOW
+      for (final wd in sortedDays) {
+        final dayOffset = wd.number - 1;
+        final targetDate = currentMonday.add(Duration(days: dayOffset));
+        final candidate = _earliestFutureAtTimes(targetDate, times, loc, now);
         if (candidate != null) return candidate;
       }
     }
-    date = date.add(const Duration(days: 1));
+
+    // Skip to next aligned week
+    final remainder = weeks % interval;
+    final skipWeeks = remainder == 0 ? interval : interval - remainder;
+    currentMonday = currentMonday.add(Duration(days: skipWeeks * 7));
   }
 
   return null;
