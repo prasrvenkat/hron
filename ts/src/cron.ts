@@ -32,6 +32,11 @@ export function toCron(schedule: ScheduleData): string {
 
   switch (expr.type) {
     case "dayRepeat": {
+      if (expr.interval > 1) {
+        throw HronError.cron(
+          "not expressible as cron (multi-day intervals not supported)",
+        );
+      }
       if (expr.times.length !== 1) {
         throw HronError.cron(
           "not expressible as cron (multiple times not supported)",
@@ -77,6 +82,11 @@ export function toCron(schedule: ScheduleData): string {
       );
 
     case "monthRepeat": {
+      if (expr.interval > 1) {
+        throw HronError.cron(
+          "not expressible as cron (multi-month intervals not supported)",
+        );
+      }
       if (expr.times.length !== 1) {
         throw HronError.cron(
           "not expressible as cron (multiple times not supported)",
@@ -226,6 +236,7 @@ export function fromCron(cron: string): ScheduleData {
     }));
     const expr: ScheduleExpr = {
       type: "monthRepeat",
+      interval: 1,
       target: { type: "days", specs },
       times: [time],
     };
@@ -236,6 +247,7 @@ export function fromCron(cron: string): ScheduleData {
   const days = parseCronDow(dowField);
   const expr: ScheduleExpr = {
     type: "dayRepeat",
+    interval: 1,
     days,
     times: [time],
   };

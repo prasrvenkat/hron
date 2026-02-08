@@ -146,7 +146,8 @@ class _Parser {
     }
     if (k is MonthNameToken) {
       advance();
-      final day = _parseDayNumber('expected day number after month name in exception');
+      final day =
+          _parseDayNumber('expected day number after month name in exception');
       return NamedException(k.name, day);
     }
     throw error('expected ISO date or month-day in exception', currentSpan());
@@ -160,7 +161,8 @@ class _Parser {
     }
     if (k is MonthNameToken) {
       advance();
-      final day = _parseDayNumber('expected day number after month name in until');
+      final day =
+          _parseDayNumber('expected day number after month name in until');
       return NamedUntil(k.name, day);
     }
     throw error("expected ISO date or month-day after 'until'", currentSpan());
@@ -187,26 +189,26 @@ class _Parser {
 
     if (k is YearToken) {
       advance();
-      return _parseYearRepeat();
+      return _parseYearRepeat(1);
     }
     if (k is DayToken) {
-      return _parseDayRepeat(EveryDay());
+      return _parseDayRepeat(1, EveryDay());
     }
     if (k is WeekdayKeyToken) {
       advance();
-      return _parseDayRepeat(WeekdayFilter());
+      return _parseDayRepeat(1, WeekdayFilter());
     }
     if (k is WeekendKeyToken) {
       advance();
-      return _parseDayRepeat(WeekendFilter());
+      return _parseDayRepeat(1, WeekendFilter());
     }
     if (k is DayNameToken) {
       final days = _parseDayList();
-      return _parseDayRepeat(SpecificDays(days));
+      return _parseDayRepeat(1, SpecificDays(days));
     }
     if (k is MonthToken) {
       advance();
-      return _parseMonthRepeat();
+      return _parseMonthRepeat(1);
     }
     if (k is NumberToken) {
       return _parseNumberRepeat();
@@ -218,19 +220,24 @@ class _Parser {
     );
   }
 
-  ScheduleExpr _parseDayRepeat(DayFilter days) {
+  ScheduleExpr _parseDayRepeat(int interval, DayFilter days) {
     if (days is EveryDay) {
       consumeKind("'day'", (k) => k is DayToken);
     }
     consumeKind("'at'", (k) => k is AtToken);
     final times = _parseTimeList();
-    return DayRepeat(days, times);
+    return DayRepeat(interval, days, times);
   }
 
   ScheduleExpr _parseNumberRepeat() {
     final k = peekKind()! as NumberToken;
     final num = k.value;
+    final numSpan = currentSpan();
     advance();
+
+    if (num == 0) {
+      throw error('interval must be at least 1', numSpan);
+    }
 
     final next = peekKind();
     if (next is WeeksToken) {
@@ -240,9 +247,20 @@ class _Parser {
     if (next is IntervalUnitToken) {
       return _parseIntervalRepeat(num);
     }
+    if (next is DayToken) {
+      return _parseDayRepeat(num, EveryDay());
+    }
+    if (next is MonthToken) {
+      advance();
+      return _parseMonthRepeat(num);
+    }
+    if (next is YearToken) {
+      advance();
+      return _parseYearRepeat(num);
+    }
 
     throw error(
-      "expected 'weeks', 'min', 'minutes', 'hour', or 'hours' after number",
+      "expected 'weeks', 'days', 'months', 'years', 'min', 'minutes', 'hour', or 'hours' after number",
       currentSpan(),
     );
   }
@@ -275,7 +293,7 @@ class _Parser {
     return WeekRepeat(interval, days, times);
   }
 
-  ScheduleExpr _parseMonthRepeat() {
+  ScheduleExpr _parseMonthRepeat(int interval) {
     consumeKind("'on'", (k) => k is OnToken);
     consumeKind("'the'", (k) => k is TheToken);
 
@@ -306,7 +324,7 @@ class _Parser {
 
     consumeKind("'at'", (k) => k is AtToken);
     final times = _parseTimeList();
-    return MonthRepeat(target, times);
+    return MonthRepeat(interval, target, times);
   }
 
   ScheduleExpr _parseOrdinalRepeat() {
@@ -321,14 +339,27 @@ class _Parser {
 
     consumeKind("'of'", (k) => k is OfToken);
     consumeKind("'every'", (k) => k is EveryToken);
+
+    // Optional interval: "of every 2 months" vs "of every month"
+    int interval = 1;
+    final next = peekKind();
+    if (next is NumberToken) {
+      interval = next.value;
+      final intervalSpan = currentSpan();
+      advance();
+      if (interval == 0) {
+        throw error('interval must be at least 1', intervalSpan);
+      }
+    }
+
     consumeKind("'month'", (k) => k is MonthToken);
     consumeKind("'at'", (k) => k is AtToken);
     final times = _parseTimeList();
 
-    return OrdinalRepeat(ordinal, day, times);
+    return OrdinalRepeat(interval, ordinal, day, times);
   }
 
-  ScheduleExpr _parseYearRepeat() {
+  ScheduleExpr _parseYearRepeat(int interval) {
     consumeKind("'on'", (k) => k is OnToken);
 
     YearTarget target;
@@ -351,7 +382,7 @@ class _Parser {
 
     consumeKind("'at'", (k) => k is AtToken);
     final times = _parseTimeList();
-    return YearRepeat(target, times);
+    return YearRepeat(interval, target, times);
   }
 
   YearTarget _parseYearTargetAfterThe() {

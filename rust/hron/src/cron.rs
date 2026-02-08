@@ -19,7 +19,16 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
         ));
     }
     match &schedule.expr {
-        ScheduleExpr::DayRepeat { days, times } => {
+        ScheduleExpr::DayRepeat {
+            interval,
+            days,
+            times,
+        } => {
+            if *interval > 1 {
+                return Err(ScheduleError::cron(
+                    "not expressible as cron (multi-day intervals not supported)",
+                ));
+            }
             if times.len() != 1 {
                 return Err(ScheduleError::cron(
                     "not expressible as cron (multiple times not supported)",
@@ -67,7 +76,16 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
             "not expressible as cron (multi-week intervals not supported)",
         )),
 
-        ScheduleExpr::MonthRepeat { target, times } => {
+        ScheduleExpr::MonthRepeat {
+            interval,
+            target,
+            times,
+        } => {
+            if *interval > 1 {
+                return Err(ScheduleError::cron(
+                    "not expressible as cron (multi-month intervals not supported)",
+                ));
+            }
             if times.len() != 1 {
                 return Err(ScheduleError::cron(
                     "not expressible as cron (multiple times not supported)",
@@ -235,6 +253,7 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
             days.map_err(|_| ScheduleError::cron(format!("invalid DOM field: {dom_field}")))?;
         let specs = days.into_iter().map(DayOfMonthSpec::Single).collect();
         return Ok(Schedule::new(ScheduleExpr::MonthRepeat {
+            interval: 1,
             target: MonthTarget::Days(specs),
             times: vec![time],
         }));
@@ -243,6 +262,7 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
     // DOW-based (day repeat)
     let days = parse_cron_dow(dow_field)?;
     Ok(Schedule::new(ScheduleExpr::DayRepeat {
+        interval: 1,
         days,
         times: vec![time],
     }))

@@ -101,22 +101,23 @@ export type ScheduleExpr =
       to: TimeOfDay;
       dayFilter: DayFilter | null;
     }
-  | { type: "dayRepeat"; days: DayFilter; times: TimeOfDay[] }
+  | { type: "dayRepeat"; interval: number; days: DayFilter; times: TimeOfDay[] }
   | {
       type: "weekRepeat";
       interval: number;
       days: Weekday[];
       times: TimeOfDay[];
     }
-  | { type: "monthRepeat"; target: MonthTarget; times: TimeOfDay[] }
+  | { type: "monthRepeat"; interval: number; target: MonthTarget; times: TimeOfDay[] }
   | {
       type: "ordinalRepeat";
+      interval: number;
       ordinal: OrdinalPosition;
       day: Weekday;
       times: TimeOfDay[];
     }
   | { type: "singleDate"; date: DateSpec; times: TimeOfDay[] }
-  | { type: "yearRepeat"; target: YearTarget; times: TimeOfDay[] };
+  | { type: "yearRepeat"; interval: number; target: YearTarget; times: TimeOfDay[] };
 
 // --- Schedule (top-level) ---
 

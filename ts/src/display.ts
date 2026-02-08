@@ -59,6 +59,9 @@ function displayExpr(expr: ScheduleExpr): string {
       return out;
     }
     case "dayRepeat":
+      if (expr.interval > 1) {
+        return `every ${expr.interval} days at ${formatTimeList(expr.times)}`;
+      }
       return `every ${displayDayFilter(expr.days)} at ${formatTimeList(expr.times)}`;
     case "weekRepeat":
       return `every ${expr.interval} weeks on ${formatDayList(expr.days)} at ${formatTimeList(expr.times)}`;
@@ -71,9 +74,15 @@ function displayExpr(expr: ScheduleExpr): string {
       } else {
         targetStr = "last weekday";
       }
+      if (expr.interval > 1) {
+        return `every ${expr.interval} months on the ${targetStr} at ${formatTimeList(expr.times)}`;
+      }
       return `every month on the ${targetStr} at ${formatTimeList(expr.times)}`;
     }
     case "ordinalRepeat":
+      if (expr.interval > 1) {
+        return `${expr.ordinal} ${expr.day} of every ${expr.interval} months at ${formatTimeList(expr.times)}`;
+      }
       return `${expr.ordinal} ${expr.day} of every month at ${formatTimeList(expr.times)}`;
     case "singleDate": {
       let dateStr: string;
@@ -94,6 +103,9 @@ function displayExpr(expr: ScheduleExpr): string {
         targetStr = `the ${expr.target.day}${ordinalSuffix(expr.target.day)} of ${expr.target.month}`;
       } else {
         targetStr = `the last weekday of ${expr.target.month}`;
+      }
+      if (expr.interval > 1) {
+        return `every ${expr.interval} years on ${targetStr} at ${formatTimeList(expr.times)}`;
       }
       return `every year on ${targetStr} at ${formatTimeList(expr.times)}`;
     }

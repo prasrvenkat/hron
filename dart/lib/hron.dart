@@ -14,8 +14,7 @@ class Schedule {
 
   Schedule._(this._data);
 
-  static Schedule parse(String input) =>
-      Schedule._(parser_impl.parse(input));
+  static Schedule parse(String input) => Schedule._(parser_impl.parse(input));
 
   static Schedule fromCron(String cronExpr) =>
       Schedule._(cron_impl.fromCron(cronExpr));
@@ -29,14 +28,12 @@ class Schedule {
     }
   }
 
-  TZDateTime? nextFrom(TZDateTime now) =>
-      eval_impl.nextFrom(_data, now);
+  TZDateTime? nextFrom(TZDateTime now) => eval_impl.nextFrom(_data, now);
 
   List<TZDateTime> nextNFrom(TZDateTime now, int n) =>
       eval_impl.nextNFrom(_data, now, n);
 
-  bool matches(TZDateTime datetime) =>
-      eval_impl.matches(_data, datetime);
+  bool matches(TZDateTime datetime) => eval_impl.matches(_data, datetime);
 
   String toCron() => cron_impl.toCron(_data);
 

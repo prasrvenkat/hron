@@ -14,7 +14,8 @@ class HronError implements Exception {
   final String? input;
   final String? suggestion;
 
-  const HronError(this.kind, this.message, {this.span, this.input, this.suggestion});
+  const HronError(this.kind, this.message,
+      {this.span, this.input, this.suggestion});
 
   factory HronError.lex(String message, Span span, String input) =>
       HronError(HronErrorKind.lex, message, span: span, input: input);

@@ -116,7 +116,8 @@ void main() {
     for (final tc in tests) {
       final name = (tc['name'] ?? tc['input']) as String;
       test(name, () {
-        expect(() => Schedule.parse(tc['input'] as String), throwsA(isA<HronError>()));
+        expect(() => Schedule.parse(tc['input'] as String),
+            throwsA(isA<HronError>()));
       });
     }
   });
@@ -227,7 +228,8 @@ void main() {
     final cronMap = spec['cron'] as Map<String, dynamic>;
 
     group('to_cron', () {
-      final tests = (cronMap['to_cron'] as Map<String, dynamic>)['tests'] as List<dynamic>;
+      final tests = (cronMap['to_cron'] as Map<String, dynamic>)['tests']
+          as List<dynamic>;
       for (final tc in tests) {
         final name = (tc['name'] ?? tc['hron']) as String;
         test(name, () {
@@ -238,8 +240,8 @@ void main() {
     });
 
     group('to_cron errors', () {
-      final tests =
-          (cronMap['to_cron_errors'] as Map<String, dynamic>)['tests'] as List<dynamic>;
+      final tests = (cronMap['to_cron_errors'] as Map<String, dynamic>)['tests']
+          as List<dynamic>;
       for (final tc in tests) {
         final name = (tc['name'] ?? tc['hron']) as String;
         test(name, () {
@@ -250,8 +252,8 @@ void main() {
     });
 
     group('from_cron', () {
-      final tests =
-          (cronMap['from_cron'] as Map<String, dynamic>)['tests'] as List<dynamic>;
+      final tests = (cronMap['from_cron'] as Map<String, dynamic>)['tests']
+          as List<dynamic>;
       for (final tc in tests) {
         final name = (tc['name'] ?? tc['cron']) as String;
         test(name, () {
@@ -262,8 +264,8 @@ void main() {
     });
 
     group('from_cron errors', () {
-      final tests =
-          (cronMap['from_cron_errors'] as Map<String, dynamic>)['tests'] as List<dynamic>;
+      final tests = (cronMap['from_cron_errors']
+          as Map<String, dynamic>)['tests'] as List<dynamic>;
       for (final tc in tests) {
         final name = (tc['name'] ?? tc['cron']) as String;
         test(name, () {
@@ -274,8 +276,8 @@ void main() {
     });
 
     group('roundtrip', () {
-      final tests =
-          (cronMap['roundtrip'] as Map<String, dynamic>)['tests'] as List<dynamic>;
+      final tests = (cronMap['roundtrip'] as Map<String, dynamic>)['tests']
+          as List<dynamic>;
       for (final tc in tests) {
         final name = (tc['name'] ?? tc['hron']) as String;
         test(name, () {

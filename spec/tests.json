@@ -17,7 +17,8 @@
     "week_repeat_default_anchor": "When no 'starting' clause is given, week_repeat uses epoch Monday (1970-01-05) as the anchor for computing week parity.",
     "day_skip": "If a month doesn't have the requested day (e.g., Feb 30), that month is skipped entirely.",
     "named_date_recurrence": "Named exceptions (e.g., 'except dec 25') recur every year. ISO exceptions (e.g., 'except 2026-12-25') apply to that one date only.",
-    "cron_limitations": "from_cron only supports comma-separated DOM values (not ranges like 1-5), and only recognizes 1-5 as weekday and 0,6 as weekend for DOW ranges."
+    "cron_limitations": "from_cron only supports comma-separated DOM values (not ranges like 1-5), and only recognizes 1-5 as weekday and 0,6 as weekend for DOW ranges.",
+    "interval_anchor": "For day/month/year/ordinal intervals > 1, alignment is computed from the anchor date. Default anchor is epoch (1970-01-01). The 'starting' clause overrides it. Formula: (date_offset - anchor_offset) mod interval == 0."
   },
 
   "parse": {
@@ -54,7 +55,16 @@
         { "name": "multi_time_weekday", "input": "every weekday at 9:00, 12:00, 17:00", "canonical": "every weekday at 09:00, 12:00, 17:00" },
         { "name": "multi_time_weekend", "input": "every weekend at 10:00, 14:00", "canonical": "every weekend at 10:00, 14:00" },
         { "name": "multi_time_specific_day", "input": "every monday at 9:00, 13:00", "canonical": "every monday at 09:00, 13:00" },
-        { "name": "multi_time_multi_day", "input": "every mon, wed, fri at 9:00, 17:00", "canonical": "every monday, wednesday, friday at 09:00, 17:00" }
+        { "name": "multi_time_multi_day", "input": "every mon, wed, fri at 9:00, 17:00", "canonical": "every monday, wednesday, friday at 09:00, 17:00" },
+
+        { "name": "every_2_days", "input": "every 2 days at 09:00", "canonical": "every 2 days at 09:00" },
+        { "name": "every_3_days", "input": "every 3 days at 09:00", "canonical": "every 3 days at 09:00" },
+        { "name": "every_5_days", "input": "every 5 days at 17:00", "canonical": "every 5 days at 17:00" },
+        { "name": "every_7_days", "input": "every 7 days at 09:00", "canonical": "every 7 days at 09:00" },
+        { "name": "every_10_days", "input": "every 10 days at 12:00", "canonical": "every 10 days at 12:00" },
+        { "name": "every_2_days_multi_time", "input": "every 2 days at 09:00, 17:00", "canonical": "every 2 days at 09:00, 17:00" },
+        { "name": "every_3_days_with_starting", "input": "every 3 days at 09:00 starting 2026-02-06", "canonical": "every 3 days at 09:00 starting 2026-02-06" },
+        { "name": "every_1_day_normalized", "input": "every 1 day at 09:00", "canonical": "every day at 09:00" }
       ]
     },
 
@@ -112,7 +122,16 @@
         { "name": "day_range_single_then_range", "input": "every month on the 1st, 10th to 15th at 9:00", "canonical": "every month on the 1st, 10th to 15th at 09:00" },
         { "name": "day_range_multiple_ranges", "input": "every month on the 1st to 5th, 10th to 15th at 9:00", "canonical": "every month on the 1st to 5th, 10th to 15th at 09:00" },
         { "name": "day_range_multi_time", "input": "every month on the 1st to 5th at 9:00, 17:00", "canonical": "every month on the 1st to 5th at 09:00, 17:00" },
-        { "name": "day_range_full_month", "input": "every month on the 1st to 31st at 9:00", "canonical": "every month on the 1st to 31st at 09:00" }
+        { "name": "day_range_full_month", "input": "every month on the 1st to 31st at 9:00", "canonical": "every month on the 1st to 31st at 09:00" },
+
+        { "name": "every_2_months", "input": "every 2 months on the 1st at 09:00", "canonical": "every 2 months on the 1st at 09:00" },
+        { "name": "every_3_months", "input": "every 3 months on the 15th at 09:00", "canonical": "every 3 months on the 15th at 09:00" },
+        { "name": "every_6_months", "input": "every 6 months on the 1st at 09:00", "canonical": "every 6 months on the 1st at 09:00" },
+        { "name": "every_2_months_multi_day", "input": "every 2 months on the 1st, 15th at 09:00", "canonical": "every 2 months on the 1st, 15th at 09:00" },
+        { "name": "every_3_months_multi_time", "input": "every 3 months on the 1st at 09:00, 17:00", "canonical": "every 3 months on the 1st at 09:00, 17:00" },
+        { "name": "every_2_months_last_day", "input": "every 2 months on the last day at 17:00", "canonical": "every 2 months on the last day at 17:00" },
+        { "name": "every_1_month_normalized", "input": "every 1 month on the 1st at 09:00", "canonical": "every month on the 1st at 09:00" },
+        { "name": "every_2_months_last_weekday", "input": "every 2 months on the last weekday at 15:00", "canonical": "every 2 months on the last weekday at 15:00" }
       ]
     },
 
@@ -127,7 +146,14 @@
         { "name": "last_sunday", "input": "last sunday of every month at 08:00", "canonical": "last sunday of every month at 08:00" },
         { "name": "first_saturday", "input": "first saturday of every month at 10:00", "canonical": "first saturday of every month at 10:00" },
         { "name": "multi_time_first_monday", "input": "first monday of every month at 10:00, 14:00", "canonical": "first monday of every month at 10:00, 14:00" },
-        { "name": "multi_time_last_friday", "input": "last friday of every month at 9:00, 17:00", "canonical": "last friday of every month at 09:00, 17:00" }
+        { "name": "multi_time_last_friday", "input": "last friday of every month at 9:00, 17:00", "canonical": "last friday of every month at 09:00, 17:00" },
+
+        { "name": "first_monday_every_2_months", "input": "first monday of every 2 months at 10:00", "canonical": "first monday of every 2 months at 10:00" },
+        { "name": "first_monday_every_3_months", "input": "first monday of every 3 months at 10:00", "canonical": "first monday of every 3 months at 10:00" },
+        { "name": "last_friday_every_2_months", "input": "last friday of every 2 months at 16:00", "canonical": "last friday of every 2 months at 16:00" },
+        { "name": "second_tuesday_every_3_months", "input": "second tuesday of every 3 months at 14:30", "canonical": "second tuesday of every 3 months at 14:30" },
+        { "name": "first_monday_every_2_months_multi_time", "input": "first monday of every 2 months at 10:00, 14:00", "canonical": "first monday of every 2 months at 10:00, 14:00" },
+        { "name": "every_1_month_ordinal_normalized", "input": "first monday of every 1 month at 10:00", "canonical": "first monday of every month at 10:00" }
       ]
     },
 
@@ -159,7 +185,15 @@
         { "name": "last_weekday_december", "input": "every year on the last weekday of december at 17:00", "canonical": "every year on the last weekday of dec at 17:00" },
         { "name": "last_weekday_june", "input": "every year on the last weekday of june at 15:00", "canonical": "every year on the last weekday of jun at 15:00" },
         { "name": "multi_time_dec_25", "input": "every year on dec 25 at 0:00, 12:00", "canonical": "every year on dec 25 at 00:00, 12:00" },
-        { "name": "multi_time_ordinal", "input": "every year on the first monday of march at 10:00, 14:00", "canonical": "every year on the first monday of mar at 10:00, 14:00" }
+        { "name": "multi_time_ordinal", "input": "every year on the first monday of march at 10:00, 14:00", "canonical": "every year on the first monday of mar at 10:00, 14:00" },
+
+        { "name": "every_2_years", "input": "every 2 years on dec 25 at 00:00", "canonical": "every 2 years on dec 25 at 00:00" },
+        { "name": "every_3_years", "input": "every 3 years on dec 25 at 00:00", "canonical": "every 3 years on dec 25 at 00:00" },
+        { "name": "every_4_years_leap", "input": "every 4 years on feb 29 at 09:00", "canonical": "every 4 years on feb 29 at 09:00" },
+        { "name": "every_2_years_ordinal", "input": "every 2 years on the first monday of march at 10:00", "canonical": "every 2 years on the first monday of mar at 10:00" },
+        { "name": "every_5_years_day_of_month", "input": "every 5 years on the 15th of march at 09:00", "canonical": "every 5 years on the 15th of mar at 09:00" },
+        { "name": "every_1_year_normalized", "input": "every 1 year on dec 25 at 00:00", "canonical": "every year on dec 25 at 00:00" },
+        { "name": "every_2_years_last_weekday", "input": "every 2 years on the last weekday of december at 17:00", "canonical": "every 2 years on the last weekday of dec at 17:00" }
       ]
     },
 
@@ -200,7 +234,11 @@
         { "name": "week_repeat", "input": "every 2 weeks on monday at 9:00 starting 2026-01-05", "canonical": "every 2 weeks on monday at 09:00 starting 2026-01-05" },
         { "name": "day_repeat", "input": "every day at 09:00 starting 2026-03-01", "canonical": "every day at 09:00 starting 2026-03-01" },
         { "name": "multi_time_with_starting", "input": "every 2 weeks on monday at 9:00, 17:00 starting 2026-01-05", "canonical": "every 2 weeks on monday at 09:00, 17:00 starting 2026-01-05" },
-        { "name": "during_with_starting", "input": "every 2 weeks on monday at 9:00 starting 2026-01-05 during jan, mar", "canonical": "every 2 weeks on monday at 09:00 starting 2026-01-05 during jan, mar" }
+        { "name": "during_with_starting", "input": "every 2 weeks on monday at 9:00 starting 2026-01-05 during jan, mar", "canonical": "every 2 weeks on monday at 09:00 starting 2026-01-05 during jan, mar" },
+        { "name": "day_interval_with_starting", "input": "every 3 days at 09:00 starting 2026-02-06", "canonical": "every 3 days at 09:00 starting 2026-02-06" },
+        { "name": "month_interval_with_starting", "input": "every 2 months on the 1st at 09:00 starting 2026-01-01", "canonical": "every 2 months on the 1st at 09:00 starting 2026-01-01" },
+        { "name": "year_interval_with_starting", "input": "every 2 years on dec 25 at 00:00 starting 2025-01-01", "canonical": "every 2 years on dec 25 at 00:00 starting 2025-01-01" },
+        { "name": "ordinal_interval_with_starting", "input": "first monday of every 2 months at 10:00 starting 2026-01-01", "canonical": "first monday of every 2 months at 10:00 starting 2026-01-01" }
       ]
     },
 
@@ -288,7 +326,14 @@
       { "name": "incomplete_during", "input": "every day at 09:00 during", "description": "incomplete during clause" },
       { "name": "during_before_except", "input": "every day at 09:00 during jan except dec 25", "description": "wrong clause order: during before except" },
       { "name": "during_before_until", "input": "every day at 09:00 during jan until 2027-12-31", "description": "wrong clause order: during before until" },
-      { "name": "in_before_during", "input": "every day at 09:00 in UTC during jan", "description": "wrong clause order: in before during" }
+      { "name": "in_before_during", "input": "every day at 09:00 in UTC during jan", "description": "wrong clause order: in before during" },
+      { "name": "zero_day_interval", "input": "every 0 days at 09:00", "description": "zero interval" },
+      { "name": "zero_minute_interval", "input": "every 0 min from 09:00 to 17:00", "description": "zero interval" },
+      { "name": "zero_month_interval", "input": "every 0 months on the 1st at 09:00", "description": "zero interval" },
+      { "name": "zero_year_interval", "input": "every 0 years on dec 25 at 00:00", "description": "zero interval" },
+      { "name": "zero_week_interval", "input": "every 0 weeks on monday at 09:00", "description": "zero interval" },
+      { "name": "zero_ordinal_interval", "input": "first monday of every 0 months at 10:00", "description": "zero interval" },
+      { "name": "starting_named_date", "input": "every day at 09:00 starting dec 25", "description": "starting only accepts ISO dates" }
     ]
   },
 
@@ -348,6 +393,36 @@
           "expression": "every day at 12:00 in UTC",
           "description": "now is exactly 12:00 UTC; strict greater-than means this is treated as passed, next is tomorrow",
           "next": "2026-02-07T12:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_3_days",
+          "expression": "every 3 days at 09:00 in UTC",
+          "description": "anchor epoch, Feb 6 aligned (20490%3=0), 09:00 passed, next aligned = Feb 9",
+          "next": "2026-02-09T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_3_days_n_occurrences",
+          "expression": "every 3 days at 09:00 in UTC",
+          "description": "5 occurrences every 3 days",
+          "next_n": [
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-12T09:00:00+00:00[UTC]",
+            "2026-02-15T09:00:00+00:00[UTC]",
+            "2026-02-18T09:00:00+00:00[UTC]",
+            "2026-02-21T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_2_days_with_starting",
+          "expression": "every 2 days at 09:00 starting 2026-02-06 in UTC",
+          "description": "anchor Feb 6, fires on even offsets from anchor",
+          "next_n": [
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]",
+            "2026-02-12T09:00:00+00:00[UTC]",
+            "2026-02-14T09:00:00+00:00[UTC]",
+            "2026-02-16T09:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -459,6 +534,39 @@
           "expression": "every month on the 30th at 09:00 in UTC",
           "description": "Feb has no 30th, skip to March 30",
           "next_date": "2026-03-30"
+        },
+        {
+          "name": "every_2_months",
+          "expression": "every 2 months on the 1st at 09:00 in UTC",
+          "description": "epoch anchor, Feb (month 673) odd = skip, Mar (674) even = aligned",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-05-01T09:00:00+00:00[UTC]",
+            "2026-07-01T09:00:00+00:00[UTC]",
+            "2026-09-01T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_3_months",
+          "expression": "every 3 months on the 15th at 09:00 in UTC",
+          "description": "epoch anchor, Apr (month 675) %3=0, Jul (678), Oct (681)",
+          "next_n": [
+            "2026-04-15T09:00:00+00:00[UTC]",
+            "2026-07-15T09:00:00+00:00[UTC]",
+            "2026-10-15T09:00:00+00:00[UTC]",
+            "2027-01-15T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_2_months_with_starting",
+          "expression": "every 2 months on the 1st at 09:00 starting 2026-01-01 in UTC",
+          "description": "anchor Jan, offset: Mar=2 (%2=0), May=4 (%2=0), etc.",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-05-01T09:00:00+00:00[UTC]",
+            "2026-07-01T09:00:00+00:00[UTC]",
+            "2026-09-01T09:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -496,6 +604,50 @@
           "expression": "fifth friday of every month at 16:00 in UTC",
           "description": "Feb/Mar/Apr have no 5th Friday, May 29 does",
           "next_date": "2026-05-29"
+        },
+        {
+          "name": "first_monday_every_2_months",
+          "expression": "first monday of every 2 months at 10:00 in UTC",
+          "description": "epoch anchor, aligned months: Mar (674), May (676), Jul (678), Sep (680)",
+          "next_n": [
+            "2026-03-02T10:00:00+00:00[UTC]",
+            "2026-05-04T10:00:00+00:00[UTC]",
+            "2026-07-06T10:00:00+00:00[UTC]",
+            "2026-09-07T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "first_monday_every_3_months",
+          "expression": "first monday of every 3 months at 10:00 in UTC",
+          "description": "epoch anchor, aligned months: Apr (675), Jul (678), Oct (681), Jan 2027 (684)",
+          "next_n": [
+            "2026-04-06T10:00:00+00:00[UTC]",
+            "2026-07-06T10:00:00+00:00[UTC]",
+            "2026-10-05T10:00:00+00:00[UTC]",
+            "2027-01-04T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "last_friday_every_2_months",
+          "expression": "last friday of every 2 months at 16:00 in UTC",
+          "description": "epoch anchor, aligned months: Mar, May, Jul, Sep",
+          "next_n": [
+            "2026-03-27T16:00:00+00:00[UTC]",
+            "2026-05-29T16:00:00+00:00[UTC]",
+            "2026-07-31T16:00:00+00:00[UTC]",
+            "2026-09-25T16:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "first_monday_every_2_months_with_starting",
+          "expression": "first monday of every 2 months at 10:00 starting 2026-01-01 in UTC",
+          "description": "anchor Jan 2026, aligned months: Jan(0), Mar(2), May(4), Jul(6). Now is Feb so first is Mar",
+          "next_n": [
+            "2026-03-02T10:00:00+00:00[UTC]",
+            "2026-05-04T10:00:00+00:00[UTC]",
+            "2026-07-06T10:00:00+00:00[UTC]",
+            "2026-09-07T10:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -631,6 +783,67 @@
           "expression": "every year on feb 29 at 09:00 in UTC",
           "description": "next leap year is 2028",
           "next_date": "2028-02-29"
+        },
+        {
+          "name": "every_2_years",
+          "expression": "every 2 years on dec 25 at 00:00 in UTC",
+          "description": "epoch anchor, 2026 (offset 56, 56%2=0) aligned, then 2028, 2030, 2032",
+          "next_n": [
+            "2026-12-25T00:00:00+00:00[UTC]",
+            "2028-12-25T00:00:00+00:00[UTC]",
+            "2030-12-25T00:00:00+00:00[UTC]",
+            "2032-12-25T00:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_3_years",
+          "expression": "every 3 years on dec 25 at 00:00 in UTC",
+          "description": "epoch anchor, 2026 offset=56 (56%3=2 skip), 2027 (57%3=0 aligned), then 2030, 2033",
+          "next_n": [
+            "2027-12-25T00:00:00+00:00[UTC]",
+            "2030-12-25T00:00:00+00:00[UTC]",
+            "2033-12-25T00:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_2_years_with_starting",
+          "expression": "every 2 years on dec 25 at 00:00 starting 2025-01-01 in UTC",
+          "description": "anchor 2025, offset: 2025=0, 2026=1 (skip), 2027=2 (aligned), 2029, 2031",
+          "next_n": [
+            "2027-12-25T00:00:00+00:00[UTC]",
+            "2029-12-25T00:00:00+00:00[UTC]",
+            "2031-12-25T00:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_2_years_ordinal_target",
+          "expression": "every 2 years on the first monday of mar at 10:00 in UTC",
+          "description": "epoch anchor, 2026 offset=56 (56%2=0 aligned), fires 2026, 2028, 2030",
+          "next_n": [
+            "2026-03-02T10:00:00+00:00[UTC]",
+            "2028-03-06T10:00:00+00:00[UTC]",
+            "2030-03-04T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_2_years_last_weekday_target",
+          "expression": "every 2 years on the last weekday of dec at 17:00 in UTC",
+          "description": "epoch anchor, 2026 offset=56 (56%2=0 aligned), fires 2026, 2028, 2030",
+          "next_n": [
+            "2026-12-31T17:00:00+00:00[UTC]",
+            "2028-12-29T17:00:00+00:00[UTC]",
+            "2030-12-31T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_4_years_feb_29",
+          "expression": "every 4 years on feb 29 at 09:00 starting 2024-01-01 in UTC",
+          "description": "anchor 2024 (leap year), aligned years: 2024,2028,2032,2036 — all leap years",
+          "next_n": [
+            "2028-02-29T09:00:00+00:00[UTC]",
+            "2032-02-29T09:00:00+00:00[UTC]",
+            "2036-02-29T09:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -1283,7 +1496,21 @@
         { "name": "day_range_multi_time_outside", "expression": "every month on the 1st to 5th at 09:00, 17:00 in UTC", "datetime": "2026-03-06T09:00:00+00:00[UTC]", "expected": false, "description": "day range + multi-time: day outside range" },
 
         { "name": "day_range_during_match", "expression": "every month on the 1st to 5th at 09:00 during mar in UTC", "datetime": "2026-03-03T09:00:00+00:00[UTC]", "expected": true, "description": "day range + during: right month, day in range" },
-        { "name": "day_range_during_wrong_month", "expression": "every month on the 1st to 5th at 09:00 during mar in UTC", "datetime": "2026-02-03T09:00:00+00:00[UTC]", "expected": false, "description": "day range + during: wrong month" }
+        { "name": "day_range_during_wrong_month", "expression": "every month on the 1st to 5th at 09:00 during mar in UTC", "datetime": "2026-02-03T09:00:00+00:00[UTC]", "expected": false, "description": "day range + during: wrong month" },
+
+        { "name": "day_interval_aligned", "expression": "every 3 days at 09:00 in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": true, "description": "3-day interval: aligned day" },
+        { "name": "day_interval_not_aligned", "expression": "every 3 days at 09:00 in UTC", "datetime": "2026-02-07T09:00:00+00:00[UTC]", "expected": false, "description": "3-day interval: not aligned" },
+        { "name": "day_interval_wrong_time", "expression": "every 3 days at 09:00 in UTC", "datetime": "2026-02-09T10:00:00+00:00[UTC]", "expected": false, "description": "3-day interval: aligned day wrong time" },
+        { "name": "month_interval_aligned", "expression": "every 2 months on the 1st at 09:00 in UTC", "datetime": "2026-03-01T09:00:00+00:00[UTC]", "expected": true, "description": "2-month interval: aligned month" },
+        { "name": "month_interval_not_aligned", "expression": "every 2 months on the 1st at 09:00 in UTC", "datetime": "2026-04-01T09:00:00+00:00[UTC]", "expected": false, "description": "2-month interval: not aligned" },
+        { "name": "ordinal_interval_aligned", "expression": "first monday of every 2 months at 10:00 in UTC", "datetime": "2026-03-02T10:00:00+00:00[UTC]", "expected": true, "description": "ordinal 2-month: aligned" },
+        { "name": "ordinal_interval_not_aligned", "expression": "first monday of every 2 months at 10:00 in UTC", "datetime": "2026-04-06T10:00:00+00:00[UTC]", "expected": false, "description": "ordinal 2-month: not aligned" },
+        { "name": "year_interval_aligned", "expression": "every 2 years on dec 25 at 00:00 in UTC", "datetime": "2026-12-25T00:00:00+00:00[UTC]", "expected": true, "description": "2-year interval: aligned year" },
+        { "name": "year_interval_not_aligned", "expression": "every 2 years on dec 25 at 00:00 in UTC", "datetime": "2027-12-25T00:00:00+00:00[UTC]", "expected": false, "description": "2-year interval: not aligned" },
+        { "name": "day_interval_starting_aligned", "expression": "every 3 days at 09:00 starting 2026-02-06 in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": true, "description": "3-day interval with starting anchor: aligned" },
+        { "name": "day_interval_starting_not_aligned", "expression": "every 3 days at 09:00 starting 2026-02-06 in UTC", "datetime": "2026-02-08T09:00:00+00:00[UTC]", "expected": false, "description": "3-day interval with starting anchor: not aligned" },
+        { "name": "month_interval_starting_aligned", "expression": "every 2 months on the 1st at 09:00 starting 2026-01-01 in UTC", "datetime": "2026-03-01T09:00:00+00:00[UTC]", "expected": true, "description": "2-month interval with starting: aligned" },
+        { "name": "month_interval_starting_not_aligned", "expression": "every 2 months on the 1st at 09:00 starting 2026-01-01 in UTC", "datetime": "2026-04-01T09:00:00+00:00[UTC]", "expected": false, "description": "2-month interval with starting: not aligned" }
       ]
     },
 
@@ -1414,7 +1641,11 @@
         { "name": "during_single", "hron": "every day at 9:00 during jan", "description": "during clause single" },
         { "name": "during_multiple", "hron": "every weekday at 9:00 during jan, jun", "description": "during clause multiple" },
         { "name": "day_range_multi_time", "hron": "every month on the 1st to 5th at 9:00, 17:00", "description": "day range + multi-time" },
-        { "name": "day_range_during", "hron": "every month on the 1st to 5th at 9:00 during jan", "description": "day range + during" }
+        { "name": "day_range_during", "hron": "every month on the 1st to 5th at 9:00 during jan", "description": "day range + during" },
+        { "name": "multi_day_interval", "hron": "every 3 days at 09:00", "description": "multi-day interval" },
+        { "name": "multi_month_interval", "hron": "every 2 months on the 1st at 09:00", "description": "multi-month interval" },
+        { "name": "ordinal_interval", "hron": "first monday of every 2 months at 10:00", "description": "ordinal with month interval" },
+        { "name": "yearly_interval", "hron": "every 2 years on dec 25 at 00:00", "description": "yearly interval" }
       ]
     },
 
