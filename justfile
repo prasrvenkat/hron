@@ -1,7 +1,7 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust test-ts
+test-all: test-rust test-ts test-dart
 
 # Rust tests
 test-rust:
@@ -10,6 +10,10 @@ test-rust:
 # TypeScript tests
 test-ts:
     cd ts && pnpm install --frozen-lockfile && pnpm test
+
+# Dart tests
+test-dart:
+    cd dart && dart pub get && dart test
 
 # Rust build
 build-rust:
@@ -28,6 +32,7 @@ stamp-versions:
     sed -i 's/hron = { path = "..\/hron", version = "[^"]*"/hron = { path = "..\/hron", version = "{{version}}"/' rust/wasm/Cargo.toml
     cd rust && cargo generate-lockfile
     cd ts && sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' package.json
+    cd dart && sed -i 's/^version: .*/version: {{version}}/' pubspec.yaml
 
 # Create a release PR: just release 1.2.3
 release new_version:
@@ -64,7 +69,7 @@ release new_version:
 
     # Create release branch, commit, push, open PR
     git checkout -b "release/v{{new_version}}"
-    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json
+    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json dart/pubspec.yaml
     git commit -m "release: v{{new_version}}"
     git push -u origin "release/v{{new_version}}"
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
@@ -85,6 +90,10 @@ publish-crates: publish-hron
     @echo "Waiting 30s for crates.io index..."
     sleep 30
     just publish-cli
+
+# Publish Dart package to pub.dev
+publish-dart:
+    cd dart && dart pub publish --force
 
 # Build and publish native TS package to npm
 publish-ts:

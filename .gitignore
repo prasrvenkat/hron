@@ -25,5 +25,11 @@ node_modules/
 ts/dist/
 *.tsbuildinfo
 
+# Dart
+.dart_tool/
+dart/.dart_tool/
+dart/pubspec.lock
+.packages
+
 # OS
 .DS_Store

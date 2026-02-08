@@ -22,7 +22,26 @@ jobs:
       - run: cargo test --workspace --all-features
         working-directory: rust
 
-  # Future language jobs:
-  # python:
-  # go:
-  # typescript:
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: cd ts && pnpm install --frozen-lockfile && pnpm test
+
+  dart:
+    name: Dart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: cd dart && dart pub get
+      - run: cd dart && dart test
