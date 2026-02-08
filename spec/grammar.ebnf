@@ -1,0 +1,112 @@
+(* hron grammar — ISO 14977 EBNF *)
+(* Human-readable schedule expressions. *)
+(* This grammar is documentation only; the parser is hand-written. *)
+
+schedule       = expression , [ except_clause ] , [ until_clause ]
+               , [ starting_clause ] , [ during_clause ] , [ timezone_clause ] ;
+
+expression     = every_expr | on_expr | ordinal_expr ;
+
+every_expr     = "every" , repeater ;
+on_expr        = "on" , date_target , "at" , time_list ;
+ordinal_expr   = ordinal , day_name , "of" , "every" , "month" , "at" , time_list ;
+
+(* --- Repeaters --- *)
+
+repeater       = interval_repeat
+               | day_repeat
+               | week_repeat
+               | month_repeat
+               | year_repeat ;
+
+(* "every 30 min from 09:00 to 17:00" *)
+interval_repeat = [ number ] , interval_unit , time_range_clause ;
+
+(* "every day at 09:00", "every weekday at 09:00, 17:00" *)
+day_repeat     = day_target , "at" , time_list ;
+
+(* "every 2 weeks on monday at 09:00" *)
+week_repeat    = number , "weeks" , "on" , day_list , "at" , time_list ;
+
+(* "every month on the 1st at 09:00", "every month on the 1st to 15th at 09:00" *)
+month_repeat   = "month" , "on" , "the" , month_target , "at" , time_list ;
+
+(* "every year on dec 25 at 00:00" *)
+(* "every year on the first monday of march at 10:00" *)
+(* "every year on the 15th of march at 09:00" *)
+(* "every year on the last weekday of december at 17:00" *)
+year_repeat    = "year" , "on" , year_target , "at" , time_list ;
+
+year_target    = year_date_target | "the" , year_ordinal_target ;
+year_date_target = month_name , number ;
+year_ordinal_target = ordinal , day_name , "of" , month_name
+                    | ordinal_day , "of" , month_name
+                    | "last" , "weekday" , "of" , month_name ;
+
+(* --- Time --- *)
+
+time           = HH , ":" , MM ;
+time_list      = time , { "," , time } ;
+
+time_range_clause = "from" , time , "to" , time , [ "on" , day_target ] ;
+
+(* --- Days --- *)
+
+day_target     = "day" | "weekday" | "weekend" | day_list ;
+day_list       = day_name , { "," , day_name } ;
+day_name       = "monday"  | "tuesday" | "wednesday" | "thursday"
+               | "friday"  | "saturday" | "sunday"
+               | "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" ;
+
+(* --- Month targets --- *)
+
+month_target   = ordinal_day_spec_list | last_target ;
+ordinal_day_spec_list = ordinal_day_spec , { "," , ordinal_day_spec } ;
+ordinal_day_spec = ordinal_day , [ "to" , ordinal_day ] ;
+ordinal_day    = number , ordinal_suffix ;
+ordinal_suffix = "st" | "nd" | "rd" | "th" ;
+last_target    = "last" , ( "day" | "weekday" ) ;
+
+(* --- Date targets (for "on" expressions) --- *)
+
+date_target    = named_date | iso_date | relative_date ;
+named_date     = month_name , number ;
+iso_date       = YYYY , "-" , MM , "-" , DD ;
+relative_date  = "next" , day_name ;
+
+month_name     = "january" | "february" | "march" | "april" | "may" | "june"
+               | "july" | "august" | "september" | "october" | "november" | "december"
+               | "jan" | "feb" | "mar" | "apr" | "may" | "jun"
+               | "jul" | "aug" | "sep" | "oct" | "nov" | "dec" ;
+
+(* --- Intervals --- *)
+
+interval_unit  = "min" | "mins" | "minute" | "minutes"
+               | "hour" | "hours" | "hr" | "hrs" ;
+
+(* --- Ordinals --- *)
+
+ordinal        = "first" | "second" | "third" | "fourth" | "fifth" | "last" ;
+
+(* --- Trailing clauses (order matters) --- *)
+
+except_clause  = "except" , exception , { "," , exception } ;
+exception      = named_date | iso_date ;
+
+until_clause   = "until" , ( iso_date | named_date ) ;
+
+starting_clause = "starting" , iso_date ;
+
+during_clause  = "during" , month_name , { "," , month_name } ;
+
+timezone_clause = "in" , iana_timezone ;
+
+(* --- Primitives --- *)
+
+number         = digit , { digit } ;
+digit          = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+HH             = digit , digit ;
+MM             = digit , digit ;
+DD             = digit , digit ;
+YYYY           = digit , digit , digit , digit ;
+iana_timezone  = (* valid IANA timezone string, e.g. "America/Vancouver", "UTC" *) ;
