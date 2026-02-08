@@ -23,7 +23,7 @@ build-rust:
 build-wasm:
     cd rust/wasm && cargo build --target wasm32-unknown-unknown
 
-# Stamp VERSION into all Cargo.toml files and regenerate lockfile
+# Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:
     sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/hron/Cargo.toml
     sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/hron-cli/Cargo.toml
@@ -31,7 +31,7 @@ stamp-versions:
     sed -i 's/hron = { path = "..\/hron", version = "[^"]*"/hron = { path = "..\/hron", version = "{{version}}"/' rust/hron-cli/Cargo.toml
     sed -i 's/hron = { path = "..\/hron", version = "[^"]*"/hron = { path = "..\/hron", version = "{{version}}"/' rust/wasm/Cargo.toml
     cd rust && cargo generate-lockfile
-    cd ts && sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' package.json
+    cd ts && sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' package.json && pnpm install --no-frozen-lockfile
     cd dart && sed -i 's/^version: .*/version: {{version}}/' pubspec.yaml
 
 # Create a release PR: just release 1.2.3
@@ -69,7 +69,7 @@ release new_version:
 
     # Create release branch, commit, push, open PR
     git checkout -b "release/v{{new_version}}"
-    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json dart/pubspec.yaml
+    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml
     git commit -m "release: v{{new_version}}"
     git push -u origin "release/v{{new_version}}"
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
