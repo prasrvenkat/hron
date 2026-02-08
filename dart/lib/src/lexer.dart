@@ -6,24 +6,43 @@ import 'error.dart';
 sealed class TokenKind {}
 
 class EveryToken extends TokenKind {}
+
 class OnToken extends TokenKind {}
+
 class AtToken extends TokenKind {}
+
 class FromToken extends TokenKind {}
+
 class ToToken extends TokenKind {}
+
 class InToken extends TokenKind {}
+
 class OfToken extends TokenKind {}
+
 class TheToken extends TokenKind {}
+
 class LastToken extends TokenKind {}
+
 class ExceptToken extends TokenKind {}
+
 class UntilToken extends TokenKind {}
+
 class StartingToken extends TokenKind {}
+
 class DuringToken extends TokenKind {}
+
 class YearToken extends TokenKind {}
+
 class DayToken extends TokenKind {}
+
 class WeekdayKeyToken extends TokenKind {}
+
 class WeekendKeyToken extends TokenKind {}
+
 class WeeksToken extends TokenKind {}
+
 class MonthToken extends TokenKind {}
+
 class CommaToken extends TokenKind {}
 
 class DayNameToken extends TokenKind {
@@ -122,7 +141,8 @@ class _Lexer {
         continue;
       }
 
-      throw HronError.lex("unexpected character '$ch'", Span(start, start + 1), input);
+      throw HronError.lex(
+          "unexpected character '$ch'", Span(start, start + 1), input);
     }
     return tokens;
   }
@@ -141,7 +161,8 @@ class _Lexer {
     }
     final tz = input.substring(start, pos);
     if (tz.isEmpty) {
-      throw HronError.lex("expected timezone after 'in'", Span(start, start + 1), input);
+      throw HronError.lex(
+          "expected timezone after 'in'", Span(start, start + 1), input);
     }
     return Token(TimezoneToken(tz), Span(start, pos));
   }
@@ -200,7 +221,10 @@ class _Lexer {
     // Ordinal suffix: st, nd, rd, th
     if (pos + 1 < input.length) {
       final suffix = input.substring(pos, pos + 2).toLowerCase();
-      if (suffix == 'st' || suffix == 'nd' || suffix == 'rd' || suffix == 'th') {
+      if (suffix == 'st' ||
+          suffix == 'nd' ||
+          suffix == 'rd' ||
+          suffix == 'th') {
         pos += 2;
         return Token(OrdinalNumberToken(num), Span(start, pos));
       }
@@ -278,7 +302,9 @@ final _keywordMap = <String, TokenKind>{
   'starting': StartingToken(),
   'during': DuringToken(),
   'year': YearToken(),
+  'years': YearToken(),
   'day': DayToken(),
+  'days': DayToken(),
   'weekday': WeekdayKeyToken(),
   'weekdays': WeekdayKeyToken(),
   'weekend': WeekendKeyToken(),
@@ -286,6 +312,7 @@ final _keywordMap = <String, TokenKind>{
   'weeks': WeeksToken(),
   'week': WeeksToken(),
   'month': MonthToken(),
+  'months': MonthToken(),
   'monday': DayNameToken(Weekday.monday),
   'mon': DayNameToken(Weekday.monday),
   'tuesday': DayNameToken(Weekday.tuesday),

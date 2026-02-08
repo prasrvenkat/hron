@@ -66,8 +66,16 @@ impl fmt::Display for ScheduleExpr {
                     write!(f, " on {df}")?;
                 }
             }
-            ScheduleExpr::DayRepeat { days, times } => {
-                write!(f, "every {days} at ")?;
+            ScheduleExpr::DayRepeat {
+                interval,
+                days,
+                times,
+            } => {
+                if *interval > 1 {
+                    write!(f, "every {interval} days at ")?;
+                } else {
+                    write!(f, "every {days} at ")?;
+                }
                 write_time_list(f, times)?;
             }
             ScheduleExpr::WeekRepeat {
@@ -80,8 +88,16 @@ impl fmt::Display for ScheduleExpr {
                 write!(f, " at ")?;
                 write_time_list(f, times)?;
             }
-            ScheduleExpr::MonthRepeat { target, times } => {
-                write!(f, "every month on the ")?;
+            ScheduleExpr::MonthRepeat {
+                interval,
+                target,
+                times,
+            } => {
+                if *interval > 1 {
+                    write!(f, "every {interval} months on the ")?;
+                } else {
+                    write!(f, "every month on the ")?;
+                }
                 match target {
                     MonthTarget::Days(specs) => write_ordinal_day_specs(f, specs)?,
                     MonthTarget::LastDay => write!(f, "last day")?,
@@ -91,16 +107,26 @@ impl fmt::Display for ScheduleExpr {
                 write_time_list(f, times)?;
             }
             ScheduleExpr::OrdinalRepeat {
+                interval,
                 ordinal,
                 day,
                 times,
             } => {
-                write!(
-                    f,
-                    "{} {} of every month at ",
-                    ordinal.as_str(),
-                    day.as_str()
-                )?;
+                if *interval > 1 {
+                    write!(
+                        f,
+                        "{} {} of every {interval} months at ",
+                        ordinal.as_str(),
+                        day.as_str()
+                    )?;
+                } else {
+                    write!(
+                        f,
+                        "{} {} of every month at ",
+                        ordinal.as_str(),
+                        day.as_str()
+                    )?;
+                }
                 write_time_list(f, times)?;
             }
             ScheduleExpr::SingleDate { date, times } => {
@@ -116,8 +142,16 @@ impl fmt::Display for ScheduleExpr {
                 write!(f, " at ")?;
                 write_time_list(f, times)?;
             }
-            ScheduleExpr::YearRepeat { target, times } => {
-                write!(f, "every year on ")?;
+            ScheduleExpr::YearRepeat {
+                interval,
+                target,
+                times,
+            } => {
+                if *interval > 1 {
+                    write!(f, "every {interval} years on ")?;
+                } else {
+                    write!(f, "every year on ")?;
+                }
                 match target {
                     YearTarget::Date { month, day } => {
                         write!(f, "{} {day}", month.as_str())?;

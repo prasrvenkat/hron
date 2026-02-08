@@ -272,11 +272,12 @@ impl<'a> Lexer<'a> {
             "during" => TokenKind::During,
             "year" => TokenKind::Year,
 
-            "day" => TokenKind::Day,
+            "day" | "days" => TokenKind::Day,
             "weekday" | "weekdays" => TokenKind::Weekday,
             "weekend" | "weekends" => TokenKind::Weekend,
             "weeks" | "week" => TokenKind::Weeks,
-            "month" => TokenKind::Month,
+            "month" | "months" => TokenKind::Month,
+            "years" => TokenKind::Year,
 
             "monday" | "mon" => TokenKind::DayName("monday".into()),
             "tuesday" | "tue" => TokenKind::DayName("tuesday".into()),

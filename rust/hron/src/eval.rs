@@ -10,6 +10,9 @@ use crate::error::ScheduleError;
 /// Epoch anchor for multi-week intervals: Monday 1970-01-05.
 static EPOCH_MONDAY: LazyLock<Date> = LazyLock::new(|| Date::new(1970, 1, 5).unwrap());
 
+/// Epoch anchor for day/month/year intervals: 1970-01-01.
+static EPOCH_DATE: LazyLock<Date> = LazyLock::new(|| Date::new(1970, 1, 1).unwrap());
+
 /// Resolve the timezone for a schedule, falling back to system local.
 fn resolve_tz(tz: &Option<String>) -> Result<TimeZone, ScheduleError> {
     match tz {
@@ -105,6 +108,16 @@ fn last_weekday_in_month(year: i16, month: i8, weekday: Weekday) -> Date {
 fn weeks_between(a: Date, b: Date) -> i64 {
     let span = a.until(b).unwrap();
     span.get_days() as i64 / 7
+}
+
+/// Count days between two dates (signed).
+fn days_between(a: Date, b: Date) -> i64 {
+    a.until(b).unwrap().get_days() as i64
+}
+
+/// Count months between two dates (year*12+month arithmetic).
+fn months_between_ym(a: Date, b: Date) -> i64 {
+    (b.year() as i64 * 12 + b.month() as i64) - (a.year() as i64 * 12 + a.month() as i64)
 }
 
 /// Pre-parsed exception data to avoid re-parsing ISO strings on every check.
@@ -316,7 +329,11 @@ fn next_expr(
     now: &Zoned,
 ) -> Result<Option<Zoned>, ScheduleError> {
     match expr {
-        ScheduleExpr::DayRepeat { days, times } => next_day_repeat(days, times, tz, now),
+        ScheduleExpr::DayRepeat {
+            interval,
+            days,
+            times,
+        } => next_day_repeat(*interval, days, times, tz, anchor, now),
 
         ScheduleExpr::IntervalRepeat {
             interval,
@@ -332,17 +349,26 @@ fn next_expr(
             times,
         } => next_week_repeat(*interval, days, times, tz, anchor, now),
 
-        ScheduleExpr::MonthRepeat { target, times } => next_month_repeat(target, times, tz, now),
+        ScheduleExpr::MonthRepeat {
+            interval,
+            target,
+            times,
+        } => next_month_repeat(*interval, target, times, tz, anchor, now),
 
         ScheduleExpr::OrdinalRepeat {
+            interval,
             ordinal,
             day,
             times,
-        } => next_ordinal_repeat(*ordinal, *day, times, tz, now),
+        } => next_ordinal_repeat(*interval, *ordinal, *day, times, tz, anchor, now),
 
         ScheduleExpr::SingleDate { date, times } => next_single_date(date, times, tz, now),
 
-        ScheduleExpr::YearRepeat { target, times } => next_year_repeat(target, times, tz, now),
+        ScheduleExpr::YearRepeat {
+            interval,
+            target,
+            times,
+        } => next_year_repeat(*interval, target, times, tz, anchor, now),
     }
 }
 
@@ -394,14 +420,27 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
     }
 
     match &schedule.expr {
-        ScheduleExpr::DayRepeat { days, times } => {
+        ScheduleExpr::DayRepeat {
+            interval,
+            days,
+            times,
+        } => {
             if !matches_day_filter(date, days) {
                 return Ok(false);
             }
-            Ok(times.iter().any(|tod| {
+            let time_matches = times.iter().any(|tod| {
                 let t = to_time(tod);
                 zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            }))
+            });
+            if !time_matches {
+                return Ok(false);
+            }
+            if *interval > 1 {
+                let anchor_date = schedule.anchor.unwrap_or(*EPOCH_DATE);
+                let day_offset = days_between(anchor_date, date);
+                return Ok(day_offset >= 0 && day_offset % (*interval as i64) == 0);
+            }
+            Ok(true)
         }
         ScheduleExpr::IntervalRepeat {
             interval,
@@ -450,13 +489,24 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             let weeks = weeks_between(anchor_date, date);
             Ok(weeks >= 0 && weeks % (*interval as i64) == 0)
         }
-        ScheduleExpr::MonthRepeat { target, times } => {
+        ScheduleExpr::MonthRepeat {
+            interval,
+            target,
+            times,
+        } => {
             let time_matches = times.iter().any(|tod| {
                 let t = to_time(tod);
                 zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
             });
             if !time_matches {
                 return Ok(false);
+            }
+            if *interval > 1 {
+                let anchor_date = schedule.anchor.unwrap_or(*EPOCH_DATE);
+                let month_offset = months_between_ym(anchor_date, date);
+                if month_offset < 0 || month_offset % (*interval as i64) != 0 {
+                    return Ok(false);
+                }
             }
             match target {
                 MonthTarget::Days(_) => {
@@ -474,6 +524,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             }
         }
         ScheduleExpr::OrdinalRepeat {
+            interval,
             ordinal,
             day,
             times,
@@ -484,6 +535,13 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             });
             if !time_matches {
                 return Ok(false);
+            }
+            if *interval > 1 {
+                let anchor_date = schedule.anchor.unwrap_or(*EPOCH_DATE);
+                let month_offset = months_between_ym(anchor_date, date);
+                if month_offset < 0 || month_offset % (*interval as i64) != 0 {
+                    return Ok(false);
+                }
             }
             let target_date = match ordinal {
                 OrdinalPosition::Last => last_weekday_in_month(date.year(), date.month(), *day),
@@ -520,13 +578,24 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                 }
             }
         }
-        ScheduleExpr::YearRepeat { target, times } => {
+        ScheduleExpr::YearRepeat {
+            interval,
+            target,
+            times,
+        } => {
             let time_matches = times.iter().any(|tod| {
                 let t = to_time(tod);
                 zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
             });
             if !time_matches {
                 return Ok(false);
+            }
+            if *interval > 1 {
+                let anchor_year = schedule.anchor.unwrap_or(*EPOCH_DATE).year();
+                let year_offset = date.year() as i64 - anchor_year as i64;
+                if year_offset < 0 || year_offset % (*interval as i64) != 0 {
+                    return Ok(false);
+                }
             }
             match target {
                 YearTarget::Date { month, day } => {
@@ -587,34 +656,58 @@ fn ordinal_to_n(ord: OrdinalPosition) -> u8 {
 // --- Eval helpers for each schedule variant ---
 
 fn next_day_repeat(
+    interval: u32,
     days: &DayFilter,
     times: &[TimeOfDay],
     tz: &TimeZone,
+    anchor: &Option<jiff::civil::Date>,
     now: &Zoned,
 ) -> Result<Option<Zoned>, ScheduleError> {
     let now_in_tz = now.with_time_zone(tz.clone());
-
     let mut date = now_in_tz.date();
 
-    // Check if today works (any time hasn't passed yet)
-    if matches_day_filter(date, days) {
-        if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
-            return Ok(Some(candidate));
-        }
-    }
-
-    // Scan forward up to 8 days (max gap for any day filter)
-    for _ in 0..8 {
-        date = date
-            .tomorrow()
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+    if interval <= 1 {
+        // Original behavior for interval=1
         if matches_day_filter(date, days) {
-            // On a future day, the earliest time is always in the future,
-            // but use earliest_future_at_times for consistency
             if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
                 return Ok(Some(candidate));
             }
         }
+        for _ in 0..8 {
+            date = date
+                .tomorrow()
+                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+            if matches_day_filter(date, days) {
+                if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
+                    return Ok(Some(candidate));
+                }
+            }
+        }
+        return Ok(None);
+    }
+
+    // Interval > 1: day intervals only apply to DayFilter::Every
+    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
+    let interval_i64 = interval as i64;
+
+    // Find the next aligned day >= today
+    let offset = days_between(anchor_date, date);
+    let remainder = offset.rem_euclid(interval_i64);
+    let aligned_date = if remainder == 0 {
+        date
+    } else {
+        date.checked_add(jiff::Span::new().days(interval_i64 - remainder))
+            .map_err(|e| ScheduleError::eval(format!("{e}")))?
+    };
+
+    let mut cur = aligned_date;
+    for _ in 0..400 {
+        if let Some(candidate) = earliest_future_at_times(cur, times, tz, now)? {
+            return Ok(Some(candidate));
+        }
+        cur = cur
+            .checked_add(jiff::Span::new().days(interval_i64))
+            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
     }
 
     Ok(None)
@@ -756,9 +849,11 @@ fn next_week_repeat(
 }
 
 fn next_month_repeat(
+    interval: u32,
     target: &MonthTarget,
     times: &[TimeOfDay],
     tz: &TimeZone,
+    anchor: &Option<jiff::civil::Date>,
     now: &Zoned,
 ) -> Result<Option<Zoned>, ScheduleError> {
     let now_in_tz = now.with_time_zone(tz.clone());
@@ -766,8 +861,28 @@ fn next_month_repeat(
     let mut year = now_in_tz.date().year();
     let mut month = now_in_tz.date().month();
 
-    // Search up to 24 months forward
-    for _ in 0..24 {
+    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
+    let max_iter = if interval > 1 {
+        24 * interval as usize
+    } else {
+        24
+    };
+
+    // Search forward
+    for _ in 0..max_iter {
+        // Check interval alignment
+        if interval > 1 {
+            let cur = Date::new(year, month, 1).unwrap();
+            let month_offset = months_between_ym(anchor_date, cur);
+            if month_offset < 0 || month_offset.rem_euclid(interval as i64) != 0 {
+                month += 1;
+                if month > 12 {
+                    month = 1;
+                    year += 1;
+                }
+                continue;
+            }
+        }
         let date_candidates = match target {
             MonthTarget::Days(_) => {
                 let expanded = target.expand_days();
@@ -818,10 +933,12 @@ fn next_month_repeat(
 }
 
 fn next_ordinal_repeat(
+    interval: u32,
     ordinal: OrdinalPosition,
     day: Weekday,
     times: &[TimeOfDay],
     tz: &TimeZone,
+    anchor: &Option<jiff::civil::Date>,
     now: &Zoned,
 ) -> Result<Option<Zoned>, ScheduleError> {
     let now_in_tz = now.with_time_zone(tz.clone());
@@ -829,8 +946,28 @@ fn next_ordinal_repeat(
     let mut year = now_in_tz.date().year();
     let mut month = now_in_tz.date().month();
 
-    // Search up to 24 months forward
-    for _ in 0..24 {
+    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
+    let max_iter = if interval > 1 {
+        24 * interval as usize
+    } else {
+        24
+    };
+
+    // Search forward
+    for _ in 0..max_iter {
+        // Check interval alignment
+        if interval > 1 {
+            let cur = Date::new(year, month, 1).unwrap();
+            let month_offset = months_between_ym(anchor_date, cur);
+            if month_offset < 0 || month_offset.rem_euclid(interval as i64) != 0 {
+                month += 1;
+                if month > 12 {
+                    month = 1;
+                    year += 1;
+                }
+                continue;
+            }
+        }
         let target_date = match ordinal {
             OrdinalPosition::Last => Some(last_weekday_in_month(year, month, day)),
             _ => nth_weekday_of_month(year, month, day, ordinal_to_n(ordinal)),
@@ -884,17 +1021,29 @@ fn next_single_date(
 }
 
 fn next_year_repeat(
+    interval: u32,
     target: &YearTarget,
     times: &[TimeOfDay],
     tz: &TimeZone,
+    anchor: &Option<jiff::civil::Date>,
     now: &Zoned,
 ) -> Result<Option<Zoned>, ScheduleError> {
     let now_in_tz = now.with_time_zone(tz.clone());
     let start_year = now_in_tz.date().year();
+    let anchor_year = anchor.unwrap_or(*EPOCH_DATE).year();
 
-    // Search up to 8 years forward (covers leap year cycles)
-    for y in 0..8 {
+    let max_iter = if interval > 1 { 8 * interval as i16 } else { 8 };
+
+    for y in 0..max_iter {
         let year = start_year + y;
+
+        // Check interval alignment
+        if interval > 1 {
+            let year_offset = (year as i64) - (anchor_year as i64);
+            if year_offset < 0 || year_offset.rem_euclid(interval as i64) != 0 {
+                continue;
+            }
+        }
 
         let target_date = match target {
             YearTarget::Date { month, day } => {

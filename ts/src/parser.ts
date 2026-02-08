@@ -238,26 +238,26 @@ class Parser {
 
     if (k.type === "year") {
       this.advance();
-      return this.parseYearRepeat();
+      return this.parseYearRepeat(1);
     }
     if (k.type === "day") {
-      return this.parseDayRepeat({ type: "every" });
+      return this.parseDayRepeat(1, { type: "every" });
     }
     if (k.type === "weekday") {
       this.advance();
-      return this.parseDayRepeat({ type: "weekday" });
+      return this.parseDayRepeat(1, { type: "weekday" });
     }
     if (k.type === "weekend") {
       this.advance();
-      return this.parseDayRepeat({ type: "weekend" });
+      return this.parseDayRepeat(1, { type: "weekend" });
     }
     if (k.type === "dayName") {
       const days = this.parseDayList();
-      return this.parseDayRepeat({ type: "days", days });
+      return this.parseDayRepeat(1, { type: "days", days });
     }
     if (k.type === "month") {
       this.advance();
-      return this.parseMonthRepeat();
+      return this.parseMonthRepeat(1);
     }
     if (k.type === "number") {
       return this.parseNumberRepeat();
@@ -269,18 +269,22 @@ class Parser {
     );
   }
 
-  private parseDayRepeat(days: DayFilter): ScheduleExpr {
+  private parseDayRepeat(interval: number, days: DayFilter): ScheduleExpr {
     if (days.type === "every") {
       this.consumeKind("'day'", (k) => k.type === "day");
     }
     this.consumeKind("'at'", (k) => k.type === "at");
     const times = this.parseTimeList();
-    return { type: "dayRepeat", days, times };
+    return { type: "dayRepeat", interval, days, times };
   }
 
   private parseNumberRepeat(): ScheduleExpr {
+    const span = this.currentSpan();
     const k = this.peekKind()!;
     const num = (k as { type: "number"; value: number }).value;
+    if (num === 0) {
+      throw this.error("interval must be at least 1", span);
+    }
     this.advance();
 
     const next = this.peekKind();
@@ -291,9 +295,20 @@ class Parser {
     if (next?.type === "intervalUnit") {
       return this.parseIntervalRepeat(num);
     }
+    if (next?.type === "day") {
+      return this.parseDayRepeat(num, { type: "every" });
+    }
+    if (next?.type === "month") {
+      this.advance();
+      return this.parseMonthRepeat(num);
+    }
+    if (next?.type === "year") {
+      this.advance();
+      return this.parseYearRepeat(num);
+    }
 
     throw this.error(
-      "expected 'weeks', 'min', 'minutes', 'hour', or 'hours' after number",
+      "expected 'weeks', 'min', 'minutes', 'hour', 'hours', 'day(s)', 'month(s)', or 'year(s)' after number",
       this.currentSpan(),
     );
   }
@@ -327,7 +342,7 @@ class Parser {
     return { type: "weekRepeat", interval, days, times };
   }
 
-  private parseMonthRepeat(): ScheduleExpr {
+  private parseMonthRepeat(interval: number): ScheduleExpr {
     this.consumeKind("'on'", (k) => k.type === "on");
     this.consumeKind("'the'", (k) => k.type === "the");
 
@@ -361,7 +376,7 @@ class Parser {
 
     this.consumeKind("'at'", (k) => k.type === "at");
     const times = this.parseTimeList();
-    return { type: "monthRepeat", target, times };
+    return { type: "monthRepeat", interval, target, times };
   }
 
   private parseOrdinalRepeat(): ScheduleExpr {
@@ -378,14 +393,26 @@ class Parser {
 
     this.consumeKind("'of'", (k) => k.type === "of");
     this.consumeKind("'every'", (k) => k.type === "every");
+
+    // "of every [N] month(s) at ..."
+    let interval = 1;
+    const next = this.peekKind();
+    if (next?.type === "number") {
+      interval = (next as { type: "number"; value: number }).value;
+      if (interval === 0) {
+        throw this.error("interval must be at least 1", this.currentSpan());
+      }
+      this.advance();
+    }
+
     this.consumeKind("'month'", (k) => k.type === "month");
     this.consumeKind("'at'", (k) => k.type === "at");
     const times = this.parseTimeList();
 
-    return { type: "ordinalRepeat", ordinal, day, times };
+    return { type: "ordinalRepeat", interval, ordinal, day, times };
   }
 
-  private parseYearRepeat(): ScheduleExpr {
+  private parseYearRepeat(interval: number): ScheduleExpr {
     this.consumeKind("'on'", (k) => k.type === "on");
 
     let target: YearTarget;
@@ -412,7 +439,7 @@ class Parser {
 
     this.consumeKind("'at'", (k) => k.type === "at");
     const times = this.parseTimeList();
-    return { type: "yearRepeat", target, times };
+    return { type: "yearRepeat", interval, target, times };
   }
 
   private parseYearTargetAfterThe(): YearTarget {

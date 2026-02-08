@@ -269,9 +269,10 @@ class IntervalRepeat extends ScheduleExpr {
 }
 
 class DayRepeat extends ScheduleExpr {
+  final int interval;
   final DayFilter days;
   final List<TimeOfDay> times;
-  DayRepeat(this.days, this.times);
+  DayRepeat(this.interval, this.days, this.times);
 }
 
 class WeekRepeat extends ScheduleExpr {
@@ -282,16 +283,18 @@ class WeekRepeat extends ScheduleExpr {
 }
 
 class MonthRepeat extends ScheduleExpr {
+  final int interval;
   final MonthTarget target;
   final List<TimeOfDay> times;
-  MonthRepeat(this.target, this.times);
+  MonthRepeat(this.interval, this.target, this.times);
 }
 
 class OrdinalRepeat extends ScheduleExpr {
+  final int interval;
   final OrdinalPosition ordinal;
   final Weekday day;
   final List<TimeOfDay> times;
-  OrdinalRepeat(this.ordinal, this.day, this.times);
+  OrdinalRepeat(this.interval, this.ordinal, this.day, this.times);
 }
 
 class SingleDate extends ScheduleExpr {
@@ -301,9 +304,10 @@ class SingleDate extends ScheduleExpr {
 }
 
 class YearRepeat extends ScheduleExpr {
+  final int interval;
   final YearTarget target;
   final List<TimeOfDay> times;
-  YearRepeat(this.target, this.times);
+  YearRepeat(this.interval, this.target, this.times);
 }
 
 // --- Schedule (top-level) ---

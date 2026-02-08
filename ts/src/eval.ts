@@ -112,11 +112,25 @@ function lastWeekdayInMonth(
 }
 
 const EPOCH_MONDAY: PD = Temporal.PlainDate.from("1970-01-05");
+const EPOCH_DATE: PD = Temporal.PlainDate.from("1970-01-01");
 const MIDNIGHT: Temporal.PlainTime = Temporal.PlainTime.from({ hour: 0, minute: 0 });
 
 function weeksBetween(a: PD, b: PD): number {
   const days = a.until(b, { largestUnit: "days" }).days;
   return Math.floor(days / 7);
+}
+
+function daysBetween(a: PD, b: PD): number {
+  return a.until(b, { largestUnit: "days" }).days;
+}
+
+function monthsBetweenYM(a: PD, b: PD): number {
+  return (b.year * 12 + b.month) - (a.year * 12 + a.month);
+}
+
+/** Euclidean modulo (always non-negative). */
+function euclideanMod(a: number, b: number): number {
+  return ((a % b) + b) % b;
 }
 
 function isExcepted(date: PD, exceptions: Exception[]): boolean {
@@ -293,7 +307,7 @@ function nextExpr(
 ): ZDT | null {
   switch (expr.type) {
     case "dayRepeat":
-      return nextDayRepeat(expr.days, expr.times, tz, now);
+      return nextDayRepeat(expr.interval, expr.days, expr.times, tz, anchor, now);
     case "intervalRepeat":
       return nextIntervalRepeat(
         expr.interval,
@@ -307,13 +321,13 @@ function nextExpr(
     case "weekRepeat":
       return nextWeekRepeat(expr.interval, expr.days, expr.times, tz, anchor, now);
     case "monthRepeat":
-      return nextMonthRepeat(expr.target, expr.times, tz, now);
+      return nextMonthRepeat(expr.interval, expr.target, expr.times, tz, anchor, now);
     case "ordinalRepeat":
-      return nextOrdinalRepeat(expr.ordinal, expr.day, expr.times, tz, now);
+      return nextOrdinalRepeat(expr.interval, expr.ordinal, expr.day, expr.times, tz, anchor, now);
     case "singleDate":
       return nextSingleDate(expr.date, expr.times, tz, now);
     case "yearRepeat":
-      return nextYearRepeat(expr.target, expr.times, tz, now);
+      return nextYearRepeat(expr.interval, expr.target, expr.times, tz, anchor, now);
   }
 }
 
@@ -352,7 +366,15 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
   switch (schedule.expr.type) {
     case "dayRepeat": {
       if (!matchesDayFilter(date, schedule.expr.days)) return false;
-      return timeMatches(schedule.expr.times);
+      if (!timeMatches(schedule.expr.times)) return false;
+      if (schedule.expr.interval > 1) {
+        const anchorDate = schedule.anchor
+          ? Temporal.PlainDate.from(schedule.anchor)
+          : EPOCH_DATE;
+        const dayOffset = daysBetween(anchorDate, date);
+        return dayOffset >= 0 && dayOffset % schedule.expr.interval === 0;
+      }
+      return true;
     }
     case "intervalRepeat": {
       const { interval, unit, from, to, dayFilter } = schedule.expr;
@@ -378,6 +400,15 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
     }
     case "monthRepeat": {
       if (!timeMatches(schedule.expr.times)) return false;
+      if (schedule.expr.interval > 1) {
+        const anchorDate = schedule.anchor
+          ? Temporal.PlainDate.from(schedule.anchor)
+          : EPOCH_DATE;
+        const monthOffset = monthsBetweenYM(anchorDate, date);
+        if (monthOffset < 0 || monthOffset % schedule.expr.interval !== 0) {
+          return false;
+        }
+      }
       const { target } = schedule.expr;
       if (target.type === "days") {
         const expanded = expandMonthTarget(target);
@@ -392,6 +423,15 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
     }
     case "ordinalRepeat": {
       if (!timeMatches(schedule.expr.times)) return false;
+      if (schedule.expr.interval > 1) {
+        const anchorDate = schedule.anchor
+          ? Temporal.PlainDate.from(schedule.anchor)
+          : EPOCH_DATE;
+        const monthOffset = monthsBetweenYM(anchorDate, date);
+        if (monthOffset < 0 || monthOffset % schedule.expr.interval !== 0) {
+          return false;
+        }
+      }
       const { ordinal, day } = schedule.expr;
       let targetDate: PD | null;
       if (ordinal === "last") {
@@ -424,6 +464,15 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
     }
     case "yearRepeat": {
       if (!timeMatches(schedule.expr.times)) return false;
+      if (schedule.expr.interval > 1) {
+        const anchorYear = schedule.anchor
+          ? Temporal.PlainDate.from(schedule.anchor).year
+          : EPOCH_DATE.year;
+        const yearOffset = date.year - anchorYear;
+        if (yearOffset < 0 || yearOffset % schedule.expr.interval !== 0) {
+          return false;
+        }
+      }
       return matchesYearTarget(schedule.expr.target, date);
     }
   }
@@ -466,25 +515,50 @@ function matchesYearTarget(target: YearTarget, date: PD): boolean {
 // --- Per-variant next functions ---
 
 function nextDayRepeat(
+  interval: number,
   days: DayFilter,
   times: TimeOfDay[],
   tz: string,
+  anchor: string | null,
   now: ZDT,
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
   let date = nowInTz.toPlainDate();
 
-  if (matchesDayFilter(date, days)) {
-    const candidate = earliestFutureAtTimes(date, times, tz, now);
-    if (candidate) return candidate;
-  }
-
-  for (let i = 0; i < 8; i++) {
-    date = date.add({ days: 1 });
+  if (interval <= 1) {
+    // Original behavior for interval=1
     if (matchesDayFilter(date, days)) {
       const candidate = earliestFutureAtTimes(date, times, tz, now);
       if (candidate) return candidate;
     }
+
+    for (let i = 0; i < 8; i++) {
+      date = date.add({ days: 1 });
+      if (matchesDayFilter(date, days)) {
+        const candidate = earliestFutureAtTimes(date, times, tz, now);
+        if (candidate) return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  // Interval > 1: day intervals only apply to DayFilter::Every
+  const anchorDate = anchor
+    ? Temporal.PlainDate.from(anchor)
+    : EPOCH_DATE;
+
+  // Find the next aligned day >= today
+  const offset = daysBetween(anchorDate, date);
+  const remainder = euclideanMod(offset, interval);
+  let alignedDate = remainder === 0
+    ? date
+    : date.add({ days: interval - remainder });
+
+  for (let i = 0; i < 400; i++) {
+    const candidate = earliestFutureAtTimes(alignedDate, times, tz, now);
+    if (candidate) return candidate;
+    alignedDate = alignedDate.add({ days: interval });
   }
 
   return null;
@@ -600,16 +674,37 @@ function nextWeekRepeat(
 }
 
 function nextMonthRepeat(
+  interval: number,
   target: MonthTarget,
   times: TimeOfDay[],
   tz: string,
+  anchor: string | null,
   now: ZDT,
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
   let year = nowInTz.year;
   let month = nowInTz.month;
 
-  for (let i = 0; i < 24; i++) {
+  const anchorDate = anchor
+    ? Temporal.PlainDate.from(anchor)
+    : EPOCH_DATE;
+  const maxIter = interval > 1 ? 24 * interval : 24;
+
+  for (let i = 0; i < maxIter; i++) {
+    // Check interval alignment
+    if (interval > 1) {
+      const cur = Temporal.PlainDate.from({ year, month, day: 1 });
+      const monthOffset = monthsBetweenYM(anchorDate, cur);
+      if (monthOffset < 0 || euclideanMod(monthOffset, interval) !== 0) {
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
+        continue;
+      }
+    }
+
     const dateCandidates: PD[] = [];
 
     if (target.type === "days") {
@@ -657,17 +752,38 @@ function nextMonthRepeat(
 }
 
 function nextOrdinalRepeat(
+  interval: number,
   ordinal: OrdinalPosition,
   day: Weekday,
   times: TimeOfDay[],
   tz: string,
+  anchor: string | null,
   now: ZDT,
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
   let year = nowInTz.year;
   let month = nowInTz.month;
 
-  for (let i = 0; i < 24; i++) {
+  const anchorDate = anchor
+    ? Temporal.PlainDate.from(anchor)
+    : EPOCH_DATE;
+  const maxIter = interval > 1 ? 24 * interval : 24;
+
+  for (let i = 0; i < maxIter; i++) {
+    // Check interval alignment
+    if (interval > 1) {
+      const cur = Temporal.PlainDate.from({ year, month, day: 1 });
+      const monthOffset = monthsBetweenYM(anchorDate, cur);
+      if (monthOffset < 0 || euclideanMod(monthOffset, interval) !== 0) {
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
+        continue;
+      }
+    }
+
     let targetDate: PD | null;
     if (ordinal === "last") {
       targetDate = lastWeekdayInMonth(year, month, day);
@@ -726,16 +842,32 @@ function nextSingleDate(
 }
 
 function nextYearRepeat(
+  interval: number,
   target: YearTarget,
   times: TimeOfDay[],
   tz: string,
+  anchor: string | null,
   now: ZDT,
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
   const startYear = nowInTz.year;
+  const anchorYear = anchor
+    ? Temporal.PlainDate.from(anchor).year
+    : EPOCH_DATE.year;
 
-  for (let y = 0; y < 8; y++) {
+  const maxIter = interval > 1 ? 8 * interval : 8;
+
+  for (let y = 0; y < maxIter; y++) {
     const year = startYear + y;
+
+    // Check interval alignment
+    if (interval > 1) {
+      const yearOffset = year - anchorYear;
+      if (yearOffset < 0 || euclideanMod(yearOffset, interval) !== 0) {
+        continue;
+      }
+    }
+
     let targetDate: PD | null = null;
 
     switch (target.type) {

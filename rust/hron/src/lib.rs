@@ -111,8 +111,21 @@ impl Serialize for Schedule {
                     map.serialize_entry("days", &day_filter_to_json(df))?;
                 }
             }
-            ScheduleExpr::DayRepeat { days, times } => {
+            ScheduleExpr::DayRepeat {
+                interval,
+                days,
+                times,
+            } => {
                 map.serialize_entry("kind", "every")?;
+                if *interval > 1 {
+                    map.serialize_entry(
+                        "interval",
+                        &serde_json::json!({
+                            "value": interval,
+                            "unit": "days"
+                        }),
+                    )?;
+                }
                 map.serialize_entry("days", &day_filter_to_json(days))?;
                 map.serialize_entry("times", times)?;
             }
@@ -132,18 +145,41 @@ impl Serialize for Schedule {
                 map.serialize_entry("days", days)?;
                 map.serialize_entry("times", times)?;
             }
-            ScheduleExpr::MonthRepeat { target, times } => {
+            ScheduleExpr::MonthRepeat {
+                interval,
+                target,
+                times,
+            } => {
                 map.serialize_entry("kind", "every")?;
                 map.serialize_entry("repeat", "monthly")?;
+                if *interval > 1 {
+                    map.serialize_entry(
+                        "interval",
+                        &serde_json::json!({
+                            "value": interval,
+                            "unit": "months"
+                        }),
+                    )?;
+                }
                 map.serialize_entry("target", target)?;
                 map.serialize_entry("times", times)?;
             }
             ScheduleExpr::OrdinalRepeat {
+                interval,
                 ordinal,
                 day,
                 times,
             } => {
                 map.serialize_entry("kind", "every")?;
+                if *interval > 1 {
+                    map.serialize_entry(
+                        "interval",
+                        &serde_json::json!({
+                            "value": interval,
+                            "unit": "months"
+                        }),
+                    )?;
+                }
                 map.serialize_entry("ordinal", ordinal)?;
                 map.serialize_entry("day", day)?;
                 map.serialize_entry("times", times)?;
@@ -158,9 +194,22 @@ impl Serialize for Schedule {
                 }
                 map.serialize_entry("times", times)?;
             }
-            ScheduleExpr::YearRepeat { target, times } => {
+            ScheduleExpr::YearRepeat {
+                interval,
+                target,
+                times,
+            } => {
                 map.serialize_entry("kind", "every")?;
                 map.serialize_entry("repeat", "yearly")?;
+                if *interval > 1 {
+                    map.serialize_entry(
+                        "interval",
+                        &serde_json::json!({
+                            "value": interval,
+                            "unit": "years"
+                        }),
+                    )?;
+                }
                 map.serialize_entry("target", target)?;
                 map.serialize_entry("times", times)?;
             }

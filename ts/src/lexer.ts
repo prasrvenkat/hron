@@ -246,8 +246,10 @@ const KEYWORD_MAP: Record<string, TokenKind> = {
   starting: { type: "starting" },
   during: { type: "during" },
   year: { type: "year" },
+  years: { type: "year" },
 
   day: { type: "day" },
+  days: { type: "day" },
   weekday: { type: "weekday" },
   weekdays: { type: "weekday" },
   weekend: { type: "weekend" },
@@ -255,6 +257,7 @@ const KEYWORD_MAP: Record<string, TokenKind> = {
   weeks: { type: "weeks" },
   week: { type: "weeks" },
   month: { type: "month" },
+  months: { type: "month" },
 
   monday: { type: "dayName", name: "monday" },
   mon: { type: "dayName", name: "monday" },

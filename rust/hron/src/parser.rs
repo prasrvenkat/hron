@@ -266,29 +266,29 @@ impl<'a> Parser<'a> {
             // "every year on ..."
             Some(TokenKind::Year) => {
                 self.advance();
-                self.parse_year_repeat()
+                self.parse_year_repeat(1)
             }
             // "every day at ..."
-            Some(TokenKind::Day) => self.parse_day_repeat(DayFilter::Every),
+            Some(TokenKind::Day) => self.parse_day_repeat(1, DayFilter::Every),
             // "every weekday at ..."
             Some(TokenKind::Weekday) => {
                 self.advance();
-                self.parse_day_repeat(DayFilter::Weekday)
+                self.parse_day_repeat(1, DayFilter::Weekday)
             }
             // "every weekend at ..."
             Some(TokenKind::Weekend) => {
                 self.advance();
-                self.parse_day_repeat(DayFilter::Weekend)
+                self.parse_day_repeat(1, DayFilter::Weekend)
             }
             // "every monday ..." or "every monday, wednesday, friday at ..."
             Some(TokenKind::DayName(_)) => {
                 let days = self.parse_day_list()?;
-                self.parse_day_repeat(DayFilter::Days(days))
+                self.parse_day_repeat(1, DayFilter::Days(days))
             }
             // "every month on ..."
             Some(TokenKind::Month) => {
                 self.advance();
-                self.parse_month_repeat()
+                self.parse_month_repeat(1)
             }
             // "every N ..." — could be interval or week repeat
             Some(TokenKind::Number(_)) => self.parse_number_repeat(),
@@ -304,22 +304,34 @@ impl<'a> Parser<'a> {
     }
 
     // day_repeat: day_target already parsed (or "day" not yet consumed)
-    fn parse_day_repeat(&mut self, days: DayFilter) -> Result<ScheduleExpr, ScheduleError> {
+    fn parse_day_repeat(
+        &mut self,
+        interval: u32,
+        days: DayFilter,
+    ) -> Result<ScheduleExpr, ScheduleError> {
         // If days is Every, consume the "day" token
         if days == DayFilter::Every {
             self.consume_kind("'day'", |k| matches!(k, TokenKind::Day))?;
         }
         self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
         let times = self.parse_time_list()?;
-        Ok(ScheduleExpr::DayRepeat { days, times })
+        Ok(ScheduleExpr::DayRepeat {
+            interval,
+            days,
+            times,
+        })
     }
 
-    // After "every N": dispatch to interval_repeat or week_repeat
+    // After "every N": dispatch to interval_repeat, week_repeat, day_repeat, month_repeat, or year_repeat
     fn parse_number_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
         let num = match &self.peek().unwrap().kind {
             TokenKind::Number(n) => *n,
             _ => unreachable!(),
         };
+        if num == 0 {
+            let span = self.peek().unwrap().span;
+            return Err(self.error("interval must be at least 1".into(), span));
+        }
         self.advance();
 
         match self.peek().map(|t| &t.kind) {
@@ -330,10 +342,22 @@ impl<'a> Parser<'a> {
             }
             // "every N min/hours from ..."
             Some(TokenKind::IntervalUnit(_)) => self.parse_interval_repeat(num),
+            // "every N days at ..." / "every N day at ..."
+            Some(TokenKind::Day) => self.parse_day_repeat(num, DayFilter::Every),
+            // "every N months on ..." / "every N month on ..."
+            Some(TokenKind::Month) => {
+                self.advance();
+                self.parse_month_repeat(num)
+            }
+            // "every N years on ..." / "every N year on ..."
+            Some(TokenKind::Year) => {
+                self.advance();
+                self.parse_year_repeat(num)
+            }
             _ => {
                 let span = self.current_span();
                 Err(self.error(
-                    "expected 'weeks', 'min', 'minutes', 'hour', or 'hours' after number".into(),
+                    "expected 'weeks', 'days', 'months', 'years', 'min', 'minutes', 'hour', or 'hours' after number".into(),
                     span,
                 ))
             }
@@ -390,8 +414,8 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // month_repeat: "month on the (ordinal_days | last day | last weekday) at HH:MM"
-    fn parse_month_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
+    // month_repeat: "[N] month[s] on the (ordinal_days | last day | last weekday) at HH:MM"
+    fn parse_month_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
         self.consume_kind("'the'", |k| matches!(k, TokenKind::The))?;
 
@@ -431,10 +455,14 @@ impl<'a> Parser<'a> {
         self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
         let times = self.parse_time_list()?;
 
-        Ok(ScheduleExpr::MonthRepeat { target, times })
+        Ok(ScheduleExpr::MonthRepeat {
+            interval,
+            target,
+            times,
+        })
     }
 
-    // ordinal_repeat: "first monday of every month at HH:MM"
+    // ordinal_repeat: "first monday of every [N] month[s] at HH:MM"
     fn parse_ordinal_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
         let ordinal = self.parse_ordinal_position()?;
 
@@ -452,19 +480,35 @@ impl<'a> Parser<'a> {
 
         self.consume_kind("'of'", |k| matches!(k, TokenKind::Of))?;
         self.consume_kind("'every'", |k| matches!(k, TokenKind::Every))?;
+
+        // Optional interval: "of every 2 months" vs "of every month"
+        let interval = match self.peek().map(|t| &t.kind) {
+            Some(TokenKind::Number(n)) => {
+                let n = *n;
+                if n == 0 {
+                    let span = self.peek().unwrap().span;
+                    return Err(self.error("interval must be at least 1".into(), span));
+                }
+                self.advance();
+                n
+            }
+            _ => 1,
+        };
+
         self.consume_kind("'month'", |k| matches!(k, TokenKind::Month))?;
         self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
         let times = self.parse_time_list()?;
 
         Ok(ScheduleExpr::OrdinalRepeat {
+            interval,
             ordinal,
             day: day_name,
             times,
         })
     }
 
-    // year_repeat: "every year on <year_target> at HH:MM"
-    fn parse_year_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
+    // year_repeat: "every [N] year[s] on <year_target> at HH:MM"
+    fn parse_year_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
 
         let target = match self.peek().map(|t| &t.kind) {
@@ -507,7 +551,11 @@ impl<'a> Parser<'a> {
         self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
         let times = self.parse_time_list()?;
 
-        Ok(ScheduleExpr::YearRepeat { target, times })
+        Ok(ScheduleExpr::YearRepeat {
+            interval,
+            target,
+            times,
+        })
     }
 
     // After "every year on the": parse ordinal weekday, day of month, or last weekday
@@ -847,7 +895,7 @@ mod tests {
     fn test_parse_every_day() {
         let s = parse("every day at 09:00").unwrap();
         match &s.expr {
-            ScheduleExpr::DayRepeat { days, times } => {
+            ScheduleExpr::DayRepeat { days, times, .. } => {
                 assert_eq!(*days, DayFilter::Every);
                 assert_eq!(*times, vec![TimeOfDay { hour: 9, minute: 0 }]);
             }
@@ -996,6 +1044,7 @@ mod tests {
                 ordinal,
                 day,
                 times,
+                ..
             } => {
                 assert_eq!(*ordinal, OrdinalPosition::First);
                 assert_eq!(*day, Weekday::Monday);
@@ -1119,7 +1168,7 @@ mod tests {
     fn test_parse_year_repeat_date() {
         let s = parse("every year on dec 25 at 00:00").unwrap();
         match &s.expr {
-            ScheduleExpr::YearRepeat { target, times } => {
+            ScheduleExpr::YearRepeat { target, times, .. } => {
                 assert_eq!(
                     *target,
                     YearTarget::Date {

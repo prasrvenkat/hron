@@ -3,21 +3,33 @@ import 'error.dart';
 
 String toCron(ScheduleData schedule) {
   if (schedule.except.isNotEmpty) {
-    throw HronError.cron('not expressible as cron (except clauses not supported)');
+    throw HronError.cron(
+        'not expressible as cron (except clauses not supported)');
   }
   if (schedule.until != null) {
-    throw HronError.cron('not expressible as cron (until clauses not supported)');
+    throw HronError.cron(
+        'not expressible as cron (until clauses not supported)');
   }
   if (schedule.during.isNotEmpty) {
-    throw HronError.cron('not expressible as cron (during clauses not supported)');
+    throw HronError.cron(
+        'not expressible as cron (during clauses not supported)');
   }
 
   final expr = schedule.expr;
 
   switch (expr) {
-    case DayRepeat(days: final days, times: final times):
+    case DayRepeat(
+        interval: final interval,
+        days: final days,
+        times: final times
+      ):
+      if (interval > 1) {
+        throw HronError.cron(
+            'not expressible as cron (multi-day intervals not supported)');
+      }
       if (times.length != 1) {
-        throw HronError.cron('not expressible as cron (multiple times not supported)');
+        throw HronError.cron(
+            'not expressible as cron (multiple times not supported)');
       }
       final time = times[0];
       final dow = _dayFilterToCronDow(days);
@@ -55,9 +67,18 @@ String toCron(ScheduleData schedule) {
       throw HronError.cron(
           'not expressible as cron (multi-week intervals not supported)');
 
-    case MonthRepeat(target: final target, times: final times):
+    case MonthRepeat(
+        interval: final interval,
+        target: final target,
+        times: final times
+      ):
+      if (interval > 1) {
+        throw HronError.cron(
+            'not expressible as cron (multi-month intervals not supported)');
+      }
       if (times.length != 1) {
-        throw HronError.cron('not expressible as cron (multiple times not supported)');
+        throw HronError.cron(
+            'not expressible as cron (multiple times not supported)');
       }
       final time = times[0];
       if (target is DaysTarget) {
@@ -125,8 +146,10 @@ ScheduleData fromCron(String cron) {
       // full day
     } else if (hourField.contains('-')) {
       final parts = hourField.split('-');
-      fromHour = int.tryParse(parts[0]) ?? (throw HronError.cron('invalid hour range'));
-      toHour = int.tryParse(parts[1]) ?? (throw HronError.cron('invalid hour range'));
+      fromHour = int.tryParse(parts[0]) ??
+          (throw HronError.cron('invalid hour range'));
+      toHour = int.tryParse(parts[1]) ??
+          (throw HronError.cron('invalid hour range'));
     } else {
       final h = int.tryParse(hourField);
       if (h == null) throw HronError.cron('invalid hour');
@@ -184,12 +207,12 @@ ScheduleData fromCron(String cron) {
       return n;
     }).toList();
     final specs = dayNums.map((d) => SingleDay(d) as DayOfMonthSpec).toList();
-    return ScheduleData(MonthRepeat(DaysTarget(specs), [time]));
+    return ScheduleData(MonthRepeat(1, DaysTarget(specs), [time]));
   }
 
   // DOW-based (day repeat)
   final days = _parseCronDow(dowField);
-  return ScheduleData(DayRepeat(days, [time]));
+  return ScheduleData(DayRepeat(1, days, [time]));
 }
 
 DayFilter _parseCronDow(String field) {

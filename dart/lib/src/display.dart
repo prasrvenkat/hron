@@ -40,13 +40,11 @@ String display(ScheduleData schedule) {
 
 String _displayExpr(ScheduleExpr expr) => switch (expr) {
       IntervalRepeat() => _displayInterval(expr),
-      DayRepeat() =>
-        'every ${_displayDayFilter(expr.days)} at ${_formatTimeList(expr.times)}',
+      DayRepeat() => _displayDayRepeat(expr),
       WeekRepeat() =>
         'every ${expr.interval} weeks on ${_formatDayList(expr.days)} at ${_formatTimeList(expr.times)}',
       MonthRepeat() => _displayMonthRepeat(expr),
-      OrdinalRepeat() =>
-        '${expr.ordinal.name} ${expr.day.name} of every month at ${_formatTimeList(expr.times)}',
+      OrdinalRepeat() => _displayOrdinalRepeat(expr),
       SingleDate() => _displaySingleDate(expr),
       YearRepeat() => _displayYearRepeat(expr),
     };
@@ -60,6 +58,20 @@ String _displayInterval(IntervalRepeat expr) {
   return out;
 }
 
+String _displayDayRepeat(DayRepeat expr) {
+  if (expr.interval > 1) {
+    return 'every ${expr.interval} days at ${_formatTimeList(expr.times)}';
+  }
+  return 'every ${_displayDayFilter(expr.days)} at ${_formatTimeList(expr.times)}';
+}
+
+String _displayOrdinalRepeat(OrdinalRepeat expr) {
+  if (expr.interval > 1) {
+    return '${expr.ordinal.name} ${expr.day.name} of every ${expr.interval} months at ${_formatTimeList(expr.times)}';
+  }
+  return '${expr.ordinal.name} ${expr.day.name} of every month at ${_formatTimeList(expr.times)}';
+}
+
 String _displayMonthRepeat(MonthRepeat expr) {
   String targetStr;
   final target = expr.target;
@@ -69,6 +81,9 @@ String _displayMonthRepeat(MonthRepeat expr) {
     targetStr = 'last day';
   } else {
     targetStr = 'last weekday';
+  }
+  if (expr.interval > 1) {
+    return 'every ${expr.interval} months on the $targetStr at ${_formatTimeList(expr.times)}';
   }
   return 'every month on the $targetStr at ${_formatTimeList(expr.times)}';
 }
@@ -99,6 +114,9 @@ String _displayYearRepeat(YearRepeat expr) {
     targetStr =
         'the last weekday of ${(target as LastWeekdayYearTarget).month.name}';
   }
+  if (expr.interval > 1) {
+    return 'every ${expr.interval} years on $targetStr at ${_formatTimeList(expr.times)}';
+  }
   return 'every year on $targetStr at ${_formatTimeList(expr.times)}';
 }
 
@@ -112,11 +130,9 @@ String _displayDayFilter(DayFilter filter) => switch (filter) {
 String _formatTimeList(List<TimeOfDay> times) =>
     times.map((t) => t.toString()).join(', ');
 
-String _formatDayList(List<Weekday> days) =>
-    days.map((d) => d.name).join(', ');
+String _formatDayList(List<Weekday> days) => days.map((d) => d.name).join(', ');
 
-String _formatOrdinalDaySpecs(List<DayOfMonthSpec> specs) =>
-    specs.map((spec) {
+String _formatOrdinalDaySpecs(List<DayOfMonthSpec> specs) => specs.map((spec) {
       if (spec is SingleDay) {
         return '${spec.day}${ordinalSuffix(spec.day)}';
       }

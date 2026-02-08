@@ -37,8 +37,9 @@ pub enum ScheduleExpr {
         to: TimeOfDay,
         day_filter: Option<DayFilter>,
     },
-    /// `every day at 09:00`, `every weekday at 09:00, 17:00`
+    /// `every day at 09:00`, `every 2 days at 09:00`
     DayRepeat {
+        interval: u32,
         days: DayFilter,
         times: Vec<TimeOfDay>,
     },
@@ -48,13 +49,15 @@ pub enum ScheduleExpr {
         days: Vec<Weekday>,
         times: Vec<TimeOfDay>,
     },
-    /// `every month on the 1st at 09:00`, `every month on the 1st to 15th at 09:00`
+    /// `every month on the 1st at 09:00`, `every 2 months on the 1st at 09:00`
     MonthRepeat {
+        interval: u32,
         target: MonthTarget,
         times: Vec<TimeOfDay>,
     },
-    /// `first monday of every month at 10:00`
+    /// `first monday of every month at 10:00`, `first monday of every 2 months at 10:00`
     OrdinalRepeat {
+        interval: u32,
         ordinal: OrdinalPosition,
         day: Weekday,
         times: Vec<TimeOfDay>,
@@ -64,8 +67,9 @@ pub enum ScheduleExpr {
         date: DateSpec,
         times: Vec<TimeOfDay>,
     },
-    /// `every year on dec 25 at 00:00`
+    /// `every year on dec 25 at 00:00`, `every 2 years on dec 25 at 00:00`
     YearRepeat {
+        interval: u32,
         target: YearTarget,
         times: Vec<TimeOfDay>,
     },

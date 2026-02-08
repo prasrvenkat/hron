@@ -80,7 +80,16 @@ DateTime _lastWeekdayInMonth(int year, int month, Weekday weekday) {
   return d;
 }
 
+int _euclideanMod(int a, int b) => ((a % b) + b) % b;
+
 final DateTime _epochMonday = DateTime.utc(1970, 1, 5);
+
+final DateTime _epochDate = DateTime.utc(1970, 1, 1);
+
+int _daysBetween(DateTime a, DateTime b) => b.difference(a).inDays;
+
+int _monthsBetweenYM(DateTime a, DateTime b) =>
+    (b.year * 12 + b.month) - (a.year * 12 + a.month);
 
 int _weeksBetween(DateTime a, DateTime b) {
   final days = b.difference(a).inDays;
@@ -205,8 +214,7 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
   final parsedExceptions = _ParsedExceptions.from(schedule.except);
   final hasExceptions = schedule.except.isNotEmpty;
   final hasDuring = schedule.during.isNotEmpty;
-  final needsTzConversion =
-      untilDate != null || hasDuring || hasExceptions;
+  final needsTzConversion = untilDate != null || hasDuring || hasExceptions;
 
   var current = now;
   for (var i = 0; i < 1000; i++) {
@@ -252,16 +260,19 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
 TZDateTime? _nextExpr(
     ScheduleExpr expr, Location loc, String? anchor, TZDateTime now) {
   return switch (expr) {
-    DayRepeat() => _nextDayRepeat(expr.days, expr.times, loc, now),
+    DayRepeat() =>
+      _nextDayRepeat(expr.interval, expr.days, expr.times, loc, anchor, now),
     IntervalRepeat() => _nextIntervalRepeat(
         expr.interval, expr.unit, expr.from, expr.to, expr.dayFilter, loc, now),
     WeekRepeat() =>
       _nextWeekRepeat(expr.interval, expr.days, expr.times, loc, anchor, now),
-    MonthRepeat() => _nextMonthRepeat(expr.target, expr.times, loc, now),
-    OrdinalRepeat() =>
-      _nextOrdinalRepeat(expr.ordinal, expr.day, expr.times, loc, now),
+    MonthRepeat() => _nextMonthRepeat(
+        expr.interval, expr.target, expr.times, loc, anchor, now),
+    OrdinalRepeat() => _nextOrdinalRepeat(
+        expr.interval, expr.ordinal, expr.day, expr.times, loc, anchor, now),
     SingleDate() => _nextSingleDate(expr.date, expr.times, loc, now),
-    YearRepeat() => _nextYearRepeat(expr.target, expr.times, loc, now),
+    YearRepeat() =>
+      _nextYearRepeat(expr.interval, expr.target, expr.times, loc, anchor, now),
   };
 }
 
@@ -295,9 +306,21 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       times.any((tod) => zdt.hour == tod.hour && zdt.minute == tod.minute);
 
   switch (schedule.expr) {
-    case DayRepeat(days: final days, times: final times):
+    case DayRepeat(
+        interval: final interval,
+        days: final days,
+        times: final times
+      ):
       if (!_matchesDayFilter(date, days)) return false;
-      return timeMatches(times);
+      if (!timeMatches(times)) return false;
+      if (interval > 1) {
+        final anchorDate = schedule.anchor != null
+            ? _parseIsoDateUtc(schedule.anchor!)
+            : _epochDate;
+        final dayOffset = _daysBetween(anchorDate, date);
+        return dayOffset >= 0 && dayOffset % interval == 0;
+      }
+      return true;
 
     case IntervalRepeat(
         interval: final interval,
@@ -333,8 +356,19 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       final weeks = _weeksBetween(anchorDate, date);
       return weeks >= 0 && weeks % interval == 0;
 
-    case MonthRepeat(target: final target, times: final times):
+    case MonthRepeat(
+        interval: final interval,
+        target: final target,
+        times: final times
+      ):
       if (!timeMatches(times)) return false;
+      if (interval > 1) {
+        final anchorDate = schedule.anchor != null
+            ? _parseIsoDateUtc(schedule.anchor!)
+            : _epochDate;
+        final monthOffset = _monthsBetweenYM(anchorDate, date);
+        if (monthOffset < 0 || monthOffset % interval != 0) return false;
+      }
       if (target is DaysTarget) {
         final expanded = expandMonthTarget(target);
         return expanded.contains(date.day);
@@ -347,16 +381,25 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       return date.day == lastWd.day;
 
     case OrdinalRepeat(
+        interval: final interval,
         ordinal: final ordinal,
         day: final day,
         times: final times,
       ):
       if (!timeMatches(times)) return false;
+      if (interval > 1) {
+        final anchorDate = schedule.anchor != null
+            ? _parseIsoDateUtc(schedule.anchor!)
+            : _epochDate;
+        final monthOffset = _monthsBetweenYM(anchorDate, date);
+        if (monthOffset < 0 || monthOffset % interval != 0) return false;
+      }
       DateTime? targetDate;
       if (ordinal == OrdinalPosition.last) {
         targetDate = _lastWeekdayInMonth(date.year, date.month, day);
       } else {
-        targetDate = _nthWeekdayOfMonth(date.year, date.month, day, ordinal.toN);
+        targetDate =
+            _nthWeekdayOfMonth(date.year, date.month, day, ordinal.toN);
       }
       if (targetDate == null) return false;
       return date.day == targetDate.day;
@@ -374,8 +417,19 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       }
       return false;
 
-    case YearRepeat(target: final target, times: final times):
+    case YearRepeat(
+        interval: final interval,
+        target: final target,
+        times: final times
+      ):
       if (!timeMatches(times)) return false;
+      if (interval > 1) {
+        final anchorYear = schedule.anchor != null
+            ? _parseIsoDateUtc(schedule.anchor!).year
+            : _epochDate.year;
+        final yearOffset = date.year - anchorYear;
+        if (yearOffset < 0 || yearOffset % interval != 0) return false;
+      }
       return _matchesYearTarget(target, date);
   }
 }
@@ -410,35 +464,50 @@ bool _matchesYearTarget(YearTarget target, DateTime date) {
 
 // --- Per-variant next functions ---
 
-TZDateTime? _nextDayRepeat(
-    DayFilter days, List<TimeOfDay> times, Location loc, TZDateTime now) {
+TZDateTime? _nextDayRepeat(int interval, DayFilter days, List<TimeOfDay> times,
+    Location loc, String? anchor, TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
   var date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
-  if (_matchesDayFilter(date, days)) {
-    final candidate = _earliestFutureAtTimes(date, times, loc, now);
-    if (candidate != null) return candidate;
-  }
-
-  for (var i = 0; i < 8; i++) {
-    date = date.add(const Duration(days: 1));
+  if (interval <= 1) {
+    // Original behavior for interval=1
     if (_matchesDayFilter(date, days)) {
       final candidate = _earliestFutureAtTimes(date, times, loc, now);
       if (candidate != null) return candidate;
     }
+
+    for (var i = 0; i < 8; i++) {
+      date = date.add(const Duration(days: 1));
+      if (_matchesDayFilter(date, days)) {
+        final candidate = _earliestFutureAtTimes(date, times, loc, now);
+        if (candidate != null) return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  // Interval > 1: day intervals only apply to DayFilter::Every
+  final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochDate;
+
+  // Find the next aligned day >= today
+  final offset = _daysBetween(anchorDate, date);
+  final alignedRemainder = _euclideanMod(offset, interval);
+  var cur = alignedRemainder == 0
+      ? date
+      : date.add(Duration(days: interval - alignedRemainder));
+
+  for (var i = 0; i < 400; i++) {
+    final candidate = _earliestFutureAtTimes(cur, times, loc, now);
+    if (candidate != null) return candidate;
+    cur = cur.add(Duration(days: interval));
   }
 
   return null;
 }
 
-TZDateTime? _nextIntervalRepeat(
-    int interval,
-    IntervalUnit unit,
-    TimeOfDay from,
-    TimeOfDay to,
-    DayFilter? dayFilter,
-    Location loc,
-    TZDateTime now) {
+TZDateTime? _nextIntervalRepeat(int interval, IntervalUnit unit, TimeOfDay from,
+    TimeOfDay to, DayFilter? dayFilter, Location loc, TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
   final stepMinutes = unit == IntervalUnit.min ? interval : interval * 60;
   final fromMinutes = from.hour * 60 + from.minute;
@@ -455,8 +524,7 @@ TZDateTime? _nextIntervalRepeat(
     final sameDay = date.year == nowInTz.year &&
         date.month == nowInTz.month &&
         date.day == nowInTz.day;
-    final nowMinutes =
-        sameDay ? nowInTz.hour * 60 + nowInTz.minute : -1;
+    final nowMinutes = sameDay ? nowInTz.hour * 60 + nowInTz.minute : -1;
 
     int nextSlot;
     if (nowMinutes < fromMinutes) {
@@ -484,8 +552,7 @@ TZDateTime? _nextIntervalRepeat(
 TZDateTime? _nextWeekRepeat(int interval, List<Weekday> days,
     List<TimeOfDay> times, Location loc, String? anchor, TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
-  final anchorDate =
-      anchor != null ? _parseIsoDateUtc(anchor) : _epochMonday;
+  final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochMonday;
 
   final date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
@@ -529,13 +596,30 @@ TZDateTime? _nextWeekRepeat(int interval, List<Weekday> days,
   return null;
 }
 
-TZDateTime? _nextMonthRepeat(
-    MonthTarget target, List<TimeOfDay> times, Location loc, TZDateTime now) {
+TZDateTime? _nextMonthRepeat(int interval, MonthTarget target,
+    List<TimeOfDay> times, Location loc, String? anchor, TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
   var year = nowInTz.year;
   var month = nowInTz.month;
 
-  for (var i = 0; i < 24; i++) {
+  final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochDate;
+  final maxIter = interval > 1 ? 24 * interval : 24;
+
+  for (var i = 0; i < maxIter; i++) {
+    // Check interval alignment
+    if (interval > 1) {
+      final cur = DateTime.utc(year, month, 1);
+      final monthOffset = _monthsBetweenYM(anchorDate, cur);
+      if (monthOffset < 0 || _euclideanMod(monthOffset, interval) != 0) {
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
+        continue;
+      }
+    }
+
     final dateCandidates = <DateTime>[];
 
     if (target is DaysTarget) {
@@ -576,13 +660,36 @@ TZDateTime? _nextMonthRepeat(
   return null;
 }
 
-TZDateTime? _nextOrdinalRepeat(OrdinalPosition ordinal, Weekday day,
-    List<TimeOfDay> times, Location loc, TZDateTime now) {
+TZDateTime? _nextOrdinalRepeat(
+    int interval,
+    OrdinalPosition ordinal,
+    Weekday day,
+    List<TimeOfDay> times,
+    Location loc,
+    String? anchor,
+    TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
   var year = nowInTz.year;
   var month = nowInTz.month;
 
-  for (var i = 0; i < 24; i++) {
+  final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochDate;
+  final maxIter = interval > 1 ? 24 * interval : 24;
+
+  for (var i = 0; i < maxIter; i++) {
+    // Check interval alignment
+    if (interval > 1) {
+      final cur = DateTime.utc(year, month, 1);
+      final monthOffset = _monthsBetweenYM(anchorDate, cur);
+      if (monthOffset < 0 || _euclideanMod(monthOffset, interval) != 0) {
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
+        continue;
+      }
+    }
+
     DateTime? targetDate;
     if (ordinal == OrdinalPosition.last) {
       targetDate = _lastWeekdayInMonth(year, month, day);
@@ -635,13 +742,26 @@ TZDateTime? _nextSingleDate(
   return null;
 }
 
-TZDateTime? _nextYearRepeat(
-    YearTarget target, List<TimeOfDay> times, Location loc, TZDateTime now) {
+TZDateTime? _nextYearRepeat(int interval, YearTarget target,
+    List<TimeOfDay> times, Location loc, String? anchor, TZDateTime now) {
   final nowInTz = TZDateTime.from(now, loc);
   final startYear = nowInTz.year;
+  final anchorYear =
+      anchor != null ? _parseIsoDateUtc(anchor).year : _epochDate.year;
 
-  for (var y = 0; y < 8; y++) {
+  final maxIter = interval > 1 ? 8 * interval : 8;
+
+  for (var y = 0; y < maxIter; y++) {
     final year = startYear + y;
+
+    // Check interval alignment
+    if (interval > 1) {
+      final yearOffset = year - anchorYear;
+      if (yearOffset < 0 || _euclideanMod(yearOffset, interval) != 0) {
+        continue;
+      }
+    }
+
     DateTime? targetDate;
 
     switch (target) {
