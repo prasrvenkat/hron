@@ -1,0 +1,20 @@
+[package]
+name = "hron"
+version = "0.1.0"
+edition = "2021"
+description = "Human-readable cron"
+license = "MIT"
+keywords = ["cron", "schedule", "datetime", "recurring", "calendar"]
+categories = ["date-and-time", "parsing"]
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+jiff = "0.2"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[dev-dependencies]
+serde_json = "1"

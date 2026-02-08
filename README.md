@@ -12,7 +12,8 @@ hron is a language specification with native implementations for multiple progra
 
 | Language | Package | Registry | Source |
 |----------|---------|----------|--------|
-| Rust | `hron` | crates.io | [rust/](rust/) |
+| Rust | `hron` | crates.io | [rust/hron/](rust/hron/) |
+| Rust CLI | `hron-cli` | crates.io | [rust/hron-cli/](rust/hron-cli/) |
 | JS/TS (WASM) | `hron-wasm` | npm | [rust/wasm/](rust/wasm/) |
 
 ## Expression Syntax

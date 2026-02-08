@@ -19,7 +19,7 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           install_args: rust
-      - run: cargo test --all-features
+      - run: cargo test --workspace --all-features
         working-directory: rust
 
   # Future language jobs:

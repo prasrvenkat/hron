@@ -5,17 +5,18 @@ test-all: test-rust
 
 # Rust
 test-rust:
-    cd rust && cargo test --all-features
+    cd rust && cargo test --workspace --all-features
 
 build-rust:
-    cd rust && cargo build --all-features
+    cd rust && cargo build --workspace --all-features
 
 build-wasm:
     cd rust/wasm && cargo build --target wasm32-unknown-unknown
 
 # Stamp VERSION into all language package manifests
 stamp-versions:
-    sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/Cargo.toml
+    sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/hron/Cargo.toml
+    sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/hron-cli/Cargo.toml
     sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/wasm/Cargo.toml
     # Future: python/pyproject.toml, etc.
 

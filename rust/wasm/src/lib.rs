@@ -62,7 +62,6 @@ impl Schedule {
 /// Parse a cron expression and return an hron Schedule.
 #[wasm_bindgen(js_name = "fromCron")]
 pub fn from_cron(cron_expr: &str) -> Result<Schedule, JsError> {
-    let inner =
-        hron::Schedule::from_cron(cron_expr).map_err(|e| JsError::new(&e.to_string()))?;
+    let inner = hron::Schedule::from_cron(cron_expr).map_err(|e| JsError::new(&e.to_string()))?;
     Ok(Schedule { inner })
 }

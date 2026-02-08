@@ -6,7 +6,7 @@
 use hron::Schedule;
 use serde_json::Value;
 
-static SPEC: &str = include_str!("../../spec/tests.json");
+static SPEC: &str = include_str!("../../../spec/tests.json");
 
 fn spec() -> Value {
     serde_json::from_str(SPEC).expect("spec/tests.json is invalid JSON")
