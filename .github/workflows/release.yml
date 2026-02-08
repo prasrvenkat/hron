@@ -168,9 +168,25 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  publish-dart:
+    name: Publish to pub.dev
+    needs: create-draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Publish to pub.dev
+        run: cd dart && dart pub publish --force
+        env:
+          PUB_TOKEN: ${{ secrets.PUB_TOKEN }}
+
   publish-release:
     name: Publish Release
-    needs: [create-tag, upload-assets, publish-crates, publish-npm]
+    needs: [create-tag, upload-assets, publish-crates, publish-npm, publish-dart]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

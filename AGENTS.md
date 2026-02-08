@@ -12,6 +12,8 @@ VERSION           # Single source of truth for all package versions
 justfile          # Build/test/release commands
 spec/             # Language-agnostic grammar (EBNF) + conformance tests (JSON)
 rust/             # Rust lib + CLI + WASM bindings
+ts/               # Native TypeScript implementation
+dart/             # Native Dart implementation
 ```
 
 ## Code Style
@@ -55,6 +57,8 @@ Lock-step across all packages. `VERSION` file at root is stamped into each langu
 ```sh
 just test-all         # All languages
 just test-rust        # Rust only
+just test-ts          # TypeScript only
+just test-dart        # Dart only
 just build-wasm       # WASM target
 just stamp-versions   # Stamp VERSION into all package manifests
 just release          # Tag + prep release

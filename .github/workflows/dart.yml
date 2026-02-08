@@ -1,0 +1,31 @@
+name: Dart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dart/**"
+      - "spec/**"
+  pull_request:
+    paths:
+      - "dart/**"
+      - "spec/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: cd dart && dart pub get
+
+      - name: Analyze
+        run: cd dart && dart analyze
+
+      - name: Test
+        run: cd dart && dart test
