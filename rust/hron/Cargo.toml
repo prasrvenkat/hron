@@ -6,6 +6,7 @@ description = "Human-readable cron"
 license = "MIT"
 keywords = ["cron", "schedule", "datetime", "recurring", "calendar"]
 categories = ["date-and-time", "parsing"]
+repository = "https://github.com/prasrvenkat/hron"
 
 [features]
 default = ["serde"]
