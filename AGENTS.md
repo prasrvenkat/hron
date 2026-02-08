@@ -25,9 +25,9 @@ dart/             # Native Dart implementation
 ## Git Workflow
 
 - Never commit directly to main. Always use feature branches.
-- Lowercase commit messages: `fix leap year edge case in eval`, not `Fix Leap Year Edge Case In Eval`.
+- Use [conventional commits](https://www.conventionalcommits.org/): `fix:`, `feat:`, `refactor:`, `docs:`, `ci:`, `test:`, `perf:`, `chore:`. Scope is optional: `fix(eval):`.
+- Lowercase after prefix: `fix: leap year edge case in eval`, not `fix: Leap Year Edge Case In Eval`.
 - Keep commit messages short and intent-focused. Skip detailed descriptions unless the "why" isn't obvious.
-- PR titles use intent prefix: `fix:`, `feat:`, `refactor:`, `docs:`, `ci:`, `test:`.
 - Squash merge PRs.
 
 ## Spec
