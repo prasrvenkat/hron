@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths: [VERSION]
 
+permissions:
+  contents: write
+  id-token: write
+
 concurrency:
   group: release
   cancel-in-progress: false
@@ -143,9 +147,6 @@ jobs:
     name: Publish hron-wasm to npm
     needs: create-draft-release
     runs-on: ubuntu-latest
-    # npm OIDC trusted publishing — no secrets needed, provenance included automatically
-    permissions:
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -173,9 +174,6 @@ jobs:
     name: Publish hron-ts to npm
     needs: create-draft-release
     runs-on: ubuntu-latest
-    # npm OIDC trusted publishing — no secrets needed, provenance included automatically
-    permissions:
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -196,9 +194,6 @@ jobs:
     name: Publish to pub.dev
     needs: create-draft-release
     runs-on: ubuntu-latest
-    # pub.dev OIDC automated publishing — no secrets needed
-    permissions:
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
