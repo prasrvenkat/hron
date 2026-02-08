@@ -169,7 +169,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-ts:
-    name: Publish hron-js to npm
+    name: Publish hron-ts to npm
     needs: create-draft-release
     runs-on: ubuntu-latest
     steps:
@@ -194,6 +194,13 @@ jobs:
     name: Publish to pub.dev
     needs: create-draft-release
     runs-on: ubuntu-latest
+    # pub.dev automated publishing uses OIDC — no secrets needed.
+    # Requires one-time setup: go to https://pub.dev/packages/hron/admin,
+    # enable "Automated publishing", and add this repo as a trusted publisher
+    # with tag pattern "v*". First publish must be done locally (`dart pub publish`)
+    # to claim the package name before automated publishing can be enabled.
+    permissions:
+      id-token: write # required for pub.dev OIDC token exchange
     steps:
       - uses: actions/checkout@v4
 
@@ -201,12 +208,9 @@ jobs:
         with:
           sdk: stable
 
-      # TODO(pras): verify pub.dev auth — PUB_TOKEN may not work directly.
-      # See https://dart.dev/tools/pub/automated-publishing for GitHub Actions setup.
       - name: Publish to pub.dev
-        run: cd dart && dart pub publish --force
-        env:
-          PUB_TOKEN: ${{ secrets.PUB_TOKEN }}
+        run: dart pub publish --force
+        working-directory: dart
 
   publish-release:
     name: Publish Release
