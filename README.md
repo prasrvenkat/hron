@@ -15,6 +15,7 @@ hron is a language specification with native implementations for multiple progra
 | Rust | `hron` | crates.io | [rust/hron/](rust/hron/) |
 | Rust CLI | `hron-cli` | crates.io | [rust/hron-cli/](rust/hron-cli/) |
 | JS/TS (WASM) | `hron-wasm` | npm | [rust/wasm/](rust/wasm/) |
+| JS/TS (native) | `hron-js` | npm | [ts/](ts/) |
 
 ## Expression Syntax
 
@@ -123,6 +124,7 @@ Requires [just](https://github.com/casey/just).
 ```sh
 just test-all        # Run tests across all languages
 just test-rust       # Run Rust tests only
+just test-ts         # Run TypeScript tests only
 just build-wasm      # Build WASM package
 just stamp-versions  # Stamp VERSION into all package manifests
 ```

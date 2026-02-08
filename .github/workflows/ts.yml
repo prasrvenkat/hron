@@ -1,0 +1,40 @@
+name: TypeScript
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ts/**"
+      - "spec/**"
+  pull_request:
+    paths:
+      - "ts/**"
+      - "spec/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: cd ts && pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: cd ts && pnpm typecheck
+
+      - name: Test
+        run: cd ts && pnpm test
+
+      - name: Build
+        run: cd ts && pnpm build
