@@ -56,6 +56,11 @@ impl Schedule {
         self
     }
 
+    /// Check if an input string is a valid hron expression.
+    pub fn validate(input: &str) -> bool {
+        Self::parse(input).is_ok()
+    }
+
     /// Convert a 5-field cron expression to a Schedule.
     pub fn from_cron(cron_expr: &str) -> Result<Self, ScheduleError> {
         cron::from_cron(cron_expr)

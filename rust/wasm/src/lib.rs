@@ -15,22 +15,32 @@ impl Schedule {
         Ok(Schedule { inner })
     }
 
-    /// Get the next occurrence as an ISO string.
-    /// Uses UTC as the default timezone in WASM.
-    pub fn next(&self) -> Result<Option<String>, JsError> {
-        let tz = jiff::tz::TimeZone::UTC;
-        let now = jiff::Zoned::now().with_time_zone(tz);
+    /// Compute the next occurrence after `now`.
+    #[wasm_bindgen(js_name = "nextFrom")]
+    pub fn next_from(&self, now: &str) -> Result<Option<String>, JsError> {
+        let now: jiff::Zoned = now
+            .parse()
+            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
         Ok(self.inner.next_from(&now).map(|z| z.to_string()))
     }
 
-    /// Get the next N occurrences as an array of ISO strings.
-    #[wasm_bindgen(js_name = "nextN")]
-    pub fn next_n(&self, n: u32) -> Result<JsValue, JsError> {
-        let tz = jiff::tz::TimeZone::UTC;
-        let now = jiff::Zoned::now().with_time_zone(tz);
+    /// Compute the next `n` occurrences after `now`.
+    #[wasm_bindgen(js_name = "nextNFrom")]
+    pub fn next_n_from(&self, now: &str, n: u32) -> Result<JsValue, JsError> {
+        let now: jiff::Zoned = now
+            .parse()
+            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
         let results = self.inner.next_n_from(&now, n as usize);
         let strings: Vec<String> = results.iter().map(|z| z.to_string()).collect();
         serde_wasm_bindgen::to_value(&strings).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Check if a datetime matches this schedule.
+    pub fn matches(&self, datetime: &str) -> Result<bool, JsError> {
+        let dt: jiff::Zoned = datetime
+            .parse()
+            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        Ok(self.inner.matches(&dt))
     }
 
     /// Get the structured JSON representation.
@@ -56,6 +66,12 @@ impl Schedule {
     /// Validate an expression (returns true if valid).
     pub fn validate(input: &str) -> bool {
         hron::Schedule::parse(input).is_ok()
+    }
+
+    /// Get the timezone, if specified.
+    #[wasm_bindgen(getter)]
+    pub fn timezone(&self) -> Option<String> {
+        self.inner.timezone().map(|s| s.to_string())
     }
 }
 
