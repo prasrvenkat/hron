@@ -1,0 +1,40 @@
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Every Monday at 04:00 UTC
+  workflow_dispatch: # Allow manual triggers
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        target: [fuzz_parse, fuzz_roundtrip]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - run: rustup default nightly
+      - run: cargo install cargo-fuzz
+
+      # Restore corpus from previous runs
+      - uses: actions/cache@v4
+        with:
+          path: rust/hron/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Fuzz ${{ matrix.target }} (3 minutes)
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=180
+        working-directory: rust/hron
+
+      # Upload crash artifacts if any are found
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: rust/hron/fuzz/artifacts/${{ matrix.target }}/

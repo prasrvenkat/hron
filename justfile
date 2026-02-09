@@ -90,6 +90,14 @@ release new_version:
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
     echo "Release PR created for v{{new_version}}"
 
+# Run Criterion benchmarks (Rust)
+bench:
+    cd rust && cargo bench -p hron
+
+# Run fuzz targets (requires nightly). Default 3 minutes per target.
+fuzz target="fuzz_parse" duration="180":
+    cd rust/hron && cargo +nightly fuzz run {{target}} -- -max_total_time={{duration}}
+
 # --- Local fallback targets (mirror CI jobs) ---
 
 # Publish hron library crate

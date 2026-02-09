@@ -169,6 +169,8 @@ just test-rust       # Run Rust tests only
 just test-ts         # Run TypeScript tests only
 just test-dart       # Run Dart tests only
 just build-wasm      # Build WASM package
+just bench           # Run Criterion benchmarks (Rust)
+just fuzz            # Run fuzz targets (requires nightly, default 3 min)
 just stamp-versions  # Stamp VERSION into all package manifests
 ```
 

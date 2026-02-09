@@ -1,6 +1,6 @@
 {
   "name": "hron-ts",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Human-readable cron — native TypeScript implementation",
   "type": "module",
   "main": "./dist/index.cjs",
