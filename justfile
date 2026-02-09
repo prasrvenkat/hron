@@ -90,6 +90,10 @@ release new_version:
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
     echo "Release PR created for v{{new_version}}"
 
+# Run Criterion benchmarks (Rust)
+bench:
+    cd rust && cargo bench -p hron
+
 # --- Local fallback targets (mirror CI jobs) ---
 
 # Publish hron library crate
