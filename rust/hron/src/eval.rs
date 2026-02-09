@@ -230,6 +230,34 @@ fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> 
     }
 }
 
+/// Check if a datetime matches any of the scheduled times, accounting for DST gaps.
+///
+/// A time matches if either:
+/// 1. The wall-clock time matches exactly (hour and minute), or
+/// 2. The scheduled time falls in a DST gap and resolves to the candidate's time
+///    (e.g., scheduled 2:00 AM during spring-forward resolves to 3:00 AM).
+fn time_matches_with_dst(
+    date: Date,
+    times: &[TimeOfDay],
+    tz: &TimeZone,
+    zdt: &Zoned,
+) -> Result<bool, ScheduleError> {
+    for tod in times {
+        let t = to_time(tod);
+        // Direct wall-clock match
+        if zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute() {
+            return Ok(true);
+        }
+        // DST gap check: resolve the scheduled time on this date and compare
+        // the resulting instant. Covers cases where e.g. 2:00 AM → 3:00 AM.
+        let resolved = at_time_on_date(date, t, tz)?;
+        if resolved.timestamp() == zdt.timestamp() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// For a given date, generate candidates at all given times and return the earliest one > now.
 fn earliest_future_at_times(
     date: Date,
@@ -432,11 +460,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             if !matches_day_filter(date, days) {
                 return Ok(false);
             }
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {
@@ -482,11 +506,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             if !days.contains(&wd) {
                 return Ok(false);
             }
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             let anchor_date = schedule.anchor.unwrap_or(*EPOCH_MONDAY);
@@ -498,11 +518,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             target,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {
@@ -533,11 +549,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             day,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {
@@ -563,11 +575,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             date: date_spec,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             match date_spec {
@@ -587,11 +595,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             target,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {

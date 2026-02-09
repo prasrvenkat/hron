@@ -3,7 +3,10 @@ use proptest::prelude::*;
 
 /// Generate a valid time string like "09:00" or "17:30"
 fn arb_time() -> impl Strategy<Value = String> {
-    (0u8..24, prop_oneof![Just(0u8), Just(15), Just(30), Just(45)])
+    (
+        0u8..24,
+        prop_oneof![Just(0u8), Just(15), Just(30), Just(45)],
+    )
         .prop_map(|(h, m)| format!("{:02}:{:02}", h, m))
 }
 
@@ -74,8 +77,7 @@ fn arb_weekday_name() -> impl Strategy<Value = &'static str> {
 fn arb_hron_expression() -> impl Strategy<Value = String> {
     prop_oneof![
         // DayRepeat: "every day at 09:00 in UTC"
-        (arb_day_filter(), arb_time_list())
-            .prop_map(|(d, t)| format!("every {d} at {t} in UTC")),
+        (arb_day_filter(), arb_time_list()).prop_map(|(d, t)| format!("every {d} at {t} in UTC")),
         // IntervalRepeat: "every 30 min from 09:00 to 17:00 in UTC"
         (
             prop_oneof![Just(15u32), Just(30), Just(45), Just(60)],
@@ -83,7 +85,11 @@ fn arb_hron_expression() -> impl Strategy<Value = String> {
         )
             .prop_map(|(i, u)| {
                 let unit = if i == 1 {
-                    if u == "min" { "minute" } else { "hour" }
+                    if u == "min" {
+                        "minute"
+                    } else {
+                        "hour"
+                    }
                 } else {
                     u
                 };
@@ -146,17 +152,18 @@ proptest! {
     }
 
     /// If next_from returns a time, matches() should return true for it.
-    /// All generated expressions use explicit UTC timezone to avoid
-    /// system-tz DST gaps causing false mismatches.
+    /// Expressions use explicit UTC to make results deterministic across
+    /// machines, but the DST-aware time_matches_with_dst helper ensures
+    /// this invariant holds for any timezone.
     #[test]
     fn self_consistency(expr in arb_hron_expression()) {
         let schedule = Schedule::parse(&expr).unwrap();
         let now: jiff::Zoned = "2026-02-06T12:00:00+00:00[UTC]".parse().unwrap();
         if let Ok(Some(next)) = schedule.next_from(&now) {
-            if let Ok(matches) = schedule.matches(&next) {
-                prop_assert!(matches,
-                    "next_from returned {} but matches() is false for '{}'", next, expr);
-            }
+            let matches = schedule.matches(&next)
+                .unwrap_or_else(|e| panic!("matches error for '{expr}': {e}"));
+            prop_assert!(matches,
+                "next_from returned {} but matches() is false for '{}'", next, expr);
         }
     }
 }

@@ -60,8 +60,7 @@ fn bench_eval(c: &mut Criterion) {
     });
 
     // OrdinalRepeat
-    let ordinal_repeat =
-        Schedule::parse("first monday of every month at 10:00 in UTC").unwrap();
+    let ordinal_repeat = Schedule::parse("first monday of every month at 10:00 in UTC").unwrap();
     group.bench_function("ordinal_repeat", |b| {
         b.iter(|| ordinal_repeat.next_from(black_box(&now)).unwrap());
     });
@@ -73,8 +72,7 @@ fn bench_eval(c: &mut Criterion) {
     });
 
     // IntervalRepeat
-    let interval_repeat =
-        Schedule::parse("every 30 min from 09:00 to 17:00 in UTC").unwrap();
+    let interval_repeat = Schedule::parse("every 30 min from 09:00 to 17:00 in UTC").unwrap();
     group.bench_function("interval_repeat", |b| {
         b.iter(|| interval_repeat.next_from(black_box(&now)).unwrap());
     });

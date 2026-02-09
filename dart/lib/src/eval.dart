@@ -302,8 +302,15 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
     if (date.isAfter(untilDate)) return false;
   }
 
-  bool timeMatches(List<TimeOfDay> times) =>
-      times.any((tod) => zdt.hour == tod.hour && zdt.minute == tod.minute);
+  // DST-aware time matching: a time matches if either the wall-clock matches
+  // directly, or the scheduled time falls in a DST gap and resolves to the
+  // candidate's instant (e.g., scheduled 2:00 AM during spring-forward → 3:00 AM).
+  bool timeMatchesWithDst(List<TimeOfDay> times) => times.any((tod) {
+        if (zdt.hour == tod.hour && zdt.minute == tod.minute) return true;
+        final resolved = _atTimeOnDate(date, tod.hour, tod.minute, loc);
+        return resolved.millisecondsSinceEpoch ==
+            datetime.millisecondsSinceEpoch;
+      });
 
   switch (schedule.expr) {
     case DayRepeat(
@@ -312,7 +319,7 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
         times: final times
       ):
       if (!_matchesDayFilter(date, days)) return false;
-      if (!timeMatches(times)) return false;
+      if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
         final anchorDate = schedule.anchor != null
             ? _parseIsoDateUtc(schedule.anchor!)
@@ -349,7 +356,7 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       ):
       final dow = _dayOfWeek(date);
       if (!days.any((d) => d.number == dow)) return false;
-      if (!timeMatches(times)) return false;
+      if (!timeMatchesWithDst(times)) return false;
       final anchorDate = schedule.anchor != null
           ? _parseIsoDateUtc(schedule.anchor!)
           : _epochMonday;
@@ -361,7 +368,7 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
         target: final target,
         times: final times
       ):
-      if (!timeMatches(times)) return false;
+      if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
         final anchorDate = schedule.anchor != null
             ? _parseIsoDateUtc(schedule.anchor!)
@@ -386,7 +393,7 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
         day: final day,
         times: final times,
       ):
-      if (!timeMatches(times)) return false;
+      if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
         final anchorDate = schedule.anchor != null
             ? _parseIsoDateUtc(schedule.anchor!)
@@ -405,7 +412,7 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       return date.day == targetDate.day;
 
     case SingleDate(date: final dateSpec, times: final times):
-      if (!timeMatches(times)) return false;
+      if (!timeMatchesWithDst(times)) return false;
       if (dateSpec is IsoDate) {
         final target = _parseIsoDateUtc(dateSpec.date);
         return date.year == target.year &&
@@ -422,7 +429,7 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
         target: final target,
         times: final times
       ):
-      if (!timeMatches(times)) return false;
+      if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
         final anchorYear = schedule.anchor != null
             ? _parseIsoDateUtc(schedule.anchor!).year
