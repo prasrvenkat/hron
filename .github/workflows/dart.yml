@@ -17,9 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: jdx/mise-action@v2
         with:
-          sdk: stable
+          install_args: dart
 
       - name: Install dependencies
         run: cd dart && dart pub get

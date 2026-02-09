@@ -2,17 +2,18 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Schedule } from "../src/index.js";
 
 const apiSpec = JSON.parse(
-  readFileSync(resolve(__dirname, "../../spec/api.json"), "utf-8")
+  readFileSync(resolve(__dirname, "../../spec/api.json"), "utf-8"),
 );
 
 describe("API conformance", () => {
   describe("static methods", () => {
     for (const method of apiSpec.schedule.staticMethods) {
       it(`static method: ${method.name}`, () => {
+        // biome-ignore lint/suspicious/noExplicitAny: dynamic spec-driven check
         expect(typeof (Schedule as any)[method.name]).toBe("function");
       });
     }
@@ -23,6 +24,7 @@ describe("API conformance", () => {
 
     for (const method of apiSpec.schedule.instanceMethods) {
       it(`instance method: ${method.name}`, () => {
+        // biome-ignore lint/suspicious/noExplicitAny: dynamic spec-driven check
         expect(typeof (instance as any)[method.name]).toBe("function");
       });
     }

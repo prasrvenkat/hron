@@ -141,11 +141,11 @@ jobs:
 
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust
+          install_args: rust nodejs
 
+      # setup-node needed only for registry-url (npm auth)
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Install wasm-pack
@@ -166,13 +166,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: jdx/mise-action@v2
         with:
-          version: 9
+          install_args: nodejs pnpm
 
+      # setup-node needed only for registry-url (npm auth)
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Build and publish
@@ -186,9 +186,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: jdx/mise-action@v2
         with:
-          sdk: stable
+          install_args: dart
 
       - name: Publish to pub.dev
         run: dart pub publish --force || echo "Already published, skipping"
