@@ -197,6 +197,9 @@ jobs:
         run: wasm-pack build --release
         working-directory: rust/wasm
 
+      - name: Patch entry point for Cloudflare Workers compatibility
+        run: cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
+
       - name: Publish to npm
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")

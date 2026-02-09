@@ -26,6 +26,7 @@ build-wasm:
 # WASM tests (build + run JS tests)
 test-wasm:
     cd rust/wasm && wasm-pack build --release
+    cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
     cd rust/wasm/test && pnpm install --frozen-lockfile && pnpm test
 
 # Print all component versions (for CI validation and local checks)
@@ -125,6 +126,7 @@ publish-ts:
 # Build and publish WASM package to npm
 publish-wasm:
     cd rust/wasm && wasm-pack build --release
+    cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
     cd rust/wasm/pkg && npm publish --access public
 
 # Create a git tag via GitHub API (verified)
