@@ -1,7 +1,7 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust test-ts test-dart
+test-all: test-rust test-ts test-dart test-wasm
 
 # Rust tests
 test-rust:
@@ -22,6 +22,11 @@ build-rust:
 # WASM build
 build-wasm:
     cd rust/wasm && cargo build --target wasm32-unknown-unknown
+
+# WASM tests (build + run JS tests)
+test-wasm:
+    cd rust/wasm && wasm-pack build --release
+    cd rust/wasm/test && pnpm install --frozen-lockfile && pnpm test
 
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:

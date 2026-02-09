@@ -40,13 +40,24 @@ jobs:
         working-directory: rust
 
   wasm:
-    name: WASM Build
+    name: WASM Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
           install_args: rust
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: rust/wasm/test/pnpm-lock.yaml
       - run: rustup target add wasm32-unknown-unknown
-      - run: cargo build --target wasm32-unknown-unknown
+      - run: cargo install wasm-pack
+      - run: wasm-pack build --release
         working-directory: rust/wasm
+      - run: pnpm install --frozen-lockfile && pnpm test
+        working-directory: rust/wasm/test
