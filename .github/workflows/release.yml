@@ -13,16 +13,46 @@ concurrency:
 
 jobs:
   version:
-    name: Read Version
+    name: Validate & Read Version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust nodejs just
+
+      - name: Validate ref is a tag
+        run: |
+          if [[ ! "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "::error::This workflow must be dispatched from a tag (e.g. v0.3.1), not a branch."
+            exit 1
+          fi
+
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+
+      - name: Verify all package versions match tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ERRORS=0
+          while IFS='=' read -r component ver; do
+            if [ "$ver" != "$VERSION" ]; then
+              echo "::error::$component version ($ver) != tag ($VERSION)"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done < <(just versions)
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::$ERRORS package(s) have mismatched versions. Run 'just release <version>' to sync."
+            exit 1
+          fi
+          echo "All package versions match tag: $VERSION"
 
   create-release:
     name: Create Draft Release
@@ -102,7 +132,7 @@ jobs:
             dist/hron-linux-x86_64/hron-linux-x86_64.tar.gz \
             dist/hron-macos-x86_64/hron-macos-x86_64.tar.gz \
             dist/hron-macos-aarch64/hron-macos-aarch64.tar.gz \
-            || echo "Assets already uploaded, skipping"
+            --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -118,7 +148,13 @@ jobs:
           install_args: rust
 
       - name: Publish hron
-        run: cargo publish --package hron || echo "Already published, skipping"
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "hron") | .version')
+          if cargo search hron --limit 100 | grep -q "^hron = \"$VERSION\""; then
+            echo "hron $VERSION already on crates.io, skipping"
+          else
+            cargo publish --package hron
+          fi
         working-directory: rust
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -127,7 +163,13 @@ jobs:
         run: sleep 30
 
       - name: Publish hron-cli
-        run: cargo publish --package hron-cli || echo "Already published, skipping"
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "hron-cli") | .version')
+          if cargo search hron-cli --limit 100 | grep -q "^hron-cli = \"$VERSION\""; then
+            echo "hron-cli $VERSION already on crates.io, skipping"
+          else
+            cargo publish --package hron-cli
+          fi
         working-directory: rust
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -156,7 +198,13 @@ jobs:
         working-directory: rust/wasm
 
       - name: Publish to npm
-        run: npm publish --access public --provenance || echo "Already published, skipping"
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          if npm view hron-wasm@"$PACKAGE_VERSION" version > /dev/null 2>&1; then
+            echo "hron-wasm $PACKAGE_VERSION already on npm, skipping"
+          else
+            npm publish --access public --provenance
+          fi
         working-directory: rust/wasm/pkg
 
   publish-ts:
@@ -175,8 +223,18 @@ jobs:
         with:
           registry-url: https://registry.npmjs.org
 
-      - name: Build and publish
-        run: pnpm install --frozen-lockfile && pnpm build && (pnpm publish --access public --no-git-checks --provenance || echo "Already published, skipping")
+      - name: Install and build
+        run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: ts
+
+      - name: Publish to npm
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          if npm view hron-ts@"$PACKAGE_VERSION" version > /dev/null 2>&1; then
+            echo "hron-ts $PACKAGE_VERSION already on npm, skipping"
+          else
+            pnpm publish --access public --no-git-checks --provenance
+          fi
         working-directory: ts
 
   publish-dart:
@@ -186,12 +244,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: jdx/mise-action@v2
+      # setup-dart needed for pub.dev OIDC authentication
+      - uses: dart-lang/setup-dart@v1
         with:
-          install_args: dart
+          sdk: stable
 
       - name: Publish to pub.dev
-        run: dart pub publish --force || echo "Already published, skipping"
+        run: |
+          PACKAGE_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          if curl -sf "https://pub.dev/api/packages/hron/versions/$PACKAGE_VERSION" > /dev/null 2>&1; then
+            echo "hron $PACKAGE_VERSION already on pub.dev, skipping"
+          else
+            dart pub publish --force
+          fi
         working-directory: dart
 
   publish-release:
