@@ -39,10 +39,10 @@ See [`hron-cli`](rust/hron-cli/) for all options.
 
 | Language | Package | Registry |
 |----------|---------|----------|
-| Rust | [`hron`](rust/hron/) | crates.io |
-| JS/TS (native) | [`hron-js`](ts/) | npm |
-| JS/TS (WASM) | [`hron-wasm`](rust/wasm/) | npm |
-| Dart/Flutter | [`hron`](dart/) | pub.dev |
+| Rust | [`hron`](rust/hron/) | [![crates.io](https://img.shields.io/crates/v/hron)](https://crates.io/crates/hron) |
+| JS/TS (native) | [`hron-ts`](ts/) | [![npm](https://img.shields.io/npm/v/hron-ts)](https://www.npmjs.com/package/hron-ts) |
+| JS/TS (WASM) | [`hron-wasm`](rust/wasm/) | [![npm](https://img.shields.io/npm/v/hron-wasm)](https://www.npmjs.com/package/hron-wasm) |
+| Dart/Flutter | [`hron`](dart/) | [![pub.dev](https://img.shields.io/pub/v/hron)](https://pub.dev/packages/hron) |
 
 > **Note:** The JS/TS native package (`hron-js`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`hron-wasm`).
 
