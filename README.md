@@ -143,6 +143,18 @@ hron can convert to and from standard 5-field cron expressions for the expressib
 
 Expressions that go beyond cron's capabilities (multi-week intervals, ordinals, yearly, `except`, `until`, partial-day windows) will return an error from `to_cron()`.
 
+## Timezone & DST Behavior
+
+When a schedule specifies a timezone via the `in` clause, all occurrences are computed in that timezone with full DST awareness:
+
+- **Spring-forward (gap):** If a scheduled time doesn't exist (e.g. `2:30 AM` during a spring-forward transition), the occurrence shifts to the next valid time after the gap (typically `3:00 AM` or later, depending on the gap size).
+- **Fall-back (ambiguity):** If a scheduled time is ambiguous (e.g. `1:30 AM` occurs twice during fall-back), the first (pre-transition) occurrence is used.
+- **No timezone:** When no `in` clause is specified, the system's local timezone is used.
+
+All implementations (Rust, TypeScript, Dart, WASM) follow these same DST semantics.
+
+The [conformance test suite](spec/tests.json) includes explicit spring-forward and fall-back test cases to verify this behavior across all implementations.
+
 ## Conformance Spec
 
 The [spec/](spec/) directory contains the language-agnostic conformance test suite (`tests.json`) and formal grammar (`grammar.ebnf`). The grammar is a reference specification — all parsers are hand-written [recursive descent](https://en.wikipedia.org/wiki/Recursive_descent_parser), not generated from the EBNF. All language implementations must pass the conformance tests.
