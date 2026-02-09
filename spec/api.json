@@ -1,0 +1,101 @@
+{
+  "version": "0.2",
+  "description": "Canonical public API contract for hron Schedule class. All implementations MUST expose these methods. Names are in camelCase; Rust implementations use snake_case equivalents.",
+  "casing": {
+    "canonical": "camelCase",
+    "rust": "snake_case"
+  },
+  "schedule": {
+    "staticMethods": [
+      {
+        "name": "parse",
+        "params": [{ "name": "input", "type": "string" }],
+        "returns": "Schedule",
+        "throws": true,
+        "description": "Parse an hron expression string."
+      },
+      {
+        "name": "fromCron",
+        "params": [{ "name": "cronExpr", "type": "string" }],
+        "returns": "Schedule",
+        "throws": true,
+        "description": "Convert a 5-field cron expression to a Schedule."
+      },
+      {
+        "name": "validate",
+        "params": [{ "name": "input", "type": "string" }],
+        "returns": "bool",
+        "throws": false,
+        "description": "Check if an input string is a valid hron expression."
+      }
+    ],
+    "instanceMethods": [
+      {
+        "name": "nextFrom",
+        "params": [{ "name": "now", "type": "ZonedDateTime" }],
+        "returns": "ZonedDateTime?",
+        "description": "Compute the next occurrence after `now`."
+      },
+      {
+        "name": "nextNFrom",
+        "params": [
+          { "name": "now", "type": "ZonedDateTime" },
+          { "name": "n", "type": "int" }
+        ],
+        "returns": "ZonedDateTime[]",
+        "description": "Compute the next `n` occurrences after `now`."
+      },
+      {
+        "name": "matches",
+        "params": [{ "name": "datetime", "type": "ZonedDateTime" }],
+        "returns": "bool",
+        "description": "Check if a datetime matches this schedule."
+      },
+      {
+        "name": "toCron",
+        "params": [],
+        "returns": "string",
+        "throws": true,
+        "description": "Convert this schedule to a 5-field cron expression."
+      },
+      {
+        "name": "toString",
+        "params": [],
+        "returns": "string",
+        "description": "Render as canonical string (roundtrip-safe)."
+      }
+    ],
+    "getters": [
+      {
+        "name": "timezone",
+        "type": "string?",
+        "description": "The IANA timezone, if specified."
+      }
+    ]
+  },
+  "error": {
+    "description": "Error type (named ScheduleError in Rust, HronError in TS/Dart). All implementations must expose the same shape.",
+    "kinds": ["lex", "parse", "eval", "cron"],
+    "properties": [
+      { "name": "kind", "type": "ErrorKind", "required": true },
+      { "name": "message", "type": "string", "required": true },
+      { "name": "span", "type": "Span?", "required": false, "note": "Present for lex/parse" },
+      { "name": "input", "type": "string?", "required": false, "note": "Present for lex/parse" },
+      { "name": "suggestion", "type": "string?", "required": false, "note": "Present for parse" }
+    ],
+    "constructors": ["lex", "parse", "eval", "cron"],
+    "methods": [
+      {
+        "name": "displayRich",
+        "params": [],
+        "returns": "string",
+        "description": "Format a rich error with underline and optional suggestion."
+      }
+    ]
+  },
+  "notes": {
+    "wasm": "WASM uses string-based ZonedDateTime params (ISO 8601 format). Also exposes toJSON() as a WASM-specific extra.",
+    "rust": "Rust expresses getters as public struct fields or methods. Also exposes explain_cron() and with_anchor() as Rust-specific extras.",
+    "dart_exception": "Dart names the Exception AST type 'ExceptionSpec' to avoid conflict with dart:core.Exception."
+  }
+}
