@@ -183,7 +183,12 @@ jobs:
 
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust nodejs
+          install_args: rust
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -209,9 +214,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
       - uses: jdx/mise-action@v2
         with:
-          install_args: nodejs pnpm
+          install_args: pnpm
 
       - name: Install and build
         run: pnpm install --frozen-lockfile && pnpm build
