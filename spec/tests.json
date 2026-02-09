@@ -1510,7 +1510,12 @@
         { "name": "day_interval_starting_aligned", "expression": "every 3 days at 09:00 starting 2026-02-06 in UTC", "datetime": "2026-02-09T09:00:00+00:00[UTC]", "expected": true, "description": "3-day interval with starting anchor: aligned" },
         { "name": "day_interval_starting_not_aligned", "expression": "every 3 days at 09:00 starting 2026-02-06 in UTC", "datetime": "2026-02-08T09:00:00+00:00[UTC]", "expected": false, "description": "3-day interval with starting anchor: not aligned" },
         { "name": "month_interval_starting_aligned", "expression": "every 2 months on the 1st at 09:00 starting 2026-01-01 in UTC", "datetime": "2026-03-01T09:00:00+00:00[UTC]", "expected": true, "description": "2-month interval with starting: aligned" },
-        { "name": "month_interval_starting_not_aligned", "expression": "every 2 months on the 1st at 09:00 starting 2026-01-01 in UTC", "datetime": "2026-04-01T09:00:00+00:00[UTC]", "expected": false, "description": "2-month interval with starting: not aligned" }
+        { "name": "month_interval_starting_not_aligned", "expression": "every 2 months on the 1st at 09:00 starting 2026-01-01 in UTC", "datetime": "2026-04-01T09:00:00+00:00[UTC]", "expected": false, "description": "2-month interval with starting: not aligned" },
+
+        { "name": "dst_gap_resolved_time_matches", "expression": "every day at 02:00 in America/New_York", "datetime": "2026-03-08T03:00:00-04:00[America/New_York]", "expected": true, "description": "DST spring-forward: scheduled 2:00 AM does not exist, resolves to 3:00 AM which should match" },
+        { "name": "dst_gap_wall_clock_no_match", "expression": "every day at 03:00 in America/New_York", "datetime": "2026-03-08T03:00:00-04:00[America/New_York]", "expected": true, "description": "DST spring-forward: 3:00 AM exists and matches normally" },
+        { "name": "dst_no_gap_exact_match", "expression": "every day at 02:00 in America/New_York", "datetime": "2026-03-09T02:00:00-04:00[America/New_York]", "expected": true, "description": "Day after spring-forward: 2:00 AM exists normally" },
+        { "name": "dst_gap_unrelated_time_no_match", "expression": "every day at 04:00 in America/New_York", "datetime": "2026-03-08T03:00:00-04:00[America/New_York]", "expected": false, "description": "DST spring-forward: 3:00 AM should not match schedule for 4:00 AM" }
       ]
     },
 

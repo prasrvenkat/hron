@@ -21,7 +21,11 @@ impl Schedule {
         let now: jiff::Zoned = now
             .parse()
             .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
-        Ok(self.inner.next_from(&now).map(|z| z.to_string()))
+        let result = self
+            .inner
+            .next_from(&now)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(result.map(|z| z.to_string()))
     }
 
     /// Compute the next `n` occurrences after `now`.
@@ -30,7 +34,10 @@ impl Schedule {
         let now: jiff::Zoned = now
             .parse()
             .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
-        let results = self.inner.next_n_from(&now, n as usize);
+        let results = self
+            .inner
+            .next_n_from(&now, n as usize)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         let strings: Vec<String> = results.iter().map(|z| z.to_string()).collect();
         serde_wasm_bindgen::to_value(&strings).map_err(|e| JsError::new(&e.to_string()))
     }
@@ -40,7 +47,9 @@ impl Schedule {
         let dt: jiff::Zoned = datetime
             .parse()
             .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
-        Ok(self.inner.matches(&dt))
+        self.inner
+            .matches(&dt)
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// Get the structured JSON representation.

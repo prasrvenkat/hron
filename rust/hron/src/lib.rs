@@ -36,18 +36,27 @@ impl Schedule {
     }
 
     /// Compute the next occurrence after `now`.
-    pub fn next_from(&self, now: &Zoned) -> Option<Zoned> {
-        eval::next_from(self, now).ok().flatten()
+    ///
+    /// Returns `Ok(None)` when there are no future occurrences (e.g., past the
+    /// `until` date). Returns `Err` on evaluation errors such as invalid
+    /// timezone or date arithmetic overflow.
+    ///
+    /// **DST behavior:** When a scheduled time falls in a DST gap (e.g. 2:30 AM
+    /// during spring-forward), the occurrence shifts to the next valid time as
+    /// resolved by the `jiff` library. During fall-back, ambiguous times resolve
+    /// to the first (pre-transition) occurrence.
+    pub fn next_from(&self, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+        eval::next_from(self, now)
     }
 
     /// Compute the next `n` occurrences after `now`.
-    pub fn next_n_from(&self, now: &Zoned, n: usize) -> Vec<Zoned> {
-        eval::next_n_from(self, now, n).unwrap_or_default()
+    pub fn next_n_from(&self, now: &Zoned, n: usize) -> Result<Vec<Zoned>, ScheduleError> {
+        eval::next_n_from(self, now, n)
     }
 
     /// Check if a datetime matches this schedule.
-    pub fn matches(&self, datetime: &Zoned) -> bool {
-        eval::matches(self, datetime).unwrap_or(false)
+    pub fn matches(&self, datetime: &Zoned) -> Result<bool, ScheduleError> {
+        eval::matches(self, datetime)
     }
 
     /// Set the anchor date for multi-week intervals.
@@ -85,6 +94,17 @@ impl FromStr for Schedule {
     }
 }
 
+/// Serialization produces a structured JSON object with fields like `kind`,
+/// `interval`, `times`, `except`, `timezone`, etc. — designed for inspection,
+/// logging, and debugging.
+///
+/// **Note:** Serialization and deserialization are intentionally asymmetric.
+/// `Serialize` produces a structured JSON object while `Deserialize` expects
+/// an hron expression string (e.g. `"every day at 09:00"`). This means
+/// `serde_json::from_str(serde_json::to_string(&schedule))` will **not**
+/// round-trip. This is by design: the structured JSON is for inspection,
+/// while deserialization accepts the compact expression format used in
+/// configuration files and APIs.
 #[cfg(feature = "serde")]
 impl Serialize for Schedule {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -253,10 +273,13 @@ fn day_filter_to_json(filter: &ast::DayFilter) -> serde_json::Value {
     }
 }
 
+/// Deserialization expects an hron expression string (e.g. `"every day at 09:00"`),
+/// **not** the structured JSON produced by `Serialize`. See the note on
+/// [`Serialize`](#impl-Serialize-for-Schedule) for details on this intentional
+/// asymmetry.
 #[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Schedule {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Deserialize from the expression string
         let s = String::deserialize(deserializer)?;
         Schedule::parse(&s).map_err(serde::de::Error::custom)
     }

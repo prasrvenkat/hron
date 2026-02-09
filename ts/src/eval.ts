@@ -397,13 +397,21 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
     if (Temporal.PlainDate.compare(date, untilDate) > 0) return false;
   }
 
-  const timeMatches = (times: TimeOfDay[]) =>
-    times.some((tod) => zdt.hour === tod.hour && zdt.minute === tod.minute);
+  // DST-aware time matching: a time matches if either the wall-clock matches
+  // directly, or the scheduled time falls in a DST gap and resolves to the
+  // candidate's instant (e.g., scheduled 2:00 AM during spring-forward → 3:00 AM).
+  const timeMatchesWithDst = (times: TimeOfDay[]) =>
+    times.some((tod) => {
+      if (zdt.hour === tod.hour && zdt.minute === tod.minute) return true;
+      const t = toPlainTime(tod);
+      const resolved = atTimeOnDate(date, t, tz);
+      return resolved.epochNanoseconds === datetime.epochNanoseconds;
+    });
 
   switch (schedule.expr.type) {
     case "dayRepeat": {
       if (!matchesDayFilter(date, schedule.expr.days)) return false;
-      if (!timeMatches(schedule.expr.times)) return false;
+      if (!timeMatchesWithDst(schedule.expr.times)) return false;
       if (schedule.expr.interval > 1) {
         const anchorDate = schedule.anchor
           ? Temporal.PlainDate.from(schedule.anchor)
@@ -429,7 +437,7 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
       const { interval, days, times } = schedule.expr;
       const dow = date.dayOfWeek;
       if (!days.some((d) => weekdayNameToNumber(d) === dow)) return false;
-      if (!timeMatches(times)) return false;
+      if (!timeMatchesWithDst(times)) return false;
       const anchorDate = schedule.anchor
         ? Temporal.PlainDate.from(schedule.anchor)
         : EPOCH_MONDAY;
@@ -437,7 +445,7 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
       return weeks >= 0 && weeks % interval === 0;
     }
     case "monthRepeat": {
-      if (!timeMatches(schedule.expr.times)) return false;
+      if (!timeMatchesWithDst(schedule.expr.times)) return false;
       if (schedule.expr.interval > 1) {
         const anchorDate = schedule.anchor
           ? Temporal.PlainDate.from(schedule.anchor)
@@ -460,7 +468,7 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
       return Temporal.PlainDate.compare(date, lastWd) === 0;
     }
     case "ordinalRepeat": {
-      if (!timeMatches(schedule.expr.times)) return false;
+      if (!timeMatchesWithDst(schedule.expr.times)) return false;
       if (schedule.expr.interval > 1) {
         const anchorDate = schedule.anchor
           ? Temporal.PlainDate.from(schedule.anchor)
@@ -486,7 +494,7 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
       return Temporal.PlainDate.compare(date, targetDate) === 0;
     }
     case "singleDate": {
-      if (!timeMatches(schedule.expr.times)) return false;
+      if (!timeMatchesWithDst(schedule.expr.times)) return false;
       const { date: dateSpec } = schedule.expr;
       if (dateSpec.type === "iso") {
         const target = Temporal.PlainDate.from(dateSpec.date);
@@ -501,7 +509,7 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
       return false;
     }
     case "yearRepeat": {
-      if (!timeMatches(schedule.expr.times)) return false;
+      if (!timeMatchesWithDst(schedule.expr.times)) return false;
       if (schedule.expr.interval > 1) {
         const anchorYear = schedule.anchor
           ? Temporal.PlainDate.from(schedule.anchor).year

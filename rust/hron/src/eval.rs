@@ -230,6 +230,34 @@ fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> 
     }
 }
 
+/// Check if a datetime matches any of the scheduled times, accounting for DST gaps.
+///
+/// A time matches if either:
+/// 1. The wall-clock time matches exactly (hour and minute), or
+/// 2. The scheduled time falls in a DST gap and resolves to the candidate's time
+///    (e.g., scheduled 2:00 AM during spring-forward resolves to 3:00 AM).
+fn time_matches_with_dst(
+    date: Date,
+    times: &[TimeOfDay],
+    tz: &TimeZone,
+    zdt: &Zoned,
+) -> Result<bool, ScheduleError> {
+    for tod in times {
+        let t = to_time(tod);
+        // Direct wall-clock match
+        if zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute() {
+            return Ok(true);
+        }
+        // DST gap check: resolve the scheduled time on this date and compare
+        // the resulting instant. Covers cases where e.g. 2:00 AM → 3:00 AM.
+        let resolved = at_time_on_date(date, t, tz)?;
+        if resolved.timestamp() == zdt.timestamp() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// For a given date, generate candidates at all given times and return the earliest one > now.
 fn earliest_future_at_times(
     date: Date,
@@ -318,7 +346,11 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
         return Ok(Some(candidate));
     }
 
-    Ok(None) // exhausted retry limit
+    // Exhausted retry limit — every candidate was filtered by exceptions or
+    // during-clause. This includes contradictory schedules (e.g. "on feb 14
+    // during mar") where no occurrence can ever match. Treat as "no more
+    // occurrences" rather than an error.
+    Ok(None)
 }
 
 /// Compute next occurrence for the expression part only.
@@ -428,11 +460,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             if !matches_day_filter(date, days) {
                 return Ok(false);
             }
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {
@@ -478,11 +506,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             if !days.contains(&wd) {
                 return Ok(false);
             }
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             let anchor_date = schedule.anchor.unwrap_or(*EPOCH_MONDAY);
@@ -494,11 +518,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             target,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {
@@ -529,11 +549,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             day,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {
@@ -559,11 +575,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             date: date_spec,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             match date_spec {
@@ -583,11 +595,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             target,
             times,
         } => {
-            let time_matches = times.iter().any(|tod| {
-                let t = to_time(tod);
-                zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute()
-            });
-            if !time_matches {
+            if !time_matches_with_dst(date, times, &tz, &zdt)? {
                 return Ok(false);
             }
             if *interval > 1 {
@@ -686,11 +694,13 @@ fn next_day_repeat(
         return Ok(None);
     }
 
-    // Interval > 1: day intervals only apply to DayFilter::Every
+    // Interval > 1: day intervals only apply to DayFilter::Every.
+    // O(1) alignment via modular arithmetic: compute the next aligned day
+    // >= today, then check at most 2 dates (today's aligned date if time
+    // hasn't passed, otherwise the next aligned date).
     let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
     let interval_i64 = interval as i64;
 
-    // Find the next aligned day >= today
     let offset = days_between(anchor_date, date);
     let remainder = offset.rem_euclid(interval_i64);
     let aligned_date = if remainder == 0 {
@@ -700,8 +710,9 @@ fn next_day_repeat(
             .map_err(|e| ScheduleError::eval(format!("{e}")))?
     };
 
+    // At most 2 iterations: aligned_date (if time hasn't passed) or next aligned date.
     let mut cur = aligned_date;
-    for _ in 0..400 {
+    for _ in 0..2 {
         if let Some(candidate) = earliest_future_at_times(cur, times, tz, now)? {
             return Ok(Some(candidate));
         }
@@ -805,41 +816,42 @@ fn next_week_repeat(
         .checked_add(jiff::Span::new().days(-anchor_dow_offset))
         .map_err(|e| ScheduleError::eval(format!("{e}")))?;
 
-    let mut cur_monday = current_monday;
-
-    // Loop up to 54 iterations (covers >1 year for any interval)
-    for _ in 0..54 {
-        let weeks = weeks_between(anchor_monday, cur_monday);
-
-        // Skip weeks before anchor
-        if weeks < 0 {
-            let skip = (-weeks + interval as i64 - 1) / interval as i64;
-            cur_monday = cur_monday
-                .checked_add(jiff::Span::new().days(skip * interval as i64 * 7))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            continue;
+    // O(1) alignment: compute the first aligned Monday >= current Monday,
+    // then check at most 2 aligned weeks (current aligned week if any
+    // target day's time hasn't passed, otherwise the next aligned week).
+    let weeks_since_anchor = weeks_between(anchor_monday, current_monday);
+    let first_aligned_monday = if weeks_since_anchor < 0 {
+        let skip = (-weeks_since_anchor + interval as i64 - 1) / interval as i64;
+        current_monday
+            .checked_add(jiff::Span::new().days(skip * interval as i64 * 7))
+            .map_err(|e| ScheduleError::eval(format!("{e}")))?
+    } else {
+        let remainder = weeks_since_anchor % (interval as i64);
+        if remainder == 0 {
+            current_monday
+        } else {
+            current_monday
+                .checked_add(jiff::Span::new().days((interval as i64 - remainder) * 7))
+                .map_err(|e| ScheduleError::eval(format!("{e}")))?
         }
+    };
 
-        if weeks % (interval as i64) == 0 {
-            // Aligned week — try each target DOW
-            for wd in &sorted_days {
-                let day_offset = wd.to_jiff().to_monday_one_offset() as i64 - 1;
-                let target_date = cur_monday
-                    .checked_add(jiff::Span::new().days(day_offset))
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-                if let Some(candidate) = earliest_future_at_times(target_date, times, tz, now)? {
-                    return Ok(Some(candidate));
-                }
+    let mut cur_monday = first_aligned_monday;
+
+    for _ in 0..2 {
+        // Aligned week — try each target DOW
+        for wd in &sorted_days {
+            let day_offset = wd.to_jiff().to_monday_one_offset() as i64 - 1;
+            let target_date = cur_monday
+                .checked_add(jiff::Span::new().days(day_offset))
+                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
+            if let Some(candidate) = earliest_future_at_times(target_date, times, tz, now)? {
+                return Ok(Some(candidate));
             }
         }
 
-        // Skip to next aligned week
-        let remainder = weeks % (interval as i64);
-        let skip_weeks = if remainder == 0 {
-            interval as i64
-        } else {
-            interval as i64 - remainder
-        };
+        // Advance to next aligned week
+        let skip_weeks = interval as i64;
         cur_monday = cur_monday
             .checked_add(jiff::Span::new().days(skip_weeks * 7))
             .map_err(|e| ScheduleError::eval(format!("{e}")))?;

@@ -122,7 +122,13 @@ fn main() {
     }
 
     let now = Zoned::now();
-    let results = schedule.next_n_from(&now, n as usize);
+    let results = match schedule.next_n_from(&now, n as usize) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{}", e.display_rich());
+            process::exit(1);
+        }
+    };
 
     if results.is_empty() {
         eprintln!("no upcoming occurrences");
