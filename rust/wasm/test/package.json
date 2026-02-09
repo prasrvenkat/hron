@@ -1,0 +1,13 @@
+{
+  "name": "hron-wasm-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0",
+    "vitest": "^3.0.0"
+  }
+}
