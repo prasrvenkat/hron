@@ -51,5 +51,6 @@ jobs:
       - run: cargo install wasm-pack
       - run: wasm-pack build --release
         working-directory: rust/wasm
+      - run: cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
       - run: pnpm install --frozen-lockfile && pnpm test
         working-directory: rust/wasm/test
