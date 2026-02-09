@@ -76,7 +76,9 @@ fn run_eval(section: &str, index: usize) {
 
     // ---- next (full timestamp) ----
     if let Some(expected_val) = case.get("next") {
-        let result = schedule.next_from(&now);
+        let result = schedule
+            .next_from(&now)
+            .unwrap_or_else(|e| panic!("next_from error for '{expr_str}': {e}"));
         if expected_val.is_null() {
             assert!(
                 result.is_none(),
@@ -95,6 +97,7 @@ fn run_eval(section: &str, index: usize) {
         let expected = expected_date.as_str().unwrap();
         let got = schedule
             .next_from(&now)
+            .unwrap_or_else(|e| panic!("next_from error for '{expr_str}': {e}"))
             .unwrap_or_else(|| panic!("next_date: got None, expected '{expected}'"));
         assert_eq!(
             got.date().to_string(),
@@ -117,7 +120,9 @@ fn run_eval(section: &str, index: usize) {
             .and_then(|v| v.as_u64())
             .unwrap_or(expected.len() as u64) as usize;
 
-        let results = schedule.next_n_from(&now, n_count);
+        let results = schedule
+            .next_n_from(&now, n_count)
+            .unwrap_or_else(|e| panic!("next_n_from error for '{expr_str}': {e}"));
         let got: Vec<String> = results.iter().map(|z| z.to_string()).collect();
 
         assert_eq!(
@@ -134,7 +139,9 @@ fn run_eval(section: &str, index: usize) {
     if let Some(expected_len) = case.get("next_n_length") {
         let expected = expected_len.as_u64().unwrap() as usize;
         let n_count = case["next_n_count"].as_u64().unwrap() as usize;
-        let results = schedule.next_n_from(&now, n_count);
+        let results = schedule
+            .next_n_from(&now, n_count)
+            .unwrap_or_else(|e| panic!("next_n_from error for '{expr_str}': {e}"));
         assert_eq!(
             results.len(),
             expected,
@@ -152,7 +159,9 @@ fn run_eval_matches(index: usize) {
     let schedule =
         Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
     let dt = parse_zoned(dt_str);
-    let got = schedule.matches(&dt);
+    let got = schedule
+        .matches(&dt)
+        .unwrap_or_else(|e| panic!("matches error for '{expr_str}': {e}"));
 
     assert_eq!(
         got, expected,

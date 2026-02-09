@@ -27,7 +27,7 @@ fn static_validate() {
 fn instance_next_from() {
     let schedule = Schedule::parse("every day at 09:00").unwrap();
     let now: jiff::Zoned = "2026-02-06T12:00:00+00:00[UTC]".parse().unwrap();
-    let result: Option<jiff::Zoned> = schedule.next_from(&now);
+    let result: Option<jiff::Zoned> = schedule.next_from(&now).unwrap();
     assert!(result.is_some());
 }
 
@@ -35,7 +35,7 @@ fn instance_next_from() {
 fn instance_next_n_from() {
     let schedule = Schedule::parse("every day at 09:00").unwrap();
     let now: jiff::Zoned = "2026-02-06T12:00:00+00:00[UTC]".parse().unwrap();
-    let results: Vec<jiff::Zoned> = schedule.next_n_from(&now, 3);
+    let results: Vec<jiff::Zoned> = schedule.next_n_from(&now, 3).unwrap();
     assert_eq!(results.len(), 3);
 }
 
@@ -43,7 +43,7 @@ fn instance_next_n_from() {
 fn instance_matches() {
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let dt: jiff::Zoned = "2026-02-07T09:00:00+00:00[UTC]".parse().unwrap();
-    let result: bool = schedule.matches(&dt);
+    let result: bool = schedule.matches(&dt).unwrap();
     assert!(result);
 }
 
