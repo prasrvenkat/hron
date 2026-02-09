@@ -28,6 +28,16 @@ test-wasm:
     cd rust/wasm && wasm-pack build --release
     cd rust/wasm/test && pnpm install --frozen-lockfile && pnpm test
 
+# Print all component versions (for CI validation and local checks)
+versions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "hron=$(cargo metadata --no-deps --format-version 1 --manifest-path rust/Cargo.toml | jq -r '.packages[] | select(.name == "hron") | .version')"
+    echo "hron-cli=$(cargo metadata --no-deps --format-version 1 --manifest-path rust/Cargo.toml | jq -r '.packages[] | select(.name == "hron-cli") | .version')"
+    echo "hron-wasm=$(cargo metadata --no-deps --format-version 1 --manifest-path rust/Cargo.toml | jq -r '.packages[] | select(.name == "hron-wasm") | .version')"
+    echo "hron-ts=$(node -p "require('./ts/package.json').version")"
+    echo "dart=$(grep '^version:' dart/pubspec.yaml | awk '{print $2}')"
+
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:
     sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/hron/Cargo.toml

@@ -10,6 +10,10 @@ repository = "https://github.com/prasrvenkat/hron"
 homepage = "https://github.com/prasrvenkat/hron"
 documentation = "https://docs.rs/hron"
 readme = "README.md"
+# build.rs and conformance tests depend on spec/tests.json and spec/api.json
+# which live outside the crate root. Exclude them from the published package
+# so build.rs never runs on end users' machines.
+exclude = ["build.rs", "tests/"]
 
 [features]
 default = ["serde"]
