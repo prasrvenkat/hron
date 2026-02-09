@@ -94,6 +94,10 @@ release new_version:
 bench:
     cd rust && cargo bench -p hron
 
+# Run fuzz targets (requires nightly). Default 3 minutes per target.
+fuzz target="fuzz_parse" duration="180":
+    cd rust/hron && cargo +nightly fuzz run {{target}} -- -max_total_time={{duration}}
+
 # --- Local fallback targets (mirror CI jobs) ---
 
 # Publish hron library crate
