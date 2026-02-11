@@ -106,6 +106,14 @@ bench:
 fuzz target="fuzz_parse" duration="180":
     cd rust/hron && cargo +nightly fuzz run {{target}} -- -max_total_time={{duration}}
 
+# Playground dev server
+dev-playground:
+    cd playground && pnpm install && pnpm dev
+
+# Build playground
+build-playground:
+    cd playground && pnpm install && pnpm build
+
 # --- Local fallback targets (mirror CI jobs) ---
 
 # Publish hron library crate
