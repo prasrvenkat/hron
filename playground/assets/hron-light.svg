@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 130" width="360" height="130">
+  <!-- === LETTER "h" === -->
+  <path d="
+    M20 8 L20 118 L37 118 L37 70
+    C37 52, 42 42, 58 42
+    C72 42, 76 52, 76 70
+    L76 118 L93 118 L93 66
+    C93 42, 80 30, 58 30
+    C46 30, 37 36, 37 42
+    L37 8 Z
+  " fill="#0f172a"/>
+  <circle cx="28.5" cy="26" r="3.5" fill="#ef4444"/>
+  <line x1="28.5" y1="26" x2="40" y2="15" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>
+  <line x1="28.5" y1="26" x2="34" y2="35" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- === LETTER "r" === -->
+  <path d="
+    M110 36 L110 118 L127 118 L127 68
+    C127 56, 132 46, 144 40
+    L148 38 L148 30 L140 32
+    C130 36, 127 40, 127 40
+    L127 36 Z
+  " fill="#0f172a"/>
+
+  <!-- === LETTER "o" — clock face === -->
+  <circle cx="196" cy="74" r="43" fill="#0f172a"/>
+  <circle cx="196" cy="74" r="28" fill="white"/>
+  <line x1="196" y1="50" x2="196" y2="56" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="220" y1="74" x2="214" y2="74" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="196" y1="98" x2="196" y2="92" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="172" y1="74" x2="178" y2="74" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="196" cy="74" r="3" fill="#ef4444"/>
+  <line x1="196" y1="74" x2="196" y2="60" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="196" y1="74" x2="208" y2="68" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- === LETTER "n" === -->
+  <path d="
+    M256 36 L256 118 L273 118 L273 70
+    C273 52, 278 42, 294 42
+    C308 42, 312 52, 312 70
+    L312 118 L329 118 L329 66
+    C329 42, 316 30, 294 30
+    C282 30, 273 36, 273 42
+    L273 36 Z
+  " fill="#0f172a"/>
+</svg>

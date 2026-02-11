@@ -12,6 +12,8 @@ hron is a language specification with native implementations for multiple progra
 
 ## Try It
 
+**[Playground](https://hron.prasrvenkat.dev)** — interactive browser-based playground, no install needed.
+
 ```sh
 cargo install hron-cli
 ```
