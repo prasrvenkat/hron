@@ -6,12 +6,10 @@ on:
     paths:
       - "rust/**"
       - "spec/**"
-      - ".tool-versions"
   pull_request:
     paths:
       - "rust/**"
       - "spec/**"
-      - ".tool-versions"
 
 jobs:
   check:
