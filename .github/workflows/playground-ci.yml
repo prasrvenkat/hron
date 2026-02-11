@@ -1,0 +1,29 @@
+name: Playground
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "playground/**"
+  pull_request:
+    paths:
+      - "playground/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: nodejs pnpm
+
+      - name: Install dependencies
+        run: cd playground && pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: cd playground && pnpm typecheck
+
+      - name: Build
+        run: cd playground && pnpm build
