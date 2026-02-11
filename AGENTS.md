@@ -14,6 +14,7 @@ spec/             # Language-agnostic grammar (EBNF) + conformance tests (JSON)
 rust/             # Rust lib + CLI + WASM bindings
 ts/               # Native TypeScript implementation
 dart/             # Native Dart implementation
+python/           # Native Python implementation
 ```
 
 ## Code Style
@@ -59,6 +60,7 @@ just test-all         # All languages
 just test-rust        # Rust only
 just test-ts          # TypeScript only
 just test-dart        # Dart only
+just test-python      # Python only
 just build-wasm       # WASM target
 just stamp-versions   # Stamp VERSION into all package manifests
 just release          # Tag + prep release

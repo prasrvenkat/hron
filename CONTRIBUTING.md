@@ -11,6 +11,7 @@ Thanks for your interest in contributing to hron! This document covers everythin
   - Rust 1.93+
   - Node.js 24+ (LTS) with pnpm
   - Dart 3.6+
+  - Python 3.11+ with [uv](https://docs.astral.sh/uv/)
 
 ### Running Tests
 
@@ -22,6 +23,7 @@ just test-all
 just test-rust
 just test-ts
 just test-dart
+just test-python
 ```
 
 ## Project Structure
@@ -35,6 +37,7 @@ hron/
 │   └── wasm/       # WASM bindings
 ├── ts/             # TypeScript: native implementation
 ├── dart/           # Dart: native implementation
+├── python/         # Python: native implementation
 ├── justfile        # Build/test commands
 └── VERSION         # Single source of truth for version
 ```
@@ -71,6 +74,7 @@ Test cases in `spec/tests.json` are the source of truth. When adding tests:
 - **Rust**: `cargo fmt` + `cargo clippy -D warnings`
 - **TypeScript**: `tsc --noEmit` (strict mode)
 - **Dart**: `dart analyze` with `package:lints/recommended.yaml`
+- **Python**: `ruff check` + `ruff format` + `mypy --strict`
 
 CI enforces all of these. Run them locally before pushing.
 

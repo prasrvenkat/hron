@@ -1,7 +1,7 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust test-ts test-dart test-wasm
+test-all: test-rust test-ts test-dart test-python test-wasm
 
 # Rust tests
 test-rust:
@@ -14,6 +14,10 @@ test-ts:
 # Dart tests
 test-dart:
     cd dart && dart pub get && dart test
+
+# Python tests
+test-python:
+    cd python && uv run pytest -v
 
 # Rust build
 build-rust:
@@ -38,6 +42,7 @@ versions:
     echo "hron-wasm=$(cargo metadata --no-deps --format-version 1 --manifest-path rust/Cargo.toml | jq -r '.packages[] | select(.name == "hron-wasm") | .version')"
     echo "hron-ts=$(node -p "require('./ts/package.json').version")"
     echo "dart=$(grep '^version:' dart/pubspec.yaml | awk '{print $2}')"
+    echo "python=$(python3 -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")"
 
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:
@@ -49,6 +54,8 @@ stamp-versions:
     cd rust && cargo generate-lockfile
     cd ts && sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' package.json && pnpm install --no-frozen-lockfile
     cd dart && sed -i 's/^version: .*/version: {{version}}/' pubspec.yaml
+    sed -i '0,/^version = .*/s//version = "{{version}}"/' python/pyproject.toml
+    cd python && uv lock
 
 # Create a release PR: just release 1.2.3
 release new_version:
@@ -85,7 +92,7 @@ release new_version:
 
     # Create release branch, commit, push, open PR
     git checkout -b "release/v{{new_version}}"
-    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml
+    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml python/pyproject.toml python/uv.lock
     git commit -m "release: v{{new_version}}"
     git push -u origin "release/v{{new_version}}"
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
@@ -118,6 +125,10 @@ publish-crates: publish-hron
 # Publish Dart package to pub.dev
 publish-dart:
     cd dart && dart pub publish --force
+
+# Build and publish Python package to PyPI
+publish-python:
+    cd python && uv build && uv publish
 
 # Build and publish native TS package to npm
 publish-ts:
