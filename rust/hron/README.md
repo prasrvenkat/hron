@@ -26,13 +26,13 @@ let schedule: Schedule = "every weekday at 9:00 in America/New_York".parse().unw
 
 // Compute next occurrence
 let now = Zoned::now();
-let next = schedule.next_from(&now);
+let next = schedule.next_from(&now).unwrap();
 
 // Compute next N occurrences
-let next_five = schedule.next_n_from(&now, 5);
+let next_five = schedule.next_n_from(&now, 5).unwrap();
 
 // Check if a datetime matches
-let matches = schedule.matches(&now);
+let matches = schedule.matches(&now).unwrap();
 
 // Convert to cron (expressible subset only)
 let cron = Schedule::parse("every day at 9:00").unwrap().to_cron().unwrap();

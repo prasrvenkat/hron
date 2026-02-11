@@ -51,6 +51,27 @@ See [`hron-cli`](rust/hron-cli/) for all options.
 
 > **Note:** The JS/TS native package (`hron-js`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`hron-wasm`).
 
+## Library Usage
+
+hron is available as a library in multiple languages:
+
+```sh
+# Rust
+cargo add hron
+
+# TypeScript / JavaScript
+npm install hron-ts    # native
+npm install hron-wasm  # WASM
+
+# Dart / Flutter
+dart pub add hron
+
+# Python
+pip install hron
+```
+
+See language-specific READMEs for API docs and examples: [Rust](rust/hron/) · [TypeScript](ts/) · [Dart](dart/) · [Python](python/) · [WASM](rust/wasm/)
+
 ## Expression Syntax
 
 ### Daily

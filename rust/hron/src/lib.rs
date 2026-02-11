@@ -31,6 +31,19 @@ use std::str::FromStr;
 
 impl Schedule {
     /// Parse an hron expression string.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every weekday at 09:00").unwrap();
+    /// assert_eq!(schedule.to_string(), "every weekday at 09:00");
+    ///
+    /// // With timezone modifier
+    /// let schedule = Schedule::parse("every day at 12:00 in UTC").unwrap();
+    /// assert_eq!(schedule.timezone(), Some("UTC"));
+    /// ```
     pub fn parse(input: &str) -> Result<Self, ScheduleError> {
         parser::parse(input)
     }
@@ -45,42 +58,136 @@ impl Schedule {
     /// during spring-forward), the occurrence shifts to the next valid time as
     /// resolved by the `jiff` library. During fall-back, ambiguous times resolve
     /// to the first (pre-transition) occurrence.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
+    /// let now: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
+    /// let next = schedule.next_from(&now).unwrap().unwrap();
+    /// assert_eq!(next.to_string(), "2025-06-15T09:00:00+00:00[UTC]");
+    /// ```
     pub fn next_from(&self, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
         eval::next_from(self, now)
     }
 
     /// Compute the next `n` occurrences after `now`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
+    /// let now: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
+    /// let next_3 = schedule.next_n_from(&now, 3).unwrap();
+    /// assert_eq!(next_3.len(), 3);
+    /// assert_eq!(next_3[0].to_string(), "2025-06-15T09:00:00+00:00[UTC]");
+    /// assert_eq!(next_3[2].to_string(), "2025-06-17T09:00:00+00:00[UTC]");
+    /// ```
     pub fn next_n_from(&self, now: &Zoned, n: usize) -> Result<Vec<Zoned>, ScheduleError> {
         eval::next_n_from(self, now, n)
     }
 
     /// Check if a datetime matches this schedule.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
+    ///
+    /// let matching: jiff::Zoned = "2025-06-15T09:00:00+00:00[UTC]".parse().unwrap();
+    /// assert!(schedule.matches(&matching).unwrap());
+    ///
+    /// let non_matching: jiff::Zoned = "2025-06-15T10:00:00+00:00[UTC]".parse().unwrap();
+    /// assert!(!schedule.matches(&non_matching).unwrap());
+    /// ```
     pub fn matches(&self, datetime: &Zoned) -> Result<bool, ScheduleError> {
         eval::matches(self, datetime)
     }
 
     /// Set the anchor date for multi-week intervals.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// // Every 2 weeks on Monday, anchored to a specific start date
+    /// let schedule = Schedule::parse("every 2 weeks on monday at 09:00 in UTC").unwrap()
+    ///     .with_anchor(jiff::civil::date(2025, 1, 6));
+    /// let now: jiff::Zoned = "2025-01-19T10:00:00+00:00[UTC]".parse().unwrap();
+    /// let next = schedule.next_from(&now).unwrap().unwrap();
+    /// assert_eq!(next.to_string(), "2025-01-20T09:00:00+00:00[UTC]");
+    /// ```
     pub fn with_anchor(mut self, date: jiff::civil::Date) -> Self {
         self.anchor = Some(date);
         self
     }
 
     /// Check if an input string is a valid hron expression.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// assert!(Schedule::validate("every day at 09:00"));
+    /// assert!(!Schedule::validate("not a valid expression"));
+    /// ```
     pub fn validate(input: &str) -> bool {
         Self::parse(input).is_ok()
     }
 
     /// Convert a 5-field cron expression to a Schedule.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::from_cron("0 9 * * 1-5").unwrap();
+    /// assert_eq!(schedule.to_string(), "every weekday at 09:00");
+    /// ```
     pub fn from_cron(cron_expr: &str) -> Result<Self, ScheduleError> {
         cron::from_cron(cron_expr)
     }
 
     /// Convert this schedule to a 5-field cron expression.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00").unwrap();
+    /// assert_eq!(schedule.to_cron().unwrap(), "0 9 * * *");
+    ///
+    /// // Schedules that exceed cron's capabilities return an error
+    /// let schedule = Schedule::parse("every 2 weeks on monday at 09:00").unwrap();
+    /// assert!(schedule.to_cron().is_err());
+    /// ```
     pub fn to_cron(&self) -> Result<String, ScheduleError> {
         cron::to_cron(self)
     }
 
     /// Get the timezone for this schedule, if specified.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00 in America/New_York").unwrap();
+    /// assert_eq!(schedule.timezone(), Some("America/New_York"));
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00").unwrap();
+    /// assert_eq!(schedule.timezone(), None);
+    /// ```
     pub fn timezone(&self) -> Option<&str> {
         self.timezone.as_deref()
     }
