@@ -1,0 +1,37 @@
+name: Python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/**"
+      - "spec/**"
+  pull_request:
+    paths:
+      - "python/**"
+      - "spec/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: cd python && uv sync --locked --python ${{ matrix.python-version }}
+
+      - name: Lint
+        run: cd python && uv run ruff check src/ tests/
+
+      - name: Format
+        run: cd python && uv run ruff format --check src/ tests/
+
+      - name: Test
+        run: cd python && uv run pytest -v

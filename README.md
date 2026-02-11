@@ -45,6 +45,7 @@ See [`hron-cli`](rust/hron-cli/) for all options.
 | JS/TS (native) | [`hron-ts`](ts/) | [![npm](https://img.shields.io/npm/v/hron-ts)](https://www.npmjs.com/package/hron-ts) |
 | JS/TS (WASM) | [`hron-wasm`](rust/wasm/) | [![npm](https://img.shields.io/npm/v/hron-wasm)](https://www.npmjs.com/package/hron-wasm) |
 | Dart/Flutter | [`hron`](dart/) | [![pub.dev](https://img.shields.io/pub/v/hron)](https://pub.dev/packages/hron) |
+| Python | [`hron`](python/) | [![PyPI](https://img.shields.io/pypi/v/hron)](https://pypi.org/project/hron/) |
 
 > **Note:** The JS/TS native package (`hron-js`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`hron-wasm`).
 
@@ -151,7 +152,7 @@ When a schedule specifies a timezone via the `in` clause, all occurrences are co
 - **Fall-back (ambiguity):** If a scheduled time is ambiguous (e.g. `1:30 AM` occurs twice during fall-back), the first (pre-transition) occurrence is used.
 - **No timezone:** When no `in` clause is specified, the system's local timezone is used.
 
-All implementations (Rust, TypeScript, Dart, WASM) follow these same DST semantics.
+All implementations (Rust, TypeScript, Dart, Python, WASM) follow these same DST semantics.
 
 The [conformance test suite](spec/tests.json) includes explicit spring-forward and fall-back test cases to verify this behavior across all implementations.
 
@@ -168,6 +169,7 @@ just test-all        # Run tests across all languages
 just test-rust       # Run Rust tests only
 just test-ts         # Run TypeScript tests only
 just test-dart       # Run Dart tests only
+just test-python     # Run Python tests only
 just build-wasm      # Build WASM package
 just bench           # Run Criterion benchmarks (Rust)
 just fuzz            # Run fuzz targets (requires nightly, default 3 min)
