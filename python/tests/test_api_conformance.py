@@ -7,8 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import pytest
-
 from hron import HronError, Schedule
 
 _api_spec_path = Path(__file__).parent.parent.parent / "spec" / "api.json"
