@@ -22,7 +22,7 @@ jobs:
 
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust nodejs just
+          install_args: rust nodejs python just
 
       - name: Validate ref is a tag
         run: |
@@ -262,9 +262,30 @@ jobs:
           fi
         working-directory: dart
 
+  publish-python:
+    name: Publish to PyPI
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build
+        run: cd python && uv build
+
+      - name: Publish to PyPI
+        run: |
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")
+          if curl -sf "https://pypi.org/pypi/hron/$VERSION/json" > /dev/null 2>&1; then
+            echo "hron $VERSION already on PyPI, skipping"
+          else
+            cd python && uv publish
+          fi
+
   publish-release:
     name: Publish Release
-    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart]
+    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
