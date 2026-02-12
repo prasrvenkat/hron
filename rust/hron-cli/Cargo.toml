@@ -1,6 +1,6 @@
 [package]
 name = "hron-cli"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 description = "CLI for hron — human-readable cron"
 license = "MIT"
@@ -15,7 +15,7 @@ name = "hron"
 path = "src/main.rs"
 
 [dependencies]
-hron = { path = "../hron", version = "0.4.1" }
+hron = { path = "../hron", version = "0.4.2" }
 clap = { version = "4", features = ["derive"] }
 jiff = "0.2"
 serde_json = "1"
