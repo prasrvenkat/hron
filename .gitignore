@@ -34,3 +34,4 @@ dart/pubspec.lock
 
 # OS
 .DS_Store
+.secrets/
