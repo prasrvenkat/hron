@@ -154,16 +154,34 @@ publish-wasm:
     cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
     cd rust/wasm/pkg && npm publish --access public
 
-# Create a git tag via GitHub API (verified)
+# Trigger Go module indexing on pkg.go.dev
+publish-go:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(cat VERSION)
+    echo "Triggering pkg.go.dev indexing for go/v${version}..."
+    curl -sfL "https://proxy.golang.org/github.com/prasrvenkat/hron/go/@v/v${version}.info" || {
+        echo "Warning: proxy.golang.org returned an error (may need a few minutes to propagate)"
+        exit 0
+    }
+    echo "Go module indexed successfully"
+
+# Create git tags via GitHub API (verified)
 create-tag:
     #!/usr/bin/env bash
     set -euo pipefail
     version=$(cat VERSION)
     sha=$(git rev-parse HEAD)
+    # Main version tag
     gh api repos/{owner}/{repo}/git/refs \
         -f "ref=refs/tags/v${version}" \
         -f "sha=${sha}"
     echo "Created tag v${version}"
+    # Go subdirectory module tag (required for pkg.go.dev)
+    gh api repos/{owner}/{repo}/git/refs \
+        -f "ref=refs/tags/go/v${version}" \
+        -f "sha=${sha}"
+    echo "Created tag go/v${version}"
 
 # Create a draft GitHub release
 create-release:

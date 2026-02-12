@@ -283,9 +283,32 @@ jobs:
             cd python && uv publish
           fi
 
+  publish-go:
+    name: Index on pkg.go.dev
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger Go proxy indexing
+        run: |
+          VERSION=$(cat VERSION)
+          echo "Triggering pkg.go.dev indexing for v${VERSION}..."
+          # Request the module version from proxy.golang.org to trigger indexing
+          # This may fail initially if the tag hasn't propagated yet, so we retry
+          for i in 1 2 3 4 5; do
+            if curl -sfL "https://proxy.golang.org/github.com/prasrvenkat/hron/go/@v/v${VERSION}.info"; then
+              echo "Go module v${VERSION} indexed successfully"
+              exit 0
+            fi
+            echo "Attempt $i failed, waiting 30s..."
+            sleep 30
+          done
+          echo "Warning: Go proxy indexing may still be propagating"
+
   publish-release:
     name: Publish Release
-    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python]
+    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python, publish-go]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
