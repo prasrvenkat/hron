@@ -49,6 +49,7 @@ See [`hron-cli`](rust/hron-cli/) for all options.
 | Dart/Flutter | [`hron`](dart/) | [![pub.dev](https://img.shields.io/pub/v/hron)](https://pub.dev/packages/hron) |
 | Python | [`hron`](python/) | [![PyPI](https://img.shields.io/pypi/v/hron)](https://pypi.org/project/hron/) |
 | Go | [`hron`](go/) | [![Go Reference](https://pkg.go.dev/badge/github.com/prasrvenkat/hron/go.svg)](https://pkg.go.dev/github.com/prasrvenkat/hron/go) |
+| Java | [`hron`](java/) | [![Maven Central](https://img.shields.io/maven-central/v/io.hron/hron)](https://central.sonatype.com/artifact/io.hron/hron) |
 
 > **Note:** The JS/TS native package (`hron-js`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`hron-wasm`).
 
@@ -72,9 +73,17 @@ pip install hron
 
 # Go
 go get github.com/prasrvenkat/hron/go
+
+# Java (Maven)
+# Add to pom.xml:
+# <dependency>
+#     <groupId>io.hron</groupId>
+#     <artifactId>hron</artifactId>
+#     <version>0.4.2</version>
+# </dependency>
 ```
 
-See language-specific READMEs for API docs and examples: [Rust](rust/hron/) · [TypeScript](ts/) · [Dart](dart/) · [Python](python/) · [Go](go/) · [WASM](rust/wasm/)
+See language-specific READMEs for API docs and examples: [Rust](rust/hron/) · [TypeScript](ts/) · [Dart](dart/) · [Python](python/) · [Go](go/) · [Java](java/) · [WASM](rust/wasm/)
 
 ## Expression Syntax
 
@@ -198,6 +207,7 @@ just test-ts         # Run TypeScript tests only
 just test-dart       # Run Dart tests only
 just test-python     # Run Python tests only
 just test-go         # Run Go tests only
+just test-java       # Run Java tests only
 just build-wasm      # Build WASM package
 just bench           # Run Criterion benchmarks (Rust)
 just fuzz            # Run fuzz targets (requires nightly, default 3 min)

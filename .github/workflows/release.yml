@@ -306,9 +306,39 @@ jobs:
           done
           echo "Warning: Go proxy indexing may still be propagating"
 
+  publish-java:
+    name: Publish to Maven Central
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: GPG_PASSPHRASE
+
+      - name: Publish to Maven Central
+        run: |
+          VERSION=$(mvn -f java/pom.xml help:evaluate -Dexpression=project.version -q -DforceStdout)
+          if curl -sf "https://repo1.maven.org/maven2/io/hron/hron/${VERSION}/hron-${VERSION}.pom" > /dev/null 2>&1; then
+            echo "hron $VERSION already on Maven Central, skipping"
+          else
+            cd java && mvn deploy -P release
+          fi
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
   publish-release:
     name: Publish Release
-    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python, publish-go]
+    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python, publish-go, publish-java]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

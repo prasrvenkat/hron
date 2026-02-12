@@ -1,7 +1,7 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust test-ts test-dart test-python test-wasm test-go
+test-all: test-rust test-ts test-dart test-python test-wasm test-go test-java
 
 # Rust tests
 test-rust:
@@ -22,6 +22,10 @@ test-python:
 # Go tests
 test-go:
     cd go && go test -v ./...
+
+# Java tests
+test-java:
+    cd java && mvn test
 
 # Rust build
 build-rust:
@@ -48,6 +52,7 @@ versions:
     echo "dart=$(grep '^version:' dart/pubspec.yaml | awk '{print $2}')"
     echo "python=$(python3 -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")"
     echo "go=$(grep 'const Version' go/version.go | cut -d'"' -f2)"
+    echo "java=$(mvn -f java/pom.xml help:evaluate -Dexpression=project.version -q -DforceStdout)"
 
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:
@@ -62,6 +67,7 @@ stamp-versions:
     sed -i '0,/^version = .*/s//version = "{{version}}"/' python/pyproject.toml
     cd python && uv lock
     sed -i 's/const Version = "[^"]*"/const Version = "{{version}}"/' go/version.go
+    mvn -f java/pom.xml versions:set -DnewVersion={{version}} -DgenerateBackupPoms=false
 
 # Create a release PR: just release 1.2.3
 release new_version:
@@ -98,7 +104,7 @@ release new_version:
 
     # Create release branch, commit, push, open PR
     git checkout -b "release/v{{new_version}}"
-    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml python/pyproject.toml python/uv.lock go/version.go
+    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml python/pyproject.toml python/uv.lock go/version.go java/pom.xml
     git commit -m "release: v{{new_version}}"
     git push -u origin "release/v{{new_version}}"
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
@@ -153,6 +159,10 @@ publish-wasm:
     cd rust/wasm && wasm-pack build --release
     cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
     cd rust/wasm/pkg && npm publish --access public
+
+# Publish Java package to Maven Central
+publish-java:
+    cd java && mvn deploy -P release
 
 # Trigger Go module indexing on pkg.go.dev
 publish-go:
