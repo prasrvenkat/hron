@@ -69,3 +69,13 @@ jobs:
       - run: cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
       - run: pnpm install --frozen-lockfile && pnpm test
         working-directory: rust/wasm/test
+
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: go
+      - run: cd go && go test -v ./...
