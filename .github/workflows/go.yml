@@ -8,13 +8,34 @@ on:
     paths: ["go/**", "spec/**"]
 
 jobs:
-  test:
+  check:
+    name: Format & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
           install_args: go
-      - run: cd go && go build ./...
-      - run: cd go && go test -v ./...
-      - run: cd go && go vet ./...
+      - name: Format check
+        run: |
+          cd go
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Code is not formatted. Run 'gofmt -w .' to fix."
+            gofmt -d .
+            exit 1
+          fi
+      - name: Vet
+        run: cd go && go vet ./...
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: go
+      - name: Build
+        run: cd go && go build ./...
+      - name: Test
+        run: cd go && go test -v ./...
