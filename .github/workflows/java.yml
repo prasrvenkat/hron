@@ -1,0 +1,35 @@
+name: Java
+
+on:
+  push:
+    branches: [main]
+    paths: ["java/**", "spec/**"]
+  pull_request:
+    paths: ["java/**", "spec/**"]
+
+jobs:
+  check:
+    name: Format & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Check formatting
+        run: cd java && mvn fmt:check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Build
+        run: cd java && mvn compile -q
+      - name: Test
+        run: cd java && mvn test
