@@ -1,0 +1,20 @@
+name: Go
+
+on:
+  push:
+    branches: [main]
+    paths: ["go/**", "spec/**"]
+  pull_request:
+    paths: ["go/**", "spec/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: go
+      - run: cd go && go build ./...
+      - run: cd go && go test -v ./...
+      - run: cd go && go vet ./...
