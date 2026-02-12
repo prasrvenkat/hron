@@ -19,8 +19,9 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag (idempotent)
+      - name: Create tags (idempotent)
         run: |
+          # Main version tag
           if gh api repos/${{ github.repository }}/git/refs/tags/v${{ steps.version.outputs.version }} >/dev/null 2>&1; then
             echo "Tag v${{ steps.version.outputs.version }} already exists, skipping"
           else
@@ -28,6 +29,15 @@ jobs:
               -f "ref=refs/tags/v${{ steps.version.outputs.version }}" \
               -f "sha=${{ github.sha }}"
             echo "Created tag v${{ steps.version.outputs.version }}"
+          fi
+          # Go subdirectory module tag (required for pkg.go.dev)
+          if gh api repos/${{ github.repository }}/git/refs/tags/go/v${{ steps.version.outputs.version }} >/dev/null 2>&1; then
+            echo "Tag go/v${{ steps.version.outputs.version }} already exists, skipping"
+          else
+            gh api repos/${{ github.repository }}/git/refs \
+              -f "ref=refs/tags/go/v${{ steps.version.outputs.version }}" \
+              -f "sha=${{ github.sha }}"
+            echo "Created tag go/v${{ steps.version.outputs.version }}"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
