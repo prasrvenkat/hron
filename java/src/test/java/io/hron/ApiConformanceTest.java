@@ -9,6 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -172,5 +174,103 @@ public class ApiConformanceTest {
     // Feb 6 is aligned (day 20490 from epoch, 20490 % 3 = 0)
     // Since 09:00 has passed, next should be Feb 9
     assertEquals(9, next.get().getDayOfMonth());
+  }
+
+  // Spec coverage tests - verify all api.json methods are implemented
+
+  @Test
+  void specVersionIsPresent() {
+    assertTrue(SPEC.has("version"));
+    assertNotNull(SPEC.get("version").asText());
+  }
+
+  @Test
+  void specStaticMethodsExist() {
+    JsonNode schedule = SPEC.get("schedule");
+    JsonNode staticMethods = schedule.get("staticMethods");
+
+    Map<String, String> expectedMethods = Map.of(
+        "parse", "parse",
+        "fromCron", "fromCron",
+        "validate", "validate");
+
+    for (JsonNode method : staticMethods) {
+      String name = method.get("name").asText();
+      assertTrue(expectedMethods.containsKey(name), "Unmapped spec static method: " + name);
+    }
+  }
+
+  @Test
+  void specInstanceMethodsExist() {
+    JsonNode schedule = SPEC.get("schedule");
+    JsonNode instanceMethods = schedule.get("instanceMethods");
+
+    Map<String, String> expectedMethods = Map.of(
+        "nextFrom", "nextFrom",
+        "nextNFrom", "nextNFrom",
+        "matches", "matches",
+        "toCron", "toCron",
+        "toString", "toString");
+
+    for (JsonNode method : instanceMethods) {
+      String name = method.get("name").asText();
+      assertTrue(expectedMethods.containsKey(name), "Unmapped spec instance method: " + name);
+    }
+  }
+
+  @Test
+  void specGettersExist() {
+    JsonNode schedule = SPEC.get("schedule");
+    JsonNode getters = schedule.get("getters");
+
+    Map<String, String> expectedGetters = Map.of("timezone", "timezone");
+
+    for (JsonNode getter : getters) {
+      String name = getter.get("name").asText();
+      assertTrue(expectedGetters.containsKey(name), "Unmapped spec getter: " + name);
+    }
+  }
+
+  @Test
+  void specErrorKindsMatch() {
+    JsonNode error = SPEC.get("error");
+    JsonNode kinds = error.get("kinds");
+
+    Set<String> expectedKinds = Set.of("lex", "parse", "eval", "cron");
+
+    for (JsonNode kind : kinds) {
+      String name = kind.asText();
+      assertTrue(expectedKinds.contains(name), "Unexpected error kind in spec: " + name);
+    }
+  }
+
+  @Test
+  void specErrorConstructorsExist() {
+    JsonNode error = SPEC.get("error");
+    JsonNode constructors = error.get("constructors");
+
+    Map<String, String> expectedConstructors = Map.of(
+        "lex", "lex",
+        "parse", "parse",
+        "eval", "eval",
+        "cron", "cron");
+
+    for (JsonNode constructor : constructors) {
+      String name = constructor.asText();
+      assertTrue(expectedConstructors.containsKey(name), "Unmapped spec error constructor: " + name);
+    }
+  }
+
+  @Test
+  void specErrorMethodsExist() {
+    JsonNode error = SPEC.get("error");
+    JsonNode methods = error.get("methods");
+
+    Map<String, String> expectedMethods = Map.of("displayRich", "displayRich");
+
+    for (JsonNode method : methods) {
+      String name = method.get("name").asText();
+      assertTrue(expectedMethods.containsKey(name), "Unmapped spec error method: " + name);
+    }
   }
 }
