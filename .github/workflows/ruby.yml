@@ -13,14 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
+      - uses: jdx/mise-action@v2
         with:
-          ruby-version: "4.0"
-          bundler-cache: true
-          working-directory: ruby
-
+          install_args: ruby
+      - name: Install dependencies
+        run: bundle install
+        working-directory: ruby
       - name: Run tests
         run: bundle exec rake test
         working-directory: ruby
@@ -30,14 +28,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
+      - uses: jdx/mise-action@v2
         with:
-          ruby-version: "4.0"
-          bundler-cache: true
-          working-directory: ruby
-
+          install_args: ruby
+      - name: Install dependencies
+        run: bundle install
+        working-directory: ruby
       - name: Run Standard
         run: bundle exec standardrb
         working-directory: ruby
