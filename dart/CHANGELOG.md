@@ -1,5 +1,5 @@
 # Changelog
 
-Current version: 0.5.0
+Current version: 0.5.1
 
 See [GitHub Releases](https://github.com/prasrvenkat/hron/releases) for release notes.
