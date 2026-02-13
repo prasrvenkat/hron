@@ -19,7 +19,7 @@ DateTime _parseIsoDateUtc(String s) {
 
 String _resolveTz(String? tz) => tz ?? 'UTC';
 
-Location _getLocation(String tz) => getLocation(tz);
+Location _getLocation(String tz) => tz == 'UTC' ? UTC : getLocation(tz);
 
 // --- Helpers ---
 
@@ -189,7 +189,11 @@ DateTime _resolveUntil(UntilSpec until, TZDateTime now) {
 }
 
 TZDateTime? _earliestFutureAtTimes(
-    DateTime date, List<TimeOfDay> times, Location loc, TZDateTime now) {
+  DateTime date,
+  List<TimeOfDay> times,
+  Location loc,
+  TZDateTime now,
+) {
   TZDateTime? best;
   for (final tod in times) {
     final candidate = _atTimeOnDate(date, tod.hour, tod.minute, loc);
@@ -208,8 +212,9 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
   final tzName = _resolveTz(schedule.timezone);
   final loc = _getLocation(tzName);
 
-  final untilDate =
-      schedule.until != null ? _resolveUntil(schedule.until!, now) : null;
+  final untilDate = schedule.until != null
+      ? _resolveUntil(schedule.until!, now)
+      : null;
 
   final parsedExceptions = _ParsedExceptions.from(schedule.except);
   final hasExceptions = schedule.except.isNotEmpty;
@@ -238,16 +243,24 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
     if (hasDuring && !_matchesDuring(cDate!, schedule.during)) {
       // Skip ahead to 1st of next valid during month
       final skipTo = _nextDuringMonth(cDate, schedule.during);
-      current = TZDateTime(loc, skipTo.year, skipTo.month, skipTo.day)
-          .subtract(const Duration(seconds: 1));
+      current = TZDateTime(
+        loc,
+        skipTo.year,
+        skipTo.month,
+        skipTo.day,
+      ).subtract(const Duration(seconds: 1));
       continue;
     }
 
     // Apply except filter
     if (hasExceptions && parsedExceptions.isExcepted(cDate!)) {
       final nextDay = cDate.add(const Duration(days: 1));
-      current = TZDateTime(loc, nextDay.year, nextDay.month, nextDay.day)
-          .subtract(const Duration(seconds: 1));
+      current = TZDateTime(
+        loc,
+        nextDay.year,
+        nextDay.month,
+        nextDay.day,
+      ).subtract(const Duration(seconds: 1));
       continue;
     }
 
@@ -258,21 +271,63 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
 }
 
 TZDateTime? _nextExpr(
-    ScheduleExpr expr, Location loc, String? anchor, TZDateTime now) {
+  ScheduleExpr expr,
+  Location loc,
+  String? anchor,
+  TZDateTime now,
+) {
   return switch (expr) {
-    DayRepeat() =>
-      _nextDayRepeat(expr.interval, expr.days, expr.times, loc, anchor, now),
+    DayRepeat() => _nextDayRepeat(
+      expr.interval,
+      expr.days,
+      expr.times,
+      loc,
+      anchor,
+      now,
+    ),
     IntervalRepeat() => _nextIntervalRepeat(
-        expr.interval, expr.unit, expr.from, expr.to, expr.dayFilter, loc, now),
-    WeekRepeat() =>
-      _nextWeekRepeat(expr.interval, expr.days, expr.times, loc, anchor, now),
+      expr.interval,
+      expr.unit,
+      expr.from,
+      expr.to,
+      expr.dayFilter,
+      loc,
+      now,
+    ),
+    WeekRepeat() => _nextWeekRepeat(
+      expr.interval,
+      expr.days,
+      expr.times,
+      loc,
+      anchor,
+      now,
+    ),
     MonthRepeat() => _nextMonthRepeat(
-        expr.interval, expr.target, expr.times, loc, anchor, now),
+      expr.interval,
+      expr.target,
+      expr.times,
+      loc,
+      anchor,
+      now,
+    ),
     OrdinalRepeat() => _nextOrdinalRepeat(
-        expr.interval, expr.ordinal, expr.day, expr.times, loc, anchor, now),
+      expr.interval,
+      expr.ordinal,
+      expr.day,
+      expr.times,
+      loc,
+      anchor,
+      now,
+    ),
     SingleDate() => _nextSingleDate(expr.date, expr.times, loc, now),
-    YearRepeat() =>
-      _nextYearRepeat(expr.interval, expr.target, expr.times, loc, anchor, now),
+    YearRepeat() => _nextYearRepeat(
+      expr.interval,
+      expr.target,
+      expr.times,
+      loc,
+      anchor,
+      now,
+    ),
   };
 }
 
@@ -306,18 +361,17 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
   // directly, or the scheduled time falls in a DST gap and resolves to the
   // candidate's instant (e.g., scheduled 2:00 AM during spring-forward → 3:00 AM).
   bool timeMatchesWithDst(List<TimeOfDay> times) => times.any((tod) {
-        if (zdt.hour == tod.hour && zdt.minute == tod.minute) return true;
-        final resolved = _atTimeOnDate(date, tod.hour, tod.minute, loc);
-        return resolved.millisecondsSinceEpoch ==
-            datetime.millisecondsSinceEpoch;
-      });
+    if (zdt.hour == tod.hour && zdt.minute == tod.minute) return true;
+    final resolved = _atTimeOnDate(date, tod.hour, tod.minute, loc);
+    return resolved.millisecondsSinceEpoch == datetime.millisecondsSinceEpoch;
+  });
 
   switch (schedule.expr) {
     case DayRepeat(
-        interval: final interval,
-        days: final days,
-        times: final times
-      ):
+      interval: final interval,
+      days: final days,
+      times: final times,
+    ):
       if (!_matchesDayFilter(date, days)) return false;
       if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
@@ -330,12 +384,12 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       return true;
 
     case IntervalRepeat(
-        interval: final interval,
-        unit: final unit,
-        from: final from,
-        to: final to,
-        dayFilter: final dayFilter,
-      ):
+      interval: final interval,
+      unit: final unit,
+      from: final from,
+      to: final to,
+      dayFilter: final dayFilter,
+    ):
       if (dayFilter != null && !_matchesDayFilter(date, dayFilter)) {
         return false;
       }
@@ -350,10 +404,10 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       return diff >= 0 && diff % step == 0;
 
     case WeekRepeat(
-        interval: final interval,
-        days: final days,
-        times: final times,
-      ):
+      interval: final interval,
+      days: final days,
+      times: final times,
+    ):
       final dow = _dayOfWeek(date);
       if (!days.any((d) => d.number == dow)) return false;
       if (!timeMatchesWithDst(times)) return false;
@@ -364,10 +418,10 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       return weeks >= 0 && weeks % interval == 0;
 
     case MonthRepeat(
-        interval: final interval,
-        target: final target,
-        times: final times
-      ):
+      interval: final interval,
+      target: final target,
+      times: final times,
+    ):
       if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
         final anchorDate = schedule.anchor != null
@@ -388,11 +442,11 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       return date.day == lastWd.day;
 
     case OrdinalRepeat(
-        interval: final interval,
-        ordinal: final ordinal,
-        day: final day,
-        times: final times,
-      ):
+      interval: final interval,
+      ordinal: final ordinal,
+      day: final day,
+      times: final times,
+    ):
       if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
         final anchorDate = schedule.anchor != null
@@ -405,8 +459,12 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       if (ordinal == OrdinalPosition.last) {
         targetDate = _lastWeekdayInMonth(date.year, date.month, day);
       } else {
-        targetDate =
-            _nthWeekdayOfMonth(date.year, date.month, day, ordinal.toN);
+        targetDate = _nthWeekdayOfMonth(
+          date.year,
+          date.month,
+          day,
+          ordinal.toN,
+        );
       }
       if (targetDate == null) return false;
       return date.day == targetDate.day;
@@ -425,10 +483,10 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       return false;
 
     case YearRepeat(
-        interval: final interval,
-        target: final target,
-        times: final times
-      ):
+      interval: final interval,
+      target: final target,
+      times: final times,
+    ):
       if (!timeMatchesWithDst(times)) return false;
       if (interval > 1) {
         final anchorYear = schedule.anchor != null
@@ -446,17 +504,21 @@ bool _matchesYearTarget(YearTarget target, DateTime date) {
     case DateTarget(month: final month, day: final day):
       return date.month == month.number && date.day == day;
     case OrdinalWeekdayTarget(
-        ordinal: final ordinal,
-        weekday: final weekday,
-        month: final month,
-      ):
+      ordinal: final ordinal,
+      weekday: final weekday,
+      month: final month,
+    ):
       if (date.month != month.number) return false;
       DateTime? targetDate;
       if (ordinal == OrdinalPosition.last) {
         targetDate = _lastWeekdayInMonth(date.year, date.month, weekday);
       } else {
-        targetDate =
-            _nthWeekdayOfMonth(date.year, date.month, weekday, ordinal.toN);
+        targetDate = _nthWeekdayOfMonth(
+          date.year,
+          date.month,
+          weekday,
+          ordinal.toN,
+        );
       }
       if (targetDate == null) return false;
       return date.day == targetDate.day;
@@ -471,8 +533,14 @@ bool _matchesYearTarget(YearTarget target, DateTime date) {
 
 // --- Per-variant next functions ---
 
-TZDateTime? _nextDayRepeat(int interval, DayFilter days, List<TimeOfDay> times,
-    Location loc, String? anchor, TZDateTime now) {
+TZDateTime? _nextDayRepeat(
+  int interval,
+  DayFilter days,
+  List<TimeOfDay> times,
+  Location loc,
+  String? anchor,
+  TZDateTime now,
+) {
   final nowInTz = TZDateTime.from(now, loc);
   var date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
@@ -513,8 +581,15 @@ TZDateTime? _nextDayRepeat(int interval, DayFilter days, List<TimeOfDay> times,
   return null;
 }
 
-TZDateTime? _nextIntervalRepeat(int interval, IntervalUnit unit, TimeOfDay from,
-    TimeOfDay to, DayFilter? dayFilter, Location loc, TZDateTime now) {
+TZDateTime? _nextIntervalRepeat(
+  int interval,
+  IntervalUnit unit,
+  TimeOfDay from,
+  TimeOfDay to,
+  DayFilter? dayFilter,
+  Location loc,
+  TZDateTime now,
+) {
   final nowInTz = TZDateTime.from(now, loc);
   final stepMinutes = unit == IntervalUnit.min ? interval : interval * 60;
   final fromMinutes = from.hour * 60 + from.minute;
@@ -528,7 +603,8 @@ TZDateTime? _nextIntervalRepeat(int interval, IntervalUnit unit, TimeOfDay from,
       continue;
     }
 
-    final sameDay = date.year == nowInTz.year &&
+    final sameDay =
+        date.year == nowInTz.year &&
         date.month == nowInTz.month &&
         date.day == nowInTz.day;
     final nowMinutes = sameDay ? nowInTz.hour * 60 + nowInTz.minute : -1;
@@ -556,8 +632,14 @@ TZDateTime? _nextIntervalRepeat(int interval, IntervalUnit unit, TimeOfDay from,
   return null;
 }
 
-TZDateTime? _nextWeekRepeat(int interval, List<Weekday> days,
-    List<TimeOfDay> times, Location loc, String? anchor, TZDateTime now) {
+TZDateTime? _nextWeekRepeat(
+  int interval,
+  List<Weekday> days,
+  List<TimeOfDay> times,
+  Location loc,
+  String? anchor,
+  TZDateTime now,
+) {
   final nowInTz = TZDateTime.from(now, loc);
   final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochMonday;
 
@@ -603,8 +685,14 @@ TZDateTime? _nextWeekRepeat(int interval, List<Weekday> days,
   return null;
 }
 
-TZDateTime? _nextMonthRepeat(int interval, MonthTarget target,
-    List<TimeOfDay> times, Location loc, String? anchor, TZDateTime now) {
+TZDateTime? _nextMonthRepeat(
+  int interval,
+  MonthTarget target,
+  List<TimeOfDay> times,
+  Location loc,
+  String? anchor,
+  TZDateTime now,
+) {
   final nowInTz = TZDateTime.from(now, loc);
   var year = nowInTz.year;
   var month = nowInTz.month;
@@ -668,13 +756,14 @@ TZDateTime? _nextMonthRepeat(int interval, MonthTarget target,
 }
 
 TZDateTime? _nextOrdinalRepeat(
-    int interval,
-    OrdinalPosition ordinal,
-    Weekday day,
-    List<TimeOfDay> times,
-    Location loc,
-    String? anchor,
-    TZDateTime now) {
+  int interval,
+  OrdinalPosition ordinal,
+  Weekday day,
+  List<TimeOfDay> times,
+  Location loc,
+  String? anchor,
+  TZDateTime now,
+) {
   final nowInTz = TZDateTime.from(now, loc);
   var year = nowInTz.year;
   var month = nowInTz.month;
@@ -720,7 +809,11 @@ TZDateTime? _nextOrdinalRepeat(
 }
 
 TZDateTime? _nextSingleDate(
-    DateSpec dateSpec, List<TimeOfDay> times, Location loc, TZDateTime now) {
+  DateSpec dateSpec,
+  List<TimeOfDay> times,
+  Location loc,
+  TZDateTime now,
+) {
   final nowInTz = TZDateTime.from(now, loc);
 
   if (dateSpec is IsoDate) {
@@ -749,12 +842,19 @@ TZDateTime? _nextSingleDate(
   return null;
 }
 
-TZDateTime? _nextYearRepeat(int interval, YearTarget target,
-    List<TimeOfDay> times, Location loc, String? anchor, TZDateTime now) {
+TZDateTime? _nextYearRepeat(
+  int interval,
+  YearTarget target,
+  List<TimeOfDay> times,
+  Location loc,
+  String? anchor,
+  TZDateTime now,
+) {
   final nowInTz = TZDateTime.from(now, loc);
   final startYear = nowInTz.year;
-  final anchorYear =
-      anchor != null ? _parseIsoDateUtc(anchor).year : _epochDate.year;
+  final anchorYear = anchor != null
+      ? _parseIsoDateUtc(anchor).year
+      : _epochDate.year;
 
   final maxIter = interval > 1 ? 8 * interval : 8;
 
@@ -784,15 +884,19 @@ TZDateTime? _nextYearRepeat(int interval, YearTarget target,
           continue;
         }
       case OrdinalWeekdayTarget(
-          ordinal: final ordinal,
-          weekday: final weekday,
-          month: final month,
-        ):
+        ordinal: final ordinal,
+        weekday: final weekday,
+        month: final month,
+      ):
         if (ordinal == OrdinalPosition.last) {
           targetDate = _lastWeekdayInMonth(year, month.number, weekday);
         } else {
-          targetDate =
-              _nthWeekdayOfMonth(year, month.number, weekday, ordinal.toN);
+          targetDate = _nthWeekdayOfMonth(
+            year,
+            month.number,
+            weekday,
+            ordinal.toN,
+          );
         }
       case DayOfMonthTarget(day: final day, month: final month):
         try {

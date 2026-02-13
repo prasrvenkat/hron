@@ -6,10 +6,14 @@ String display(ScheduleData schedule) {
 
   if (schedule.except.isNotEmpty) {
     buf.write(' except ');
-    buf.write(schedule.except.map((exc) {
-      if (exc is NamedException) return '${exc.month.name} ${exc.day}';
-      return (exc as IsoException).date;
-    }).join(', '));
+    buf.write(
+      schedule.except
+          .map((exc) {
+            if (exc is NamedException) return '${exc.month.name} ${exc.day}';
+            return (exc as IsoException).date;
+          })
+          .join(', '),
+    );
   }
 
   if (schedule.until != null) {
@@ -39,15 +43,15 @@ String display(ScheduleData schedule) {
 }
 
 String _displayExpr(ScheduleExpr expr) => switch (expr) {
-      IntervalRepeat() => _displayInterval(expr),
-      DayRepeat() => _displayDayRepeat(expr),
-      WeekRepeat() =>
-        'every ${expr.interval} weeks on ${_formatDayList(expr.days)} at ${_formatTimeList(expr.times)}',
-      MonthRepeat() => _displayMonthRepeat(expr),
-      OrdinalRepeat() => _displayOrdinalRepeat(expr),
-      SingleDate() => _displaySingleDate(expr),
-      YearRepeat() => _displayYearRepeat(expr),
-    };
+  IntervalRepeat() => _displayInterval(expr),
+  DayRepeat() => _displayDayRepeat(expr),
+  WeekRepeat() =>
+    'every ${expr.interval} weeks on ${_formatDayList(expr.days)} at ${_formatTimeList(expr.times)}',
+  MonthRepeat() => _displayMonthRepeat(expr),
+  OrdinalRepeat() => _displayOrdinalRepeat(expr),
+  SingleDate() => _displaySingleDate(expr),
+  YearRepeat() => _displayYearRepeat(expr),
+};
 
 String _displayInterval(IntervalRepeat expr) {
   final unit = _unitDisplay(expr.interval, expr.unit);
@@ -121,24 +125,26 @@ String _displayYearRepeat(YearRepeat expr) {
 }
 
 String _displayDayFilter(DayFilter filter) => switch (filter) {
-      EveryDay() => 'day',
-      WeekdayFilter() => 'weekday',
-      WeekendFilter() => 'weekend',
-      SpecificDays() => _formatDayList(filter.days),
-    };
+  EveryDay() => 'day',
+  WeekdayFilter() => 'weekday',
+  WeekendFilter() => 'weekend',
+  SpecificDays() => _formatDayList(filter.days),
+};
 
 String _formatTimeList(List<TimeOfDay> times) =>
     times.map((t) => t.toString()).join(', ');
 
 String _formatDayList(List<Weekday> days) => days.map((d) => d.name).join(', ');
 
-String _formatOrdinalDaySpecs(List<DayOfMonthSpec> specs) => specs.map((spec) {
+String _formatOrdinalDaySpecs(List<DayOfMonthSpec> specs) => specs
+    .map((spec) {
       if (spec is SingleDay) {
         return '${spec.day}${ordinalSuffix(spec.day)}';
       }
       final range = spec as DayRange;
       return '${range.start}${ordinalSuffix(range.start)} to ${range.end}${ordinalSuffix(range.end)}';
-    }).join(', ');
+    })
+    .join(', ');
 
 String _unitDisplay(int interval, IntervalUnit unit) {
   if (unit == IntervalUnit.min) {

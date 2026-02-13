@@ -4,60 +4,69 @@ import 'error.dart';
 String toCron(ScheduleData schedule) {
   if (schedule.except.isNotEmpty) {
     throw HronError.cron(
-        'not expressible as cron (except clauses not supported)');
+      'not expressible as cron (except clauses not supported)',
+    );
   }
   if (schedule.until != null) {
     throw HronError.cron(
-        'not expressible as cron (until clauses not supported)');
+      'not expressible as cron (until clauses not supported)',
+    );
   }
   if (schedule.during.isNotEmpty) {
     throw HronError.cron(
-        'not expressible as cron (during clauses not supported)');
+      'not expressible as cron (during clauses not supported)',
+    );
   }
 
   final expr = schedule.expr;
 
   switch (expr) {
     case DayRepeat(
-        interval: final interval,
-        days: final days,
-        times: final times
-      ):
+      interval: final interval,
+      days: final days,
+      times: final times,
+    ):
       if (interval > 1) {
         throw HronError.cron(
-            'not expressible as cron (multi-day intervals not supported)');
+          'not expressible as cron (multi-day intervals not supported)',
+        );
       }
       if (times.length != 1) {
         throw HronError.cron(
-            'not expressible as cron (multiple times not supported)');
+          'not expressible as cron (multiple times not supported)',
+        );
       }
       final time = times[0];
       final dow = _dayFilterToCronDow(days);
       return '${time.minute} ${time.hour} * * $dow';
 
     case IntervalRepeat(
-        interval: final interval,
-        unit: final unit,
-        from: final from,
-        to: final to,
-        dayFilter: final dayFilter,
-      ):
-      final fullDay = from.hour == 0 &&
+      interval: final interval,
+      unit: final unit,
+      from: final from,
+      to: final to,
+      dayFilter: final dayFilter,
+    ):
+      final fullDay =
+          from.hour == 0 &&
           from.minute == 0 &&
           to.hour == 23 &&
           to.minute == 59;
       if (!fullDay) {
         throw HronError.cron(
-            'not expressible as cron (partial-day interval windows not supported)');
+          'not expressible as cron (partial-day interval windows not supported)',
+        );
       }
       if (dayFilter != null) {
         throw HronError.cron(
-            'not expressible as cron (interval with day filter not supported)');
+          'not expressible as cron (interval with day filter not supported)',
+        );
       }
       if (unit == IntervalUnit.min) {
         if (60 % interval != 0) {
           throw HronError.cron(
-              'not expressible as cron (*/$interval breaks at hour boundaries)');
+            'not expressible as cron (*/$interval breaks at hour boundaries)',
+          );
         }
         return '*/$interval * * * *';
       }
@@ -65,20 +74,23 @@ String toCron(ScheduleData schedule) {
 
     case WeekRepeat():
       throw HronError.cron(
-          'not expressible as cron (multi-week intervals not supported)');
+        'not expressible as cron (multi-week intervals not supported)',
+      );
 
     case MonthRepeat(
-        interval: final interval,
-        target: final target,
-        times: final times
-      ):
+      interval: final interval,
+      target: final target,
+      times: final times,
+    ):
       if (interval > 1) {
         throw HronError.cron(
-            'not expressible as cron (multi-month intervals not supported)');
+          'not expressible as cron (multi-month intervals not supported)',
+        );
       }
       if (times.length != 1) {
         throw HronError.cron(
-            'not expressible as cron (multiple times not supported)');
+          'not expressible as cron (multiple times not supported)',
+        );
       }
       final time = times[0];
       if (target is DaysTarget) {
@@ -92,22 +104,27 @@ String toCron(ScheduleData schedule) {
       }
       if (target is LastDayTarget) {
         throw HronError.cron(
-            'not expressible as cron (last day of month not supported)');
+          'not expressible as cron (last day of month not supported)',
+        );
       }
       throw HronError.cron(
-          'not expressible as cron (last weekday of month not supported)');
+        'not expressible as cron (last weekday of month not supported)',
+      );
 
     case OrdinalRepeat():
       throw HronError.cron(
-          'not expressible as cron (ordinal weekday of month not supported)');
+        'not expressible as cron (ordinal weekday of month not supported)',
+      );
 
     case SingleDate():
       throw HronError.cron(
-          'not expressible as cron (single dates are not repeating)');
+        'not expressible as cron (single dates are not repeating)',
+      );
 
     case YearRepeat():
       throw HronError.cron(
-          'not expressible as cron (yearly schedules not supported in 5-field cron)');
+        'not expressible as cron (yearly schedules not supported in 5-field cron)',
+      );
   }
 }
 
@@ -117,9 +134,9 @@ String _dayFilterToCronDow(DayFilter filter) {
     WeekdayFilter() => '1-5',
     WeekendFilter() => '0,6',
     SpecificDays(days: final days) => () {
-        final nums = days.map((d) => d.cronDow).toList()..sort();
-        return nums.join(',');
-      }(),
+      final nums = days.map((d) => d.cronDow).toList()..sort();
+      return nums.join(',');
+    }(),
   };
 }
 
@@ -146,9 +163,11 @@ ScheduleData fromCron(String cron) {
       // full day
     } else if (hourField.contains('-')) {
       final parts = hourField.split('-');
-      fromHour = int.tryParse(parts[0]) ??
+      fromHour =
+          int.tryParse(parts[0]) ??
           (throw HronError.cron('invalid hour range'));
-      toHour = int.tryParse(parts[1]) ??
+      toHour =
+          int.tryParse(parts[1]) ??
           (throw HronError.cron('invalid hour range'));
     } else {
       final h = int.tryParse(hourField);
@@ -160,13 +179,15 @@ ScheduleData fromCron(String cron) {
     final dayFilter = dowField == '*' ? null : _parseCronDow(dowField);
 
     if (domField == '*') {
-      return ScheduleData(IntervalRepeat(
-        interval,
-        IntervalUnit.min,
-        TimeOfDay(fromHour, 0),
-        TimeOfDay(toHour, toHour == 23 ? 59 : 0),
-        dayFilter,
-      ));
+      return ScheduleData(
+        IntervalRepeat(
+          interval,
+          IntervalUnit.min,
+          TimeOfDay(fromHour, 0),
+          TimeOfDay(toHour, toHour == 23 ? 59 : 0),
+          dayFilter,
+        ),
+      );
     }
   }
 
@@ -175,13 +196,15 @@ ScheduleData fromCron(String cron) {
     final interval = int.tryParse(hourField.substring(2));
     if (interval == null) throw HronError.cron('invalid hour interval');
     if (domField == '*' && dowField == '*') {
-      return ScheduleData(IntervalRepeat(
-        interval,
-        IntervalUnit.hours,
-        const TimeOfDay(0, 0),
-        const TimeOfDay(23, 59),
-        null,
-      ));
+      return ScheduleData(
+        IntervalRepeat(
+          interval,
+          IntervalUnit.hours,
+          const TimeOfDay(0, 0),
+          const TimeOfDay(23, 59),
+          null,
+        ),
+      );
     }
   }
 

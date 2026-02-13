@@ -61,18 +61,26 @@ versions:
 
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:
+    # Rust: hron, hron-cli, hron-wasm + internal deps
     sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/hron/Cargo.toml
     sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/hron-cli/Cargo.toml
     sed -i '0,/^version = .*/s//version = "{{version}}"/' rust/wasm/Cargo.toml
     sed -i 's/hron = { path = "..\/hron", version = "[^"]*"/hron = { path = "..\/hron", version = "{{version}}"/' rust/hron-cli/Cargo.toml
     sed -i 's/hron = { path = "..\/hron", version = "[^"]*"/hron = { path = "..\/hron", version = "{{version}}"/' rust/wasm/Cargo.toml
     cd rust && cargo generate-lockfile
+    # TypeScript
     cd ts && sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' package.json && pnpm install --no-frozen-lockfile
-    cd dart && sed -i 's/^version: .*/version: {{version}}/' pubspec.yaml
+    # Dart
+    sed -i 's/^version: .*/version: {{version}}/' dart/pubspec.yaml
+    sed -i 's/^Current version: .*/Current version: {{version}}/' dart/CHANGELOG.md
+    # Python
     sed -i '0,/^version = .*/s//version = "{{version}}"/' python/pyproject.toml
     cd python && uv lock
+    # Go
     sed -i 's/const Version = "[^"]*"/const Version = "{{version}}"/' go/version.go
+    # Java
     mvn -f java/pom.xml versions:set -DnewVersion={{version}} -DgenerateBackupPoms=false
+    # C#
     sed -i 's/<Version>[^<]*<\/Version>/<Version>{{version}}<\/Version>/' csharp/Hron/Hron.csproj
 
 # Create a release PR: just release 1.2.3
@@ -110,7 +118,7 @@ release new_version:
 
     # Create release branch, commit, push, open PR
     git checkout -b "release/v{{new_version}}"
-    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml python/pyproject.toml python/uv.lock go/version.go java/pom.xml csharp/Hron/Hron.csproj
+    git add .
     git commit -m "release: v{{new_version}}"
     git push -u origin "release/v{{new_version}}"
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."

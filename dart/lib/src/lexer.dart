@@ -142,7 +142,10 @@ class _Lexer {
       }
 
       throw HronError.lex(
-          "unexpected character '$ch'", Span(start, start + 1), input);
+        "unexpected character '$ch'",
+        Span(start, start + 1),
+        input,
+      );
     }
     return tokens;
   }
@@ -162,7 +165,10 @@ class _Lexer {
     final tz = input.substring(start, pos);
     if (tz.isEmpty) {
       throw HronError.lex(
-          "expected timezone after 'in'", Span(start, start + 1), input);
+        "expected timezone after 'in'",
+        Span(start, start + 1),
+        input,
+      );
     }
     return Token(TimezoneToken(tz), Span(start, pos));
   }
@@ -256,36 +262,36 @@ class _Lexer {
 }
 
 String tokenKindType(TokenKind kind) => switch (kind) {
-      EveryToken() => 'every',
-      OnToken() => 'on',
-      AtToken() => 'at',
-      FromToken() => 'from',
-      ToToken() => 'to',
-      InToken() => 'in',
-      OfToken() => 'of',
-      TheToken() => 'the',
-      LastToken() => 'last',
-      ExceptToken() => 'except',
-      UntilToken() => 'until',
-      StartingToken() => 'starting',
-      DuringToken() => 'during',
-      YearToken() => 'year',
-      DayToken() => 'day',
-      WeekdayKeyToken() => 'weekday',
-      WeekendKeyToken() => 'weekend',
-      WeeksToken() => 'weeks',
-      MonthToken() => 'month',
-      CommaToken() => 'comma',
-      DayNameToken() => 'dayName',
-      MonthNameToken() => 'monthName',
-      OrdinalToken() => 'ordinal',
-      IntervalUnitToken() => 'intervalUnit',
-      NumberToken() => 'number',
-      OrdinalNumberToken() => 'ordinalNumber',
-      TimeToken() => 'time',
-      IsoDateToken() => 'isoDate',
-      TimezoneToken() => 'timezone',
-    };
+  EveryToken() => 'every',
+  OnToken() => 'on',
+  AtToken() => 'at',
+  FromToken() => 'from',
+  ToToken() => 'to',
+  InToken() => 'in',
+  OfToken() => 'of',
+  TheToken() => 'the',
+  LastToken() => 'last',
+  ExceptToken() => 'except',
+  UntilToken() => 'until',
+  StartingToken() => 'starting',
+  DuringToken() => 'during',
+  YearToken() => 'year',
+  DayToken() => 'day',
+  WeekdayKeyToken() => 'weekday',
+  WeekendKeyToken() => 'weekend',
+  WeeksToken() => 'weeks',
+  MonthToken() => 'month',
+  CommaToken() => 'comma',
+  DayNameToken() => 'dayName',
+  MonthNameToken() => 'monthName',
+  OrdinalToken() => 'ordinal',
+  IntervalUnitToken() => 'intervalUnit',
+  NumberToken() => 'number',
+  OrdinalNumberToken() => 'ordinalNumber',
+  TimeToken() => 'time',
+  IsoDateToken() => 'isoDate',
+  TimezoneToken() => 'timezone',
+};
 
 final _keywordMap = <String, TokenKind>{
   'every': EveryToken(),
