@@ -336,9 +336,42 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
+  publish-csharp:
+    name: Publish to NuGet
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for OIDC
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: dotnet
+
+      - name: Build and pack
+        run: dotnet pack csharp/Hron/Hron.csproj -c Release
+
+      - name: NuGet login (OIDC)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish to NuGet
+        run: |
+          VERSION=$(grep '<Version>' csharp/Hron/Hron.csproj | sed 's/.*<Version>\(.*\)<\/Version>.*/\1/')
+          if curl -sf "https://api.nuget.org/v3-flatcontainer/hron/$VERSION/hron.nuspec" > /dev/null 2>&1; then
+            echo "Hron $VERSION already on NuGet, skipping"
+          else
+            dotnet nuget push csharp/Hron/bin/Release/*.nupkg \
+              --source https://api.nuget.org/v3/index.json \
+              --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          fi
+
   publish-release:
     name: Publish Release
-    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python, publish-go, publish-java]
+    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python, publish-go, publish-java, publish-csharp]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet package metadata -->
+    <PackageId>Hron</PackageId>
+    <Version>0.4.2</Version>
+    <Authors>Prasanna Ram Venkatachalam</Authors>
+    <Description>Human-readable cron expressions</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://hron.io</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/prasrvenkat/hron</RepositoryUrl>
+    <PackageTags>cron;scheduling;parser</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

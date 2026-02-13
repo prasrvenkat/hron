@@ -26,6 +26,11 @@ node_modules/
 ts/dist/
 *.tsbuildinfo
 
+# C# / .NET
+**/bin/
+**/obj/
+*.nupkg
+
 # Dart
 .dart_tool/
 dart/.dart_tool/
