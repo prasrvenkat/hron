@@ -1,7 +1,7 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust test-ts test-dart test-python test-wasm test-go test-java test-csharp
+test-all: test-rust test-ts test-dart test-python test-wasm test-go test-java test-csharp test-ruby
 
 # Rust tests
 test-rust:
@@ -31,6 +31,10 @@ test-java:
 test-csharp:
     dotnet test csharp/Hron.sln
 
+# Ruby tests
+test-ruby:
+    cd ruby && bundle install && bundle exec rake test
+
 # Rust build
 build-rust:
     cd rust && cargo build --workspace --all-features
@@ -58,6 +62,7 @@ versions:
     echo "go=$(grep 'const Version' go/version.go | cut -d'"' -f2)"
     echo "java=$(mvn -f java/pom.xml help:evaluate -Dexpression=project.version -q -DforceStdout)"
     echo "csharp=$(grep '<Version>' csharp/Hron/Hron.csproj | sed 's/.*<Version>\(.*\)<\/Version>.*/\1/')"
+    echo "ruby=$(ruby -r ./ruby/lib/hron/version.rb -e 'puts Hron::VERSION')"
 
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:
@@ -82,6 +87,8 @@ stamp-versions:
     mvn -f java/pom.xml versions:set -DnewVersion={{version}} -DgenerateBackupPoms=false
     # C#
     sed -i 's/<Version>[^<]*<\/Version>/<Version>{{version}}<\/Version>/' csharp/Hron/Hron.csproj
+    # Ruby
+    sed -i "s/VERSION = '[^']*'/VERSION = '{{version}}'/" ruby/lib/hron/version.rb
 
 # Create a release PR: just release 1.2.3
 release new_version:
@@ -182,6 +189,10 @@ publish-java:
 publish-csharp:
     cd csharp/Hron && dotnet pack -c Release
     cd csharp/Hron && dotnet nuget push bin/Release/*.nupkg --source nuget.org --api-key $NUGET_API_KEY
+
+# Build and publish Ruby gem to RubyGems
+publish-ruby:
+    cd ruby && gem build hron.gemspec && gem push hron-$(cat ../VERSION).gem
 
 # Trigger Go module indexing on pkg.go.dev
 publish-go:

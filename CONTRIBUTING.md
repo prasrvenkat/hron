@@ -9,11 +9,13 @@ Thanks for your interest in contributing to hron! This document covers everythin
 - [just](https://github.com/casey/just) (command runner)
 - [mise](https://mise.jdx.dev/) (tool version manager) — or install manually:
   - Rust 1.93+
-  - Go 1.23+
+  - Go 1.25+
   - Java 25+ (Temurin LTS)
   - Node.js 24+ (LTS) with pnpm
-  - Dart 3.6+
-  - Python 3.11+ with [uv](https://docs.astral.sh/uv/)
+  - Dart 3.11+
+  - Python 3.12+ with [uv](https://docs.astral.sh/uv/)
+  - Ruby 4.0+
+  - .NET 10.0+
 
 ### Running Tests
 
@@ -28,6 +30,8 @@ just test-dart
 just test-python
 just test-go
 just test-java
+just test-csharp
+just test-ruby
 ```
 
 ## Project Structure
@@ -44,6 +48,8 @@ hron/
 ├── python/         # Python: native implementation
 ├── go/             # Go: native implementation
 ├── java/           # Java: native implementation
+├── csharp/         # C#: native implementation
+├── ruby/           # Ruby: native implementation
 ├── justfile        # Build/test commands
 └── VERSION         # Single source of truth for version
 ```
@@ -83,6 +89,8 @@ Test cases in `spec/tests.json` are the source of truth. When adding tests:
 - **Python**: `ruff check` + `ruff format` + `mypy --strict`
 - **Go**: `gofmt -w .` + `go vet ./...`
 - **Java**: Google Java Format
+- **C#**: `dotnet format`
+- **Ruby**: `standard`
 
 CI enforces all of these. Run them locally before pushing.
 
