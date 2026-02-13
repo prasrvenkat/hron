@@ -1,5 +1,10 @@
-// AST types for hron — Dart sealed classes mirroring Rust enums.
+/// AST types for hron schedule expressions.
+///
+/// These types represent the parsed structure of hron expressions and are
+/// exposed for advanced use cases like custom schedule analysis.
+library;
 
+/// Days of the week.
 enum Weekday {
   monday,
   tuesday,
@@ -52,6 +57,7 @@ const _weekdayMap = {
   'sun': Weekday.sunday,
 };
 
+/// Month names for date specifications.
 enum MonthName {
   jan,
   feb,
@@ -99,8 +105,16 @@ const _monthMap = {
   'dec': MonthName.dec,
 };
 
-enum IntervalUnit { min, hours }
+/// Time interval units for repeat expressions.
+enum IntervalUnit {
+  /// Minutes.
+  min,
 
+  /// Hours.
+  hours,
+}
+
+/// Ordinal positions for expressions like "first Monday of every month".
 enum OrdinalPosition {
   first,
   second,
@@ -121,6 +135,7 @@ enum OrdinalPosition {
   }
 }
 
+/// A time of day (hour and minute) without timezone.
 class TimeOfDay {
   final int hour;
   final int minute;
@@ -139,23 +154,25 @@ class TimeOfDay {
       '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
-// --- Day filter ---
-
+/// Filter for which days a schedule applies to.
 sealed class DayFilter {}
 
+/// Matches every day of the week.
 class EveryDay extends DayFilter {}
 
+/// Matches Monday through Friday.
 class WeekdayFilter extends DayFilter {}
 
+/// Matches Saturday and Sunday.
 class WeekendFilter extends DayFilter {}
 
+/// Matches specific days of the week.
 class SpecificDays extends DayFilter {
   final List<Weekday> days;
   SpecificDays(this.days);
 }
 
-// --- Day of month spec ---
-
+/// Specification for days within a month.
 sealed class DayOfMonthSpec {}
 
 class SingleDay extends DayOfMonthSpec {
@@ -169,8 +186,7 @@ class DayRange extends DayOfMonthSpec {
   DayRange(this.start, this.end);
 }
 
-// --- Month target ---
-
+/// Target specification for monthly schedules.
 sealed class MonthTarget {}
 
 class DaysTarget extends MonthTarget {
@@ -182,8 +198,7 @@ class LastDayTarget extends MonthTarget {}
 
 class LastWeekdayTarget extends MonthTarget {}
 
-// --- Year target ---
-
+/// Target specification for yearly schedules.
 sealed class YearTarget {}
 
 class DateTarget extends YearTarget {
@@ -210,8 +225,7 @@ class LastWeekdayYearTarget extends YearTarget {
   LastWeekdayYearTarget(this.month);
 }
 
-// --- Date spec ---
-
+/// A specific date (named like "Jan 1" or ISO like "2024-01-01").
 sealed class DateSpec {}
 
 class NamedDate extends DateSpec {
@@ -225,8 +239,7 @@ class IsoDate extends DateSpec {
   IsoDate(this.date);
 }
 
-// --- Exception spec ---
-
+/// A date to exclude from a schedule (used in `except` clauses).
 sealed class ExceptionSpec {}
 
 class NamedException extends ExceptionSpec {
@@ -240,8 +253,7 @@ class IsoException extends ExceptionSpec {
   IsoException(this.date);
 }
 
-// --- Until spec ---
-
+/// End date for a schedule (used in `until` clauses).
 sealed class UntilSpec {}
 
 class IsoUntil extends UntilSpec {
@@ -255,10 +267,19 @@ class NamedUntil extends UntilSpec {
   NamedUntil(this.month, this.day);
 }
 
-// --- Schedule expression ---
-
+/// A schedule expression representing when events occur.
+///
+/// This is the main AST type representing different schedule patterns:
+/// - [IntervalRepeat]: "every 30 min from 9am to 5pm"
+/// - [DayRepeat]: "every day at 9am"
+/// - [WeekRepeat]: "every week on monday at 9am"
+/// - [MonthRepeat]: "on the 1st of every month at 9am"
+/// - [OrdinalRepeat]: "on the first monday of every month at 9am"
+/// - [SingleDate]: "on Jan 1 at 12:00"
+/// - [YearRepeat]: "every year on Jan 1 at 12:00"
 sealed class ScheduleExpr {}
 
+/// Schedule repeating at a time interval (e.g., "every 30 min from 9am to 5pm").
 class IntervalRepeat extends ScheduleExpr {
   final int interval;
   final IntervalUnit unit;
@@ -268,6 +289,7 @@ class IntervalRepeat extends ScheduleExpr {
   IntervalRepeat(this.interval, this.unit, this.from, this.to, this.dayFilter);
 }
 
+/// Schedule repeating daily (e.g., "every day at 9am").
 class DayRepeat extends ScheduleExpr {
   final int interval;
   final DayFilter days;
@@ -275,6 +297,7 @@ class DayRepeat extends ScheduleExpr {
   DayRepeat(this.interval, this.days, this.times);
 }
 
+/// Schedule repeating weekly (e.g., "every week on monday at 9am").
 class WeekRepeat extends ScheduleExpr {
   final int interval;
   final List<Weekday> days;
@@ -282,6 +305,7 @@ class WeekRepeat extends ScheduleExpr {
   WeekRepeat(this.interval, this.days, this.times);
 }
 
+/// Schedule repeating monthly (e.g., "on the 1st of every month at 9am").
 class MonthRepeat extends ScheduleExpr {
   final int interval;
   final MonthTarget target;
@@ -289,6 +313,7 @@ class MonthRepeat extends ScheduleExpr {
   MonthRepeat(this.interval, this.target, this.times);
 }
 
+/// Schedule repeating on ordinal weekdays (e.g., "first monday of every month").
 class OrdinalRepeat extends ScheduleExpr {
   final int interval;
   final OrdinalPosition ordinal;
@@ -297,12 +322,14 @@ class OrdinalRepeat extends ScheduleExpr {
   OrdinalRepeat(this.interval, this.ordinal, this.day, this.times);
 }
 
+/// A one-time schedule on a specific date (e.g., "on Jan 1 at 12:00").
 class SingleDate extends ScheduleExpr {
   final DateSpec date;
   final List<TimeOfDay> times;
   SingleDate(this.date, this.times);
 }
 
+/// Schedule repeating yearly (e.g., "every year on Jan 1 at 12:00").
 class YearRepeat extends ScheduleExpr {
   final int interval;
   final YearTarget target;
@@ -310,8 +337,10 @@ class YearRepeat extends ScheduleExpr {
   YearRepeat(this.interval, this.target, this.times);
 }
 
-// --- Schedule (top-level) ---
-
+/// The complete parsed schedule with expression and modifiers.
+///
+/// Contains the main [expr] plus optional clauses like timezone,
+/// exceptions, end date, anchor, and month restrictions.
 class ScheduleData {
   final ScheduleExpr expr;
   String? timezone;
@@ -320,9 +349,7 @@ class ScheduleData {
   String? anchor;
   List<MonthName> during;
 
-  ScheduleData(this.expr)
-      : except = [],
-        during = [];
+  ScheduleData(this.expr) : except = [], during = [];
 }
 
 // --- Helper functions ---
