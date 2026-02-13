@@ -194,7 +194,7 @@ When a schedule specifies a timezone via the `in` clause, all occurrences are co
 
 - **Spring-forward (gap):** If a scheduled time doesn't exist (e.g. `2:30 AM` during a spring-forward transition), the occurrence shifts to the next valid time after the gap (typically `3:00 AM` or later, depending on the gap size).
 - **Fall-back (ambiguity):** If a scheduled time is ambiguous (e.g. `1:30 AM` occurs twice during fall-back), the first (pre-transition) occurrence is used.
-- **No timezone:** When no `in` clause is specified, the system's local timezone is used.
+- **No timezone:** When no `in` clause is specified, UTC is used for deterministic, portable behavior.
 
 All implementations (Rust, TypeScript, Dart, Python, Go, Java, C#, Ruby, WASM) follow these same DST semantics.
 

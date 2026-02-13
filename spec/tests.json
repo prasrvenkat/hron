@@ -1596,6 +1596,30 @@
           ]
         }
       ]
+    },
+
+    "timezone_default": {
+      "description": "When no timezone is specified, implementations MUST default to UTC for deterministic, portable behavior.",
+      "tests": [
+        {
+          "name": "no_timezone_defaults_to_utc",
+          "expression": "every day at 09:00",
+          "description": "expression without timezone defaults to UTC",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "interval_no_timezone_defaults_to_utc",
+          "expression": "every 30 min from 09:00 to 17:00",
+          "description": "interval expression without timezone defaults to UTC",
+          "next": "2026-02-06T12:30:00+00:00[UTC]"
+        },
+        {
+          "name": "month_no_timezone_defaults_to_utc",
+          "expression": "every month on the 1st at 09:00",
+          "description": "month expression without timezone defaults to UTC",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        }
+      ]
     }
   },
 
