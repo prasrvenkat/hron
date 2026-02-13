@@ -51,6 +51,7 @@ See [`hron-cli`](rust/hron-cli/) for all options.
 | Go | [`hron`](go/) | [![Go Reference](https://pkg.go.dev/badge/github.com/prasrvenkat/hron/go.svg)](https://pkg.go.dev/github.com/prasrvenkat/hron/go) |
 | Java | [`hron`](java/) | [![Maven Central](https://img.shields.io/maven-central/v/io.hron/hron)](https://central.sonatype.com/artifact/io.hron/hron) |
 | C# | [`Hron`](csharp/Hron/) | [![NuGet](https://img.shields.io/nuget/v/Hron)](https://www.nuget.org/packages/Hron) |
+| Ruby | [`hron`](ruby/) | [![Gem Version](https://img.shields.io/gem/v/hron)](https://rubygems.org/gems/hron) |
 
 > **Note:** The JS/TS native package (`hron-ts`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`hron-wasm`).
 
@@ -85,9 +86,12 @@ go get github.com/prasrvenkat/hron/go
 
 # C# / .NET
 dotnet add package Hron
+
+# Ruby
+gem install hron
 ```
 
-See language-specific READMEs for API docs and examples: [Rust](rust/hron/) · [TypeScript](ts/) · [Dart](dart/) · [Python](python/) · [Go](go/) · [Java](java/) · [C#](csharp/Hron/) · [WASM](rust/wasm/)
+See language-specific READMEs for API docs and examples: [Rust](rust/hron/) · [TypeScript](ts/) · [Dart](dart/) · [Python](python/) · [Go](go/) · [Java](java/) · [C#](csharp/Hron/) · [Ruby](ruby/) · [WASM](rust/wasm/)
 
 ## Expression Syntax
 
@@ -192,7 +196,7 @@ When a schedule specifies a timezone via the `in` clause, all occurrences are co
 - **Fall-back (ambiguity):** If a scheduled time is ambiguous (e.g. `1:30 AM` occurs twice during fall-back), the first (pre-transition) occurrence is used.
 - **No timezone:** When no `in` clause is specified, the system's local timezone is used.
 
-All implementations (Rust, TypeScript, Dart, Python, Go, Java, C#, WASM) follow these same DST semantics.
+All implementations (Rust, TypeScript, Dart, Python, Go, Java, C#, Ruby, WASM) follow these same DST semantics.
 
 The [conformance test suite](spec/tests.json) includes explicit spring-forward and fall-back test cases to verify this behavior across all implementations.
 
@@ -213,6 +217,7 @@ just test-python     # Run Python tests only
 just test-go         # Run Go tests only
 just test-java       # Run Java tests only
 just test-csharp     # Run C# tests only
+just test-ruby       # Run Ruby tests only
 just build-wasm      # Build WASM package
 just bench           # Run Criterion benchmarks (Rust)
 just fuzz            # Run fuzz targets (requires nightly, default 3 min)

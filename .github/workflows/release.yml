@@ -375,9 +375,41 @@ jobs:
               --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           fi
 
+  publish-ruby:
+    name: Publish to RubyGems
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          working-directory: ruby
+
+      - name: Build gem
+        run: gem build hron.gemspec
+        working-directory: ruby
+
+      - name: Configure RubyGems trusted publishing
+        uses: rubygems/configure-rubygems-credentials@v1
+
+      - name: Publish to RubyGems
+        run: |
+          VERSION=$(ruby -r ./lib/hron/version.rb -e "puts Hron::VERSION")
+          if gem info hron --remote --exact | grep -q "hron ($VERSION)"; then
+            echo "hron $VERSION already on RubyGems, skipping"
+          else
+            gem push hron-$VERSION.gem
+          fi
+        working-directory: ruby
+
   publish-release:
     name: Publish Release
-    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python, publish-go, publish-java, publish-csharp]
+    needs: [version, upload-assets, publish-crates, publish-wasm, publish-ts, publish-dart, publish-python, publish-go, publish-java, publish-csharp, publish-ruby]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
