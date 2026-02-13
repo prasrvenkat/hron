@@ -146,9 +146,10 @@ public final class Schedule {
     return data;
   }
 
+  /** Resolve timezone, defaulting to UTC for deterministic behavior. */
   private static ZoneId resolveTimezone(String tzName) {
     if (tzName == null || tzName.isEmpty()) {
-      return ZoneId.systemDefault();
+      return ZoneId.of("UTC");
     }
     return ZoneId.of(tzName);
   }

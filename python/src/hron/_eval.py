@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import calendar
 import contextlib
-import os
-import sys
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -52,32 +50,8 @@ from ._ast import (
 
 
 def _resolve_tz(tz_name: str | None) -> ZoneInfo:
-    if tz_name:
-        return ZoneInfo(tz_name)
-    return _detect_system_tz()
-
-
-def _detect_system_tz() -> ZoneInfo:
-    """Best-effort system IANA timezone detection, matching Rust/TS behavior."""
-    # Check TZ environment variable (common in Docker/CI)
-    tz_env = os.environ.get("TZ")
-    if tz_env:
-        try:
-            return ZoneInfo(tz_env)
-        except KeyError:
-            pass
-    # On Linux/macOS, resolve /etc/localtime symlink
-    if sys.platform != "win32":
-        try:
-            link = os.path.realpath("/etc/localtime")
-            # e.g. /usr/share/zoneinfo/America/New_York → America/New_York
-            marker = "/zoneinfo/"
-            idx = link.find(marker)
-            if idx != -1:
-                return ZoneInfo(link[idx + len(marker) :])
-        except (OSError, KeyError):
-            pass
-    return ZoneInfo("UTC")
+    """Resolve timezone, defaulting to UTC for deterministic behavior."""
+    return ZoneInfo(tz_name) if tz_name else ZoneInfo("UTC")
 
 
 # --- Helpers ---

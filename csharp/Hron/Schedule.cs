@@ -131,11 +131,14 @@ public sealed class Schedule
     /// </summary>
     public ScheduleData Data => _data;
 
+    /// <summary>
+    /// Resolve timezone, defaulting to UTC for deterministic behavior.
+    /// </summary>
     private static TimeZoneInfo ResolveTimezone(string? tzName)
     {
         if (string.IsNullOrEmpty(tzName))
         {
-            return TimeZoneInfo.Local;
+            return TimeZoneInfo.Utc;
         }
 
         // Try IANA timezone ID first

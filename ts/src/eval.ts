@@ -27,13 +27,9 @@ type PD = Temporal.PlainDate;
 
 // --- Timezone resolution ---
 
+/** Resolve timezone, defaulting to UTC for deterministic behavior. */
 function resolveTz(tz: string | null): string {
-  if (tz) return tz;
-  try {
-    return Temporal.Now.timeZoneId();
-  } catch {
-    return "UTC";
-  }
+  return tz ?? "UTC";
 }
 
 // --- Helpers ---

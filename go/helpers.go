@@ -1,7 +1,6 @@
 package hron
 
 import (
-	"os"
 	"time"
 )
 
@@ -12,23 +11,12 @@ var (
 )
 
 // resolveTimezone resolves a timezone name to a *time.Location.
-// If tzName is empty, returns the system timezone.
+// If tzName is empty, returns UTC for deterministic behavior.
 func resolveTimezone(tzName string) (*time.Location, error) {
 	if tzName != "" {
 		return time.LoadLocation(tzName)
 	}
-	return detectSystemTimezone(), nil
-}
-
-// detectSystemTimezone detects the system's local timezone.
-func detectSystemTimezone() *time.Location {
-	// Check TZ environment variable
-	if tz := os.Getenv("TZ"); tz != "" {
-		if loc, err := time.LoadLocation(tz); err == nil {
-			return loc
-		}
-	}
-	return time.Local
+	return time.UTC, nil
 }
 
 // atTimeOnDate creates a time.Time at the given date and time of day in the given location.

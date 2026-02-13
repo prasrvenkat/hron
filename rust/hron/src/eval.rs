@@ -13,12 +13,12 @@ static EPOCH_MONDAY: LazyLock<Date> = LazyLock::new(|| Date::new(1970, 1, 5).unw
 /// Epoch anchor for day/month/year intervals: 1970-01-01.
 static EPOCH_DATE: LazyLock<Date> = LazyLock::new(|| Date::new(1970, 1, 1).unwrap());
 
-/// Resolve the timezone for a schedule, falling back to system local.
+/// Resolve the timezone for a schedule, falling back to UTC for deterministic behavior.
 fn resolve_tz(tz: &Option<String>) -> Result<TimeZone, ScheduleError> {
     match tz {
         Some(name) => TimeZone::get(name)
             .map_err(|e| ScheduleError::eval(format!("invalid timezone '{name}': {e}"))),
-        None => Ok(TimeZone::system()),
+        None => Ok(TimeZone::UTC),
     }
 }
 
