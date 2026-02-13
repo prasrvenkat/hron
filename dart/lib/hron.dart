@@ -3,6 +3,7 @@ import 'package:timezone/timezone.dart';
 import 'src/ast.dart';
 import 'src/cron.dart' as cron_impl;
 import 'src/display.dart' as display_impl;
+import 'src/error.dart';
 import 'src/eval.dart' as eval_impl;
 import 'src/parser.dart' as parser_impl;
 
@@ -23,7 +24,7 @@ class Schedule {
     try {
       parser_impl.parse(input);
       return true;
-    } catch (_) {
+    } on HronError {
       return false;
     }
   }

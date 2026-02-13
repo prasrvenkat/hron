@@ -24,7 +24,8 @@ void main() {
     dir = p.dirname(dir);
   }
   final specPath = p.join(dir, 'spec', 'api.json');
-  apiSpec = jsonDecode(File(specPath).readAsStringSync()) as Map<String, dynamic>;
+  apiSpec =
+      jsonDecode(File(specPath).readAsStringSync()) as Map<String, dynamic>;
 
   final scheduleMap = apiSpec['schedule'] as Map<String, dynamic>;
 
@@ -90,7 +91,8 @@ void main() {
       });
 
       test('timezone (present)', () {
-        final schedule = Schedule.parse('every day at 09:00 in America/New_York');
+        final schedule =
+            Schedule.parse('every day at 09:00 in America/New_York');
         expect(schedule.timezone, equals('America/New_York'));
       });
     });
@@ -112,8 +114,10 @@ void main() {
       });
 
       test('all instance methods tested', () {
-        expect(instanceMethods,
-            containsAll(['nextFrom', 'nextNFrom', 'matches', 'toCron', 'toString']));
+        expect(
+            instanceMethods,
+            containsAll(
+                ['nextFrom', 'nextNFrom', 'matches', 'toCron', 'toString']));
       });
 
       test('all getters tested', () {
