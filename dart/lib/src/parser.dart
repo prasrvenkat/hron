@@ -146,8 +146,9 @@ class _Parser {
     }
     if (k is MonthNameToken) {
       advance();
-      final day =
-          _parseDayNumber('expected day number after month name in exception');
+      final day = _parseDayNumber(
+        'expected day number after month name in exception',
+      );
       return NamedException(k.name, day);
     }
     throw error('expected ISO date or month-day in exception', currentSpan());
@@ -161,8 +162,9 @@ class _Parser {
     }
     if (k is MonthNameToken) {
       advance();
-      final day =
-          _parseDayNumber('expected day number after month name in until');
+      final day = _parseDayNumber(
+        'expected day number after month name in until',
+      );
       return NamedUntil(k.name, day);
     }
     throw error("expected ISO date or month-day after 'until'", currentSpan());
@@ -487,10 +489,7 @@ class _Parser {
       final day = _parseDayNumber('expected day number after month name');
       return NamedDate(month, day);
     }
-    throw error(
-      'expected date (ISO date or month name)',
-      currentSpan(),
-    );
+    throw error('expected date (ISO date or month name)', currentSpan());
   }
 
   DayFilter _parseDayTarget() {
