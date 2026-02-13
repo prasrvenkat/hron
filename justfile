@@ -1,7 +1,7 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust test-ts test-dart test-python test-wasm test-go test-java
+test-all: test-rust test-ts test-dart test-python test-wasm test-go test-java test-csharp
 
 # Rust tests
 test-rust:
@@ -26,6 +26,10 @@ test-go:
 # Java tests
 test-java:
     cd java && mvn test
+
+# C# tests
+test-csharp:
+    dotnet test csharp/Hron.sln
 
 # Rust build
 build-rust:
@@ -53,6 +57,7 @@ versions:
     echo "python=$(python3 -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")"
     echo "go=$(grep 'const Version' go/version.go | cut -d'"' -f2)"
     echo "java=$(mvn -f java/pom.xml help:evaluate -Dexpression=project.version -q -DforceStdout)"
+    echo "csharp=$(grep '<Version>' csharp/Hron/Hron.csproj | sed 's/.*<Version>\(.*\)<\/Version>.*/\1/')"
 
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:
@@ -68,6 +73,7 @@ stamp-versions:
     cd python && uv lock
     sed -i 's/const Version = "[^"]*"/const Version = "{{version}}"/' go/version.go
     mvn -f java/pom.xml versions:set -DnewVersion={{version}} -DgenerateBackupPoms=false
+    sed -i 's/<Version>[^<]*<\/Version>/<Version>{{version}}<\/Version>/' csharp/Hron/Hron.csproj
 
 # Create a release PR: just release 1.2.3
 release new_version:
@@ -104,7 +110,7 @@ release new_version:
 
     # Create release branch, commit, push, open PR
     git checkout -b "release/v{{new_version}}"
-    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml python/pyproject.toml python/uv.lock go/version.go java/pom.xml
+    git add VERSION rust/hron/Cargo.toml rust/hron-cli/Cargo.toml rust/wasm/Cargo.toml rust/Cargo.lock ts/package.json ts/pnpm-lock.yaml dart/pubspec.yaml python/pyproject.toml python/uv.lock go/version.go java/pom.xml csharp/Hron/Hron.csproj
     git commit -m "release: v{{new_version}}"
     git push -u origin "release/v{{new_version}}"
     gh pr create --title "release: v{{new_version}}" --body "Bump version to {{new_version}} and publish."
@@ -163,6 +169,11 @@ publish-wasm:
 # Publish Java package to Maven Central
 publish-java:
     cd java && mvn deploy -P release
+
+# Publish C# package to NuGet
+publish-csharp:
+    cd csharp/Hron && dotnet pack -c Release
+    cd csharp/Hron && dotnet nuget push bin/Release/*.nupkg --source nuget.org --api-key $NUGET_API_KEY
 
 # Trigger Go module indexing on pkg.go.dev
 publish-go:

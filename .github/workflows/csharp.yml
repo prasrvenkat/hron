@@ -1,0 +1,29 @@
+name: C#
+
+on:
+  push:
+    branches: [main]
+    paths: ["csharp/**", "spec/**"]
+  pull_request:
+    paths: ["csharp/**", "spec/**"]
+
+jobs:
+  check:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - name: Format check
+        run: dotnet format csharp/Hron.sln --verify-no-changes
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - name: Build
+        run: dotnet build csharp/Hron.sln
+      - name: Test
+        run: dotnet test csharp/Hron.sln
