@@ -10,7 +10,7 @@ importers:
     dependencies:
       hron-wasm:
         specifier: latest
-        version: 0.4.1
+        version: 0.4.2
     devDependencies:
       typescript:
         specifier: ^5.7.0
@@ -808,8 +808,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  hron-wasm@0.4.1:
-    resolution: {integrity: sha512-+OG7BmrvHf6LWSVE3XQM5v+JSS7270sRFlNJQ8pSCmXyG7x2F+eM1T7kn/7TxQw6GN4aZFY50i+m/PtUtS0nPw==}
+  hron-wasm@0.4.2:
+    resolution: {integrity: sha512-4d8SLZn0LGfhFNWoqXU5SG/Sizee86g1/8kqaKSjb08AtKuU3q7HbdEwYyV/rUn8DUcCFDrha2lFu27KJi8Gvw==}
 
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
@@ -1489,7 +1489,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  hron-wasm@0.4.1: {}
+  hron-wasm@0.4.2: {}
 
   kleur@4.1.5: {}
 

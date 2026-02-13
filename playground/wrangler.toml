@@ -1,4 +1,4 @@
-name = "hron-playground"
+name = "hron"
 compatibility_date = "2026-02-11"
 workers_dev = false
 preview_urls = false
@@ -7,5 +7,5 @@ preview_urls = false
 directory = "./dist"
 
 [[routes]]
-pattern = "hron.prasrvenkat.dev"
+pattern = "hron.io"
 custom_domain = true
