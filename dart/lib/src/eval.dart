@@ -181,8 +181,8 @@ DateTime _resolveUntil(UntilSpec until, TZDateTime now) {
           return d;
         }
       }
-    } catch (_) {
-      // Invalid date, try next year
+    } on Exception catch (_) {
+      // Invalid date construction, try next year
     }
   }
   return DateTime.utc(year + 1, named.month.number, named.day);
@@ -739,8 +739,8 @@ TZDateTime? _nextSingleDate(
           final candidate = _earliestFutureAtTimes(date, times, loc, now);
           if (candidate != null) return candidate;
         }
-      } catch (_) {
-        // invalid date
+      } on Exception catch (_) {
+        // Invalid date construction, skip to next year
       }
     }
     return null;
@@ -780,7 +780,7 @@ TZDateTime? _nextYearRepeat(int interval, YearTarget target,
           } else {
             continue;
           }
-        } catch (_) {
+        } on Exception catch (_) {
           continue;
         }
       case OrdinalWeekdayTarget(
@@ -802,7 +802,7 @@ TZDateTime? _nextYearRepeat(int interval, YearTarget target,
           } else {
             continue;
           }
-        } catch (_) {
+        } on Exception catch (_) {
           continue;
         }
       case LastWeekdayYearTarget(month: final month):

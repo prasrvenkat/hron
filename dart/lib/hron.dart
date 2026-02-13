@@ -23,7 +23,7 @@ class Schedule {
     try {
       parser_impl.parse(input);
       return true;
-    } catch (_) {
+    } on HronError {
       return false;
     }
   }

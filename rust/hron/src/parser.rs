@@ -326,7 +326,7 @@ impl<'a> Parser<'a> {
     fn parse_number_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
         let num = match &self.peek().unwrap().kind {
             TokenKind::Number(n) => *n,
-            _ => unreachable!(),
+            _ => unreachable!("parse_number_repeat called without Number token"),
         };
         if num == 0 {
             let span = self.peek().unwrap().span;
@@ -368,14 +368,14 @@ impl<'a> Parser<'a> {
     fn parse_interval_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         let unit_str = match &self.peek().unwrap().kind {
             TokenKind::IntervalUnit(u) => u.clone(),
-            _ => unreachable!(),
+            _ => unreachable!("parse_interval_repeat called without IntervalUnit token"),
         };
         self.advance();
 
         let unit = match unit_str.as_str() {
             "min" => IntervalUnit::Minutes,
             "hours" => IntervalUnit::Hours,
-            _ => unreachable!(),
+            _ => unreachable!("lexer produced invalid IntervalUnit: {unit_str}"),
         };
 
         self.consume_kind("'from'", |k| matches!(k, TokenKind::From))?;

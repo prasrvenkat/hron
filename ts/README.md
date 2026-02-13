@@ -1,17 +1,17 @@
-# hron-js (TypeScript)
+# hron-ts (TypeScript)
 
 Native TypeScript implementation of [hron](https://github.com/prasrvenkat/hron) — human-readable cron expressions.
 
 ## Install
 
 ```sh
-npm install hron-js
+npm install hron-ts
 ```
 
 ## Usage
 
 ```typescript
-import { Schedule, Temporal } from "hron-js";
+import { Schedule, Temporal } from "hron-ts";
 
 // Parse an expression
 const schedule = Schedule.parse("every weekday at 9:00 in America/New_York");
