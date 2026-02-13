@@ -12,23 +12,35 @@ on:
       - "spec/**"
 
 jobs:
-  test:
+  format:
+    name: Format & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: jdx/mise-action@v2
         with:
           install_args: dart
-
       - name: Install dependencies
-        run: cd dart && dart pub get
-
+        run: dart pub get
+        working-directory: dart
       - name: Format check
-        run: cd dart && dart format --output=none --set-exit-if-changed .
-
+        run: dart format --output=none --set-exit-if-changed .
+        working-directory: dart
       - name: Analyze
-        run: cd dart && dart analyze
+        run: dart analyze
+        working-directory: dart
 
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: dart
+      - name: Install dependencies
+        run: dart pub get
+        working-directory: dart
       - name: Test
-        run: cd dart && dart test
+        run: dart test
+        working-directory: dart
