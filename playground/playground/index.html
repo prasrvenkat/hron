@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playground — hron</title>
+    <meta name="description" content="Interactive playground for hron — human-readable cron expressions" />
+    <meta property="og:title" content="hron Playground" />
+    <meta property="og:description" content="Try hron expressions interactively in your browser." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://hron.io/playground" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="header-left">
+        <h1>
+          <a href="/">
+            <img src="/logo-light.png" alt="hron" class="logo logo-light" height="32" />
+            <img src="/logo-dark.png" alt="hron" class="logo logo-dark" height="32" />
+          </a>
+          <span class="dim">playground</span>
+          <span id="version" class="version"></span>
+        </h1>
+      </div>
+      <div class="header-right">
+        <a href="https://github.com/prasrvenkat/hron" class="header-link">GitHub</a>
+        <button id="theme-toggle" type="button" aria-label="Toggle dark mode">
+          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="playground-page">
+      <div class="playground-container">
+        <div class="input-section">
+          <label for="expression">Expression</label>
+          <textarea id="expression" rows="3" spellcheck="false" autocomplete="off" placeholder="every weekday at 9:00 in America/New_York"></textarea>
+          <div id="error" class="error" hidden></div>
+          <div class="examples">
+            <span class="examples-label">Examples:</span>
+            <button type="button" class="chip" data-expr="every weekday at 9:00">every weekday at 9:00</button>
+            <button type="button" class="chip" data-expr="every 30 min from 09:00 to 17:00 on weekdays">every 30 min from 09:00 to 17:00 on weekdays</button>
+            <button type="button" class="chip" data-expr="first monday of every month at 10:00">first monday of every month at 10:00</button>
+            <button type="button" class="chip" data-expr="every year on dec 25 at 00:00">every year on dec 25 at 00:00</button>
+            <button type="button" class="chip" data-expr="every weekday at 9:00 except dec 25, jan 1 until 2027-12-31 in America/New_York">weekday 9am ET except holidays</button>
+          </div>
+        </div>
+
+        <div class="results-section">
+          <div id="results-empty" class="results-empty">
+            Type an expression or click an example to see results.
+          </div>
+
+          <div id="results" hidden>
+            <div class="result-group">
+              <h4>Cron equivalent</h4>
+              <div id="cron"></div>
+            </div>
+
+            <div class="result-group">
+              <h4>Next occurrences</h4>
+              <ol id="occurrences"></ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <div class="footer-links">
+        <a href="https://github.com/prasrvenkat/hron">GitHub</a>
+        <span class="sep">&middot;</span>
+        <a href="https://crates.io/crates/hron">crates.io</a>
+        <span class="sep">&middot;</span>
+        <a href="https://www.npmjs.com/package/hron-ts">npm</a>
+        <span class="sep">&middot;</span>
+        <a href="https://pypi.org/project/hron/">PyPI</a>
+        <span class="sep">&middot;</span>
+        <a href="https://pkg.go.dev/github.com/prasrvenkat/hron/go">pkg.go.dev</a>
+        <span class="sep">&middot;</span>
+        <a href="https://pub.dev/packages/hron">pub.dev</a>
+        <span class="sep">&middot;</span>
+        <a href="https://central.sonatype.com/artifact/io.hron/hron">Maven Central</a>
+      </div>
+      <div class="footer-license">MIT License</div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
