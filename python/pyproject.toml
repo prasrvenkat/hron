@@ -1,6 +1,6 @@
 [project]
 name = "hron"
-version = "0.4.2"
+version = "0.5.0"
 description = "Human-readable cron — a scheduling expression language that is a superset of cron"
 readme = "README.md"
 license = "MIT"

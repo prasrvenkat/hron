@@ -88,7 +88,7 @@ stamp-versions:
     # C#
     sed -i 's/<Version>[^<]*<\/Version>/<Version>{{version}}<\/Version>/' csharp/Hron/Hron.csproj
     # Ruby
-    sed -i "s/VERSION = '[^']*'/VERSION = '{{version}}'/" ruby/lib/hron/version.rb
+    sed -i 's/VERSION = "[^"]*"/VERSION = "{{version}}"/' ruby/lib/hron/version.rb
 
 # Create a release PR: just release 1.2.3
 release new_version:

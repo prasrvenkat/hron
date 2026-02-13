@@ -14,6 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        with:
+          install_args: dotnet
       - name: Format check
         run: dotnet format csharp/Hron.sln --verify-no-changes
 
@@ -23,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        with:
+          install_args: dotnet
       - name: Build
         run: dotnet build csharp/Hron.sln
       - name: Test

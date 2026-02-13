@@ -2,7 +2,7 @@
   <PropertyGroup>
     <!-- NuGet package metadata -->
     <PackageId>Hron</PackageId>
-    <Version>0.4.2</Version>
+    <Version>0.5.0</Version>
     <Authors>Prasanna Ram Venkatachalam</Authors>
     <Description>Human-readable cron expressions</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
