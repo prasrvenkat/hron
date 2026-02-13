@@ -189,10 +189,11 @@ public class ApiConformanceTest {
     JsonNode schedule = SPEC.get("schedule");
     JsonNode staticMethods = schedule.get("staticMethods");
 
-    Map<String, String> expectedMethods = Map.of(
-        "parse", "parse",
-        "fromCron", "fromCron",
-        "validate", "validate");
+    Map<String, String> expectedMethods =
+        Map.of(
+            "parse", "parse",
+            "fromCron", "fromCron",
+            "validate", "validate");
 
     for (JsonNode method : staticMethods) {
       String name = method.get("name").asText();
@@ -205,12 +206,13 @@ public class ApiConformanceTest {
     JsonNode schedule = SPEC.get("schedule");
     JsonNode instanceMethods = schedule.get("instanceMethods");
 
-    Map<String, String> expectedMethods = Map.of(
-        "nextFrom", "nextFrom",
-        "nextNFrom", "nextNFrom",
-        "matches", "matches",
-        "toCron", "toCron",
-        "toString", "toString");
+    Map<String, String> expectedMethods =
+        Map.of(
+            "nextFrom", "nextFrom",
+            "nextNFrom", "nextNFrom",
+            "matches", "matches",
+            "toCron", "toCron",
+            "toString", "toString");
 
     for (JsonNode method : instanceMethods) {
       String name = method.get("name").asText();
@@ -249,15 +251,17 @@ public class ApiConformanceTest {
     JsonNode error = SPEC.get("error");
     JsonNode constructors = error.get("constructors");
 
-    Map<String, String> expectedConstructors = Map.of(
-        "lex", "lex",
-        "parse", "parse",
-        "eval", "eval",
-        "cron", "cron");
+    Map<String, String> expectedConstructors =
+        Map.of(
+            "lex", "lex",
+            "parse", "parse",
+            "eval", "eval",
+            "cron", "cron");
 
     for (JsonNode constructor : constructors) {
       String name = constructor.asText();
-      assertTrue(expectedConstructors.containsKey(name), "Unmapped spec error constructor: " + name);
+      assertTrue(
+          expectedConstructors.containsKey(name), "Unmapped spec error constructor: " + name);
     }
   }
 
