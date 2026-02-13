@@ -53,7 +53,7 @@ void main() {
     // Instance methods
     group('instance methods', () {
       final schedule = Schedule.parse('every day at 09:00');
-      final now = TZDateTime(getLocation('UTC'), 2026, 2, 6, 12, 0, 0);
+      final now = TZDateTime.utc(2026, 2, 6, 12, 0, 0);
 
       test('nextFrom', () {
         final result = schedule.nextFrom(now);
@@ -91,8 +91,9 @@ void main() {
       });
 
       test('timezone (present)', () {
-        final schedule =
-            Schedule.parse('every day at 09:00 in America/New_York');
+        final schedule = Schedule.parse(
+          'every day at 09:00 in America/New_York',
+        );
         expect(schedule.timezone, equals('America/New_York'));
       });
     });
@@ -115,9 +116,15 @@ void main() {
 
       test('all instance methods tested', () {
         expect(
-            instanceMethods,
-            containsAll(
-                ['nextFrom', 'nextNFrom', 'matches', 'toCron', 'toString']));
+          instanceMethods,
+          containsAll([
+            'nextFrom',
+            'nextNFrom',
+            'matches',
+            'toCron',
+            'toString',
+          ]),
+        );
       });
 
       test('all getters tested', () {
