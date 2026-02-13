@@ -362,7 +362,7 @@ jobs:
         id: nuget-login
         uses: NuGet/login@v1
         with:
-          user: ${{ vars.NUGET_USER }}
+          user: ${{ secrets.NUGET_USER }}
 
       - name: Publish to NuGet
         run: |
@@ -394,8 +394,8 @@ jobs:
         run: gem build hron.gemspec
         working-directory: ruby
 
-      - name: Configure RubyGems trusted publishing
-        uses: rubygems/configure-rubygems-credentials@v1
+      - name: Configure RubyGems credentials (OIDC)
+        uses: rubygems/configure-rubygems-credentials@v1.0.0
 
       - name: Publish to RubyGems
         run: |
