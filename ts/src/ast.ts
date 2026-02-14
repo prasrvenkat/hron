@@ -52,12 +52,17 @@ export type DayOfMonthSpec =
   | { type: "single"; day: number }
   | { type: "range"; start: number; end: number };
 
+// --- Nearest direction ---
+
+export type NearestDirection = "next" | "previous";
+
 // --- Month target ---
 
 export type MonthTarget =
   | { type: "days"; specs: DayOfMonthSpec[] }
   | { type: "lastDay" }
-  | { type: "lastWeekday" };
+  | { type: "lastWeekday" }
+  | { type: "nearestWeekday"; day: number; direction: NearestDirection | null };
 
 // --- Year target ---
 

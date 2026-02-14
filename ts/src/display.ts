@@ -71,8 +71,13 @@ function displayExpr(expr: ScheduleExpr): string {
         targetStr = formatOrdinalDaySpecs(expr.target.specs);
       } else if (expr.target.type === "lastDay") {
         targetStr = "last day";
-      } else {
+      } else if (expr.target.type === "lastWeekday") {
         targetStr = "last weekday";
+      } else {
+        // nearestWeekday
+        const { day, direction } = expr.target;
+        const dirPrefix = direction ? `${direction} ` : "";
+        targetStr = `${dirPrefix}nearest weekday to ${day}${ordinalSuffix(day)}`;
       }
       if (expr.interval > 1) {
         return `every ${expr.interval} months on the ${targetStr} at ${formatTimeList(expr.times)}`;

@@ -7,6 +7,7 @@ import type {
   Exception,
   MonthName,
   MonthTarget,
+  NearestDirection,
   OrdinalPosition,
   ScheduleData,
   ScheduleExpr,
@@ -74,6 +75,74 @@ function lastWeekdayOfMonth(year: number, month: number): PD {
     d = d.subtract({ days: 1 });
   }
   return d;
+}
+
+/**
+ * Get the nearest weekday to a given day in a month.
+ * - direction=null: standard cron W behavior (never crosses month boundary)
+ * - direction="next": always prefer following weekday (can cross to next month)
+ * - direction="previous": always prefer preceding weekday (can cross to prev month)
+ * Returns null if the target_day doesn't exist in the month (e.g., day 31 in February).
+ */
+function nearestWeekday(
+  year: number,
+  month: number,
+  targetDay: number,
+  direction: NearestDirection | null,
+): PD | null {
+  const last = lastDayOfMonth(year, month);
+  const lastDay = last.day;
+
+  // If target day doesn't exist in this month, return null (skip this month)
+  if (targetDay > lastDay) {
+    return null;
+  }
+
+  const date = Temporal.PlainDate.from({ year, month, day: targetDay });
+  const dow = date.dayOfWeek; // 1=Monday, 7=Sunday
+
+  // Already a weekday (Monday=1 through Friday=5)
+  if (dow >= 1 && dow <= 5) {
+    return date;
+  }
+
+  // Saturday (dow === 6)
+  if (dow === 6) {
+    if (direction === null) {
+      // Standard: prefer Friday, but if at month start, use Monday
+      if (targetDay === 1) {
+        // Can't go to previous month, use Monday (day 3)
+        return date.add({ days: 2 });
+      }
+      // Friday
+      return date.subtract({ days: 1 });
+    }
+    if (direction === "next") {
+      // Always Monday (may cross month)
+      return date.add({ days: 2 });
+    }
+    // direction === "previous"
+    // Always Friday (may cross month if day==1)
+    return date.subtract({ days: 1 });
+  }
+
+  // Sunday (dow === 7)
+  if (direction === null) {
+    // Standard: prefer Monday, but if at month end, use Friday
+    if (targetDay >= lastDay) {
+      // Can't go to next month, use Friday (day - 2)
+      return date.subtract({ days: 2 });
+    }
+    // Monday
+    return date.add({ days: 1 });
+  }
+  if (direction === "next") {
+    // Always Monday (may cross month)
+    return date.add({ days: 1 });
+  }
+  // direction === "previous"
+  // Always Friday (go back 2 days, may cross month)
+  return date.subtract({ days: 2 });
 }
 
 function nthWeekdayOfMonth(
@@ -261,9 +330,21 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   const hasDuring = schedule.during.length > 0;
   const needsTzConversion = untilDate !== null || hasDuring || hasExceptions;
 
+  // Check if expression is NearestWeekday with direction (can cross month boundaries)
+  const handlesDuringInternally =
+    schedule.expr.type === "monthRepeat" &&
+    schedule.expr.target.type === "nearestWeekday" &&
+    schedule.expr.target.direction !== null;
+
   let current = now;
   for (let i = 0; i < 1000; i++) {
-    const candidate = nextExpr(schedule.expr, tz, schedule.anchor, current);
+    const candidate = nextExpr(
+      schedule.expr,
+      tz,
+      schedule.anchor,
+      current,
+      schedule.during,
+    );
 
     if (candidate === null) return null;
 
@@ -280,7 +361,12 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
     }
 
     // Apply during filter
-    if (hasDuring && !matchesDuring(cDate!, schedule.during)) {
+    // Skip this check for expressions that handle during internally (NearestWeekday with direction)
+    if (
+      hasDuring &&
+      !handlesDuringInternally &&
+      !matchesDuring(cDate!, schedule.during)
+    ) {
       // Skip ahead to 1st of next valid during month
       const skipTo = nextDuringMonth(cDate!, schedule.during);
       current = atTimeOnDate(skipTo, MIDNIGHT, tz).subtract({ seconds: 1 });
@@ -305,6 +391,7 @@ function nextExpr(
   tz: string,
   anchor: string | null,
   now: ZDT,
+  during: MonthName[],
 ): ZDT | null {
   switch (expr.type) {
     case "dayRepeat":
@@ -343,6 +430,7 @@ function nextExpr(
         tz,
         anchor,
         now,
+        during,
       );
     case "ordinalRepeat":
       return nextOrdinalRepeat(
@@ -460,8 +548,19 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
         const last = lastDayOfMonth(date.year, date.month);
         return Temporal.PlainDate.compare(date, last) === 0;
       }
-      const lastWd = lastWeekdayOfMonth(date.year, date.month);
-      return Temporal.PlainDate.compare(date, lastWd) === 0;
+      if (target.type === "lastWeekday") {
+        const lastWd = lastWeekdayOfMonth(date.year, date.month);
+        return Temporal.PlainDate.compare(date, lastWd) === 0;
+      }
+      // nearestWeekday
+      const targetDate = nearestWeekday(
+        date.year,
+        date.month,
+        target.day,
+        target.direction,
+      );
+      if (!targetDate) return false;
+      return Temporal.PlainDate.compare(date, targetDate) === 0;
     }
     case "ordinalRepeat": {
       if (!timeMatchesWithDst(schedule.expr.times)) return false;
@@ -716,6 +815,7 @@ function nextMonthRepeat(
   tz: string,
   anchor: string | null,
   now: ZDT,
+  during: MonthName[],
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
   let year = nowInTz.year;
@@ -724,7 +824,24 @@ function nextMonthRepeat(
   const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
   const maxIter = interval > 1 ? 24 * interval : 24;
 
+  // For NearestWeekday with direction, we need to apply the during filter here
+  // because the result can cross month boundaries
+  const applyDuringFilter =
+    during.length > 0 &&
+    target.type === "nearestWeekday" &&
+    target.direction !== null;
+
   for (let i = 0; i < maxIter; i++) {
+    // Check during filter for NearestWeekday with direction
+    if (applyDuringFilter && !during.some((mn) => monthNumber(mn) === month)) {
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+      continue;
+    }
+
     // Check interval alignment
     if (interval > 1) {
       const cur = Temporal.PlainDate.from({ year, month, day: 1 });
@@ -757,8 +874,14 @@ function nextMonthRepeat(
       }
     } else if (target.type === "lastDay") {
       dateCandidates.push(lastDayOfMonth(year, month));
-    } else {
+    } else if (target.type === "lastWeekday") {
       dateCandidates.push(lastWeekdayOfMonth(year, month));
+    } else {
+      // nearestWeekday
+      const nwDate = nearestWeekday(year, month, target.day, target.direction);
+      if (nwDate) {
+        dateCandidates.push(nwDate);
+      }
     }
 
     let best: ZDT | null = null;

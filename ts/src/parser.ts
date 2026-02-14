@@ -8,6 +8,7 @@ import type {
   IntervalUnit,
   MonthName,
   MonthTarget,
+  NearestDirection,
   OrdinalPosition,
   ScheduleData,
   ScheduleExpr,
@@ -364,9 +365,15 @@ class Parser {
     } else if (k?.type === "ordinalNumber") {
       const specs = this.parseOrdinalDayList();
       target = { type: "days", specs };
+    } else if (
+      k?.type === "next" ||
+      k?.type === "previous" ||
+      k?.type === "nearest"
+    ) {
+      target = this.parseNearestWeekdayTarget();
     } else {
       throw this.error(
-        "expected ordinal day (1st, 15th) or 'last' after 'the'",
+        "expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'",
         this.currentSpan(),
       );
     }
@@ -374,6 +381,39 @@ class Parser {
     this.consumeKind("'at'", (k) => k.type === "at");
     const times = this.parseTimeList();
     return { type: "monthRepeat", interval, target, times };
+  }
+
+  // [next|previous] nearest weekday to <day>
+  private parseNearestWeekdayTarget(): MonthTarget {
+    // Optional direction: "next" or "previous"
+    let direction: NearestDirection | null = null;
+    const k = this.peekKind();
+
+    if (k?.type === "next") {
+      this.advance();
+      direction = "next";
+    } else if (k?.type === "previous") {
+      this.advance();
+      direction = "previous";
+    }
+
+    this.consumeKind("'nearest'", (k) => k.type === "nearest");
+    this.consumeKind("'weekday'", (k) => k.type === "weekday");
+    this.consumeKind("'to'", (k) => k.type === "to");
+
+    const day = this.parseOrdinalDayNumber();
+
+    return { type: "nearestWeekday", day, direction };
+  }
+
+  private parseOrdinalDayNumber(): number {
+    const k = this.peekKind();
+    if (k?.type === "ordinalNumber") {
+      const d = (k as { type: "ordinalNumber"; value: number }).value;
+      this.advance();
+      return d;
+    }
+    throw this.error("expected ordinal day number", this.currentSpan());
   }
 
   private parseOrdinalRepeat(): ScheduleExpr {
