@@ -28,6 +28,8 @@ from ._ast import (
     NamedDate,
     NamedException,
     NamedUntil,
+    NearestDirection,
+    NearestWeekdayTarget,
     OrdinalPosition,
     OrdinalRepeat,
     ScheduleData,
@@ -114,6 +116,75 @@ def _last_weekday_in_month(year: int, month: int, weekday: Weekday) -> date:
     d = _last_day_of_month(year, month)
     while d.isoweekday() != target_dow:
         d -= timedelta(days=1)
+    return d
+
+
+def _nearest_weekday(
+    year: int, month: int, target_day: int, direction: NearestDirection | None
+) -> date | None:
+    """Get the nearest weekday to a given day in a month.
+
+    Args:
+        year: The year
+        month: The month (1-12)
+        target_day: The target day of month (1-31)
+        direction: None for standard cron W behavior (never crosses month boundary),
+                   NearestDirection.NEXT for always prefer following weekday,
+                   NearestDirection.PREVIOUS for always prefer preceding weekday.
+
+    Returns:
+        The nearest weekday date, or None if target_day doesn't exist in the month.
+    """
+    last = _last_day_of_month(year, month)
+    last_day = last.day
+
+    # If target day doesn't exist in this month, return None (skip this month)
+    if target_day > last_day:
+        return None
+
+    try:
+        d = date(year, month, target_day)
+    except ValueError:
+        return None
+
+    dow = d.isoweekday()  # Monday=1, Sunday=7
+
+    # Already a weekday (Mon-Fri)
+    if 1 <= dow <= 5:
+        return d
+
+    # Saturday (dow=6)
+    if dow == 6:
+        if direction is None:
+            # Standard: prefer Friday, but if at month start, use Monday
+            if target_day == 1:
+                # Can't go to previous month, use Monday (day 3)
+                return d + timedelta(days=2)
+            else:
+                return d - timedelta(days=1)  # Friday
+        elif direction == NearestDirection.NEXT:
+            # Always Monday (may cross month)
+            return d + timedelta(days=2)
+        else:  # PREVIOUS
+            # Always Friday (may cross month if day==1)
+            return d - timedelta(days=1)
+
+    # Sunday (dow=7)
+    if dow == 7:
+        if direction is None:
+            # Standard: prefer Monday, but if at month end, use Friday
+            if target_day >= last_day:
+                # Can't go to next month, use Friday (day - 2)
+                return d - timedelta(days=2)
+            else:
+                return d + timedelta(days=1)  # Monday
+        elif direction == NearestDirection.NEXT:
+            # Always Monday (may cross month)
+            return d + timedelta(days=1)
+        else:  # PREVIOUS
+            # Always Friday (go back 2 days, may cross month)
+            return d - timedelta(days=2)
+
     return d
 
 
@@ -229,9 +300,16 @@ def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
     has_exceptions = len(schedule.except_) > 0
     has_during = len(schedule.during) > 0
 
+    # Check if expression is NearestWeekday with direction (can cross month boundaries)
+    handles_during_internally = (
+        isinstance(schedule.expr, MonthRepeat)
+        and isinstance(schedule.expr.target, NearestWeekdayTarget)
+        and schedule.expr.target.direction is not None
+    )
+
     current = now
     for _ in range(1000):
-        candidate = _next_expr(schedule.expr, tz, schedule.anchor, current)
+        candidate = _next_expr(schedule.expr, tz, schedule.anchor, current, schedule.during)
 
         if candidate is None:
             return None
@@ -243,7 +321,9 @@ def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
             return None
 
         # Apply during filter
-        if has_during and not _matches_during(c_date, schedule.during):
+        # Skip for expressions that handle during internally (NearestWeekday w/ direction)
+        during_mismatch = has_during and not _matches_during(c_date, schedule.during)
+        if during_mismatch and not handles_during_internally:
             skip_to = _next_during_month(c_date, schedule.during)
             midnight = _at_time_on_date(skip_to, TimeOfDay(0, 0), tz)
             current = midnight - timedelta(seconds=1)
@@ -266,6 +346,7 @@ def _next_expr(
     tz: ZoneInfo,
     anchor: str | None,
     now: datetime,
+    during: tuple[MonthName, ...] = (),
 ) -> datetime | None:
     match expr:
         case DayRepeat(interval=interval, days=days, times=times):
@@ -281,7 +362,7 @@ def _next_expr(
         case WeekRepeat(interval=interval, days=days, times=times):
             return _next_week_repeat(interval, days, times, tz, anchor, now)
         case MonthRepeat(interval=interval, target=target, times=times):
-            return _next_month_repeat(interval, target, times, tz, anchor, now)
+            return _next_month_repeat(interval, target, times, tz, anchor, now, during)
         case OrdinalRepeat(interval=interval, ordinal=ordinal, day=day, times=times):
             return _next_ordinal_repeat(interval, ordinal, day, times, tz, anchor, now)
         case SingleDateExpr(date=date_spec, times=times):
@@ -391,6 +472,9 @@ def matches(schedule: ScheduleData, dt: datetime) -> bool:
                 case LastWeekdayTarget():
                     lwd = _last_weekday_of_month(d.year, d.month)
                     return d == lwd
+                case NearestWeekdayTarget(day=target_day, direction=direction):
+                    target_date = _nearest_weekday(d.year, d.month, target_day, direction)
+                    return target_date is not None and d == target_date
 
         case OrdinalRepeat(interval=interval, ordinal=ordinal, day=day, times=times):
             if not time_matches_with_dst(times):
@@ -609,6 +693,7 @@ def _next_month_repeat(
     tz: ZoneInfo,
     anchor: str | None,
     now: datetime,
+    during: tuple[MonthName, ...] = (),
 ) -> datetime | None:
     now_in_tz = now.astimezone(tz)
     year = now_in_tz.year
@@ -617,7 +702,24 @@ def _next_month_repeat(
     anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
     max_iter = 24 * interval if interval > 1 else 24
 
+    # For NearestWeekday with direction, we need to apply the during filter here
+    # because the result can cross month boundaries
+    apply_during_filter = (
+        len(during) > 0
+        and isinstance(target, NearestWeekdayTarget)
+        and target.direction is not None
+    )
+
     for _ in range(max_iter):
+        # Check during filter for NearestWeekday with direction
+        if apply_during_filter:
+            during_months = {mn.number for mn in during}
+            if month not in during_months:
+                month += 1
+                if month > 12:
+                    month = 1
+                    year += 1
+                continue
         # Check interval alignment
         if interval > 1:
             cur = date(year, month, 1)
@@ -643,6 +745,10 @@ def _next_month_repeat(
                 date_candidates.append(_last_day_of_month(year, month))
             case LastWeekdayTarget():
                 date_candidates.append(_last_weekday_of_month(year, month))
+            case NearestWeekdayTarget(day=target_day, direction=direction):
+                nearest_date = _nearest_weekday(year, month, target_day, direction)
+                if nearest_date is not None:
+                    date_candidates.append(nearest_date)
 
         best: datetime | None = None
         for dc in date_candidates:

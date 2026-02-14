@@ -288,12 +288,27 @@ const (
 	MonthTargetKindDays MonthTargetKind = iota
 	MonthTargetKindLastDay
 	MonthTargetKindLastWeekday
+	MonthTargetKindNearestWeekday
+)
+
+// NearestDirection represents the direction for nearest weekday calculations.
+type NearestDirection int
+
+const (
+	// NearestNone means no direction (standard cron W behavior, never crosses month boundary)
+	NearestNone NearestDirection = iota
+	// NearestNext means always prefer following weekday (can cross to next month)
+	NearestNext
+	// NearestPrevious means always prefer preceding weekday (can cross to prev month)
+	NearestPrevious
 )
 
 // MonthTarget represents which day(s) within a month a schedule fires on.
 type MonthTarget struct {
-	Kind  MonthTargetKind
-	Specs []DayOfMonthSpec // Only used when Kind == MonthTargetKindDays
+	Kind      MonthTargetKind
+	Specs     []DayOfMonthSpec // Only used when Kind == MonthTargetKindDays
+	Day       int              // Only used when Kind == MonthTargetKindNearestWeekday
+	Direction NearestDirection // Only used when Kind == MonthTargetKindNearestWeekday
 }
 
 // NewDaysTarget creates a month target for specific days.
@@ -309,6 +324,11 @@ func NewLastDayTarget() MonthTarget {
 // NewLastWeekdayTarget creates a month target for the last weekday of the month.
 func NewLastWeekdayTarget() MonthTarget {
 	return MonthTarget{Kind: MonthTargetKindLastWeekday}
+}
+
+// NewNearestWeekdayTarget creates a month target for the nearest weekday to a given day.
+func NewNearestWeekdayTarget(day int, direction NearestDirection) MonthTarget {
+	return MonthTarget{Kind: MonthTargetKindNearestWeekday, Day: day, Direction: direction}
 }
 
 // ExpandDays returns all days specified by this target.

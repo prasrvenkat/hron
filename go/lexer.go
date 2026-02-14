@@ -38,6 +38,9 @@ const (
 	TokenISODate
 	TokenComma
 	TokenTimezone
+	TokenNearest
+	TokenNext
+	TokenPrevious
 )
 
 // Token represents a lexed token.
@@ -292,6 +295,10 @@ var keywordMap = map[string]Token{
 	"third":  {Kind: TokenOrdinal, OrdinalVal: Third},
 	"fourth": {Kind: TokenOrdinal, OrdinalVal: Fourth},
 	"fifth":  {Kind: TokenOrdinal, OrdinalVal: Fifth},
+	// Nearest weekday keywords
+	"nearest":  {Kind: TokenNearest},
+	"next":     {Kind: TokenNext},
+	"previous": {Kind: TokenPrevious},
 	// Interval units
 	"min":     {Kind: TokenIntervalUnit, UnitVal: IntervalMin},
 	"mins":    {Kind: TokenIntervalUnit, UnitVal: IntervalMin},

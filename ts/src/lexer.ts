@@ -20,6 +20,9 @@ export type TokenKind =
   | { type: "starting" }
   | { type: "during" }
   | { type: "year" }
+  | { type: "nearest" }
+  | { type: "next" }
+  | { type: "previous" }
   | { type: "day" }
   | { type: "weekday" }
   | { type: "weekend" }
@@ -254,6 +257,9 @@ const KEYWORD_MAP: Record<string, TokenKind> = {
   during: { type: "during" },
   year: { type: "year" },
   years: { type: "year" },
+  nearest: { type: "nearest" },
+  next: { type: "next" },
+  previous: { type: "previous" },
 
   day: { type: "day" },
   days: { type: "day" },

@@ -109,6 +109,59 @@ module Hron
       d
     end
 
+    # Get the nearest weekday to a given day in a month.
+    # - direction=nil: standard cron W behavior (never crosses month boundary)
+    # - direction=NearestDirection::NEXT: always prefer following weekday (can cross to next month)
+    # - direction=NearestDirection::PREVIOUS: always prefer preceding weekday (can cross to prev month)
+    # Returns nil if the target_day doesn't exist in the month (e.g., day 31 in February).
+    def self.nearest_weekday(year, month, target_day, direction)
+      last = last_day_of_month(year, month)
+      last_day_num = last.day
+
+      # If target day doesn't exist in this month, return nil (skip this month)
+      return nil if target_day > last_day_num
+
+      date = Date.new(year, month, target_day)
+      dow = date.cwday # Monday=1 ... Sunday=7
+
+      # Already a weekday (Mon-Fri = 1-5)
+      return date if dow.between?(1, 5)
+
+      case direction
+      when nil
+        # Standard cron W behavior: never cross month boundary
+        if dow == 6 && target_day == 1
+          # Saturday at 1st: can't go to previous month, use Monday (day 3)
+          date + 2
+        elsif dow == 6
+          # Saturday: Friday
+          date - 1
+        elsif target_day >= last_day_num
+          # Sunday at end of month: can't go to next month, use Friday
+          date - 2
+        else
+          # Sunday: Monday
+          date + 1
+        end
+
+      when NearestDirection::NEXT
+        # Always prefer following weekday (can cross month)
+        if dow == 6 # Saturday -> Monday
+          date + 2
+        else # Sunday -> Monday
+          date + 1
+        end
+
+      when NearestDirection::PREVIOUS
+        # Always prefer preceding weekday (can cross month if day==1)
+        if dow == 6 # Saturday -> Friday
+          date - 1
+        else # Sunday -> Friday (go back 2 days)
+          date - 2
+        end
+      end
+    end
+
     def self.nth_weekday_of_month(year, month, weekday, n)
       target_dow = Weekday.number(weekday)
       d = Date.new(year, month, 1)
@@ -204,9 +257,14 @@ module Hron
       has_exceptions = !schedule.except.empty?
       has_during = !schedule.during.empty?
 
+      # Check if expression is NearestWeekday with direction (can cross month boundaries)
+      handles_during_internally = schedule.expr.is_a?(MonthRepeat) &&
+        schedule.expr.target.is_a?(NearestWeekdayTarget) &&
+        !schedule.expr.target.direction.nil?
+
       current = now
       1000.times do
-        candidate = next_expr(schedule.expr, tz, schedule.anchor, current)
+        candidate = next_expr(schedule.expr, tz, schedule.anchor, current, schedule.during)
         return nil unless candidate
 
         c_date = candidate.to_date
@@ -215,7 +273,8 @@ module Hron
         return nil if until_date && c_date > until_date
 
         # Apply during filter
-        if has_during && !EvalHelpers.matches_during(c_date, schedule.during)
+        # Skip this check for expressions that handle during internally (NearestWeekday with direction)
+        if has_during && !handles_during_internally && !EvalHelpers.matches_during(c_date, schedule.during)
           skip_to = EvalHelpers.next_during_month(c_date, schedule.during)
           midnight = EvalHelpers.at_time_on_date(skip_to, TimeOfDay.new(0, 0), tz)
           current = midnight - 1
@@ -266,7 +325,7 @@ module Hron
       matches_expr(schedule.expr, schedule.anchor, d, dt_local, tz)
     end
 
-    def self.next_expr(expr, tz, anchor, now)
+    def self.next_expr(expr, tz, anchor, now, during = [])
       case expr
       when DayRepeat
         next_day_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
@@ -275,7 +334,7 @@ module Hron
       when WeekRepeat
         next_week_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
       when MonthRepeat
-        next_month_repeat(expr.interval, expr.target, expr.times, tz, anchor, now)
+        next_month_repeat(expr.interval, expr.target, expr.times, tz, anchor, now, during)
       when OrdinalRepeat
         next_ordinal_repeat(expr.interval, expr.ordinal, expr.day, expr.times, tz, anchor, now)
       when SingleDateExpr
@@ -391,6 +450,9 @@ module Hron
         d == EvalHelpers.last_day_of_month(d.year, d.month)
       when LastWeekdayTarget
         d == EvalHelpers.last_weekday_of_month(d.year, d.month)
+      when NearestWeekdayTarget
+        target_date = EvalHelpers.nearest_weekday(d.year, d.month, target.day, target.direction)
+        target_date && d == target_date
       else
         false
       end
@@ -552,7 +614,7 @@ module Hron
       nil
     end
 
-    def self.next_month_repeat(interval, target, times, tz, anchor, now)
+    def self.next_month_repeat(interval, target, times, tz, anchor, now, during = [])
       now_local = tz.utc_to_local(now.utc)
       year = now_local.year
       month = now_local.month
@@ -560,7 +622,23 @@ module Hron
       anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
       max_iter = (interval > 1) ? 24 * interval : 24
 
+      # For NearestWeekday with direction, we need to apply the during filter here
+      # because the result can cross month boundaries
+      apply_during_filter = !during.empty? &&
+        target.is_a?(NearestWeekdayTarget) &&
+        !target.direction.nil?
+
       max_iter.times do
+        # Check during filter for NearestWeekday with direction
+        if apply_during_filter && !during.any? { |mn| MonthName.number(mn) == month }
+          month += 1
+          if month > 12
+            month = 1
+            year += 1
+          end
+          next
+        end
+
         if interval > 1
           cur = Date.new(year, month, 1)
           month_offset = EvalHelpers.months_between_ym(anchor_date, cur)
@@ -593,6 +671,9 @@ module Hron
           date_candidates << EvalHelpers.last_day_of_month(year, month)
         when LastWeekdayTarget
           date_candidates << EvalHelpers.last_weekday_of_month(year, month)
+        when NearestWeekdayTarget
+          nw = EvalHelpers.nearest_weekday(year, month, target.day, target.direction)
+          date_candidates << nw if nw
         end
 
         best = nil

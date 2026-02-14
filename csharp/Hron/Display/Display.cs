@@ -132,8 +132,20 @@ public static class Display
         MonthTargetKind.LastDay => "last day",
         MonthTargetKind.LastWeekday => "last weekday",
         MonthTargetKind.Days => FormatOrdinalDaySpecs(target.Specs),
+        MonthTargetKind.NearestWeekday => RenderNearestWeekday(target),
         _ => throw new ArgumentOutOfRangeException()
     };
+
+    private static string RenderNearestWeekday(MonthTarget target)
+    {
+        var prefix = target.NearestWeekdayDirection switch
+        {
+            NearestDirection.Next => "next ",
+            NearestDirection.Previous => "previous ",
+            _ => ""
+        };
+        return $"{prefix}nearest weekday to {OrdinalNumber(target.NearestWeekdayDay)}";
+    }
 
     private static string RenderYearTarget(YearTarget target) => target.Kind switch
     {

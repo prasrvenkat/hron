@@ -234,6 +234,9 @@ public final class Lexer {
             Map.entry("week", Token.keyword(TokenKind.WEEKS, DUMMY_SPAN)),
             Map.entry("month", Token.keyword(TokenKind.MONTH, DUMMY_SPAN)),
             Map.entry("months", Token.keyword(TokenKind.MONTH, DUMMY_SPAN)),
+            Map.entry("nearest", Token.keyword(TokenKind.NEAREST, DUMMY_SPAN)),
+            Map.entry("next", Token.keyword(TokenKind.NEXT, DUMMY_SPAN)),
+            Map.entry("previous", Token.keyword(TokenKind.PREVIOUS, DUMMY_SPAN)),
 
             // Day names
             Map.entry("monday", Token.dayName(Weekday.MONDAY, DUMMY_SPAN)),

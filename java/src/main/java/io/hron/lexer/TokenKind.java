@@ -22,6 +22,9 @@ public enum TokenKind {
   WEEKEND,
   WEEKS,
   MONTH,
+  NEAREST,
+  NEXT,
+  PREVIOUS,
 
   // Value-carrying tokens
   DAY_NAME,

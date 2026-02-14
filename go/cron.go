@@ -73,6 +73,11 @@ func ToCron(schedule *ScheduleData) (string, error) {
 			return "", CronError("not expressible as cron (last day of month not supported)")
 		case MonthTargetKindLastWeekday:
 			return "", CronError("not expressible as cron (last weekday of month not supported)")
+		case MonthTargetKindNearestWeekday:
+			if expr.MonthTarget.Direction != NearestNone {
+				return "", CronError("not expressible as cron (directional nearest weekday not supported)")
+			}
+			return fmt.Sprintf("%d %d %dW * *", t.Minute, t.Hour, expr.MonthTarget.Day), nil
 		}
 
 	case ScheduleExprKindOrdinal:
@@ -168,9 +173,13 @@ func FromCron(cron string) (*ScheduleData, error) {
 		return schedule, nil
 	}
 
-	// Check for W (nearest weekday) - not yet supported
-	if strings.HasSuffix(domField, "W") && domField != "LW" {
-		return nil, CronError("W (nearest weekday) not yet supported")
+	// Check for W (nearest weekday) pattern like 15W
+	schedule, handled, err = tryParseNearestWeekday(minuteField, hourField, domField, dowField, during)
+	if err != nil {
+		return nil, err
+	}
+	if handled {
+		return schedule, nil
 	}
 
 	// Check for interval patterns: */N or range/N
@@ -412,6 +421,42 @@ func tryParseNthWeekday(minuteField, hourField, domField, dowField string, durin
 	}
 
 	return nil, false, nil
+}
+
+// tryParseNearestWeekday tries to parse W (nearest weekday) patterns like 15W.
+func tryParseNearestWeekday(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
+	// Check for pattern like 15W, 1W, etc.
+	if !strings.HasSuffix(domField, "W") || domField == "LW" {
+		return nil, false, nil
+	}
+
+	// Extract the day number before the W
+	dayStr := domField[:len(domField)-1]
+	day, err := strconv.Atoi(dayStr)
+	if err != nil {
+		return nil, false, CronError(fmt.Sprintf("invalid nearest weekday value: %s", domField))
+	}
+	if day < 1 || day > 31 {
+		return nil, false, CronError(fmt.Sprintf("nearest weekday day must be 1-31, got %d", day))
+	}
+
+	if dowField != "*" && dowField != "?" {
+		return nil, false, CronError("DOW must be * when using W in DOM")
+	}
+
+	minute, err := parseSingleValue(minuteField, "minute", 0, 59)
+	if err != nil {
+		return nil, false, err
+	}
+	hour, err := parseSingleValue(hourField, "hour", 0, 23)
+	if err != nil {
+		return nil, false, err
+	}
+
+	target := NewNearestWeekdayTarget(day, NearestNone)
+	schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{{hour, minute}}))
+	schedule.During = during
+	return schedule, true, nil
 }
 
 // tryParseLastDay tries to parse L (last day) or LW (last weekday) patterns.

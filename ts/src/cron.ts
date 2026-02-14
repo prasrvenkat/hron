@@ -121,9 +121,18 @@ export function toCron(schedule: ScheduleData): string {
           "not expressible as cron (last day of month not supported)",
         );
       }
-      throw HronError.cron(
-        "not expressible as cron (last weekday of month not supported)",
-      );
+      if (target.type === "lastWeekday") {
+        throw HronError.cron(
+          "not expressible as cron (last weekday of month not supported)",
+        );
+      }
+      // nearestWeekday
+      if (target.direction !== null) {
+        throw HronError.cron(
+          "not expressible as cron (directional nearest weekday not supported)",
+        );
+      }
+      return `${time.minute} ${time.hour} ${target.day}W * *`;
     }
 
     case "ordinalRepeat":
@@ -206,9 +215,16 @@ export function fromCron(cron: string): ScheduleData {
   );
   if (lastDayResult) return lastDayResult;
 
-  // Check for W (nearest weekday) - not yet supported
+  // Check for W (nearest weekday): e.g., 15W, 1W
   if (domField.endsWith("W") && domField !== "LW") {
-    throw HronError.cron("W (nearest weekday) not yet supported");
+    const nearestWeekdayResult = tryParseNearestWeekday(
+      minuteField,
+      hourField,
+      domField,
+      dowField,
+      during,
+    );
+    if (nearestWeekdayResult) return nearestWeekdayResult;
   }
 
   // Check for interval patterns: */N or range/N
@@ -486,6 +502,52 @@ function tryParseLastDay(
 
   const target: MonthTarget =
     domField === "LW" ? { type: "lastWeekday" } : { type: "lastDay" };
+
+  const schedule = newScheduleData({
+    type: "monthRepeat",
+    interval: 1,
+    target,
+    times: [{ hour, minute }],
+  });
+  schedule.during = during;
+  return schedule;
+}
+
+/** Try to parse W (nearest weekday) patterns: 15W, 1W, etc. */
+function tryParseNearestWeekday(
+  minuteField: string,
+  hourField: string,
+  domField: string,
+  dowField: string,
+  during: MonthName[],
+): ScheduleData | null {
+  if (!domField.endsWith("W") || domField === "LW") {
+    return null;
+  }
+
+  if (dowField !== "*" && dowField !== "?") {
+    throw HronError.cron("DOW must be * when using W in DOM");
+  }
+
+  const dayStr = domField.slice(0, -1);
+  const day = parseInt(dayStr, 10);
+
+  if (isNaN(day)) {
+    throw HronError.cron(`invalid W day: ${dayStr}`);
+  }
+
+  if (day < 1 || day > 31) {
+    throw HronError.cron(`W day must be 1-31, got ${day}`);
+  }
+
+  const minute = parseSingleValue(minuteField, "minute", 0, 59);
+  const hour = parseSingleValue(hourField, "hour", 0, 23);
+
+  const target: MonthTarget = {
+    type: "nearestWeekday",
+    day,
+    direction: null,
+  };
 
   const schedule = newScheduleData({
     type: "monthRepeat",

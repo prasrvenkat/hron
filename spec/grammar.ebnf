@@ -66,12 +66,14 @@ day_name       = "monday"  | "tuesday" | "wednesday" | "thursday"
 
 (* --- Month targets --- *)
 
-month_target   = ordinal_day_spec_list | last_target ;
+month_target   = ordinal_day_spec_list | last_target | nearest_weekday_target ;
 ordinal_day_spec_list = ordinal_day_spec , { "," , ordinal_day_spec } ;
 ordinal_day_spec = ordinal_day , [ "to" , ordinal_day ] ;
 ordinal_day    = number , ordinal_suffix ;
 ordinal_suffix = "st" | "nd" | "rd" | "th" ;
 last_target    = "last" , ( "day" | "weekday" ) ;
+nearest_weekday_target = [ direction ] , "nearest" , "weekday" , "to" , ordinal_day ;
+direction      = "next" | "previous" ;
 
 (* --- Date targets (for "on" expressions) --- *)
 

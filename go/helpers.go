@@ -249,3 +249,66 @@ func isoWeekday(t time.Time) int {
 	dow := t.Weekday()
 	return (int(dow)+6)%7 + 1
 }
+
+// nearestWeekday returns the nearest weekday to a given day in a month.
+// - direction=NearestNone: standard cron W behavior (never crosses month boundary)
+// - direction=NearestNext: always prefer following weekday (can cross to next month)
+// - direction=NearestPrevious: always prefer preceding weekday (can cross to prev month)
+// Returns zero time if the target_day doesn't exist in the month (e.g., day 31 in February).
+func nearestWeekday(year int, month time.Month, targetDay int, direction NearestDirection) (time.Time, bool) {
+	last := lastDayOfMonth(year, month)
+	lastDay := last.Day()
+
+	// If target day doesn't exist in this month, return zero (skip this month)
+	if targetDay > lastDay {
+		return time.Time{}, false
+	}
+
+	date := time.Date(year, month, targetDay, 0, 0, 0, 0, time.UTC)
+	dow := date.Weekday()
+
+	// If already a weekday (Mon-Fri), return as-is
+	if dow != time.Saturday && dow != time.Sunday {
+		return date, true
+	}
+
+	switch dow {
+	case time.Saturday:
+		switch direction {
+		case NearestNone:
+			// Standard: prefer Friday, but if at month start, use Monday
+			if targetDay == 1 {
+				// Can't go to previous month, use Monday (day 3)
+				return date.AddDate(0, 0, 2), true
+			}
+			// Friday
+			return date.AddDate(0, 0, -1), true
+		case NearestNext:
+			// Always Monday (may cross month)
+			return date.AddDate(0, 0, 2), true
+		case NearestPrevious:
+			// Always Friday (may cross month if day==1)
+			return date.AddDate(0, 0, -1), true
+		}
+
+	case time.Sunday:
+		switch direction {
+		case NearestNone:
+			// Standard: prefer Monday, but if at month end, use Friday
+			if targetDay >= lastDay {
+				// Can't go to next month, use Friday (day - 2)
+				return date.AddDate(0, 0, -2), true
+			}
+			// Monday
+			return date.AddDate(0, 0, 1), true
+		case NearestNext:
+			// Always Monday (may cross month)
+			return date.AddDate(0, 0, 1), true
+		case NearestPrevious:
+			// Always Friday (go back 2 days, may cross month)
+			return date.AddDate(0, 0, -2), true
+		}
+	}
+
+	return date, true
+}

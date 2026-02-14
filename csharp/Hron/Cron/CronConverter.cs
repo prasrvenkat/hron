@@ -102,6 +102,9 @@ public static class CronConverter
             MonthTargetKind.Days => $"{t.Minute} {t.Hour} {FormatIntList(mr.Target.ExpandDays())} * *",
             MonthTargetKind.LastDay => throw HronException.Cron("not expressible as cron (last day of month not supported)"),
             MonthTargetKind.LastWeekday => throw HronException.Cron("not expressible as cron (last weekday of month not supported)"),
+            MonthTargetKind.NearestWeekday when mr.Target.NearestWeekdayDirection.HasValue =>
+                throw HronException.Cron("not expressible as cron (directional nearest weekday not supported)"),
+            MonthTargetKind.NearestWeekday => $"{t.Minute} {t.Hour} {mr.Target.NearestWeekdayDay}W * *",
             _ => throw new ArgumentException("Unknown month target kind")
         };
     }
@@ -167,10 +170,14 @@ public static class CronConverter
             return lastDay;
         }
 
-        // Check for W (nearest weekday) - not yet supported
+        // Check for W (nearest weekday): 15W, 1W, etc.
         if (domField.EndsWith('W') && domField != "LW")
         {
-            throw HronException.Cron("W (nearest weekday) not yet supported");
+            var nearestWeekday = TryParseNearestWeekday(minuteField, hourField, domField, dowField, during);
+            if (nearestWeekday is not null)
+            {
+                return nearestWeekday;
+            }
         }
 
         // Check for interval patterns: */N or range/N
@@ -430,6 +437,46 @@ public static class CronConverter
         var hour = ParseSingleValue(hourField, "hour", 0, 23);
 
         var target = domField == "LW" ? MonthTarget.LastWeekday() : MonthTarget.LastDay();
+
+        return ScheduleData.Of(new MonthRepeat(1, target, [new TimeOfDay(hour, minute)]))
+            .WithDuring(during);
+    }
+
+    /// <summary>
+    /// Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
+    /// </summary>
+    private static ScheduleData? TryParseNearestWeekday(
+        string minuteField,
+        string hourField,
+        string domField,
+        string dowField,
+        List<MonthName> during)
+    {
+        if (!domField.EndsWith('W') || domField == "LW")
+        {
+            return null;
+        }
+
+        if (dowField != "*" && dowField != "?")
+        {
+            throw HronException.Cron("DOW must be * when using W in DOM");
+        }
+
+        var dayStr = domField[..^1];
+        if (!int.TryParse(dayStr, out var day))
+        {
+            throw HronException.Cron($"invalid W day: {dayStr}");
+        }
+
+        if (day < 1 || day > 31)
+        {
+            throw HronException.Cron($"W day must be 1-31, got {day}");
+        }
+
+        var minute = ParseSingleValue(minuteField, "minute", 0, 59);
+        var hour = ParseSingleValue(hourField, "hour", 0, 23);
+
+        var target = MonthTarget.NearestWeekday(day, direction: null);
 
         return ScheduleData.Of(new MonthRepeat(1, target, [new TimeOfDay(hour, minute)]))
             .WithDuring(during);

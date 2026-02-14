@@ -20,6 +20,9 @@ module Hron
     STARTING = :starting
     DURING = :during
     YEAR = :year
+    NEAREST = :nearest
+    NEXT = :next
+    PREVIOUS = :previous
     DAY = :day
     WEEKDAY_KW = :weekday_kw
     WEEKEND_KW = :weekend_kw
@@ -59,6 +62,9 @@ module Hron
     "during" => TokenKind::DURING,
     "year" => TokenKind::YEAR,
     "years" => TokenKind::YEAR,
+    "nearest" => TokenKind::NEAREST,
+    "next" => TokenKind::NEXT,
+    "previous" => TokenKind::PREVIOUS,
     "day" => TokenKind::DAY,
     "days" => TokenKind::DAY,
     "weekday" => TokenKind::WEEKDAY_KW,

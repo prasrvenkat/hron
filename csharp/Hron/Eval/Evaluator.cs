@@ -21,9 +21,14 @@ public static class Evaluator
     /// </summary>
     public static DateTimeOffset? NextFrom(ScheduleData data, DateTimeOffset now, TimeZoneInfo location)
     {
+        // Check if this is a NearestWeekday with direction - it handles during filter internally
+        var handlesDuringInternally = data.Expr is MonthRepeat mr &&
+            mr.Target.Kind == MonthTargetKind.NearestWeekday &&
+            mr.Target.NearestWeekdayDirection.HasValue;
+
         for (var i = 0; i < MaxIterations; i++)
         {
-            var candidate = NextCandidate(data.Expr, now, location, data.Anchor);
+            var candidate = NextCandidate(data.Expr, now, location, data.Anchor, data.During);
             if (candidate is null)
             {
                 return null;
@@ -49,8 +54,8 @@ public static class Evaluator
                 }
             }
 
-            // Check during clause
-            if (!MatchesDuring(DateOnly.FromDateTime(t.DateTime), data.During))
+            // Check during clause (skip if handled internally for NearestWeekday with direction)
+            if (!handlesDuringInternally && !MatchesDuring(DateOnly.FromDateTime(t.DateTime), data.During))
             {
                 // Skip to next month that matches
                 var nextMonth = NextDuringMonth(DateOnly.FromDateTime(t.DateTime), data.During);
@@ -97,14 +102,14 @@ public static class Evaluator
         return next.HasValue && next.Value == dt;
     }
 
-    private static DateTimeOffset? NextCandidate(IScheduleExpr expr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    private static DateTimeOffset? NextCandidate(IScheduleExpr expr, DateTimeOffset now, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName>? during = null)
     {
         return expr switch
         {
             DayRepeat dr => NextDayRepeat(dr, now, location, anchor),
             IntervalRepeat ir => NextIntervalRepeat(ir, now, location),
             WeekRepeat wr => NextWeekRepeat(wr, now, location, anchor),
-            MonthRepeat mr => NextMonthRepeat(mr, now, location, anchor),
+            MonthRepeat mr => NextMonthRepeat(mr, now, location, anchor, during),
             OrdinalRepeat or => NextOrdinalRepeat(or, now, location, anchor),
             SingleDate sd => NextSingleDate(sd, now, location),
             YearRepeat yr => NextYearRepeat(yr, now, location, anchor),
@@ -236,13 +241,30 @@ public static class Evaluator
         return null;
     }
 
-    private static DateTimeOffset? NextMonthRepeat(MonthRepeat mr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    private static DateTimeOffset? NextMonthRepeat(MonthRepeat mr, DateTimeOffset now, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName>? during = null)
     {
         var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
         var day = DateOnly.FromDateTime(now.DateTime);
 
+        // For NearestWeekday with direction, we need to apply the during filter here
+        // because the result can cross month boundaries
+        var applyDuringFilter = during is not null && during.Count > 0 &&
+            mr.Target.Kind == MonthTargetKind.NearestWeekday &&
+            mr.Target.NearestWeekdayDirection.HasValue;
+
         for (var i = 0; i < MaxIterations; i++)
         {
+            // Check during filter for NearestWeekday with direction
+            if (applyDuringFilter)
+            {
+                var currentMonth = day.Month;
+                if (!during!.Any(m => m.Number() == currentMonth))
+                {
+                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(1);
+                    continue;
+                }
+            }
+
             // Check month alignment
             if (mr.Interval > 1)
             {
@@ -259,9 +281,14 @@ public static class Evaluator
             // Get target days for this month
             var targetDays = GetTargetDaysInMonth(day.Year, day.Month, mr.Target);
 
+            // For NearestWeekday with direction, don't skip based on day comparison
+            // because the result can cross month boundaries (e.g., nearest to March 1st
+            // with Previous direction could be Feb 27)
+            var skipBasedOnDay = !applyDuringFilter;
+
             foreach (var targetDay in targetDays)
             {
-                if (targetDay < day) continue;
+                if (skipBasedOnDay && targetDay < day) continue;
 
                 var time = EarliestFutureTime(targetDay, mr.Times, location, now);
                 if (time.HasValue)
@@ -460,6 +487,10 @@ public static class Evaluator
                 .Where(d => d.HasValue)
                 .Select(d => d!.Value)
                 .ToList(),
+            MonthTargetKind.NearestWeekday =>
+                NearestWeekday(year, month, target.NearestWeekdayDay, target.NearestWeekdayDirection) is { } nw
+                    ? [nw]
+                    : [],
             _ => []
         };
     }
@@ -514,6 +545,70 @@ public static class Evaluator
             d = d.AddDays(-1);
         }
         return d;
+    }
+
+    /// <summary>
+    /// Get the nearest weekday to a given day in a month.
+    /// - direction=null: standard cron W behavior (never crosses month boundary)
+    /// - direction=Next: always prefer following weekday (can cross to next month)
+    /// - direction=Previous: always prefer preceding weekday (can cross to prev month)
+    /// Returns null if the target_day doesn't exist in the month (e.g., day 31 in February).
+    /// </summary>
+    private static DateOnly? NearestWeekday(int year, int month, int targetDay, NearestDirection? direction)
+    {
+        var last = LastDayOfMonth(year, month);
+        var lastDay = last.Day;
+
+        // If target day doesn't exist in this month, return null (skip this month)
+        if (targetDay > lastDay)
+        {
+            return null;
+        }
+
+        var date = new DateOnly(year, month, targetDay);
+        var dow = date.DayOfWeek;
+
+        // Already a weekday
+        if (dow is >= DayOfWeek.Monday and <= DayOfWeek.Friday)
+        {
+            return date;
+        }
+
+        // Saturday handling
+        if (dow == DayOfWeek.Saturday)
+        {
+            return direction switch
+            {
+                NearestDirection.Next =>
+                    // Always Monday (may cross month)
+                    date.AddDays(2),
+                NearestDirection.Previous =>
+                    // Always Friday (may cross month if day==1)
+                    date.AddDays(-1),
+                _ =>
+                    // Standard: prefer Friday, but if at month start, use Monday
+                    targetDay == 1 ? date.AddDays(2) : date.AddDays(-1)
+            };
+        }
+
+        // Sunday handling
+        if (dow == DayOfWeek.Sunday)
+        {
+            return direction switch
+            {
+                NearestDirection.Next =>
+                    // Always Monday (may cross month)
+                    date.AddDays(1),
+                NearestDirection.Previous =>
+                    // Always Friday (go back 2 days, may cross month)
+                    date.AddDays(-2),
+                _ =>
+                    // Standard: prefer Monday, but if at month end, use Friday
+                    targetDay >= lastDay ? date.AddDays(-2) : date.AddDays(1)
+            };
+        }
+
+        return date;
     }
 
     private static DateOnly? GetYearTargetDay(int year, YearTarget target)

@@ -108,6 +108,14 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
                 MonthTarget::LastWeekday => Err(ScheduleError::cron(
                     "not expressible as cron (last weekday of month not supported)",
                 )),
+                MonthTarget::NearestWeekday { day, direction } => {
+                    if direction.is_some() {
+                        return Err(ScheduleError::cron(
+                            "not expressible as cron (directional nearest weekday not supported)",
+                        ));
+                    }
+                    Ok(format!("{} {} {}W * *", time.minute, time.hour, day))
+                }
             }
         }
 
@@ -203,9 +211,13 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
         return Ok(schedule);
     }
 
-    // Check for W (nearest weekday) - not yet supported
+    // Check for W (nearest weekday): e.g., 15W
     if dom_field.ends_with('W') && dom_field != "LW" {
-        return Err(ScheduleError::cron("W (nearest weekday) not yet supported"));
+        if let Some(schedule) =
+            try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, &during)?
+        {
+            return Ok(schedule);
+        }
     }
 
     // Check for interval patterns: */N or range/N
@@ -467,6 +479,51 @@ fn try_parse_last_day(
         MonthTarget::LastWeekday
     } else {
         MonthTarget::LastDay
+    };
+
+    let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
+        interval: 1,
+        target,
+        times: vec![TimeOfDay { hour, minute }],
+    });
+    schedule.during = during.to_vec();
+    Ok(Some(schedule))
+}
+
+/// Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
+fn try_parse_nearest_weekday(
+    minute_field: &str,
+    hour_field: &str,
+    dom_field: &str,
+    dow_field: &str,
+    during: &[MonthName],
+) -> Result<Option<Schedule>, ScheduleError> {
+    if !dom_field.ends_with('W') || dom_field == "LW" {
+        return Ok(None);
+    }
+
+    if dow_field != "*" && dow_field != "?" {
+        return Err(ScheduleError::cron("DOW must be * when using W in DOM"));
+    }
+
+    let day_str = &dom_field[..dom_field.len() - 1];
+    let day: u8 = day_str
+        .parse()
+        .map_err(|_| ScheduleError::cron(format!("invalid W day: {}", day_str)))?;
+
+    if !(1..=31).contains(&day) {
+        return Err(ScheduleError::cron(format!(
+            "W day must be 1-31, got {}",
+            day
+        )));
+    }
+
+    let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
+    let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
+
+    let target = MonthTarget::NearestWeekday {
+        day,
+        direction: None,
     };
 
     let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {

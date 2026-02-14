@@ -31,6 +31,12 @@ class StartingToken extends TokenKind {}
 
 class DuringToken extends TokenKind {}
 
+class NearestToken extends TokenKind {}
+
+class NextToken extends TokenKind {}
+
+class PreviousToken extends TokenKind {}
+
 class YearToken extends TokenKind {}
 
 class DayToken extends TokenKind {}
@@ -275,6 +281,9 @@ String tokenKindType(TokenKind kind) => switch (kind) {
   UntilToken() => 'until',
   StartingToken() => 'starting',
   DuringToken() => 'during',
+  NearestToken() => 'nearest',
+  NextToken() => 'next',
+  PreviousToken() => 'previous',
   YearToken() => 'year',
   DayToken() => 'day',
   WeekdayKeyToken() => 'weekday',
@@ -307,6 +316,9 @@ final _keywordMap = <String, TokenKind>{
   'until': UntilToken(),
   'starting': StartingToken(),
   'during': DuringToken(),
+  'nearest': NearestToken(),
+  'next': NextToken(),
+  'previous': PreviousToken(),
   'year': YearToken(),
   'years': YearToken(),
   'day': DayToken(),

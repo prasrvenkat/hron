@@ -63,6 +63,19 @@ module Hron
           format_ordinal_day_specs(expr.target.specs)
         when LastDayTarget
           "last day"
+        when LastWeekdayTarget
+          "last weekday"
+        when NearestWeekdayTarget
+          prefix = case expr.target.direction
+          when NearestDirection::NEXT
+            "next "
+          when NearestDirection::PREVIOUS
+            "previous "
+          else
+            ""
+          end
+          day = expr.target.day
+          "#{prefix}nearest weekday to #{day}#{ordinal_suffix(day)}"
         else
           "last weekday"
         end

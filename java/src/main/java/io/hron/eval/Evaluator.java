@@ -30,8 +30,18 @@ public final class Evaluator {
    */
   public static Optional<ZonedDateTime> nextFrom(
       ScheduleData data, ZonedDateTime now, ZoneId location) {
+    // Check if expression is NearestWeekday with direction (can cross month boundaries)
+    // For these expressions, during filter is handled inside nextMonthRepeat
+    boolean handlesDuringInternally = false;
+    if (data.expr() instanceof MonthRepeat mr
+        && mr.target().kind() == MonthTarget.Kind.NEAREST_WEEKDAY
+        && mr.target().nearestDirection() != null) {
+      handlesDuringInternally = true;
+    }
+
     for (int i = 0; i < MAX_ITERATIONS; i++) {
-      Optional<ZonedDateTime> candidate = nextCandidate(data.expr(), now, location, data.anchor());
+      Optional<ZonedDateTime> candidate =
+          nextCandidate(data.expr(), now, location, data.anchor(), data.during());
       if (candidate.isEmpty()) {
         return Optional.empty();
       }
@@ -53,8 +63,8 @@ public final class Evaluator {
         }
       }
 
-      // Check during clause
-      if (!matchesDuring(t.toLocalDate(), data.during())) {
+      // Check during clause (skip for expressions that handle during internally)
+      if (!handlesDuringInternally && !matchesDuring(t.toLocalDate(), data.during())) {
         // Skip to next month that matches
         LocalDate nextMonth = nextDuringMonth(t.toLocalDate(), data.during());
         now = ZonedDateTime.of(nextMonth, LocalTime.MIDNIGHT, location).minusNanos(1);
@@ -109,12 +119,16 @@ public final class Evaluator {
   }
 
   private static Optional<ZonedDateTime> nextCandidate(
-      ScheduleExpr expr, ZonedDateTime now, ZoneId location, String anchor) {
+      ScheduleExpr expr,
+      ZonedDateTime now,
+      ZoneId location,
+      String anchor,
+      List<MonthName> during) {
     return switch (expr) {
       case DayRepeat dr -> nextDayRepeat(dr, now, location, anchor);
       case IntervalRepeat ir -> nextIntervalRepeat(ir, now, location);
       case WeekRepeat wr -> nextWeekRepeat(wr, now, location, anchor);
-      case MonthRepeat mr -> nextMonthRepeat(mr, now, location, anchor);
+      case MonthRepeat mr -> nextMonthRepeat(mr, now, location, anchor, during);
       case OrdinalRepeat or -> nextOrdinalRepeat(or, now, location, anchor);
       case SingleDate sd -> nextSingleDate(sd, now, location);
       case YearRepeat yr -> nextYearRepeat(yr, now, location, anchor);
@@ -236,11 +250,24 @@ public final class Evaluator {
   }
 
   private static Optional<ZonedDateTime> nextMonthRepeat(
-      MonthRepeat mr, ZonedDateTime now, ZoneId location, String anchor) {
+      MonthRepeat mr, ZonedDateTime now, ZoneId location, String anchor, List<MonthName> during) {
     LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
     LocalDate day = now.toLocalDate();
 
+    // For NearestWeekday with direction, apply during filter here (on source month)
+    boolean applyDuringFilter =
+        !during.isEmpty()
+            && mr.target().kind() == MonthTarget.Kind.NEAREST_WEEKDAY
+            && mr.target().nearestDirection() != null;
+
     for (int i = 0; i < MAX_ITERATIONS; i++) {
+      // Check during filter for NearestWeekday with direction
+      if (applyDuringFilter && !matchesDuring(day.withDayOfMonth(1), during)) {
+        LocalDate nextMonth = nextDuringMonth(day, during);
+        day = nextMonth;
+        continue;
+      }
+
       // Check month alignment
       if (mr.interval() > 1) {
         long monthsFromAnchor =
@@ -256,8 +283,15 @@ public final class Evaluator {
       // Get target days for this month
       List<LocalDate> targetDays = getTargetDaysInMonth(day.getYear(), day.getMonth(), mr.target());
 
+      // For directional NearestWeekday, the result can be in a different month
+      // (e.g., "previous nearest weekday to 1st" in March -> Feb 27)
+      // Don't skip based on `day` for these - earliestFutureTime handles the now check
+      boolean canCrossMonth =
+          mr.target().kind() == MonthTarget.Kind.NEAREST_WEEKDAY
+              && mr.target().nearestDirection() != null;
+
       for (LocalDate targetDay : targetDays) {
-        if (targetDay.isBefore(day)) continue;
+        if (!canCrossMonth && targetDay.isBefore(day)) continue;
 
         Optional<ZonedDateTime> time = earliestFutureTime(targetDay, mr.times(), location, now);
         if (time.isPresent()) {
@@ -448,7 +482,83 @@ public final class Evaluator {
         }
         yield days;
       }
+      case NEAREST_WEEKDAY -> {
+        Optional<LocalDate> result =
+            nearestWeekday(year, month, target.nearestWeekdayDay(), target.nearestDirection());
+        yield result.map(List::of).orElse(List.of());
+      }
     };
+  }
+
+  /**
+   * Computes the nearest weekday to a given day in a month.
+   *
+   * <ul>
+   *   <li>direction=null: standard cron W behavior (never crosses month boundary)
+   *   <li>direction=NEXT: always prefer following weekday (can cross to next month)
+   *   <li>direction=PREVIOUS: always prefer preceding weekday (can cross to prev month)
+   * </ul>
+   *
+   * @param year the year
+   * @param month the month
+   * @param targetDay the target day of month (1-31)
+   * @param direction the direction, or null for standard behavior
+   * @return the nearest weekday date, or empty if target day doesn't exist in the month
+   */
+  private static Optional<LocalDate> nearestWeekday(
+      int year, Month month, int targetDay, NearestDirection direction) {
+    LocalDate last = lastDayOfMonth(year, month);
+    int lastDayNum = last.getDayOfMonth();
+
+    // If target day doesn't exist in this month, return empty (skip this month)
+    if (targetDay > lastDayNum) {
+      return Optional.empty();
+    }
+
+    LocalDate date = LocalDate.of(year, month, targetDay);
+    DayOfWeek dow = date.getDayOfWeek();
+
+    // Already a weekday
+    if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY) {
+      return Optional.of(date);
+    }
+
+    if (dow == DayOfWeek.SATURDAY) {
+      if (direction == null) {
+        // Standard: prefer Friday, but if at month start, use Monday
+        if (targetDay == 1) {
+          // Can't go to previous month, use Monday (day 3)
+          return Optional.of(date.plusDays(2));
+        } else {
+          // Friday
+          return Optional.of(date.minusDays(1));
+        }
+      } else if (direction == NearestDirection.NEXT) {
+        // Always Monday (may cross month)
+        return Optional.of(date.plusDays(2));
+      } else {
+        // PREVIOUS: Always Friday (may cross month if day==1)
+        return Optional.of(date.minusDays(1));
+      }
+    } else {
+      // Sunday
+      if (direction == null) {
+        // Standard: prefer Monday, but if at month end, use Friday
+        if (targetDay >= lastDayNum) {
+          // Can't go to next month, use Friday (day - 2)
+          return Optional.of(date.minusDays(2));
+        } else {
+          // Monday
+          return Optional.of(date.plusDays(1));
+        }
+      } else if (direction == NearestDirection.NEXT) {
+        // Always Monday (may cross month)
+        return Optional.of(date.plusDays(1));
+      } else {
+        // PREVIOUS: Always Friday (go back 2 days, may cross month)
+        return Optional.of(date.minusDays(2));
+      }
+    }
   }
 
   private static Optional<LocalDate> nthWeekdayOfMonth(

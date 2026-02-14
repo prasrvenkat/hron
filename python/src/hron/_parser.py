@@ -24,6 +24,8 @@ from ._ast import (
     NamedDate,
     NamedException,
     NamedUntil,
+    NearestDirection,
+    NearestWeekdayTarget,
     OrdinalPosition,
     OrdinalRepeat,
     ScheduleData,
@@ -57,6 +59,8 @@ from ._lexer import (
     TLast,
     TMonth,
     TMonthName,
+    TNearest,
+    TNext,
     TNumber,
     TOf,
     Token,
@@ -64,6 +68,7 @@ from ._lexer import (
     TOn,
     TOrdinal,
     TOrdinalNumber,
+    TPrevious,
     TStarting,
     TThe,
     TTime,
@@ -351,15 +356,43 @@ class _Parser:
         elif isinstance(k, TOrdinalNumber):
             specs = self._parse_ordinal_day_list()
             target = DaysTarget(tuple(specs))
+        elif isinstance(k, (TNext, TPrevious, TNearest)):
+            target = self._parse_nearest_weekday_target()
         else:
             raise self._error(
-                "expected ordinal day (1st, 15th) or 'last' after 'the'",
+                "expected ordinal day, 'last', or '[next|previous] nearest' after 'the'",
                 self.current_span(),
             )
 
         self._consume("'at'", TAt)
         times = self._parse_time_list()
         return MonthRepeat(interval, target, tuple(times))
+
+    def _parse_nearest_weekday_target(self) -> NearestWeekdayTarget:
+        """Parse [next|previous] nearest weekday to <day>."""
+        k = self.peek_kind()
+        direction: NearestDirection | None = None
+
+        if isinstance(k, TNext):
+            self.advance()
+            direction = NearestDirection.NEXT
+        elif isinstance(k, TPrevious):
+            self.advance()
+            direction = NearestDirection.PREVIOUS
+
+        self._consume("'nearest'", TNearest)
+        self._consume("'weekday'", TWeekday)
+        self._consume("'to'", TTo)
+
+        day = self._parse_ordinal_day_number()
+        return NearestWeekdayTarget(day, direction)
+
+    def _parse_ordinal_day_number(self) -> int:
+        k = self.peek_kind()
+        if isinstance(k, TOrdinalNumber):
+            self.advance()
+            return k.value
+        raise self._error("expected ordinal day number", self.current_span())
 
     def _parse_ordinal_repeat(self) -> ScheduleExpr:
         ordinal = self._parse_ordinal_position()

@@ -106,6 +106,13 @@ public final class CronConverter {
           throw HronException.cron("not expressible as cron (last day of month not supported)");
       case LAST_WEEKDAY ->
           throw HronException.cron("not expressible as cron (last weekday of month not supported)");
+      case NEAREST_WEEKDAY -> {
+        if (mr.target().nearestDirection() != null) {
+          throw HronException.cron(
+              "not expressible as cron (directional nearest weekday not supported)");
+        }
+        yield String.format("%d %d %dW * *", t.minute(), t.hour(), mr.target().nearestWeekdayDay());
+      }
     };
   }
 
@@ -174,9 +181,13 @@ public final class CronConverter {
       return lastResult;
     }
 
-    // Check for W (nearest weekday) - not yet supported
+    // Check for W (nearest weekday): e.g., 15W
     if (domField.endsWith("W") && !domField.equals("LW")) {
-      throw HronException.cron("W (nearest weekday) not yet supported");
+      ScheduleData wResult =
+          tryParseNearestWeekday(minuteField, hourField, domField, dowField, during);
+      if (wResult != null) {
+        return wResult;
+      }
     }
 
     // Check for interval patterns: */N or range/N
@@ -422,6 +433,42 @@ public final class CronConverter {
 
     MonthTarget target = domField.equals("LW") ? MonthTarget.lastWeekday() : MonthTarget.lastDay();
 
+    ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
+    return new ScheduleData(expr, null, List.of(), null, null, during);
+  }
+
+  /** Try to parse W (nearest weekday) patterns: 15W, 1W, etc. */
+  private static ScheduleData tryParseNearestWeekday(
+      String minuteField,
+      String hourField,
+      String domField,
+      String dowField,
+      List<MonthName> during)
+      throws HronException {
+    if (!domField.endsWith("W") || domField.equals("LW")) {
+      return null;
+    }
+
+    if (!dowField.equals("*") && !dowField.equals("?")) {
+      throw HronException.cron("DOW must be * when using W in DOM");
+    }
+
+    String dayStr = domField.substring(0, domField.length() - 1);
+    int day;
+    try {
+      day = Integer.parseInt(dayStr);
+    } catch (NumberFormatException e) {
+      throw HronException.cron("invalid W day: " + dayStr);
+    }
+
+    if (day < 1 || day > 31) {
+      throw HronException.cron("W day must be 1-31, got " + day);
+    }
+
+    int minute = parseSingleValue(minuteField, "minute", 0, 59);
+    int hour = parseSingleValue(hourField, "hour", 0, 23);
+
+    MonthTarget target = MonthTarget.nearestWeekday(day);
     ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
     return new ScheduleData(expr, null, List.of(), null, null, during);
   }

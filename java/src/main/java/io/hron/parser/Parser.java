@@ -323,9 +323,44 @@ public final class Parser {
           "expected 'day' or 'weekday' after 'last'", next != null ? next.span() : endSpan());
     }
 
+    // Check for [next|previous] nearest weekday to <day>
+    if (tok.kind() == TokenKind.NEXT
+        || tok.kind() == TokenKind.PREVIOUS
+        || tok.kind() == TokenKind.NEAREST) {
+      return parseNearestWeekdayTarget();
+    }
+
     // Parse day specs (single or range)
     List<DayOfMonthSpec> specs = parseDayOfMonthSpecs();
     return MonthTarget.days(specs);
+  }
+
+  /**
+   * Parses [next|previous] nearest weekday to <ordinal_day>.
+   *
+   * @return a nearest weekday month target
+   * @throws HronException if parsing fails
+   */
+  private MonthTarget parseNearestWeekdayTarget() throws HronException {
+    // Optional direction: "next" or "previous"
+    NearestDirection direction = null;
+    Token tok = peek();
+    if (tok != null && tok.kind() == TokenKind.NEXT) {
+      pos++;
+      direction = NearestDirection.NEXT;
+    } else if (tok != null && tok.kind() == TokenKind.PREVIOUS) {
+      pos++;
+      direction = NearestDirection.PREVIOUS;
+    }
+
+    expect(TokenKind.NEAREST);
+    expect(TokenKind.WEEKDAY);
+    expect(TokenKind.TO);
+
+    Token dayTok = expect(TokenKind.ORDINAL_NUMBER);
+    int day = dayTok.numberVal();
+
+    return MonthTarget.nearestWeekday(day, direction);
   }
 
   private List<DayOfMonthSpec> parseDayOfMonthSpecs() throws HronException {

@@ -83,6 +83,16 @@ String _displayMonthRepeat(MonthRepeat expr) {
     targetStr = _formatOrdinalDaySpecs(target.specs);
   } else if (target is LastDayTarget) {
     targetStr = 'last day';
+  } else if (target is LastWeekdayTarget) {
+    targetStr = 'last weekday';
+  } else if (target is NearestWeekdayTarget) {
+    final dirPrefix = switch (target.direction) {
+      NearestDirection.next => 'next ',
+      NearestDirection.previous => 'previous ',
+      null => '',
+    };
+    targetStr =
+        '${dirPrefix}nearest weekday to ${target.day}${ordinalSuffix(target.day)}';
   } else {
     targetStr = 'last weekday';
   }

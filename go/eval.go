@@ -22,10 +22,20 @@ func nextFrom(schedule *ScheduleData, now time.Time) *time.Time {
 	hasExceptions := len(schedule.Except) > 0
 	hasDuring := len(schedule.During) > 0
 
+	// Check if expression is NearestWeekday with direction (can cross month boundaries)
+	handlesDuringInternally := schedule.Expr.Kind == ScheduleExprKindMonth &&
+		schedule.Expr.MonthTarget.Kind == MonthTargetKindNearestWeekday &&
+		schedule.Expr.MonthTarget.Direction != NearestNone
+
 	current := now
 
 	for i := 0; i < maxIterations; i++ {
-		candidate := nextExpr(schedule.Expr, loc, schedule.Anchor, current)
+		var candidate *time.Time
+		if handlesDuringInternally {
+			candidate = nextExprWithDuring(schedule.Expr, loc, schedule.Anchor, current, schedule.During)
+		} else {
+			candidate = nextExpr(schedule.Expr, loc, schedule.Anchor, current)
+		}
 		if candidate == nil {
 			return nil
 		}
@@ -38,7 +48,8 @@ func nextFrom(schedule *ScheduleData, now time.Time) *time.Time {
 		}
 
 		// Apply during filter
-		if hasDuring && !matchesDuring(cDate, schedule.During) {
+		// Skip this check for expressions that handle during internally (NearestWeekday with direction)
+		if hasDuring && !handlesDuringInternally && !matchesDuring(cDate, schedule.During) {
 			skipTo := nextDuringMonth(cDate, schedule.During)
 			midnight := atTimeOnDate(skipTo, TimeOfDay{0, 0}, loc)
 			current = midnight.Add(-time.Second)
@@ -61,6 +72,11 @@ func nextFrom(schedule *ScheduleData, now time.Time) *time.Time {
 
 // nextExpr dispatches to the appropriate next function based on expression type.
 func nextExpr(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time) *time.Time {
+	return nextExprWithDuring(expr, loc, anchor, now, nil)
+}
+
+// nextExprWithDuring dispatches to the appropriate next function, passing during filter for special handling.
+func nextExprWithDuring(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time, during []MonthName) *time.Time {
 	switch expr.Kind {
 	case ScheduleExprKindDay:
 		return nextDayRepeat(expr.Interval, expr.Days, expr.Times, loc, anchor, now)
@@ -69,7 +85,7 @@ func nextExpr(expr ScheduleExpr, loc *time.Location, anchor string, now time.Tim
 	case ScheduleExprKindWeek:
 		return nextWeekRepeat(expr.Interval, expr.WeekDays, expr.Times, loc, anchor, now)
 	case ScheduleExprKindMonth:
-		return nextMonthRepeat(expr.Interval, expr.MonthTarget, expr.Times, loc, anchor, now)
+		return nextMonthRepeatWithDuring(expr.Interval, expr.MonthTarget, expr.Times, loc, anchor, now, during)
 	case ScheduleExprKindOrdinal:
 		return nextOrdinalRepeat(expr.Interval, expr.Ordinal, expr.OrdinalDay, expr.Times, loc, anchor, now)
 	case ScheduleExprKindSingleDate:
@@ -222,6 +238,12 @@ func matches(schedule *ScheduleData, dt time.Time) bool {
 		case MonthTargetKindLastWeekday:
 			lwd := lastWeekdayOfMonth(d.Year(), d.Month())
 			return d.Day() == lwd.Day()
+		case MonthTargetKindNearestWeekday:
+			nwd, ok := nearestWeekday(d.Year(), d.Month(), schedule.Expr.MonthTarget.Day, schedule.Expr.MonthTarget.Direction)
+			if !ok {
+				return false
+			}
+			return d.Year() == nwd.Year() && d.Month() == nwd.Month() && d.Day() == nwd.Day()
 		}
 		return false
 
@@ -484,6 +506,10 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 }
 
 func nextMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
+	return nextMonthRepeatWithDuring(interval, target, times, loc, anchor, now, nil)
+}
+
+func nextMonthRepeatWithDuring(interval int, target MonthTarget, times []TimeOfDay, loc *time.Location, anchor string, now time.Time, during []MonthName) *time.Time {
 	nowInTz := now.In(loc)
 	year := nowInTz.Year()
 	month := int(nowInTz.Month())
@@ -497,7 +523,32 @@ func nextMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *t
 		maxIter = 24
 	}
 
+	// For NearestWeekday with direction, we need to apply the during filter here
+	// because the result can cross month boundaries
+	applyDuringFilter := len(during) > 0 &&
+		target.Kind == MonthTargetKindNearestWeekday &&
+		target.Direction != NearestNone
+
 	for i := 0; i < maxIter; i++ {
+		// Check during filter for NearestWeekday with direction
+		if applyDuringFilter {
+			found := false
+			for _, mn := range during {
+				if mn.Number() == month {
+					found = true
+					break
+				}
+			}
+			if !found {
+				month++
+				if month > 12 {
+					month = 1
+					year++
+				}
+				continue
+			}
+		}
+
 		// Check interval alignment
 		if interval > 1 {
 			cur := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
@@ -527,6 +578,10 @@ func nextMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *t
 			dateCandidates = append(dateCandidates, lastDayOfMonth(year, time.Month(month)))
 		case MonthTargetKindLastWeekday:
 			dateCandidates = append(dateCandidates, lastWeekdayOfMonth(year, time.Month(month)))
+		case MonthTargetKindNearestWeekday:
+			if nwd, ok := nearestWeekday(year, time.Month(month), target.Day, target.Direction); ok {
+				dateCandidates = append(dateCandidates, nwd)
+			}
 		}
 
 		var best *time.Time

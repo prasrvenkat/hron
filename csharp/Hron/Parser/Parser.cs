@@ -339,9 +339,42 @@ public sealed class Parser
             throw ParseError("expected 'day' or 'weekday' after 'last'", next?.Span ?? EndSpan());
         }
 
+        // Check for [next|previous] nearest weekday to <day>
+        if (tok.Kind == TokenKind.Next || tok.Kind == TokenKind.Previous || tok.Kind == TokenKind.Nearest)
+        {
+            return ParseNearestWeekdayTarget();
+        }
+
         // Parse day specs (single or range)
         var specs = ParseDayOfMonthSpecs();
         return MonthTarget.Days(specs);
+    }
+
+    private MonthTarget ParseNearestWeekdayTarget()
+    {
+        NearestDirection? direction = null;
+        var tok = Peek();
+
+        // Optional direction: "next" or "previous"
+        if (tok is not null && tok.Kind == TokenKind.Next)
+        {
+            _pos++;
+            direction = NearestDirection.Next;
+        }
+        else if (tok is not null && tok.Kind == TokenKind.Previous)
+        {
+            _pos++;
+            direction = NearestDirection.Previous;
+        }
+
+        Expect(TokenKind.Nearest);
+        Expect(TokenKind.Weekday);
+        Expect(TokenKind.To);
+
+        var dayTok = Expect(TokenKind.OrdinalNumber);
+        var day = dayTok.NumberVal;
+
+        return MonthTarget.NearestWeekday(day, direction);
     }
 
     private IReadOnlyList<DayOfMonthSpec> ParseDayOfMonthSpecs()
