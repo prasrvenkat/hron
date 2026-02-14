@@ -130,9 +130,14 @@ fn nearest_weekday(
 
     match (wd, direction) {
         // Already a weekday
-        (JiffWd::Monday | JiffWd::Tuesday | JiffWd::Wednesday | JiffWd::Thursday | JiffWd::Friday, _) => {
-            Some(date)
-        }
+        (
+            JiffWd::Monday
+            | JiffWd::Tuesday
+            | JiffWd::Wednesday
+            | JiffWd::Thursday
+            | JiffWd::Friday,
+            _,
+        ) => Some(date),
 
         // Saturday handling
         (JiffWd::Saturday, None) => {
@@ -372,7 +377,10 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
     let handles_during_internally = matches!(
         &schedule.expr,
         ScheduleExpr::MonthRepeat {
-            target: MonthTarget::NearestWeekday { direction: Some(_), .. },
+            target: MonthTarget::NearestWeekday {
+                direction: Some(_),
+                ..
+            },
             ..
         }
     );
@@ -403,7 +411,10 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
 
         // Apply during filter
         // Skip this check for expressions that handle during internally (NearestWeekday with direction)
-        if has_during && !handles_during_internally && !matches_during(c_date.unwrap(), &schedule.during) {
+        if has_during
+            && !handles_during_internally
+            && !matches_during(c_date.unwrap(), &schedule.during)
+        {
             // Skip ahead to 1st of next valid during month
             let skip_to = next_during_month(c_date.unwrap(), &schedule.during);
             current = at_time_on_date(skip_to, Time::new(0, 0, 0, 0).unwrap(), &tz)?
@@ -973,7 +984,13 @@ fn next_month_repeat(
     // For NearestWeekday with direction, we need to apply the during filter here
     // because the result can cross month boundaries
     let apply_during_filter = !during.is_empty()
-        && matches!(target, MonthTarget::NearestWeekday { direction: Some(_), .. });
+        && matches!(
+            target,
+            MonthTarget::NearestWeekday {
+                direction: Some(_),
+                ..
+            }
+        );
 
     // Search forward
     for _ in 0..max_iter {

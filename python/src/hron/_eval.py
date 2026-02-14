@@ -321,8 +321,9 @@ def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
             return None
 
         # Apply during filter
-        # Skip this check for expressions that handle during internally (NearestWeekday with direction)
-        if has_during and not handles_during_internally and not _matches_during(c_date, schedule.during):
+        # Skip for expressions that handle during internally (NearestWeekday w/ direction)
+        during_mismatch = has_during and not _matches_during(c_date, schedule.during)
+        if during_mismatch and not handles_during_internally:
             skip_to = _next_during_month(c_date, schedule.during)
             midnight = _at_time_on_date(skip_to, TimeOfDay(0, 0), tz)
             current = midnight - timedelta(seconds=1)

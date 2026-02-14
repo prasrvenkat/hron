@@ -360,7 +360,7 @@ class _Parser:
             target = self._parse_nearest_weekday_target()
         else:
             raise self._error(
-                "expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'",
+                "expected ordinal day, 'last', or '[next|previous] nearest' after 'the'",
                 self.current_span(),
             )
 

@@ -111,8 +111,7 @@ public final class CronConverter {
           throw HronException.cron(
               "not expressible as cron (directional nearest weekday not supported)");
         }
-        yield String.format(
-            "%d %d %dW * *", t.minute(), t.hour(), mr.target().nearestWeekdayDay());
+        yield String.format("%d %d %dW * *", t.minute(), t.hour(), mr.target().nearestWeekdayDay());
       }
     };
   }

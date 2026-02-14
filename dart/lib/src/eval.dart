@@ -282,7 +282,8 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
   final needsTzConversion = untilDate != null || hasDuring || hasExceptions;
 
   // Check if expression is NearestWeekday with direction (can cross month boundaries)
-  final handlesDuringInternally = schedule.expr is MonthRepeat &&
+  final handlesDuringInternally =
+      schedule.expr is MonthRepeat &&
       (schedule.expr as MonthRepeat).target is NearestWeekdayTarget &&
       ((schedule.expr as MonthRepeat).target as NearestWeekdayTarget)
               .direction !=
@@ -793,7 +794,8 @@ TZDateTime? _nextMonthRepeat(
 
   // For NearestWeekday with direction, we need to apply the during filter here
   // because the result can cross month boundaries
-  final applyDuringFilter = during.isNotEmpty &&
+  final applyDuringFilter =
+      during.isNotEmpty &&
       target is NearestWeekdayTarget &&
       target.direction != null;
 

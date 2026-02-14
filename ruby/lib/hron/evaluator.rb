@@ -130,22 +130,18 @@ module Hron
       case direction
       when nil
         # Standard cron W behavior: never cross month boundary
-        if dow == 6 # Saturday
-          if target_day == 1
-            # Can't go to previous month, use Monday (day 3)
-            date + 2
-          else
-            # Friday
-            date - 1
-          end
-        else # Sunday (dow == 7)
-          if target_day >= last_day_num
-            # Can't go to next month, use Friday
-            date - 2
-          else
-            # Monday
-            date + 1
-          end
+        if dow == 6 && target_day == 1
+          # Saturday at 1st: can't go to previous month, use Monday (day 3)
+          date + 2
+        elsif dow == 6
+          # Saturday: Friday
+          date - 1
+        elsif target_day >= last_day_num
+          # Sunday at end of month: can't go to next month, use Friday
+          date - 2
+        else
+          # Sunday: Monday
+          date + 1
         end
 
       when NearestDirection::NEXT
