@@ -355,8 +355,10 @@ module Hron
       elsif k.is_a?(TOrdinalNumber)
         specs = parse_ordinal_day_list
         target = DaysTarget.new(specs)
+      elsif k == TokenKind::NEXT || k == TokenKind::PREVIOUS || k == TokenKind::NEAREST
+        target = parse_nearest_weekday_target
       else
-        raise error("expected ordinal day (1st, 15th) or 'last' after 'the'", current_span)
+        raise error("expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'", current_span)
       end
 
       consume_keyword("'at'", TokenKind::AT)
@@ -571,6 +573,35 @@ module Hron
       end
 
       SingleDay.new(start)
+    end
+
+    def parse_nearest_weekday_target
+      k = peek_kind
+
+      # Optional direction: "next" or "previous"
+      direction = nil
+      if k == TokenKind::NEXT
+        advance
+        direction = NearestDirection::NEXT
+      elsif k == TokenKind::PREVIOUS
+        advance
+        direction = NearestDirection::PREVIOUS
+      end
+
+      consume_keyword("'nearest'", TokenKind::NEAREST)
+      consume_keyword("'weekday'", TokenKind::WEEKDAY_KW)
+      consume_keyword("'to'", TokenKind::TO)
+
+      # Parse the day number (ordinal like 15th)
+      k = peek_kind
+      if k.is_a?(TOrdinalNumber)
+        day = k.value
+        advance
+      else
+        raise error("expected ordinal day number after 'to'", current_span)
+      end
+
+      NearestWeekdayTarget.new(day, direction)
     end
 
     def parse_month_list

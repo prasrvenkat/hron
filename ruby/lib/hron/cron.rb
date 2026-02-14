@@ -75,6 +75,14 @@ module Hron
           "#{time.minute} #{time.hour} #{dom} * *"
         when LastDayTarget
           raise HronError.cron("not expressible as cron (last day of month not supported)")
+        when LastWeekdayTarget
+          raise HronError.cron("not expressible as cron (last weekday of month not supported)")
+        when NearestWeekdayTarget
+          if expr.target.direction
+            raise HronError.cron("not expressible as cron (directional nearest weekday not supported)")
+          end
+
+          "#{time.minute} #{time.hour} #{expr.target.day}W * *"
         else
           raise HronError.cron("not expressible as cron (last weekday of month not supported)")
         end
@@ -144,9 +152,10 @@ module Hron
       result = try_parse_last_day(minute_field, hour_field, dom_field, dow_field, during)
       return result if result
 
-      # Check for W (nearest weekday) - not yet supported
+      # Check for W (nearest weekday): e.g., 15W
       if dom_field.end_with?("W") && dom_field != "LW"
-        raise HronError.cron("W (nearest weekday) not yet supported")
+        result = try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, during)
+        return result if result
       end
 
       # Check for interval patterns: */N or range/N
@@ -360,6 +369,31 @@ module Hron
       hour = parse_single_value(hour_field, "hour", 0, 23)
 
       target = (dom_field == "LW") ? LastWeekdayTarget.new : LastDayTarget.new
+
+      ScheduleData.new(
+        expr: MonthRepeat.new(1, target, [TimeOfDay.new(hour, minute)]),
+        during: during
+      )
+    end
+
+    # Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
+    def self.try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, during)
+      return nil unless dom_field.end_with?("W") && dom_field != "LW"
+
+      raise HronError.cron("DOW must be * when using W in DOM") if dow_field != "*" && dow_field != "?"
+
+      day_str = dom_field[0..-2]
+      day = begin
+        Integer(day_str)
+      rescue
+        raise(HronError.cron("invalid W day: #{day_str}"))
+      end
+      raise HronError.cron("W day must be 1-31, got #{day}") if day < 1 || day > 31
+
+      minute = parse_single_value(minute_field, "minute", 0, 59)
+      hour = parse_single_value(hour_field, "hour", 0, 23)
+
+      target = NearestWeekdayTarget.new(day, nil)
 
       ScheduleData.new(
         expr: MonthRepeat.new(1, target, [TimeOfDay.new(hour, minute)]),

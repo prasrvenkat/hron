@@ -165,11 +165,19 @@ module Hron
   SingleDay = Data.define(:day)
   DayRange = Data.define(:start, :end_day) # end_day to avoid Ruby keyword
 
+  # --- Direction for nearest weekday ---
+
+  module NearestDirection
+    NEXT = :next
+    PREVIOUS = :previous
+  end
+
   # --- Month target variants ---
 
   DaysTarget = Data.define(:specs) # specs: Array<DayOfMonthSpec>
   LastDayTarget = Data.define
   LastWeekdayTarget = Data.define
+  NearestWeekdayTarget = Data.define(:day, :direction) # day: 1-31, direction: nil or NearestDirection
 
   # --- Year target variants ---
 
