@@ -786,7 +786,9 @@ function parseCronDow(field: string): DayFilter {
       const start = parseDowValueRaw(startStr);
       const end = parseDowValueRaw(endStr);
       if (start > end) {
-        throw HronError.cron(`range start must be <= end: ${startStr}-${endStr}`);
+        throw HronError.cron(
+          `range start must be <= end: ${startStr}-${endStr}`,
+        );
       }
       for (let d = start; d <= end; d++) {
         // Normalize 7 to 0 (Sunday) when converting to weekday

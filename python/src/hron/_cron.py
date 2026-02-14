@@ -170,9 +170,7 @@ def from_cron(cron: str) -> ScheduleData:
         return nth_weekday_result
 
     # Check for L (last day) or LW (last weekday) in DOM
-    last_day_result = _try_parse_last_day(
-        minute_field, hour_field, dom_field, dow_field, during
-    )
+    last_day_result = _try_parse_last_day(minute_field, hour_field, dom_field, dow_field, during)
     if last_day_result is not None:
         return last_day_result
 
@@ -181,9 +179,7 @@ def from_cron(cron: str) -> ScheduleData:
         raise HronError.cron("W (nearest weekday) not yet supported")
 
     # Check for interval patterns: */N or range/N
-    interval_result = _try_parse_interval(
-        minute_field, hour_field, dom_field, dow_field, during
-    )
+    interval_result = _try_parse_interval(minute_field, hour_field, dom_field, dow_field, during)
     if interval_result is not None:
         return interval_result
 
@@ -195,9 +191,7 @@ def from_cron(cron: str) -> ScheduleData:
     # DOM-based (monthly) - when DOM is specified and DOW is *
     if dom_field != "*" and dow_field == "*":
         target = _parse_dom_field(dom_field)
-        schedule = new_schedule_data(
-            MonthRepeat(interval=1, target=target, times=(time,))
-        )
+        schedule = new_schedule_data(MonthRepeat(interval=1, target=target, times=(time,)))
         schedule.during = during
         return schedule
 
