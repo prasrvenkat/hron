@@ -724,7 +724,7 @@ fn parse_dom_field(field: &str) -> Result<MonthTarget, ScheduleError> {
 }
 
 fn validate_dom(day: u8) -> Result<(), ScheduleError> {
-    if day < 1 || day > 31 {
+    if !(1..=31).contains(&day) {
         return Err(ScheduleError::cron(format!(
             "DOM must be 1-31, got {}",
             day
