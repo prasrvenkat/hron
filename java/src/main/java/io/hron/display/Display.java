@@ -131,6 +131,18 @@ public final class Display {
       case LAST_DAY -> "last day";
       case LAST_WEEKDAY -> "last weekday";
       case DAYS -> formatOrdinalDaySpecs(target.specs());
+      case NEAREST_WEEKDAY -> {
+        StringBuilder sb = new StringBuilder();
+        if (target.nearestDirection() != null) {
+          switch (target.nearestDirection()) {
+            case NEXT -> sb.append("next ");
+            case PREVIOUS -> sb.append("previous ");
+          }
+        }
+        sb.append("nearest weekday to ");
+        sb.append(ordinalNumber(target.nearestWeekdayDay()));
+        yield sb.toString();
+      }
     };
   }
 
