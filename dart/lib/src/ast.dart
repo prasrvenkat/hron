@@ -186,6 +186,15 @@ class DayRange extends DayOfMonthSpec {
   DayRange(this.start, this.end);
 }
 
+/// Direction for nearest weekday (hron extension beyond cron W).
+enum NearestDirection {
+  /// Always prefer following weekday (can cross to next month).
+  next,
+
+  /// Always prefer preceding weekday (can cross to prev month).
+  previous,
+}
+
 /// Target specification for monthly schedules.
 sealed class MonthTarget {}
 
@@ -197,6 +206,15 @@ class DaysTarget extends MonthTarget {
 class LastDayTarget extends MonthTarget {}
 
 class LastWeekdayTarget extends MonthTarget {}
+
+/// Nearest weekday to a given day of month.
+/// Standard (direction=null): never crosses month boundary (cron W compatibility).
+/// Directional (direction!=null): can cross month boundary.
+class NearestWeekdayTarget extends MonthTarget {
+  final int day;
+  final NearestDirection? direction;
+  NearestWeekdayTarget(this.day, [this.direction]);
+}
 
 /// Target specification for yearly schedules.
 sealed class YearTarget {}

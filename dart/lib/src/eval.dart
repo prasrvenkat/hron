@@ -80,6 +80,66 @@ DateTime _lastWeekdayInMonth(int year, int month, Weekday weekday) {
   return d;
 }
 
+/// Get the nearest weekday to a given day in a month.
+/// - direction=null: standard cron W behavior (never crosses month boundary)
+/// - direction=next: always prefer following weekday (can cross to next month)
+/// - direction=previous: always prefer preceding weekday (can cross to prev month)
+/// Returns null if the target_day doesn't exist in the month (e.g., day 31 in February).
+DateTime? _nearestWeekday(
+  int year,
+  int month,
+  int targetDay,
+  NearestDirection? direction,
+) {
+  final last = _lastDayOfMonth(year, month);
+  final lastDay = last.day;
+
+  // If target day doesn't exist in this month, return null (skip this month)
+  if (targetDay > lastDay) {
+    return null;
+  }
+
+  final date = DateTime.utc(year, month, targetDay);
+  final dow = date.weekday; // 1=Monday ... 7=Sunday
+
+  // Already a weekday
+  if (dow >= 1 && dow <= 5) {
+    return date;
+  }
+
+  // Saturday (dow == 6)
+  if (dow == 6) {
+    return switch (direction) {
+      NearestDirection.next =>
+        // Always next Monday (can cross to next month)
+        date.add(const Duration(days: 2)),
+      NearestDirection.previous =>
+        // Always previous Friday (can cross to prev month)
+        date.subtract(const Duration(days: 1)),
+      null =>
+        // Standard cron W behavior: never cross month boundary
+        targetDay == 1
+            ? date.add(const Duration(days: 2)) // Monday
+            : date.subtract(const Duration(days: 1)), // Friday
+    };
+  }
+
+  // Sunday (dow == 7)
+  return switch (direction) {
+    NearestDirection.next =>
+      // Always next Monday (can cross to next month)
+      date.add(const Duration(days: 1)),
+    NearestDirection.previous =>
+      // Always previous Friday (can cross to prev month)
+      date.subtract(const Duration(days: 2)),
+    null =>
+      // Standard cron W behavior: never cross month boundary
+      targetDay == lastDay
+          ? date.subtract(const Duration(days: 2)) // Friday
+          : date.add(const Duration(days: 1)), // Monday
+  };
+}
+
 int _euclideanMod(int a, int b) => ((a % b) + b) % b;
 
 final DateTime _epochMonday = DateTime.utc(1970, 1, 5);
@@ -221,9 +281,22 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
   final hasDuring = schedule.during.isNotEmpty;
   final needsTzConversion = untilDate != null || hasDuring || hasExceptions;
 
+  // Check if expression is NearestWeekday with direction (can cross month boundaries)
+  final handlesDuringInternally = schedule.expr is MonthRepeat &&
+      (schedule.expr as MonthRepeat).target is NearestWeekdayTarget &&
+      ((schedule.expr as MonthRepeat).target as NearestWeekdayTarget)
+              .direction !=
+          null;
+
   var current = now;
   for (var i = 0; i < 1000; i++) {
-    final candidate = _nextExpr(schedule.expr, loc, schedule.anchor, current);
+    final candidate = _nextExpr(
+      schedule.expr,
+      loc,
+      schedule.anchor,
+      current,
+      during: handlesDuringInternally ? schedule.during : const [],
+    );
 
     if (candidate == null) return null;
 
@@ -240,7 +313,10 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
     }
 
     // Apply during filter
-    if (hasDuring && !_matchesDuring(cDate!, schedule.during)) {
+    // Skip this check for expressions that handle during internally (NearestWeekday with direction)
+    if (hasDuring &&
+        !handlesDuringInternally &&
+        !_matchesDuring(cDate!, schedule.during)) {
       // Skip ahead to 1st of next valid during month
       final skipTo = _nextDuringMonth(cDate, schedule.during);
       current = TZDateTime(
@@ -274,8 +350,9 @@ TZDateTime? _nextExpr(
   ScheduleExpr expr,
   Location loc,
   String? anchor,
-  TZDateTime now,
-) {
+  TZDateTime now, {
+  List<MonthName> during = const [],
+}) {
   return switch (expr) {
     DayRepeat() => _nextDayRepeat(
       expr.interval,
@@ -309,6 +386,7 @@ TZDateTime? _nextExpr(
       loc,
       anchor,
       now,
+      during: during,
     ),
     OrdinalRepeat() => _nextOrdinalRepeat(
       expr.interval,
@@ -437,6 +515,18 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       if (target is LastDayTarget) {
         final last = _lastDayOfMonth(date.year, date.month);
         return date.day == last.day;
+      }
+      if (target is NearestWeekdayTarget) {
+        final targetDate = _nearestWeekday(
+          date.year,
+          date.month,
+          target.day,
+          target.direction,
+        );
+        if (targetDate == null) return false;
+        return date.year == targetDate.year &&
+            date.month == targetDate.month &&
+            date.day == targetDate.day;
       }
       final lastWd = _lastWeekdayOfMonth(date.year, date.month);
       return date.day == lastWd.day;
@@ -691,8 +781,9 @@ TZDateTime? _nextMonthRepeat(
   List<TimeOfDay> times,
   Location loc,
   String? anchor,
-  TZDateTime now,
-) {
+  TZDateTime now, {
+  List<MonthName> during = const [],
+}) {
   final nowInTz = TZDateTime.from(now, loc);
   var year = nowInTz.year;
   var month = nowInTz.month;
@@ -700,7 +791,23 @@ TZDateTime? _nextMonthRepeat(
   final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochDate;
   final maxIter = interval > 1 ? 24 * interval : 24;
 
+  // For NearestWeekday with direction, we need to apply the during filter here
+  // because the result can cross month boundaries
+  final applyDuringFilter = during.isNotEmpty &&
+      target is NearestWeekdayTarget &&
+      target.direction != null;
+
   for (var i = 0; i < maxIter; i++) {
+    // Check during filter for NearestWeekday with direction
+    if (applyDuringFilter && !during.any((mn) => mn.number == month)) {
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+      continue;
+    }
+
     // Check interval alignment
     if (interval > 1) {
       final cur = DateTime.utc(year, month, 1);
@@ -730,6 +837,11 @@ TZDateTime? _nextMonthRepeat(
       }
     } else if (target is LastDayTarget) {
       dateCandidates.add(_lastDayOfMonth(year, month));
+    } else if (target is NearestWeekdayTarget) {
+      final d = _nearestWeekday(year, month, target.day, target.direction);
+      if (d != null) {
+        dateCandidates.add(d);
+      }
     } else {
       dateCandidates.add(_lastWeekdayOfMonth(year, month));
     }

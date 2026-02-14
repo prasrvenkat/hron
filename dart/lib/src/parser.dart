@@ -317,9 +317,11 @@ class _Parser {
     } else if (k is OrdinalNumberToken) {
       final specs = _parseOrdinalDayList();
       target = DaysTarget(specs);
+    } else if (k is NextToken || k is PreviousToken || k is NearestToken) {
+      target = _parseNearestWeekdayTarget();
     } else {
       throw error(
-        "expected ordinal day (1st, 15th) or 'last' after 'the'",
+        "expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'",
         currentSpan(),
       );
     }
@@ -327,6 +329,36 @@ class _Parser {
     consumeKind("'at'", (k) => k is AtToken);
     final times = _parseTimeList();
     return MonthRepeat(interval, target, times);
+  }
+
+  /// Parse [next|previous] nearest weekday to <day>
+  MonthTarget _parseNearestWeekdayTarget() {
+    // Optional direction: "next" or "previous"
+    NearestDirection? direction;
+    final k = peekKind();
+    if (k is NextToken) {
+      advance();
+      direction = NearestDirection.next;
+    } else if (k is PreviousToken) {
+      advance();
+      direction = NearestDirection.previous;
+    }
+
+    consumeKind("'nearest'", (k) => k is NearestToken);
+    consumeKind("'weekday'", (k) => k is WeekdayKeyToken);
+    consumeKind("'to'", (k) => k is ToToken);
+
+    final day = _parseOrdinalDayNumber();
+    return NearestWeekdayTarget(day, direction);
+  }
+
+  int _parseOrdinalDayNumber() {
+    final k = peekKind();
+    if (k is OrdinalNumberToken) {
+      advance();
+      return k.value;
+    }
+    throw error('expected ordinal day number', currentSpan());
   }
 
   ScheduleExpr _parseOrdinalRepeat() {

@@ -107,6 +107,14 @@ String toCron(ScheduleData schedule) {
           'not expressible as cron (last day of month not supported)',
         );
       }
+      if (target is NearestWeekdayTarget) {
+        if (target.direction != null) {
+          throw HronError.cron(
+            'not expressible as cron (directional nearest weekday not supported)',
+          );
+        }
+        return '${time.minute} ${time.hour} ${target.day}W * *';
+      }
       throw HronError.cron(
         'not expressible as cron (last weekday of month not supported)',
       );
@@ -191,9 +199,16 @@ ScheduleData fromCron(String cron) {
   );
   if (lastDayResult != null) return lastDayResult;
 
-  // Check for W (nearest weekday) - not yet supported
+  // Check for W (nearest weekday): e.g., 15W
   if (domField.endsWith('W') && domField != 'LW') {
-    throw HronError.cron('W (nearest weekday) not yet supported');
+    final nearestWeekdayResult = _tryParseNearestWeekday(
+      minuteField,
+      hourField,
+      domField,
+      dowField,
+      during,
+    );
+    if (nearestWeekdayResult != null) return nearestWeekdayResult;
   }
 
   // Check for interval patterns: */N or range/N
@@ -446,6 +461,43 @@ ScheduleData? _tryParseLastDay(
   final hour = _parseSingleValue(hourField, 'hour', 0, 23);
 
   final target = domField == 'LW' ? LastWeekdayTarget() : LastDayTarget();
+
+  final schedule = ScheduleData(
+    MonthRepeat(1, target, [TimeOfDay(hour, minute)]),
+  );
+  schedule.during = during;
+  return schedule;
+}
+
+/// Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
+ScheduleData? _tryParseNearestWeekday(
+  String minuteField,
+  String hourField,
+  String domField,
+  String dowField,
+  List<MonthName> during,
+) {
+  if (!domField.endsWith('W') || domField == 'LW') {
+    return null;
+  }
+
+  if (dowField != '*' && dowField != '?') {
+    throw HronError.cron('DOW must be * when using W in DOM');
+  }
+
+  final dayStr = domField.substring(0, domField.length - 1);
+  final day = int.tryParse(dayStr);
+  if (day == null) {
+    throw HronError.cron('invalid W day value: $dayStr');
+  }
+  if (day < 1 || day > 31) {
+    throw HronError.cron('W day must be 1-31, got $day');
+  }
+
+  final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
+  final hour = _parseSingleValue(hourField, 'hour', 0, 23);
+
+  final target = NearestWeekdayTarget(day);
 
   final schedule = ScheduleData(
     MonthRepeat(1, target, [TimeOfDay(hour, minute)]),
