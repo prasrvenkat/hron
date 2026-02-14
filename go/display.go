@@ -136,6 +136,16 @@ func displayMonthTarget(target MonthTarget) string {
 		return "last weekday"
 	case MonthTargetKindDays:
 		return formatOrdinalDaySpecs(target.Specs)
+	case MonthTargetKindNearestWeekday:
+		var sb strings.Builder
+		switch target.Direction {
+		case NearestNext:
+			sb.WriteString("next ")
+		case NearestPrevious:
+			sb.WriteString("previous ")
+		}
+		sb.WriteString(fmt.Sprintf("nearest weekday to %s", ordinalNumber(target.Day)))
+		return sb.String()
 	default:
 		return ""
 	}

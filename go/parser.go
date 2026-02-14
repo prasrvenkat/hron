@@ -428,9 +428,15 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 			return ScheduleExpr{}, err
 		}
 		target = NewDaysTarget(specs)
+	case TokenNext, TokenPrevious, TokenNearest:
+		var err error
+		target, err = p.parseNearestWeekdayTarget()
+		if err != nil {
+			return ScheduleExpr{}, err
+		}
 	default:
 		return ScheduleExpr{}, p.error(
-			"expected ordinal day (1st, 15th) or 'last' after 'the'",
+			"expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'",
 			p.currentSpan(),
 		)
 	}
@@ -443,6 +449,38 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 		return ScheduleExpr{}, err
 	}
 	return NewMonthRepeat(interval, target, times), nil
+}
+
+func (p *parser) parseNearestWeekdayTarget() (MonthTarget, error) {
+	// Optional direction: "next" or "previous"
+	direction := NearestNone
+	switch p.peekKind() {
+	case TokenNext:
+		p.advance()
+		direction = NearestNext
+	case TokenPrevious:
+		p.advance()
+		direction = NearestPrevious
+	}
+
+	if _, err := p.consume("'nearest'", TokenNearest); err != nil {
+		return MonthTarget{}, err
+	}
+	if _, err := p.consume("'weekday'", TokenWeekday); err != nil {
+		return MonthTarget{}, err
+	}
+	if _, err := p.consume("'to'", TokenTo); err != nil {
+		return MonthTarget{}, err
+	}
+
+	if p.peekKind() != TokenOrdinalNumber {
+		return MonthTarget{}, p.error("expected ordinal day number", p.currentSpan())
+	}
+	tok := p.peek()
+	day := tok.NumberVal
+	p.advance()
+
+	return NewNearestWeekdayTarget(day, direction), nil
 }
 
 func (p *parser) parseOrdinalRepeat() (ScheduleExpr, error) {
