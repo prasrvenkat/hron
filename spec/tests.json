@@ -15,7 +15,7 @@
     "week_repeat_default_anchor": "When no 'starting' clause is given, week_repeat uses epoch Monday (1970-01-05) as the anchor for computing week parity.",
     "day_skip": "If a month doesn't have the requested day (e.g., Feb 30), that month is skipped entirely.",
     "named_date_recurrence": "Named exceptions (e.g., 'except dec 25') recur every year. ISO exceptions (e.g., 'except 2026-12-25') apply to that one date only.",
-    "cron_limitations": "from_cron supports standard 5-field cron including ranges, steps, L (last day), # (nth weekday), @ shortcuts, and named months/days. W (nearest weekday) requires grammar support and is not yet implemented.",
+    "cron_limitations": "from_cron supports standard 5-field cron including ranges, steps, L (last day), W (nearest weekday), # (nth weekday), @ shortcuts, and named months/days. Directional nearest weekday (next/previous) is hron-only and cannot be converted to cron.",
     "interval_anchor": "For day/month/year/ordinal intervals > 1, alignment is computed from the anchor date. Default anchor is epoch (1970-01-01). The 'starting' clause overrides it. Formula: (date_offset - anchor_offset) mod interval == 0."
   },
   "parse": {
@@ -478,6 +478,41 @@
           "name": "every_2_months_last_weekday",
           "input": "every 2 months on the last weekday at 15:00",
           "canonical": "every 2 months on the last weekday at 15:00"
+        },
+        {
+          "name": "nearest_weekday_15th",
+          "input": "every month on the nearest weekday to 15th at 09:00",
+          "canonical": "every month on the nearest weekday to 15th at 09:00"
+        },
+        {
+          "name": "nearest_weekday_1st",
+          "input": "every month on the nearest weekday to 1st at 09:00",
+          "canonical": "every month on the nearest weekday to 1st at 09:00"
+        },
+        {
+          "name": "nearest_weekday_31st",
+          "input": "every month on the nearest weekday to 31st at 17:00",
+          "canonical": "every month on the nearest weekday to 31st at 17:00"
+        },
+        {
+          "name": "every_2_months_nearest_weekday",
+          "input": "every 2 months on the nearest weekday to 15th at 09:00",
+          "canonical": "every 2 months on the nearest weekday to 15th at 09:00"
+        },
+        {
+          "name": "next_nearest_weekday",
+          "input": "every month on the next nearest weekday to 15th at 09:00",
+          "canonical": "every month on the next nearest weekday to 15th at 09:00"
+        },
+        {
+          "name": "previous_nearest_weekday",
+          "input": "every month on the previous nearest weekday to 15th at 09:00",
+          "canonical": "every month on the previous nearest weekday to 15th at 09:00"
+        },
+        {
+          "name": "previous_nearest_weekday_1st",
+          "input": "every month on the previous nearest weekday to 1st at 09:00",
+          "canonical": "every month on the previous nearest weekday to 1st at 09:00"
         }
       ]
     },
@@ -1464,6 +1499,90 @@
             "2026-07-01T09:00:00+00:00[UTC]",
             "2026-09-01T09:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "nearest_weekday_on_weekday",
+          "expression": "every month on the nearest weekday to 13th at 09:00 in UTC",
+          "description": "Feb 13, 2026 is Friday, fires as-is",
+          "next_date": "2026-02-13"
+        },
+        {
+          "name": "nearest_weekday_saturday_to_friday",
+          "expression": "every month on the nearest weekday to 14th at 09:00 in UTC",
+          "description": "Feb 14, 2026 is Saturday, nearest weekday is Friday 13th",
+          "next_date": "2026-02-13"
+        },
+        {
+          "name": "nearest_weekday_sunday_to_monday",
+          "expression": "every month on the nearest weekday to 15th at 09:00 in UTC",
+          "description": "Feb 15, 2026 is Sunday, nearest weekday is Monday 16th",
+          "next_date": "2026-02-16"
+        },
+        {
+          "name": "nearest_weekday_1st_sunday",
+          "expression": "every month on the nearest weekday to 1st at 09:00 in UTC",
+          "description": "Feb 1 is Sunday (past), Mar 1 is Sunday, fires Monday Mar 2",
+          "next_date": "2026-03-02"
+        },
+        {
+          "name": "nearest_weekday_1st_saturday_boundary",
+          "expression": "every month on the nearest weekday to 1st at 09:00 during aug in UTC",
+          "description": "Aug 1, 2026 is Saturday, can't go prev month, fires Monday Aug 3",
+          "next_date": "2026-08-03"
+        },
+        {
+          "name": "nearest_weekday_31st",
+          "expression": "every month on the nearest weekday to 31st at 09:00 in UTC",
+          "description": "Mar 31, 2026 is Tuesday, fires as-is",
+          "next_date": "2026-03-31"
+        },
+        {
+          "name": "nearest_weekday_31st_sunday_boundary",
+          "expression": "every month on the nearest weekday to 31st at 09:00 during may in UTC",
+          "description": "May 31, 2026 is Sunday, can't go next month, fires Friday May 29",
+          "next_date": "2026-05-29"
+        },
+        {
+          "name": "nearest_weekday_31st_saturday",
+          "expression": "every month on the nearest weekday to 31st at 09:00 during oct in UTC",
+          "description": "Oct 31, 2026 is Saturday, fires Friday Oct 30",
+          "next_date": "2026-10-30"
+        },
+        {
+          "name": "next_nearest_saturday_to_monday",
+          "expression": "every month on the next nearest weekday to 14th at 09:00 in UTC",
+          "description": "Feb 14, 2026 is Saturday, next nearest is Monday 16th",
+          "next_date": "2026-02-16"
+        },
+        {
+          "name": "next_nearest_sunday_to_monday",
+          "expression": "every month on the next nearest weekday to 15th at 09:00 in UTC",
+          "description": "Feb 15, 2026 is Sunday, next nearest is Monday 16th",
+          "next_date": "2026-02-16"
+        },
+        {
+          "name": "next_nearest_31st_crosses_month",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 during may in UTC",
+          "description": "May 31, 2026 is Sunday, next nearest crosses to Monday Jun 1",
+          "next_date": "2026-06-01"
+        },
+        {
+          "name": "previous_nearest_sunday_to_friday",
+          "expression": "every month on the previous nearest weekday to 15th at 09:00 in UTC",
+          "description": "Feb 15, 2026 is Sunday, previous nearest is Friday 13th",
+          "next_date": "2026-02-13"
+        },
+        {
+          "name": "previous_nearest_saturday_to_friday",
+          "expression": "every month on the previous nearest weekday to 14th at 09:00 in UTC",
+          "description": "Feb 14, 2026 is Saturday, previous nearest is Friday 13th",
+          "next_date": "2026-02-13"
+        },
+        {
+          "name": "previous_nearest_1st_crosses_month",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 during mar in UTC",
+          "description": "Mar 1, 2026 is Sunday, previous nearest crosses to Friday Feb 27",
+          "next_date": "2026-02-27"
         }
       ]
     },
@@ -2940,6 +3059,11 @@
           "name": "day_range_10_to_15",
           "hron": "every month on the 10th to 15th at 12:00",
           "cron": "0 12 10,11,12,13,14,15 * *"
+        },
+        {
+          "name": "nearest_weekday",
+          "hron": "every month on the nearest weekday to 15th at 09:00",
+          "cron": "0 9 15W * *"
         }
       ]
     },
@@ -3055,6 +3179,16 @@
           "name": "yearly_interval",
           "hron": "every 2 years on dec 25 at 00:00",
           "description": "yearly interval"
+        },
+        {
+          "name": "next_nearest_weekday_unsupported",
+          "hron": "every month on the next nearest weekday to 15th at 09:00",
+          "description": "directional nearest weekday not supported in cron"
+        },
+        {
+          "name": "previous_nearest_weekday_unsupported",
+          "hron": "every month on the previous nearest weekday to 1st at 09:00",
+          "description": "directional nearest weekday not supported in cron"
         }
       ]
     },
@@ -3450,6 +3584,26 @@
           "name": "dow_step_full_week_with_7",
           "cron": "0 9 * * 0-7/2",
           "hron": "every sunday, tuesday, thursday, saturday at 09:00"
+        },
+        {
+          "name": "nearest_weekday_15",
+          "cron": "0 9 15W * *",
+          "hron": "every month on the nearest weekday to 15th at 09:00"
+        },
+        {
+          "name": "nearest_weekday_1",
+          "cron": "0 9 1W * *",
+          "hron": "every month on the nearest weekday to 1st at 09:00"
+        },
+        {
+          "name": "nearest_weekday_31",
+          "cron": "0 17 31W * *",
+          "hron": "every month on the nearest weekday to 31st at 17:00"
+        },
+        {
+          "name": "nearest_weekday_with_month",
+          "cron": "0 9 15W 3 *",
+          "hron": "every month on the nearest weekday to 15th at 09:00 during mar"
         }
       ]
     },
@@ -3545,16 +3699,6 @@
           "name": "invalid_dow_range_reversed",
           "cron": "0 9 * * 5-1",
           "description": "range start must be <= end"
-        },
-        {
-          "name": "nearest_weekday",
-          "cron": "0 9 15W * *",
-          "description": "W (nearest weekday) not yet supported"
-        },
-        {
-          "name": "nearest_weekday_first",
-          "cron": "0 9 1W * *",
-          "description": "W (nearest weekday) not yet supported"
         }
       ]
     },
