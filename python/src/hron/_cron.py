@@ -20,7 +20,6 @@ from ._ast import (
     OrdinalPosition,
     OrdinalRepeat,
     ScheduleData,
-    ScheduleExpr,
     SingleDateExpr,
     SingleDay,
     TimeOfDay,

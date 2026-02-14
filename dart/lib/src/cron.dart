@@ -231,38 +231,30 @@ ScheduleData _parseCronShortcut(String cron) {
   switch (cron.toLowerCase()) {
     case '@yearly':
     case '@annually':
-      return ScheduleData(YearRepeat(
-        1,
-        DateTarget(MonthName.jan, 1),
-        [const TimeOfDay(0, 0)],
-      ));
+      return ScheduleData(
+        YearRepeat(1, DateTarget(MonthName.jan, 1), [const TimeOfDay(0, 0)]),
+      );
     case '@monthly':
-      return ScheduleData(MonthRepeat(
-        1,
-        DaysTarget([SingleDay(1)]),
-        [const TimeOfDay(0, 0)],
-      ));
+      return ScheduleData(
+        MonthRepeat(1, DaysTarget([SingleDay(1)]), [const TimeOfDay(0, 0)]),
+      );
     case '@weekly':
-      return ScheduleData(DayRepeat(
-        1,
-        SpecificDays([Weekday.sunday]),
-        [const TimeOfDay(0, 0)],
-      ));
+      return ScheduleData(
+        DayRepeat(1, SpecificDays([Weekday.sunday]), [const TimeOfDay(0, 0)]),
+      );
     case '@daily':
     case '@midnight':
-      return ScheduleData(DayRepeat(
-        1,
-        EveryDay(),
-        [const TimeOfDay(0, 0)],
-      ));
+      return ScheduleData(DayRepeat(1, EveryDay(), [const TimeOfDay(0, 0)]));
     case '@hourly':
-      return ScheduleData(IntervalRepeat(
-        1,
-        IntervalUnit.hours,
-        const TimeOfDay(0, 0),
-        const TimeOfDay(23, 59),
-        null,
-      ));
+      return ScheduleData(
+        IntervalRepeat(
+          1,
+          IntervalUnit.hours,
+          const TimeOfDay(0, 0),
+          const TimeOfDay(23, 59),
+          null,
+        ),
+      );
     default:
       throw HronError.cron('unknown @ shortcut: $cron');
   }
@@ -402,12 +394,9 @@ ScheduleData? _tryParseNthWeekday(
     final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
     final hour = _parseSingleValue(hourField, 'hour', 0, 23);
 
-    final schedule = ScheduleData(OrdinalRepeat(
-      1,
-      ordinal,
-      weekday,
-      [TimeOfDay(hour, minute)],
-    ));
+    final schedule = ScheduleData(
+      OrdinalRepeat(1, ordinal, weekday, [TimeOfDay(hour, minute)]),
+    );
     schedule.during = during;
     return schedule;
   }
@@ -425,12 +414,11 @@ ScheduleData? _tryParseNthWeekday(
     final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
     final hour = _parseSingleValue(hourField, 'hour', 0, 23);
 
-    final schedule = ScheduleData(OrdinalRepeat(
-      1,
-      OrdinalPosition.last,
-      weekday,
-      [TimeOfDay(hour, minute)],
-    ));
+    final schedule = ScheduleData(
+      OrdinalRepeat(1, OrdinalPosition.last, weekday, [
+        TimeOfDay(hour, minute),
+      ]),
+    );
     schedule.during = during;
     return schedule;
   }
@@ -457,14 +445,11 @@ ScheduleData? _tryParseLastDay(
   final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
   final hour = _parseSingleValue(hourField, 'hour', 0, 23);
 
-  final target =
-      domField == 'LW' ? LastWeekdayTarget() : LastDayTarget();
+  final target = domField == 'LW' ? LastWeekdayTarget() : LastDayTarget();
 
-  final schedule = ScheduleData(MonthRepeat(
-    1,
-    target,
-    [TimeOfDay(hour, minute)],
-  ));
+  final schedule = ScheduleData(
+    MonthRepeat(1, target, [TimeOfDay(hour, minute)]),
+  );
   schedule.during = during;
   return schedule;
 }
@@ -562,13 +547,15 @@ ScheduleData? _tryParseInterval(
         endMinute = toMinute;
       }
 
-      final schedule = ScheduleData(IntervalRepeat(
-        interval,
-        IntervalUnit.min,
-        TimeOfDay(fromHour, fromMinute),
-        TimeOfDay(toHour, endMinute),
-        dayFilter,
-      ));
+      final schedule = ScheduleData(
+        IntervalRepeat(
+          interval,
+          IntervalUnit.min,
+          TimeOfDay(fromHour, fromMinute),
+          TimeOfDay(toHour, endMinute),
+          dayFilter,
+        ),
+      );
       schedule.during = during;
       return schedule;
     }
@@ -618,13 +605,15 @@ ScheduleData? _tryParseInterval(
       // Use :59 only for full day (00:00 to 23:59), otherwise use :00
       final endMinute = (fromHour == 0 && toHour == 23) ? 59 : 0;
 
-      final schedule = ScheduleData(IntervalRepeat(
-        interval,
-        IntervalUnit.hours,
-        TimeOfDay(fromHour, 0),
-        TimeOfDay(toHour, endMinute),
-        null,
-      ));
+      final schedule = ScheduleData(
+        IntervalRepeat(
+          interval,
+          IntervalUnit.hours,
+          TimeOfDay(fromHour, 0),
+          TimeOfDay(toHour, endMinute),
+          null,
+        ),
+      );
       schedule.during = during;
       return schedule;
     }
@@ -653,10 +642,14 @@ MonthTarget _parseDomField(String field) {
         final s = int.tryParse(rangePart.substring(0, dashIdx));
         final e = int.tryParse(rangePart.substring(dashIdx + 1));
         if (s == null) {
-          throw HronError.cron('invalid DOM range start: ${rangePart.substring(0, dashIdx)}');
+          throw HronError.cron(
+            'invalid DOM range start: ${rangePart.substring(0, dashIdx)}',
+          );
         }
         if (e == null) {
-          throw HronError.cron('invalid DOM range end: ${rangePart.substring(dashIdx + 1)}');
+          throw HronError.cron(
+            'invalid DOM range end: ${rangePart.substring(dashIdx + 1)}',
+          );
         }
         if (s > e) {
           throw HronError.cron('range start must be <= end: $s-$e');
@@ -747,7 +740,9 @@ DayFilter _parseCronDow(String field) {
         start = _parseDowValueRaw(rangePart.substring(0, dashIdx));
         end = _parseDowValueRaw(rangePart.substring(dashIdx + 1));
         if (start > end) {
-          throw HronError.cron('range start must be <= end: ${rangePart.substring(0, dashIdx)}-${rangePart.substring(dashIdx + 1)}');
+          throw HronError.cron(
+            'range start must be <= end: ${rangePart.substring(0, dashIdx)}-${rangePart.substring(dashIdx + 1)}',
+          );
         }
       } else {
         start = _parseDowValueRaw(rangePart);
@@ -790,7 +785,8 @@ DayFilter _parseCronDow(String field) {
 
   // Check for special patterns
   if (days.length == 5) {
-    final sorted = List<Weekday>.from(days)..sort((a, b) => a.number.compareTo(b.number));
+    final sorted = List<Weekday>.from(days)
+      ..sort((a, b) => a.number.compareTo(b.number));
     if (_listEquals(sorted, [
       Weekday.monday,
       Weekday.tuesday,
@@ -802,7 +798,8 @@ DayFilter _parseCronDow(String field) {
     }
   }
   if (days.length == 2) {
-    final sorted = List<Weekday>.from(days)..sort((a, b) => a.number.compareTo(b.number));
+    final sorted = List<Weekday>.from(days)
+      ..sort((a, b) => a.number.compareTo(b.number));
     if (_listEquals(sorted, [Weekday.saturday, Weekday.sunday])) {
       return WeekendFilter();
     }

@@ -208,18 +208,26 @@ public final class CronConverter {
   private static ScheduleData parseCronShortcut(String cron) throws HronException {
     String lower = cron.toLowerCase();
     return switch (lower) {
-      case "@yearly", "@annually" -> ScheduleData.of(
-          new YearRepeat(
-              1, YearTarget.date(MonthName.JANUARY, 1), List.of(new TimeOfDay(0, 0))));
-      case "@monthly" -> ScheduleData.of(
-          new MonthRepeat(
-              1, MonthTarget.days(List.of(DayOfMonthSpec.single(1))), List.of(new TimeOfDay(0, 0))));
-      case "@weekly" -> ScheduleData.of(
-          new DayRepeat(1, DayFilter.days(List.of(Weekday.SUNDAY)), List.of(new TimeOfDay(0, 0))));
-      case "@daily", "@midnight" -> ScheduleData.of(
-          new DayRepeat(1, DayFilter.every(), List.of(new TimeOfDay(0, 0))));
-      case "@hourly" -> ScheduleData.of(
-          new IntervalRepeat(1, IntervalUnit.HOURS, new TimeOfDay(0, 0), new TimeOfDay(23, 59), null));
+      case "@yearly", "@annually" ->
+          ScheduleData.of(
+              new YearRepeat(
+                  1, YearTarget.date(MonthName.JANUARY, 1), List.of(new TimeOfDay(0, 0))));
+      case "@monthly" ->
+          ScheduleData.of(
+              new MonthRepeat(
+                  1,
+                  MonthTarget.days(List.of(DayOfMonthSpec.single(1))),
+                  List.of(new TimeOfDay(0, 0))));
+      case "@weekly" ->
+          ScheduleData.of(
+              new DayRepeat(
+                  1, DayFilter.days(List.of(Weekday.SUNDAY)), List.of(new TimeOfDay(0, 0))));
+      case "@daily", "@midnight" ->
+          ScheduleData.of(new DayRepeat(1, DayFilter.every(), List.of(new TimeOfDay(0, 0))));
+      case "@hourly" ->
+          ScheduleData.of(
+              new IntervalRepeat(
+                  1, IntervalUnit.HOURS, new TimeOfDay(0, 0), new TimeOfDay(23, 59), null));
       default -> throw HronException.cron("unknown @ shortcut: " + cron);
     };
   }
@@ -273,7 +281,8 @@ public final class CronConverter {
         int startNum = startMonth.number();
         int endNum = endMonth.number();
         if (startNum > endNum) {
-          throw HronException.cron("invalid month range: " + rangeBounds[0] + " > " + rangeBounds[1]);
+          throw HronException.cron(
+              "invalid month range: " + rangeBounds[0] + " > " + rangeBounds[1]);
         }
         for (int n = startNum; n <= endNum; n++) {
           months.add(monthFromNumber(n));
@@ -319,8 +328,7 @@ public final class CronConverter {
   }
 
   private static MonthName parseMonthName(String s) throws HronException {
-    return MonthName.parse(s)
-        .orElseThrow(() -> HronException.cron("invalid month: " + s));
+    return MonthName.parse(s).orElseThrow(() -> HronException.cron("invalid month: " + s));
   }
 
   /** Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday). */
@@ -367,7 +375,8 @@ public final class CronConverter {
       int minute = parseSingleValue(minuteField, "minute", 0, 59);
       int hour = parseSingleValue(hourField, "hour", 0, 23);
 
-      ScheduleExpr expr = new OrdinalRepeat(1, ordinal, weekday, List.of(new TimeOfDay(hour, minute)));
+      ScheduleExpr expr =
+          new OrdinalRepeat(1, ordinal, weekday, List.of(new TimeOfDay(hour, minute)));
       return new ScheduleData(expr, null, List.of(), null, null, during);
     }
 
@@ -743,11 +752,7 @@ public final class CronConverter {
       sorted.sort((a, b) -> Integer.compare(a.number(), b.number()));
       List<Weekday> weekdays =
           List.of(
-              Weekday.MONDAY,
-              Weekday.TUESDAY,
-              Weekday.WEDNESDAY,
-              Weekday.THURSDAY,
-              Weekday.FRIDAY);
+              Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY);
       if (sorted.equals(weekdays)) {
         return DayFilter.weekday();
       }

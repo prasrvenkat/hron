@@ -245,7 +245,11 @@ module Hron
             raise HronError.cron("invalid month step expression: #{part}")
           end
 
-          step = Integer(step_str) rescue raise(HronError.cron("invalid month step value: #{step_str}"))
+          step = begin
+            Integer(step_str)
+          rescue
+            raise(HronError.cron("invalid month step value: #{step_str}"))
+          end
           raise HronError.cron("step cannot be 0") if step == 0
 
           n = start_num
@@ -275,7 +279,7 @@ module Hron
     # Parse a single month value (number 1-12 or name JAN-DEC).
     def self.parse_month_value(s)
       # Try as number first
-      if s =~ /^\d+$/
+      if /^\d+$/.match?(s)
         n = Integer(s)
         return month_from_number(n)
       end
@@ -300,7 +304,11 @@ module Hron
         dow_str, nth_str = dow_field.split("#", 2)
         dow_num = parse_dow_value(dow_str)
         weekday = cron_dow_to_weekday(dow_num)
-        nth = Integer(nth_str) rescue raise(HronError.cron("invalid nth value: #{nth_str}"))
+        nth = begin
+          Integer(nth_str)
+        rescue
+          raise(HronError.cron("invalid nth value: #{nth_str}"))
+        end
         raise HronError.cron("nth must be 1-5, got #{nth}") if nth < 1 || nth > 5
 
         ordinal = case nth
@@ -351,7 +359,7 @@ module Hron
       minute = parse_single_value(minute_field, "minute", 0, 59)
       hour = parse_single_value(hour_field, "hour", 0, 23)
 
-      target = dom_field == "LW" ? LastWeekdayTarget.new : LastDayTarget.new
+      target = (dom_field == "LW") ? LastWeekdayTarget.new : LastDayTarget.new
 
       ScheduleData.new(
         expr: MonthRepeat.new(1, target, [TimeOfDay.new(hour, minute)]),
@@ -364,7 +372,11 @@ module Hron
       # Minute interval: */N or range/N
       if minute_field.include?("/")
         range_part, step_str = minute_field.split("/", 2)
-        interval = Integer(step_str) rescue raise(HronError.cron("invalid minute interval value"))
+        interval = begin
+          Integer(step_str)
+        rescue
+          raise(HronError.cron("invalid minute interval value"))
+        end
         raise HronError.cron("step cannot be 0") if interval == 0
 
         if range_part == "*"
@@ -372,12 +384,24 @@ module Hron
           to_minute = 59
         elsif range_part.include?("-")
           s, e = range_part.split("-", 2)
-          from_minute = Integer(s) rescue raise(HronError.cron("invalid minute range"))
-          to_minute = Integer(e) rescue raise(HronError.cron("invalid minute range"))
+          from_minute = begin
+            Integer(s)
+          rescue
+            raise(HronError.cron("invalid minute range"))
+          end
+          to_minute = begin
+            Integer(e)
+          rescue
+            raise(HronError.cron("invalid minute range"))
+          end
           raise HronError.cron("range start must be <= end: #{s}-#{e}") if from_minute > to_minute
         else
           # Single value with step (e.g., 0/15) - treat as starting point
-          from_minute = Integer(range_part) rescue raise(HronError.cron("invalid minute value"))
+          from_minute = begin
+            Integer(range_part)
+          rescue
+            raise(HronError.cron("invalid minute value"))
+          end
           to_minute = 59
         end
 
@@ -387,19 +411,31 @@ module Hron
           to_hour = 23
         elsif hour_field.include?("-")
           s, e = hour_field.split("-", 2)
-          from_hour = Integer(s) rescue raise(HronError.cron("invalid hour range"))
-          to_hour = Integer(e) rescue raise(HronError.cron("invalid hour range"))
+          from_hour = begin
+            Integer(s)
+          rescue
+            raise(HronError.cron("invalid hour range"))
+          end
+          to_hour = begin
+            Integer(e)
+          rescue
+            raise(HronError.cron("invalid hour range"))
+          end
         elsif hour_field.include?("/")
           # Hour also has step - this is complex, handle as hour interval
           return nil
         else
-          h = Integer(hour_field) rescue raise(HronError.cron("invalid hour"))
+          h = begin
+            Integer(hour_field)
+          rescue
+            raise(HronError.cron("invalid hour"))
+          end
           from_hour = h
           to_hour = h
         end
 
         # Check if this should be a day filter
-        day_filter = dow_field == "*" ? nil : parse_cron_dow(dow_field)
+        day_filter = (dow_field == "*") ? nil : parse_cron_dow(dow_field)
 
         if dom_field == "*" || dom_field == "?"
           # Determine the end minute based on context
@@ -429,7 +465,11 @@ module Hron
       # Hour interval: 0 */N or 0 range/N
       if hour_field.include?("/") && (minute_field == "0" || minute_field == "00")
         range_part, step_str = hour_field.split("/", 2)
-        interval = Integer(step_str) rescue raise(HronError.cron("invalid hour interval value"))
+        interval = begin
+          Integer(step_str)
+        rescue
+          raise(HronError.cron("invalid hour interval value"))
+        end
         raise HronError.cron("step cannot be 0") if interval == 0
 
         if range_part == "*"
@@ -437,11 +477,23 @@ module Hron
           to_hour = 23
         elsif range_part.include?("-")
           s, e = range_part.split("-", 2)
-          from_hour = Integer(s) rescue raise(HronError.cron("invalid hour range"))
-          to_hour = Integer(e) rescue raise(HronError.cron("invalid hour range"))
+          from_hour = begin
+            Integer(s)
+          rescue
+            raise(HronError.cron("invalid hour range"))
+          end
+          to_hour = begin
+            Integer(e)
+          rescue
+            raise(HronError.cron("invalid hour range"))
+          end
           raise HronError.cron("range start must be <= end: #{s}-#{e}") if from_hour > to_hour
         else
-          from_hour = Integer(range_part) rescue raise(HronError.cron("invalid hour value"))
+          from_hour = begin
+            Integer(range_part)
+          rescue
+            raise(HronError.cron("invalid hour value"))
+          end
           to_hour = 23
         end
 
@@ -478,15 +530,31 @@ module Hron
             end_day = 31
           elsif range_part.include?("-")
             s, e = range_part.split("-", 2)
-            start_day = Integer(s) rescue raise(HronError.cron("invalid DOM range start: #{s}"))
-            end_day = Integer(e) rescue raise(HronError.cron("invalid DOM range end: #{e}"))
+            start_day = begin
+              Integer(s)
+            rescue
+              raise(HronError.cron("invalid DOM range start: #{s}"))
+            end
+            end_day = begin
+              Integer(e)
+            rescue
+              raise(HronError.cron("invalid DOM range end: #{e}"))
+            end
             raise HronError.cron("range start must be <= end: #{start_day}-#{end_day}") if start_day > end_day
           else
-            start_day = Integer(range_part) rescue raise(HronError.cron("invalid DOM value: #{range_part}"))
+            start_day = begin
+              Integer(range_part)
+            rescue
+              raise(HronError.cron("invalid DOM value: #{range_part}"))
+            end
             end_day = 31
           end
 
-          step = Integer(step_str) rescue raise(HronError.cron("invalid DOM step: #{step_str}"))
+          step = begin
+            Integer(step_str)
+          rescue
+            raise(HronError.cron("invalid DOM step: #{step_str}"))
+          end
           raise HronError.cron("step cannot be 0") if step == 0
 
           validate_dom(start_day)
@@ -500,15 +568,27 @@ module Hron
         elsif part.include?("-")
           # Range: 1-5
           start_str, end_str = part.split("-", 2)
-          start_day = Integer(start_str) rescue raise(HronError.cron("invalid DOM range start: #{start_str}"))
-          end_day = Integer(end_str) rescue raise(HronError.cron("invalid DOM range end: #{end_str}"))
+          start_day = begin
+            Integer(start_str)
+          rescue
+            raise(HronError.cron("invalid DOM range start: #{start_str}"))
+          end
+          end_day = begin
+            Integer(end_str)
+          rescue
+            raise(HronError.cron("invalid DOM range end: #{end_str}"))
+          end
           raise HronError.cron("range start must be <= end: #{start_day}-#{end_day}") if start_day > end_day
           validate_dom(start_day)
           validate_dom(end_day)
           specs << DayRange.new(start_day, end_day)
         else
           # Single: 15
-          day = Integer(part) rescue raise(HronError.cron("invalid DOM value: #{part}"))
+          day = begin
+            Integer(part)
+          rescue
+            raise(HronError.cron("invalid DOM value: #{part}"))
+          end
           validate_dom(day)
           specs << SingleDay.new(day)
         end
@@ -544,7 +624,11 @@ module Hron
             end_dow = 6
           end
 
-          step = Integer(step_str) rescue raise(HronError.cron("invalid DOW step: #{step_str}"))
+          step = begin
+            Integer(step_str)
+          rescue
+            raise(HronError.cron("invalid DOW step: #{step_str}"))
+          end
           raise HronError.cron("step cannot be 0") if step == 0
 
           d = start_dow
@@ -562,7 +646,7 @@ module Hron
 
           (start_dow..end_dow).each do |d|
             # Normalize 7 to 0 (Sunday) when converting to weekday
-            normalized = d == 7 ? 0 : d
+            normalized = (d == 7) ? 0 : d
             days << cron_dow_to_weekday(normalized)
           end
         else
@@ -589,13 +673,13 @@ module Hron
     def self.parse_dow_value(s)
       raw = parse_dow_value_raw(s)
       # Normalize 7 to 0 (both mean Sunday)
-      raw == 7 ? 0 : raw
+      (raw == 7) ? 0 : raw
     end
 
     # Parse a DOW value without normalizing 7 to 0 (for range checking).
     def self.parse_dow_value_raw(s)
       # Try as number first
-      if s =~ /^\d+$/
+      if /^\d+$/.match?(s)
         n = Integer(s)
         raise HronError.cron("DOW must be 0-7, got #{n}") if n > 7
 
@@ -617,7 +701,11 @@ module Hron
 
     # Parse a single numeric value with validation.
     def self.parse_single_value(field, name, min, max)
-      value = Integer(field) rescue raise(HronError.cron("invalid #{name} field: #{field}"))
+      value = begin
+        Integer(field)
+      rescue
+        raise(HronError.cron("invalid #{name} field: #{field}"))
+      end
       raise HronError.cron("#{name} must be #{min}-#{max}, got #{value}") if value < min || value > max
 
       value
