@@ -17,6 +17,7 @@ from ._ast import (
     LastWeekdayTarget,
     MonthName,
     MonthRepeat,
+    NearestWeekdayTarget,
     OrdinalPosition,
     OrdinalRepeat,
     ScheduleData,
@@ -104,9 +105,19 @@ def to_cron(schedule: ScheduleData) -> str:
                     raise HronError.cron(
                         "not expressible as cron (last day of month not supported)"
                     )
-                case _:
+                case LastWeekdayTarget():
                     raise HronError.cron(
                         "not expressible as cron (last weekday of month not supported)"
+                    )
+                case NearestWeekdayTarget(day=day, direction=direction):
+                    if direction is not None:
+                        raise HronError.cron(
+                            "not expressible as cron (directional nearest weekday not supported)"
+                        )
+                    return f"{time.minute} {time.hour} {day}W * *"
+                case _:
+                    raise HronError.cron(
+                        "not expressible as cron (unknown month target)"
                     )
 
         case OrdinalRepeat():
@@ -174,9 +185,13 @@ def from_cron(cron: str) -> ScheduleData:
     if last_day_result is not None:
         return last_day_result
 
-    # Check for W (nearest weekday) - not yet supported
+    # Check for W (nearest weekday): e.g., 15W, 1W
     if dom_field.endswith("W") and dom_field != "LW":
-        raise HronError.cron("W (nearest weekday) not yet supported")
+        nearest_weekday_result = _try_parse_nearest_weekday(
+            minute_field, hour_field, dom_field, dow_field, during
+        )
+        if nearest_weekday_result is not None:
+            return nearest_weekday_result
 
     # Check for interval patterns: */N or range/N
     interval_result = _try_parse_interval(minute_field, hour_field, dom_field, dow_field, during)
@@ -440,6 +455,45 @@ def _try_parse_last_day(
     hour = _parse_single_value(hour_field, "hour", 0, 23)
 
     target = LastWeekdayTarget() if dom_field == "LW" else LastDayTarget()
+
+    schedule = new_schedule_data(
+        MonthRepeat(
+            interval=1,
+            target=target,
+            times=(TimeOfDay(hour, minute),),
+        )
+    )
+    schedule.during = during
+    return schedule
+
+
+def _try_parse_nearest_weekday(
+    minute_field: str,
+    hour_field: str,
+    dom_field: str,
+    dow_field: str,
+    during: tuple[MonthName, ...],
+) -> ScheduleData | None:
+    """Try to parse W (nearest weekday) patterns: 15W, 1W, etc."""
+    if not dom_field.endswith("W") or dom_field == "LW":
+        return None
+
+    if dow_field != "*" and dow_field != "?":
+        raise HronError.cron("DOW must be * when using W in DOM")
+
+    day_str = dom_field[:-1]
+    try:
+        day = int(day_str)
+    except ValueError:
+        raise HronError.cron(f"invalid W day: {day_str}") from None
+
+    if day < 1 or day > 31:
+        raise HronError.cron(f"W day must be 1-31, got {day}")
+
+    minute = _parse_single_value(minute_field, "minute", 0, 59)
+    hour = _parse_single_value(hour_field, "hour", 0, 23)
+
+    target = NearestWeekdayTarget(day=day, direction=None)
 
     schedule = new_schedule_data(
         MonthRepeat(

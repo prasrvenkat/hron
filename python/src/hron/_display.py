@@ -15,10 +15,13 @@ from ._ast import (
     IsoException,
     IsoUntil,
     LastDayTarget,
+    LastWeekdayTarget,
     MonthRepeat,
     NamedDate,
     NamedException,
     NamedUntil,
+    NearestDirection,
+    NearestWeekdayTarget,
     OrdinalRepeat,
     ScheduleData,
     ScheduleExpr,
@@ -90,6 +93,15 @@ def _display_expr(expr: ScheduleExpr) -> str:
                     target_str = _format_ordinal_day_specs(specs)
                 case LastDayTarget():
                     target_str = "last day"
+                case LastWeekdayTarget():
+                    target_str = "last weekday"
+                case NearestWeekdayTarget(day=day, direction=direction):
+                    prefix = ""
+                    if direction == NearestDirection.NEXT:
+                        prefix = "next "
+                    elif direction == NearestDirection.PREVIOUS:
+                        prefix = "previous "
+                    target_str = f"{prefix}nearest weekday to {day}{_ordinal_suffix(day)}"
                 case _:
                     target_str = "last weekday"
             if interval > 1:

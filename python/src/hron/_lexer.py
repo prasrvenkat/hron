@@ -74,6 +74,21 @@ class TDuring:
 
 
 @dataclass(frozen=True, slots=True)
+class TNearest:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class TNext:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class TPrevious:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class TYear:
     pass
 
@@ -168,6 +183,9 @@ TokenKind = (
     | TUntil
     | TStarting
     | TDuring
+    | TNearest
+    | TNext
+    | TPrevious
     | TYear
     | TDay
     | TWeekday
@@ -209,6 +227,9 @@ _KEYWORD_MAP: dict[str, TokenKind] = {
     "until": TUntil(),
     "starting": TStarting(),
     "during": TDuring(),
+    "nearest": TNearest(),
+    "next": TNext(),
+    "previous": TPrevious(),
     "year": TYear(),
     "years": TYear(),
     "day": TDay(),

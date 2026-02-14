@@ -175,6 +175,16 @@ _ORDINAL_TO_N: dict[OrdinalPosition, int] = {
 }
 
 
+class NearestDirection(Enum):
+    """Direction for nearest weekday (hron extension beyond cron W)."""
+
+    NEXT = "next"  # Always prefer following weekday (can cross to next month)
+    PREVIOUS = "previous"  # Always prefer preceding weekday (can cross to prev month)
+
+    def __str__(self) -> str:
+        return self.value
+
+
 @dataclass(frozen=True, slots=True)
 class TimeOfDay:
     hour: int
@@ -245,7 +255,19 @@ class LastWeekdayTarget:
     pass
 
 
-MonthTarget = DaysTarget | LastDayTarget | LastWeekdayTarget
+@dataclass(frozen=True, slots=True)
+class NearestWeekdayTarget:
+    """Nearest weekday to a given day of month.
+
+    Standard (direction=None): never crosses month boundary (cron W compatibility).
+    Directional (direction=Some): can cross month boundary.
+    """
+
+    day: int
+    direction: NearestDirection | None = None
+
+
+MonthTarget = DaysTarget | LastDayTarget | LastWeekdayTarget | NearestWeekdayTarget
 
 
 # --- Year target ---
