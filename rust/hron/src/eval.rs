@@ -108,6 +108,7 @@ fn last_weekday_in_month(year: i16, month: i8, weekday: Weekday) -> Date {
 /// - direction=None: standard cron W behavior (never crosses month boundary)
 /// - direction=Some(Next): always prefer following weekday (can cross to next month)
 /// - direction=Some(Previous): always prefer preceding weekday (can cross to prev month)
+///
 /// Returns None if the target_day doesn't exist in the month (e.g., day 31 in February).
 fn nearest_weekday(
     year: i16,

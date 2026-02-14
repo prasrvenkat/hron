@@ -116,9 +116,7 @@ def to_cron(schedule: ScheduleData) -> str:
                         )
                     return f"{time.minute} {time.hour} {day}W * *"
                 case _:
-                    raise HronError.cron(
-                        "not expressible as cron (unknown month target)"
-                    )
+                    raise HronError.cron("not expressible as cron (unknown month target)")
 
         case OrdinalRepeat():
             raise HronError.cron("not expressible as cron (ordinal weekday of month not supported)")
