@@ -102,6 +102,15 @@ impl fmt::Display for ScheduleExpr {
                     MonthTarget::Days(specs) => write_ordinal_day_specs(f, specs)?,
                     MonthTarget::LastDay => write!(f, "last day")?,
                     MonthTarget::LastWeekday => write!(f, "last weekday")?,
+                    MonthTarget::NearestWeekday { day, direction } => {
+                        if let Some(dir) = direction {
+                            match dir {
+                                NearestDirection::Next => write!(f, "next ")?,
+                                NearestDirection::Previous => write!(f, "previous ")?,
+                            }
+                        }
+                        write!(f, "nearest weekday to {}{}", day, ordinal_suffix(*day))?;
+                    }
                 }
                 write!(f, " at ")?;
                 write_time_list(f, times)?;

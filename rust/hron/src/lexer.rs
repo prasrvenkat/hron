@@ -24,6 +24,9 @@ pub enum TokenKind {
     Starting,
     During,
     Year,
+    Nearest,
+    Next,
+    Previous,
 
     // Day keywords
     Day,
@@ -271,6 +274,9 @@ impl<'a> Lexer<'a> {
             "starting" => TokenKind::Starting,
             "during" => TokenKind::During,
             "year" => TokenKind::Year,
+            "nearest" => TokenKind::Nearest,
+            "next" => TokenKind::Next,
+            "previous" => TokenKind::Previous,
 
             "day" | "days" => TokenKind::Day,
             "weekday" | "weekdays" => TokenKind::Weekday,

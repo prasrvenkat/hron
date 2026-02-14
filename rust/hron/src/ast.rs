@@ -308,6 +308,17 @@ impl DayOfMonthSpec {
     }
 }
 
+/// Direction for nearest weekday (hron extension beyond cron W).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum NearestDirection {
+    /// Always prefer following weekday (can cross to next month).
+    Next,
+    /// Always prefer preceding weekday (can cross to prev month).
+    Previous,
+}
+
 /// Month target for month-repeat expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -316,6 +327,13 @@ pub enum MonthTarget {
     Days(Vec<DayOfMonthSpec>),
     LastDay,
     LastWeekday,
+    /// Nearest weekday to a given day of month.
+    /// Standard (None): never crosses month boundary (cron W compatibility).
+    /// Directional (Some): can cross month boundary.
+    NearestWeekday {
+        day: u8,
+        direction: Option<NearestDirection>,
+    },
 }
 
 impl MonthTarget {

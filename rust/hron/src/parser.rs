@@ -414,7 +414,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // month_repeat: "[N] month[s] on the (ordinal_days | last day | last weekday) at HH:MM"
+    // month_repeat: "[N] month[s] on the (ordinal_days | last day | last weekday | [direction] nearest weekday to day) at HH:MM"
     fn parse_month_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
         self.consume_kind("'the'", |k| matches!(k, TokenKind::The))?;
@@ -443,10 +443,14 @@ impl<'a> Parser<'a> {
                 let days = self.parse_ordinal_day_list()?;
                 MonthTarget::Days(days)
             }
+            // [next|previous] nearest weekday to <day>
+            Some(TokenKind::Next) | Some(TokenKind::Previous) | Some(TokenKind::Nearest) => {
+                self.parse_nearest_weekday_target()?
+            }
             _ => {
                 let span = self.current_span();
                 return Err(self.error(
-                    "expected ordinal day (1st, 15th) or 'last' after 'the'".into(),
+                    "expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'".into(),
                     span,
                 ));
             }
@@ -460,6 +464,44 @@ impl<'a> Parser<'a> {
             target,
             times,
         })
+    }
+
+    // [next|previous] nearest weekday to <day>
+    fn parse_nearest_weekday_target(&mut self) -> Result<MonthTarget, ScheduleError> {
+        // Optional direction: "next" or "previous"
+        let direction = match self.peek().map(|t| &t.kind) {
+            Some(TokenKind::Next) => {
+                self.advance();
+                Some(NearestDirection::Next)
+            }
+            Some(TokenKind::Previous) => {
+                self.advance();
+                Some(NearestDirection::Previous)
+            }
+            _ => None,
+        };
+
+        self.consume_kind("'nearest'", |k| matches!(k, TokenKind::Nearest))?;
+        self.consume_kind("'weekday'", |k| matches!(k, TokenKind::Weekday))?;
+        self.consume_kind("'to'", |k| matches!(k, TokenKind::To))?;
+
+        let day = self.parse_ordinal_day_number()?;
+
+        Ok(MonthTarget::NearestWeekday { day, direction })
+    }
+
+    fn parse_ordinal_day_number(&mut self) -> Result<u8, ScheduleError> {
+        match self.peek().map(|t| &t.kind) {
+            Some(TokenKind::OrdinalNumber(n)) => {
+                let d = *n as u8;
+                self.advance();
+                Ok(d)
+            }
+            _ => {
+                let span = self.current_span();
+                Err(self.error("expected ordinal day number".into(), span))
+            }
+        }
     }
 
     // ordinal_repeat: "first monday of every [N] month[s] at HH:MM"

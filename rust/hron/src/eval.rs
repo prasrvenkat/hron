@@ -104,6 +104,78 @@ fn last_weekday_in_month(year: i16, month: i8, weekday: Weekday) -> Date {
     d
 }
 
+/// Get the nearest weekday to a given day in a month.
+/// - direction=None: standard cron W behavior (never crosses month boundary)
+/// - direction=Some(Next): always prefer following weekday (can cross to next month)
+/// - direction=Some(Previous): always prefer preceding weekday (can cross to prev month)
+/// Returns None if the target_day doesn't exist in the month (e.g., day 31 in February).
+fn nearest_weekday(
+    year: i16,
+    month: i8,
+    target_day: u8,
+    direction: Option<NearestDirection>,
+) -> Option<Date> {
+    let last = last_day_of_month(year, month);
+    let last_day = last.day() as u8;
+
+    // If target day doesn't exist in this month, return None (skip this month)
+    if target_day > last_day {
+        return None;
+    }
+
+    let date = Date::new(year, month, target_day as i8).ok()?;
+    let wd = date.weekday();
+
+    use jiff::civil::Weekday as JiffWd;
+
+    match (wd, direction) {
+        // Already a weekday
+        (JiffWd::Monday | JiffWd::Tuesday | JiffWd::Wednesday | JiffWd::Thursday | JiffWd::Friday, _) => {
+            Some(date)
+        }
+
+        // Saturday handling
+        (JiffWd::Saturday, None) => {
+            // Standard: prefer Friday, but if at month start, use Monday
+            if target_day == 1 {
+                // Can't go to previous month, use Monday (day 3)
+                Some(date.checked_add(jiff::Span::new().days(2)).ok()?)
+            } else {
+                // Friday
+                Some(date.yesterday().ok()?)
+            }
+        }
+        (JiffWd::Saturday, Some(NearestDirection::Next)) => {
+            // Always Monday (may cross month)
+            Some(date.checked_add(jiff::Span::new().days(2)).ok()?)
+        }
+        (JiffWd::Saturday, Some(NearestDirection::Previous)) => {
+            // Always Friday (may cross month if day==1)
+            Some(date.yesterday().ok()?)
+        }
+
+        // Sunday handling
+        (JiffWd::Sunday, None) => {
+            // Standard: prefer Monday, but if at month end, use Friday
+            if target_day >= last_day {
+                // Can't go to next month, use Friday (day - 2)
+                Some(date.checked_add(jiff::Span::new().days(-2)).ok()?)
+            } else {
+                // Monday
+                Some(date.tomorrow().ok()?)
+            }
+        }
+        (JiffWd::Sunday, Some(NearestDirection::Next)) => {
+            // Always Monday (may cross month)
+            Some(date.tomorrow().ok()?)
+        }
+        (JiffWd::Sunday, Some(NearestDirection::Previous)) => {
+            // Always Friday (go back 2 days, may cross month)
+            Some(date.checked_add(jiff::Span::new().days(-2)).ok()?)
+        }
+    }
+}
+
 /// Count ISO weeks between two dates.
 fn weeks_between(a: Date, b: Date) -> i64 {
     let span = a.until(b).unwrap();
@@ -296,10 +368,19 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
     let has_during = !schedule.during.is_empty();
     let needs_tz_conversion = until_date.is_some() || has_during || has_exceptions;
 
+    // Check if expression is NearestWeekday with direction (can cross month boundaries)
+    let handles_during_internally = matches!(
+        &schedule.expr,
+        ScheduleExpr::MonthRepeat {
+            target: MonthTarget::NearestWeekday { direction: Some(_), .. },
+            ..
+        }
+    );
+
     // Retry loop for exceptions and during filter: if candidate is filtered, skip and retry
     let mut current = now.clone();
     for _ in 0..1000 {
-        let candidate = next_expr(&schedule.expr, &tz, &anchor, &current)?;
+        let candidate = next_expr(&schedule.expr, &tz, &anchor, &current, &schedule.during)?;
 
         let candidate = match candidate {
             Some(c) => c,
@@ -321,7 +402,8 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
         }
 
         // Apply during filter
-        if has_during && !matches_during(c_date.unwrap(), &schedule.during) {
+        // Skip this check for expressions that handle during internally (NearestWeekday with direction)
+        if has_during && !handles_during_internally && !matches_during(c_date.unwrap(), &schedule.during) {
             // Skip ahead to 1st of next valid during month
             let skip_to = next_during_month(c_date.unwrap(), &schedule.during);
             current = at_time_on_date(skip_to, Time::new(0, 0, 0, 0).unwrap(), &tz)?
@@ -359,6 +441,7 @@ fn next_expr(
     tz: &TimeZone,
     anchor: &Option<jiff::civil::Date>,
     now: &Zoned,
+    during: &[MonthName],
 ) -> Result<Option<Zoned>, ScheduleError> {
     match expr {
         ScheduleExpr::DayRepeat {
@@ -385,7 +468,7 @@ fn next_expr(
             interval,
             target,
             times,
-        } => next_month_repeat(*interval, target, times, tz, anchor, now),
+        } => next_month_repeat(*interval, target, times, tz, anchor, now, during),
 
         ScheduleExpr::OrdinalRepeat {
             interval,
@@ -540,6 +623,12 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                 MonthTarget::LastWeekday => {
                     let last_wd = last_weekday_of_month(date.year(), date.month());
                     Ok(date == last_wd)
+                }
+                MonthTarget::NearestWeekday { day, direction } => {
+                    match nearest_weekday(date.year(), date.month(), *day, *direction) {
+                        Some(target_date) => Ok(date == target_date),
+                        None => Ok(false),
+                    }
                 }
             }
         }
@@ -867,6 +956,7 @@ fn next_month_repeat(
     tz: &TimeZone,
     anchor: &Option<jiff::civil::Date>,
     now: &Zoned,
+    during: &[MonthName],
 ) -> Result<Option<Zoned>, ScheduleError> {
     let now_in_tz = now.with_time_zone(tz.clone());
 
@@ -880,8 +970,23 @@ fn next_month_repeat(
         24
     };
 
+    // For NearestWeekday with direction, we need to apply the during filter here
+    // because the result can cross month boundaries
+    let apply_during_filter = !during.is_empty()
+        && matches!(target, MonthTarget::NearestWeekday { direction: Some(_), .. });
+
     // Search forward
     for _ in 0..max_iter {
+        // Check during filter for NearestWeekday with direction
+        if apply_during_filter && !during.iter().any(|mn| mn.number() == month as u8) {
+            month += 1;
+            if month > 12 {
+                month = 1;
+                year += 1;
+            }
+            continue;
+        }
+
         // Check interval alignment
         if interval > 1 {
             let cur = Date::new(year, month, 1).unwrap();
@@ -915,6 +1020,12 @@ fn next_month_repeat(
             }
             MonthTarget::LastWeekday => {
                 vec![last_weekday_of_month(year, month)]
+            }
+            MonthTarget::NearestWeekday { day, direction } => {
+                match nearest_weekday(year, month, *day, *direction) {
+                    Some(d) => vec![d],
+                    None => vec![],
+                }
             }
         };
 
