@@ -231,6 +231,9 @@ public sealed class Lexer
         ["week"] = Token.Keyword(TokenKind.Weeks, DummySpan),
         ["month"] = Token.Keyword(TokenKind.Month, DummySpan),
         ["months"] = Token.Keyword(TokenKind.Month, DummySpan),
+        ["nearest"] = Token.Keyword(TokenKind.Nearest, DummySpan),
+        ["next"] = Token.Keyword(TokenKind.Next, DummySpan),
+        ["previous"] = Token.Keyword(TokenKind.Previous, DummySpan),
 
         // Day names
         ["monday"] = Token.DayName(Ast.Weekday.Monday, DummySpan),
