@@ -73,7 +73,7 @@ fn occurrences_early_termination_with_take_while() {
     let results: Vec<_> = schedule
         .occurrences(&from)
         .take_while(|r| match r {
-            Ok(dt) => dt < &cutoff,
+            Ok(dt) => dt < cutoff,
             Err(_) => false,
         })
         .collect::<Result<_, _>>()
@@ -393,7 +393,7 @@ fn complex_iterator_chain() {
         .filter_map(|r| r.ok())
         .filter(|dt| {
             let dow = dt.weekday().to_sunday_zero_offset();
-            dow >= 1 && dow <= 5 // Monday-Friday
+            (1..=5).contains(&dow) // Monday-Friday
         })
         .take(5)
         .map(|dt| dt.date().day())

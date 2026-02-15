@@ -331,7 +331,7 @@ class _Parser {
     return MonthRepeat(interval, target, times);
   }
 
-  /// Parse [next|previous] nearest weekday to <day>
+  /// Parse [next|previous] nearest weekday to `<day>`
   MonthTarget _parseNearestWeekdayTarget() {
     // Optional direction: "next" or "previous"
     NearestDirection? direction;
