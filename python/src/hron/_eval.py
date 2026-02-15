@@ -920,3 +920,506 @@ def between(schedule: ScheduleData, from_: datetime, to: datetime) -> Iterator[d
         if dt > to:
             return
         yield dt
+
+
+# --- Previous From ---
+
+
+def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
+    """Compute the most recent occurrence strictly before `now`.
+
+    Returns None if no previous occurrence exists (e.g., before a starting anchor
+    or for single dates in the future).
+    """
+    tz = _resolve_tz(schedule.timezone)
+    anchor = schedule.anchor
+
+    named_exc, iso_exc = _parse_exceptions(schedule.except_)
+    has_exceptions = len(schedule.except_) > 0
+    has_during = len(schedule.during) > 0
+
+    current = now
+    for _ in range(1000):
+        candidate = _prev_expr(schedule.expr, tz, anchor, current)
+
+        if candidate is None:
+            return None
+
+        c_date = candidate.astimezone(tz).date()
+
+        # Check starting anchor - if before anchor, no previous occurrence
+        if anchor:
+            anchor_date = date.fromisoformat(anchor)
+            if c_date < anchor_date:
+                return None
+
+        # Apply until filter for previousFrom:
+        # If candidate is after until, search earlier
+        if schedule.until:
+            until_date = _resolve_until(schedule.until, now)
+            if c_date > until_date:
+                end_of_day = _at_time_on_date(until_date, TimeOfDay(23, 59), tz)
+                current = end_of_day + timedelta(seconds=1)
+                continue
+
+        # Apply during filter
+        if has_during and not _matches_during(c_date, schedule.during):
+            skip_to = _prev_during_month(c_date, schedule.during)
+            current = _at_time_on_date(skip_to, TimeOfDay(23, 59), tz) + timedelta(seconds=1)
+            continue
+
+        # Apply except filter
+        if has_exceptions and _is_excepted_parsed(c_date, named_exc, iso_exc):
+            prev_day = c_date - timedelta(days=1)
+            current = _at_time_on_date(prev_day, TimeOfDay(23, 59), tz) + timedelta(seconds=1)
+            continue
+
+        return candidate
+
+    return None
+
+
+def _prev_expr(
+    expr: ScheduleExpr,
+    tz: ZoneInfo,
+    anchor: str | None,
+    now: datetime,
+) -> datetime | None:
+    match expr:
+        case DayRepeat(interval=interval, days=days, times=times):
+            return _prev_day_repeat(interval, days, times, tz, anchor, now)
+        case IntervalRepeat(
+            interval=interval,
+            unit=unit,
+            from_time=ft,
+            to_time=tt,
+            day_filter=df,
+        ):
+            return _prev_interval_repeat(interval, unit, ft, tt, df, tz, now)
+        case WeekRepeat(interval=interval, days=days, times=times):
+            return _prev_week_repeat(interval, days, times, tz, anchor, now)
+        case MonthRepeat(interval=interval, target=target, times=times):
+            return _prev_month_repeat(interval, target, times, tz, anchor, now)
+        case OrdinalRepeat(interval=interval, ordinal=ordinal, day=day, times=times):
+            return _prev_ordinal_repeat(interval, ordinal, day, times, tz, anchor, now)
+        case SingleDateExpr(date=date_spec, times=times):
+            return _prev_single_date(date_spec, times, tz, now)
+        case YearRepeat(interval=interval, target=target, times=times):
+            return _prev_year_repeat(interval, target, times, tz, anchor, now)
+    return None  # pragma: no cover
+
+
+def _prev_during_month(d: date, during: tuple[MonthName, ...]) -> date:
+    """Find the last day of the previous month in the during list."""
+    during_months = sorted((mn.number for mn in during), reverse=True)
+    year = d.year
+    month = d.month - 1
+    if month < 1:
+        month = 12
+        year -= 1
+
+    # Search backwards through months to find one in the during list
+    for _ in range(13):
+        if month in during_months:
+            return _last_day_of_month(year, month)
+        month -= 1
+        if month < 1:
+            month = 12
+            year -= 1
+
+    return d - timedelta(days=1)
+
+
+def _latest_past_at_times(
+    d: date,
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+    now: datetime,
+) -> datetime | None:
+    """Find the latest time on date d that is strictly before now."""
+    sorted_times = sorted(times, key=lambda t: (t.hour, t.minute), reverse=True)
+    for tod in sorted_times:
+        candidate = _at_time_on_date(d, tod, tz)
+        if candidate < now:
+            return candidate
+    return None
+
+
+def _latest_at_times(
+    d: date,
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+) -> datetime | None:
+    """Find the latest time on date d."""
+    if not times:
+        return None
+    sorted_times = sorted(times, key=lambda t: (t.hour, t.minute))
+    latest = sorted_times[-1]
+    return _at_time_on_date(d, latest, tz)
+
+
+def _prev_day_repeat(
+    interval: int,
+    days: DayFilter,
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+    anchor: str | None,
+    now: datetime,
+) -> datetime | None:
+    now_in_tz = now.astimezone(tz)
+    d = now_in_tz.date()
+
+    if interval <= 1:
+        # Check today for times that have passed
+        if _matches_day_filter(d, days):
+            candidate = _latest_past_at_times(d, times, tz, now)
+            if candidate is not None:
+                return candidate
+
+        # Go back day by day
+        for _ in range(8):
+            d -= timedelta(days=1)
+            if _matches_day_filter(d, days):
+                candidate = _latest_at_times(d, times, tz)
+                if candidate is not None:
+                    return candidate
+
+        return None
+
+    # Interval > 1
+    anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
+    offset = _days_between(anchor_date, d)
+    remainder = offset % interval
+    aligned_date = d if remainder == 0 else d - timedelta(days=remainder)
+
+    for _ in range(2):
+        candidate = _latest_past_at_times(aligned_date, times, tz, now)
+        if candidate is not None:
+            return candidate
+        latest = _latest_at_times(aligned_date, times, tz)
+        if latest is not None and latest < now:
+            return latest
+        aligned_date -= timedelta(days=interval)
+
+    return None
+
+
+def _prev_interval_repeat(
+    interval: int,
+    unit: IntervalUnit,
+    from_time: TimeOfDay,
+    to_time: TimeOfDay,
+    day_filter: DayFilter | None,
+    tz: ZoneInfo,
+    now: datetime,
+) -> datetime | None:
+    now_in_tz = now.astimezone(tz)
+    d = now_in_tz.date()
+
+    step_minutes = interval if unit == IntervalUnit.MIN else interval * 60
+    from_minutes = from_time.hour * 60 + from_time.minute
+    to_minutes = to_time.hour * 60 + to_time.minute
+
+    for day_offset in range(8):
+        if day_filter is not None and not _matches_day_filter(d, day_filter):
+            d -= timedelta(days=1)
+            continue
+
+        now_minutes = now_in_tz.hour * 60 + now_in_tz.minute if day_offset == 0 else to_minutes + 1
+        search_until = min(now_minutes, to_minutes)
+
+        if search_until >= from_minutes:
+            slots_in_range = (search_until - from_minutes) // step_minutes
+            last_slot_minutes = from_minutes + slots_in_range * step_minutes
+
+            if day_offset == 0 and last_slot_minutes >= now_minutes:
+                last_slot_minutes -= step_minutes
+
+            if last_slot_minutes >= from_minutes:
+                h = last_slot_minutes // 60
+                m = last_slot_minutes % 60
+                return _at_time_on_date(d, TimeOfDay(h, m), tz)
+
+        d -= timedelta(days=1)
+
+    return None
+
+
+def _prev_week_repeat(
+    interval: int,
+    days: tuple[Weekday, ...],
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+    anchor: str | None,
+    now: datetime,
+) -> datetime | None:
+    now_in_tz = now.astimezone(tz)
+    d = now_in_tz.date()
+    anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_MONDAY
+
+    # Sort target DOWs in reverse order for latest-first matching
+    sorted_days = sorted(days, key=lambda wd: wd.number, reverse=True)
+
+    # Find Monday of current week and Monday of anchor week
+    dow_offset = d.isoweekday() - 1
+    current_monday = d - timedelta(days=dow_offset)
+
+    anchor_dow_offset = anchor_date.isoweekday() - 1
+    anchor_monday = anchor_date - timedelta(days=anchor_dow_offset)
+
+    for _ in range(54):
+        weeks = _weeks_between(anchor_monday, current_monday)
+
+        if weeks < 0:
+            return None
+
+        if weeks % interval == 0:
+            # Aligned week — try each target DOW in reverse order
+            for wd in sorted_days:
+                day_offset = wd.number - 1
+                target_date = current_monday + timedelta(days=day_offset)
+                if target_date > d:
+                    continue
+                if target_date == d:
+                    candidate = _latest_past_at_times(target_date, times, tz, now)
+                    if candidate is not None:
+                        return candidate
+                else:
+                    candidate = _latest_at_times(target_date, times, tz)
+                    if candidate is not None:
+                        return candidate
+
+        # Go back to previous aligned week
+        remainder = weeks % interval
+        skip_weeks = interval if remainder == 0 else remainder
+        current_monday -= timedelta(days=skip_weeks * 7)
+
+    return None
+
+
+def _prev_month_repeat(
+    interval: int,
+    target: MonthTarget,
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+    anchor: str | None,
+    now: datetime,
+) -> datetime | None:
+    now_in_tz = now.astimezone(tz)
+    start_date = now_in_tz.date()
+    year = start_date.year
+    month = start_date.month
+
+    anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
+    max_iter = 24 * interval if interval > 1 else 24
+
+    for _ in range(max_iter):
+        # Check interval alignment
+        if interval > 1:
+            cur = date(year, month, 1)
+            month_offset = _months_between_ym(anchor_date, cur)
+            if month_offset < 0 or month_offset % interval != 0:
+                month -= 1
+                if month < 1:
+                    month = 12
+                    year -= 1
+                continue
+
+        date_candidates: list[date] = []
+
+        match target:
+            case DaysTarget():
+                expanded = expand_month_target(target)
+                last = _last_day_of_month(year, month)
+                for day_num in expanded:
+                    if day_num <= last.day:
+                        with contextlib.suppress(ValueError):
+                            date_candidates.append(date(year, month, day_num))
+            case LastDayTarget():
+                date_candidates.append(_last_day_of_month(year, month))
+            case LastWeekdayTarget():
+                date_candidates.append(_last_weekday_of_month(year, month))
+            case NearestWeekdayTarget(day=target_day, direction=direction):
+                nearest_date = _nearest_weekday(year, month, target_day, direction)
+                if nearest_date is not None:
+                    date_candidates.append(nearest_date)
+
+        # Sort in reverse order for latest first
+        for dc in sorted(date_candidates, reverse=True):
+            if dc > start_date:
+                continue
+            if dc == start_date:
+                candidate = _latest_past_at_times(dc, times, tz, now)
+                if candidate is not None:
+                    return candidate
+            else:
+                candidate = _latest_at_times(dc, times, tz)
+                if candidate is not None:
+                    return candidate
+
+        month -= 1
+        if month < 1:
+            month = 12
+            year -= 1
+
+    return None
+
+
+def _prev_ordinal_repeat(
+    interval: int,
+    ordinal: OrdinalPosition,
+    day: Weekday,
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+    anchor: str | None,
+    now: datetime,
+) -> datetime | None:
+    now_in_tz = now.astimezone(tz)
+    start_date = now_in_tz.date()
+    year = start_date.year
+    month = start_date.month
+
+    anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
+    max_iter = 24 * interval if interval > 1 else 24
+
+    for _ in range(max_iter):
+        # Check interval alignment
+        if interval > 1:
+            cur = date(year, month, 1)
+            month_offset = _months_between_ym(anchor_date, cur)
+            if month_offset < 0 or month_offset % interval != 0:
+                month -= 1
+                if month < 1:
+                    month = 12
+                    year -= 1
+                continue
+
+        if ordinal == OrdinalPosition.LAST:
+            ordinal_date: date | None = _last_weekday_in_month(year, month, day)
+        else:
+            ordinal_date = _nth_weekday_of_month(year, month, day, ordinal.to_n())
+
+        if ordinal_date is not None:
+            if ordinal_date > start_date:
+                # Future, skip
+                pass
+            elif ordinal_date == start_date:
+                candidate = _latest_past_at_times(ordinal_date, times, tz, now)
+                if candidate is not None:
+                    return candidate
+            else:
+                candidate = _latest_at_times(ordinal_date, times, tz)
+                if candidate is not None:
+                    return candidate
+
+        month -= 1
+        if month < 1:
+            month = 12
+            year -= 1
+
+    return None
+
+
+def _prev_single_date(
+    date_spec: DateSpec,
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+    now: datetime,
+) -> datetime | None:
+    now_in_tz = now.astimezone(tz)
+    now_date = now_in_tz.date()
+
+    match date_spec:
+        case IsoDate(date=iso_str):
+            target_date = date.fromisoformat(iso_str)
+            if target_date > now_date:
+                return None  # Future date
+            if target_date == now_date:
+                return _latest_past_at_times(target_date, times, tz, now)
+            return _latest_at_times(target_date, times, tz)
+        case NamedDate(month=m, day=day_num):
+            # Find most recent occurrence
+            try:
+                this_year = date(now_date.year, m.number, day_num)
+            except ValueError:
+                this_year = None
+            try:
+                last_year = date(now_date.year - 1, m.number, day_num)
+            except ValueError:
+                last_year = None
+
+            if this_year is not None and this_year < now_date:
+                target_date = this_year
+            elif this_year is not None and this_year == now_date:
+                candidate = _latest_past_at_times(this_year, times, tz, now)
+                if candidate is not None:
+                    return candidate
+                target_date = last_year
+            else:
+                target_date = last_year
+
+            if target_date is not None:
+                return _latest_at_times(target_date, times, tz)
+            return None
+
+    return None  # pragma: no cover
+
+
+def _prev_year_repeat(
+    interval: int,
+    target: YearTarget,
+    times: tuple[TimeOfDay, ...],
+    tz: ZoneInfo,
+    anchor: str | None,
+    now: datetime,
+) -> datetime | None:
+    now_in_tz = now.astimezone(tz)
+    start_date = now_in_tz.date()
+    start_year = start_date.year
+    anchor_year = date.fromisoformat(anchor).year if anchor else _EPOCH_DATE.year
+
+    max_iter = 8 * interval if interval > 1 else 8
+
+    for y in range(max_iter):
+        year = start_year - y
+
+        # Check interval alignment
+        if interval > 1:
+            year_offset = year - anchor_year
+            if year_offset < 0 or year_offset % interval != 0:
+                continue
+
+        target_date: date | None = None
+
+        match target:
+            case YearDateTarget(month=m, day=day_val):
+                try:
+                    target_date = date(year, m.number, day_val)
+                except ValueError:
+                    continue
+            case YearOrdinalWeekdayTarget(ordinal=ord_val, weekday=weekday, month=m):
+                if ord_val == OrdinalPosition.LAST:
+                    target_date = _last_weekday_in_month(year, m.number, weekday)
+                else:
+                    target_date = _nth_weekday_of_month(year, m.number, weekday, ord_val.to_n())
+            case YearDayOfMonthTarget(day=day_val, month=m):
+                try:
+                    target_date = date(year, m.number, day_val)
+                except ValueError:
+                    continue
+            case YearLastWeekdayTarget(month=m):
+                target_date = _last_weekday_of_month(year, m.number)
+
+        if target_date is not None:
+            if target_date > start_date:
+                continue  # Future
+            if target_date == start_date:
+                candidate = _latest_past_at_times(target_date, times, tz, now)
+                if candidate is not None:
+                    return candidate
+            else:
+                candidate = _latest_at_times(target_date, times, tz)
+                if candidate is not None:
+                    return candidate
+
+    return None

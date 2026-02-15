@@ -224,6 +224,29 @@ def test_eval_between(name: str, tc: dict) -> None:  # type: ignore[type-arg]
 
 
 # ===========================================================================
+# Eval previous_from conformance
+# ===========================================================================
+
+_PREVIOUS_FROM_TESTS = [
+    (tc.get("name", tc["expression"]), tc) for tc in _spec["eval"]["previous_from"]["tests"]
+]
+_PREVIOUS_FROM_IDS = [t[0] for t in _PREVIOUS_FROM_TESTS]
+
+
+@pytest.mark.parametrize("name,tc", _PREVIOUS_FROM_TESTS, ids=_PREVIOUS_FROM_IDS)
+def test_eval_previous_from(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+    schedule = Schedule.parse(tc["expression"])
+    now = parse_zoned(tc["now"])
+    result = schedule.previous_from(now)
+
+    if tc["expected"] is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert format_zoned(result) == tc["expected"]
+
+
+# ===========================================================================
 # Cron conformance
 # ===========================================================================
 

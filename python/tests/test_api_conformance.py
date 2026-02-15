@@ -55,6 +55,11 @@ class TestInstanceMethods:
         assert len(results) == 3
         assert all(isinstance(r, datetime) for r in results)
 
+    def test_previous_from(self) -> None:
+        result = self._schedule.previous_from(self._now)
+        assert result is None or isinstance(result, datetime)
+        assert result is not None
+
     def test_matches(self) -> None:
         result = self._schedule.matches(self._now)
         assert isinstance(result, bool)
@@ -99,6 +104,7 @@ class TestSpecCoverage:
     _INSTANCE_METHOD_MAP = {
         "nextFrom": "next_from",
         "nextNFrom": "next_n_from",
+        "previousFrom": "previous_from",
         "matches": "matches",
         "occurrences": "occurrences",
         "between": "between",
