@@ -248,6 +248,35 @@ fn run_eval_between(index: usize) {
     }
 }
 
+fn run_eval_previous_from(index: usize) {
+    let case = &SPEC["eval"]["previous_from"]["tests"][index];
+    let expr_str = case["expression"].as_str().unwrap();
+    let now_str = case["now"].as_str().unwrap();
+
+    let schedule =
+        Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
+    let now = parse_zoned(now_str);
+
+    let result = schedule
+        .previous_from(&now)
+        .unwrap_or_else(|e| panic!("previous_from error for '{expr_str}': {e}"));
+
+    if case["expected"].is_null() {
+        assert!(
+            result.is_none(),
+            "expected None for '{expr_str}', got {:?}",
+            result
+        );
+    } else {
+        let expected = case["expected"].as_str().unwrap();
+        let got = result
+            .as_ref()
+            .map(|z| z.to_string())
+            .unwrap_or_else(|| "None".to_string());
+        assert_eq!(got, expected, "previous_from mismatch for '{expr_str}'");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Cron
 // ---------------------------------------------------------------------------

@@ -91,6 +91,26 @@ impl Schedule {
         eval::next_n_from(self, now, n)
     }
 
+    /// Compute the most recent occurrence strictly before `now`.
+    ///
+    /// Returns `None` if no previous occurrence exists, which can happen when:
+    /// - The schedule has a `starting` anchor and the result would be before it
+    /// - The schedule is a single date in the future
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
+    /// let now: jiff::Zoned = "2025-06-15T12:00:00+00:00[UTC]".parse().unwrap();
+    /// let prev = schedule.previous_from(&now).unwrap().unwrap();
+    /// assert_eq!(prev.to_string(), "2025-06-15T09:00:00+00:00[UTC]");
+    /// ```
+    pub fn previous_from(&self, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+        eval::previous_from(self, now)
+    }
+
     /// Check if a datetime matches this schedule.
     ///
     /// # Examples

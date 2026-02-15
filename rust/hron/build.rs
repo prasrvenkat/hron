@@ -118,6 +118,17 @@ fn main() {
         );
     }
 
+    // --- Eval previous_from ---
+    for (i, case) in iter_tests(&eval["previous_from"]).enumerate() {
+        let name = test_name(case, i);
+        emit_flat(
+            &mut f,
+            &format!("eval_previous_from_{name}"),
+            "run_eval_previous_from",
+            i,
+        );
+    }
+
     // --- Cron ---
     let cron = &spec["cron"];
     for (i, case) in iter_tests(&cron["to_cron"]).enumerate() {
