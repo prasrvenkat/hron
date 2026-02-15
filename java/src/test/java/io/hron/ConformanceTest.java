@@ -266,8 +266,7 @@ public class ConformanceTest {
 
                 List<ZonedDateTime> results = s.occurrences(from).limit(take).toList();
 
-                assertEquals(
-                    expectedStrs.size(), results.size(), "occurrences() count mismatch");
+                assertEquals(expectedStrs.size(), results.size(), "occurrences() count mismatch");
 
                 for (int i = 0; i < expectedStrs.size(); i++) {
                   ZonedDateTime expected = parseZonedDateTime(expectedStrs.get(i));
@@ -312,8 +311,7 @@ public class ConformanceTest {
                   List<String> expectedStrs =
                       MAPPER.convertValue(tc.get("expected"), new TypeReference<List<String>>() {});
 
-                  assertEquals(
-                      expectedStrs.size(), results.size(), "between() count mismatch");
+                  assertEquals(expectedStrs.size(), results.size(), "between() count mismatch");
 
                   for (int i = 0; i < expectedStrs.size(); i++) {
                     ZonedDateTime expected = parseZonedDateTime(expectedStrs.get(i));

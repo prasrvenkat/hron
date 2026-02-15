@@ -152,7 +152,11 @@ fn main() {
         } else {
             // occurrences() with default limit
             let limit = 100;
-            match schedule.occurrences(&from).take(limit).collect::<Result<Vec<_>, _>>() {
+            match schedule
+                .occurrences(&from)
+                .take(limit)
+                .collect::<Result<Vec<_>, _>>()
+            {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!("{}", e.display_rich());

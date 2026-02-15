@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import itertools
 from datetime import datetime
-from typing import Iterator
 from zoneinfo import ZoneInfo
 
 import pytest

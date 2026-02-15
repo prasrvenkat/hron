@@ -350,7 +350,7 @@ class IteratorTest < Minitest::Test
     # Complex chain: skip weekends, take first 5 weekdays, get their day numbers
     weekday_days = schedule.occurrences(from)
       .first(14) # Two weeks to ensure we have enough
-      .select { |dt| dt.wday >= 1 && dt.wday <= 5 } # Monday-Friday
+      .select { |dt| dt.wday.between?(1, 5) } # Monday-Friday
       .first(5)
       .map(&:day)
 

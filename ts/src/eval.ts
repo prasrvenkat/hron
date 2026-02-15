@@ -328,7 +328,6 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   const parsedExceptions = parseExceptions(schedule.except);
   const hasExceptions = schedule.except.length > 0;
   const hasDuring = schedule.during.length > 0;
-  const needsTzConversion = untilDate !== null || hasDuring || hasExceptions;
 
   // Check if expression is NearestWeekday with direction (can cross month boundaries)
   const handlesDuringInternally =
@@ -349,13 +348,11 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
     if (candidate === null) return null;
 
     // Convert to target tz once for all filter checks
-    const cDate = needsTzConversion
-      ? candidate.withTimeZone(tz).toPlainDate()
-      : null;
+    const cDate = candidate.withTimeZone(tz).toPlainDate();
 
     // Apply until filter
     if (untilDate) {
-      if (Temporal.PlainDate.compare(cDate!, untilDate) > 0) {
+      if (Temporal.PlainDate.compare(cDate, untilDate) > 0) {
         return null;
       }
     }
@@ -365,17 +362,17 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
     if (
       hasDuring &&
       !handlesDuringInternally &&
-      !matchesDuring(cDate!, schedule.during)
+      !matchesDuring(cDate, schedule.during)
     ) {
       // Skip ahead to 1st of next valid during month
-      const skipTo = nextDuringMonth(cDate!, schedule.during);
+      const skipTo = nextDuringMonth(cDate, schedule.during);
       current = atTimeOnDate(skipTo, MIDNIGHT, tz).subtract({ seconds: 1 });
       continue;
     }
 
     // Apply except filter
-    if (hasExceptions && isExceptedParsed(cDate!, parsedExceptions)) {
-      const nextDay = cDate!.add({ days: 1 });
+    if (hasExceptions && isExceptedParsed(cDate, parsedExceptions)) {
+      const nextDay = cDate.add({ days: 1 });
       current = atTimeOnDate(nextDay, MIDNIGHT, tz).subtract({ seconds: 1 });
       continue;
     }

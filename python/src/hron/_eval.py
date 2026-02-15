@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar
 import contextlib
+from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -892,8 +893,6 @@ def _next_year_repeat(
 
 
 # --- Iterator functions ---
-
-from typing import Iterator
 
 
 def occurrences(schedule: ScheduleData, from_: datetime) -> Iterator[datetime]:

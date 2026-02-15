@@ -116,13 +116,17 @@ describe("iterator protocol", () => {
   });
 
   it("works with Array.from", () => {
-    const schedule = Schedule.parse("every day at 09:00 until 2026-02-05 in UTC");
+    const schedule = Schedule.parse(
+      "every day at 09:00 until 2026-02-05 in UTC",
+    );
     const from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
     const results = Array.from(schedule.occurrences(from));
 
     expect(results.length).toBe(5); // Feb 1-5
-    expect(results.every((dt) => dt instanceof Temporal.ZonedDateTime)).toBe(true);
+    expect(results.every((dt) => dt instanceof Temporal.ZonedDateTime)).toBe(
+      true,
+    );
   });
 
   it("works with spread operator", () => {
@@ -175,7 +179,9 @@ describe("for...of patterns", () => {
 
 describe("edge cases", () => {
   it("occurrences empty when past until", () => {
-    const schedule = Schedule.parse("every day at 09:00 until 2026-01-01 in UTC");
+    const schedule = Schedule.parse(
+      "every day at 09:00 until 2026-01-01 in UTC",
+    );
     const from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
     const results = [...schedule.occurrences(from)];
@@ -199,7 +205,7 @@ describe("edge cases", () => {
 
     // Request many but should only get 1
     let count = 0;
-    for (const dt of schedule.occurrences(from)) {
+    for (const _dt of schedule.occurrences(from)) {
       count++;
       if (count >= 100) break;
     }

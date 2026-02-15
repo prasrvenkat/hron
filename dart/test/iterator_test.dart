@@ -29,7 +29,10 @@ void main() {
 
     final loc = tzName == 'UTC' ? tz.UTC : tz.getLocation(tzName);
     final dt = DateTime.parse(isoStr);
-    return tz.TZDateTime.fromMillisecondsSinceEpoch(loc, dt.millisecondsSinceEpoch);
+    return tz.TZDateTime.fromMillisecondsSinceEpoch(
+      loc,
+      dt.millisecondsSinceEpoch,
+    );
   }
 
   // ===========================================================================
@@ -110,8 +113,9 @@ void main() {
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
       // Find the first Saturday occurrence (weekday 6 in Dart)
-      final saturday =
-          schedule.occurrences(from).firstWhere((dt) => dt.weekday == 6);
+      final saturday = schedule
+          .occurrences(from)
+          .firstWhere((dt) => dt.weekday == 6);
 
       // Feb 7, 2026 is a Saturday
       expect(saturday.day, equals(7));
@@ -157,8 +161,7 @@ void main() {
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
       // Skip first 5, take next 3
-      final results =
-          schedule.occurrences(from).skip(5).take(3).toList();
+      final results = schedule.occurrences(from).skip(5).take(3).toList();
 
       expect(results.length, equals(3));
       // Should be Feb 6, 7, 8
@@ -190,7 +193,9 @@ void main() {
     });
 
     test('works with indexed access via elementAt', () {
-      final schedule = Schedule.parse('every day at 09:00 until 2026-02-10 in UTC');
+      final schedule = Schedule.parse(
+        'every day at 09:00 until 2026-02-10 in UTC',
+      );
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
       final iter = schedule.occurrences(from);
@@ -206,7 +211,9 @@ void main() {
 
   group('collect patterns', () {
     test('occurrences collect to list', () {
-      final schedule = Schedule.parse('every day at 09:00 until 2026-02-05 in UTC');
+      final schedule = Schedule.parse(
+        'every day at 09:00 until 2026-02-05 in UTC',
+      );
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
       final results = schedule.occurrences(from).toList();
@@ -263,7 +270,9 @@ void main() {
 
   group('edge cases', () {
     test('occurrences empty when past until', () {
-      final schedule = Schedule.parse('every day at 09:00 until 2026-01-01 in UTC');
+      final schedule = Schedule.parse(
+        'every day at 09:00 until 2026-01-01 in UTC',
+      );
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
       final results = schedule.occurrences(from).take(10).toList();
@@ -331,10 +340,15 @@ void main() {
 
   group('multiple times per day', () {
     test('occurrences multiple times per day', () {
-      final schedule = Schedule.parse('every day at 09:00, 12:00, 17:00 in UTC');
+      final schedule = Schedule.parse(
+        'every day at 09:00, 12:00, 17:00 in UTC',
+      );
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      final results = schedule.occurrences(from).take(9).toList(); // 3 days worth
+      final results = schedule
+          .occurrences(from)
+          .take(9)
+          .toList(); // 3 days worth
 
       expect(results.length, equals(9));
       // First day: 09:00, 12:00, 17:00

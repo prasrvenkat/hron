@@ -150,11 +150,7 @@ fn occurrences_works_with_enumerate() {
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    let enumerated: Vec<_> = schedule
-        .occurrences(&from)
-        .take(3)
-        .enumerate()
-        .collect();
+    let enumerated: Vec<_> = schedule.occurrences(&from).take(3).enumerate().collect();
 
     assert_eq!(enumerated.len(), 3);
     assert_eq!(enumerated[0].0, 0);
@@ -189,10 +185,7 @@ fn between_works_with_count() {
     let to = parse_zoned("2026-02-10T23:59:00+00:00[UTC]");
 
     // Count occurrences in range
-    let count = schedule
-        .between(&from, &to)
-        .filter(|r| r.is_ok())
-        .count();
+    let count = schedule.between(&from, &to).filter(|r| r.is_ok()).count();
 
     // Feb 1-10 inclusive = 10 days
     assert_eq!(count, 10);
@@ -204,11 +197,7 @@ fn between_works_with_last() {
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
     let to = parse_zoned("2026-02-10T23:59:00+00:00[UTC]");
 
-    let last = schedule
-        .between(&from, &to)
-        .last()
-        .unwrap()
-        .unwrap();
+    let last = schedule.between(&from, &to).last().unwrap().unwrap();
 
     assert_eq!(last.date().day(), 10);
 }
@@ -361,9 +350,9 @@ fn between_handles_dst_transition() {
 
     // Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
     assert_eq!(results.len(), 3);
-    assert_eq!(results[0].time().hour(), 2);  // Mar 7 02:30
-    assert_eq!(results[1].time().hour(), 3);  // Mar 8 03:30 (shifted due to DST)
-    assert_eq!(results[2].time().hour(), 2);  // Mar 9 02:30
+    assert_eq!(results[0].time().hour(), 2); // Mar 7 02:30
+    assert_eq!(results[1].time().hour(), 3); // Mar 8 03:30 (shifted due to DST)
+    assert_eq!(results[2].time().hour(), 2); // Mar 9 02:30
 }
 
 // =============================================================================

@@ -242,8 +242,11 @@ void main() {
 
         expect(results.length, equals(expected.length));
         for (var i = 0; i < expected.length; i++) {
-          expect(formatZoned(results[i]), equals(expected[i]),
-              reason: 'occurrences[$i] mismatch');
+          expect(
+            formatZoned(results[i]),
+            equals(expected[i]),
+            reason: 'occurrences[$i] mismatch',
+          );
         }
       });
     }
@@ -270,8 +273,11 @@ void main() {
           final expected = (tc['expected'] as List<dynamic>).cast<String>();
           expect(results.length, equals(expected.length));
           for (var i = 0; i < expected.length; i++) {
-            expect(formatZoned(results[i]), equals(expected[i]),
-                reason: 'between[$i] mismatch');
+            expect(
+              formatZoned(results[i]),
+              equals(expected[i]),
+              reason: 'between[$i] mismatch',
+            );
           }
         } else if (tc.containsKey('expected_count')) {
           expect(results.length, equals(tc['expected_count']));
