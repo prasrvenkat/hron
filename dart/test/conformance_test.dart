@@ -222,6 +222,26 @@ void main() {
     }
   });
 
+  group('eval previous_from', () {
+    final evalMap = spec['eval'] as Map<String, dynamic>;
+    final previousFromData = evalMap['previous_from'] as Map<String, dynamic>;
+    final tests = previousFromData['tests'] as List<dynamic>;
+    for (final tc in tests) {
+      final name = (tc['name'] ?? tc['expression']) as String;
+      test(name, () {
+        final schedule = Schedule.parse(tc['expression'] as String);
+        final now = parseZoned(tc['now'] as String);
+        final result = schedule.previousFrom(now);
+        if (tc['expected'] == null) {
+          expect(result, isNull);
+        } else {
+          expect(result, isNotNull);
+          expect(formatZoned(result!), equals(tc['expected']));
+        }
+      });
+    }
+  });
+
   // =========================================================================
   // Occurrences conformance
   // =========================================================================

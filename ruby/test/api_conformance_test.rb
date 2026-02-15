@@ -16,6 +16,7 @@ class ApiConformanceTest < Minitest::Test
   INSTANCE_METHOD_MAP = {
     "nextFrom" => "next_from",
     "nextNFrom" => "next_n_from",
+    "previousFrom" => "previous_from",
     "matches" => "matches",
     "occurrences" => "occurrences",
     "between" => "between",
@@ -66,6 +67,15 @@ class ApiConformanceTest < Minitest::Test
     assert_kind_of Array, results
     assert_equal 3, results.length
     results.each { |r| assert_kind_of Time, r }
+  end
+
+  def test_previous_from
+    result = @schedule.previous_from(@now)
+    refute_nil result
+    assert_kind_of Time, result
+    # Previous should be today at 09:00
+    assert_equal 6, result.day
+    assert_equal 9, result.hour
   end
 
   def test_matches

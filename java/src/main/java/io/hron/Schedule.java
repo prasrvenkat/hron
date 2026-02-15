@@ -99,6 +99,17 @@ public final class Schedule {
   }
 
   /**
+   * Computes the most recent occurrence strictly before the given time.
+   *
+   * @param now the reference time (exclusive upper bound)
+   * @return the previous occurrence, or empty if none exists
+   */
+  public Optional<ZonedDateTime> previousFrom(ZonedDateTime now) {
+    ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
+    return Evaluator.previousFrom(data, nowInTz, zoneId);
+  }
+
+  /**
    * Checks if a datetime matches this schedule.
    *
    * @param datetime the datetime to check

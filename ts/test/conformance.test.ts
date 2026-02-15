@@ -206,6 +206,25 @@ describe("eval between", () => {
   }
 });
 
+describe("eval previous_from", () => {
+  const tests = spec.eval.previous_from.tests;
+  for (const tc of tests) {
+    const name = tc.name ?? tc.expression;
+    it(name, () => {
+      const schedule = Schedule.parse(tc.expression);
+      const now = parseZoned(tc.now);
+      const result = schedule.previousFrom(now);
+
+      if (tc.expected === null) {
+        expect(result).toBeNull();
+      } else {
+        expect(result).not.toBeNull();
+        expect(result?.toString()).toBe(tc.expected);
+      }
+    });
+  }
+});
+
 // ===========================================================================
 // Cron conformance
 // ===========================================================================

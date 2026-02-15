@@ -153,6 +153,23 @@ describe("eval matches", () => {
   }
 });
 
+describe("eval previous_from", () => {
+  const tests = spec.eval.previous_from.tests;
+  for (const tc of tests) {
+    const name = tc.name ?? tc.expression;
+    it(name, () => {
+      const schedule = Schedule.parse(tc.expression);
+      const result = schedule.previousFrom(tc.now);
+      if (tc.expected === null) {
+        expect(result).toBeUndefined();
+      } else {
+        expect(result).toBeDefined();
+        expect(result).toBe(tc.expected);
+      }
+    });
+  }
+});
+
 // ===========================================================================
 // Cron conformance
 // ===========================================================================

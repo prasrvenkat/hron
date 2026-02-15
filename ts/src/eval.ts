@@ -1083,6 +1083,623 @@ function nextYearRepeat(
   return null;
 }
 
+/**
+ * Compute the most recent occurrence strictly before `now`.
+ * Returns null if no previous occurrence exists (e.g., before a starting anchor
+ * or for single dates in the future).
+ */
+export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
+  const tz = resolveTz(schedule.timezone);
+  const anchor = schedule.anchor;
+
+  // Parse exceptions once
+  const parsedExceptions = parseExceptions(schedule.except);
+  const hasExceptions = schedule.except.length > 0;
+  const hasDuring = schedule.during.length > 0;
+
+  // Retry loop for exceptions and during filter
+  let current = now;
+  for (let i = 0; i < 1000; i++) {
+    const candidate = prevExpr(schedule, tz, anchor, current);
+
+    if (candidate === null) return null;
+
+    const cDate = candidate.withTimeZone(tz).toPlainDate();
+
+    // Check starting anchor - if before anchor, no previous occurrence
+    if (anchor) {
+      const anchorDate = Temporal.PlainDate.from(anchor);
+      if (Temporal.PlainDate.compare(cDate, anchorDate) < 0) {
+        return null;
+      }
+    }
+
+    // Apply until filter for previousFrom:
+    // If candidate is after until, search earlier
+    if (schedule.until) {
+      const untilDate = resolveUntil(schedule.until, now);
+      if (Temporal.PlainDate.compare(cDate, untilDate) > 0) {
+        const endOfDay = toPlainTime({ hour: 23, minute: 59 });
+        const skipTo = atTimeOnDate(untilDate, endOfDay, tz);
+        current = skipTo.add({ seconds: 1 });
+        continue;
+      }
+    }
+
+    // Apply during filter
+    if (hasDuring && !matchesDuring(cDate, schedule.during)) {
+      const skipTo = prevDuringMonth(cDate, schedule.during);
+      const endOfDay = toPlainTime({ hour: 23, minute: 59 });
+      current = atTimeOnDate(skipTo, endOfDay, tz).add({
+        seconds: 1,
+      });
+      continue;
+    }
+
+    // Apply except filter
+    if (hasExceptions && isExceptedParsed(cDate, parsedExceptions)) {
+      const prevDay = cDate.subtract({ days: 1 });
+      const endOfDay = toPlainTime({ hour: 23, minute: 59 });
+      current = atTimeOnDate(prevDay, endOfDay, tz).add({
+        seconds: 1,
+      });
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return null;
+}
+
+/**
+ * Compute previous occurrence for the expression part.
+ */
+function prevExpr(
+  schedule: ScheduleData,
+  tz: string,
+  anchor: string | null,
+  now: ZDT,
+): ZDT | null {
+  const expr = schedule.expr;
+
+  switch (expr.type) {
+    case "dayRepeat":
+      return prevDayRepeat(expr, tz, anchor, now);
+    case "intervalRepeat":
+      return prevIntervalRepeat(expr, tz, now);
+    case "weekRepeat":
+      return prevWeekRepeat(expr, tz, anchor, now);
+    case "monthRepeat":
+      return prevMonthRepeat(expr, tz, anchor, now);
+    case "ordinalRepeat":
+      return prevOrdinalRepeat(expr, tz, anchor, now);
+    case "singleDate":
+      return prevSingleDate(expr, tz, now);
+    case "yearRepeat":
+      return prevYearRepeat(expr, tz, anchor, now);
+    default:
+      return null;
+  }
+}
+
+function prevDayRepeat(
+  expr: Extract<ScheduleExpr, { type: "dayRepeat" }>,
+  tz: string,
+  anchor: string | null,
+  now: ZDT,
+): ZDT | null {
+  const nowInTz = now.withTimeZone(tz);
+  let date = nowInTz.toPlainDate();
+  const { interval, days, times } = expr;
+
+  if (interval <= 1) {
+    // Check today for times that have passed
+    if (matchesDayFilter(date, days)) {
+      const candidate = latestPastAtTimes(date, times, tz, now);
+      if (candidate !== null) return candidate;
+    }
+    // Go back day by day
+    for (let i = 0; i < 8; i++) {
+      date = date.subtract({ days: 1 });
+      if (matchesDayFilter(date, days)) {
+        const candidate = latestAtTimes(date, times, tz);
+        if (candidate !== null) return candidate;
+      }
+    }
+    return null;
+  }
+
+  // Interval > 1
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
+  const offset = daysBetween(anchorDate, date);
+  const remainder = ((offset % interval) + interval) % interval;
+  const alignedDate =
+    remainder === 0 ? date : date.subtract({ days: remainder });
+
+  for (let i = 0; i < 2; i++) {
+    const checkDate = alignedDate.subtract({ days: i * interval });
+    const candidate = latestPastAtTimes(checkDate, times, tz, now);
+    if (candidate !== null) return candidate;
+    const latest = latestAtTimes(checkDate, times, tz);
+    if (latest !== null && Temporal.ZonedDateTime.compare(latest, now) < 0) {
+      return latest;
+    }
+  }
+
+  return null;
+}
+
+function prevIntervalRepeat(
+  expr: Extract<ScheduleExpr, { type: "intervalRepeat" }>,
+  tz: string,
+  now: ZDT,
+): ZDT | null {
+  const nowInTz = now.withTimeZone(tz);
+  let date = nowInTz.toPlainDate();
+  const { interval, unit, from, to, dayFilter } = expr;
+
+  const stepMinutes = unit === "min" ? interval : interval * 60;
+  const fromMinutes = from.hour * 60 + from.minute;
+  const toMinutes = to.hour * 60 + to.minute;
+
+  for (let d = 0; d < 8; d++) {
+    if (dayFilter && !matchesDayFilter(date, dayFilter)) {
+      date = date.subtract({ days: 1 });
+      continue;
+    }
+
+    const nowMinutes =
+      d === 0 ? nowInTz.hour * 60 + nowInTz.minute : toMinutes + 1;
+    const searchUntil = Math.min(nowMinutes, toMinutes);
+
+    if (searchUntil >= fromMinutes) {
+      const slotsInRange = Math.floor(
+        (searchUntil - fromMinutes) / stepMinutes,
+      );
+      let lastSlotMinutes = fromMinutes + slotsInRange * stepMinutes;
+
+      if (d === 0 && lastSlotMinutes >= nowMinutes) {
+        lastSlotMinutes -= stepMinutes;
+      }
+
+      if (lastSlotMinutes >= fromMinutes) {
+        const h = Math.floor(lastSlotMinutes / 60);
+        const m = lastSlotMinutes % 60;
+        return atTimeOnDate(date, toPlainTime({ hour: h, minute: m }), tz);
+      }
+    }
+
+    date = date.subtract({ days: 1 });
+  }
+
+  return null;
+}
+
+function prevWeekRepeat(
+  expr: Extract<ScheduleExpr, { type: "weekRepeat" }>,
+  tz: string,
+  anchor: string | null,
+  now: ZDT,
+): ZDT | null {
+  const nowInTz = now.withTimeZone(tz);
+  const date = nowInTz.toPlainDate();
+  const { interval, days, times } = expr;
+
+  const dayOfWeek = date.dayOfWeek; // 1=Mon, 7=Sun
+  const currentMonday = date.subtract({ days: dayOfWeek - 1 });
+
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_MONDAY;
+  const anchorDayOfWeek = anchorDate.dayOfWeek;
+  const anchorMonday = anchorDate.subtract({ days: anchorDayOfWeek - 1 });
+
+  // Sort days descending (latest first)
+  const sortedDays = [...days].sort((a, b) => dayToNumber(b) - dayToNumber(a));
+
+  let checkMonday = currentMonday;
+
+  for (let w = 0; w < 54; w++) {
+    const weeks = weeksBetween(anchorMonday, checkMonday);
+
+    if (weeks < 0) {
+      return null; // Before anchor
+    }
+
+    if (weeks % interval === 0) {
+      for (const wd of sortedDays) {
+        const dayNum = dayToNumber(wd);
+        const targetDate = checkMonday.add({ days: dayNum - 1 });
+
+        if (Temporal.PlainDate.compare(targetDate, date) < 0) {
+          const candidate = latestAtTimes(targetDate, times, tz);
+          if (candidate !== null) return candidate;
+        } else if (Temporal.PlainDate.compare(targetDate, date) === 0) {
+          const candidate = latestPastAtTimes(targetDate, times, tz, now);
+          if (candidate !== null) return candidate;
+        }
+      }
+    }
+
+    checkMonday = checkMonday.subtract({ days: interval * 7 });
+  }
+
+  return null;
+}
+
+function prevMonthRepeat(
+  expr: Extract<ScheduleExpr, { type: "monthRepeat" }>,
+  tz: string,
+  anchor: string | null,
+  now: ZDT,
+): ZDT | null {
+  const nowInTz = now.withTimeZone(tz);
+  const startDate = nowInTz.toPlainDate();
+  const { interval, target, times } = expr;
+
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
+
+  let year = startDate.year;
+  let month = startDate.month;
+
+  const maxIter = interval > 1 ? 24 * interval : 24;
+
+  for (let i = 0; i < maxIter; i++) {
+    if (interval > 1) {
+      const monthOffset = monthsBetweenYM(
+        anchorDate,
+        Temporal.PlainDate.from({ year, month, day: 1 }),
+      );
+      if (monthOffset < 0 || monthOffset % interval !== 0) {
+        ({ year, month } = prevMonth(year, month));
+        continue;
+      }
+    }
+
+    const targetDates = getMonthTargetDates(year, month, target);
+
+    for (const d of targetDates.sort((a, b) =>
+      Temporal.PlainDate.compare(b, a),
+    )) {
+      if (Temporal.PlainDate.compare(d, startDate) > 0) continue;
+      if (Temporal.PlainDate.compare(d, startDate) === 0) {
+        const candidate = latestPastAtTimes(d, times, tz, now);
+        if (candidate !== null) return candidate;
+      } else {
+        const candidate = latestAtTimes(d, times, tz);
+        if (candidate !== null) return candidate;
+      }
+    }
+
+    ({ year, month } = prevMonth(year, month));
+  }
+
+  return null;
+}
+
+function prevOrdinalRepeat(
+  expr: Extract<ScheduleExpr, { type: "ordinalRepeat" }>,
+  tz: string,
+  anchor: string | null,
+  now: ZDT,
+): ZDT | null {
+  const nowInTz = now.withTimeZone(tz);
+  const startDate = nowInTz.toPlainDate();
+  const { interval, ordinal, day, times } = expr;
+
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
+
+  let year = startDate.year;
+  let month = startDate.month;
+
+  const maxIter = interval > 1 ? 24 * interval : 24;
+
+  for (let i = 0; i < maxIter; i++) {
+    if (interval > 1) {
+      const monthOffset = monthsBetweenYM(
+        anchorDate,
+        Temporal.PlainDate.from({ year, month, day: 1 }),
+      );
+      if (monthOffset < 0 || monthOffset % interval !== 0) {
+        ({ year, month } = prevMonth(year, month));
+        continue;
+      }
+    }
+
+    const targetDate = getOrdinalWeekday(year, month, ordinal, day);
+
+    if (targetDate !== null) {
+      if (Temporal.PlainDate.compare(targetDate, startDate) > 0) {
+        // Future, skip
+      } else if (Temporal.PlainDate.compare(targetDate, startDate) === 0) {
+        const candidate = latestPastAtTimes(targetDate, times, tz, now);
+        if (candidate !== null) return candidate;
+      } else {
+        const candidate = latestAtTimes(targetDate, times, tz);
+        if (candidate !== null) return candidate;
+      }
+    }
+
+    ({ year, month } = prevMonth(year, month));
+  }
+
+  return null;
+}
+
+function prevSingleDate(
+  expr: Extract<ScheduleExpr, { type: "singleDate" }>,
+  tz: string,
+  now: ZDT,
+): ZDT | null {
+  const nowInTz = now.withTimeZone(tz);
+  const nowDate = nowInTz.toPlainDate();
+  const { date: dateSpec, times } = expr;
+
+  let targetDate: Temporal.PlainDate;
+
+  if (dateSpec.type === "iso") {
+    targetDate = Temporal.PlainDate.from(dateSpec.date);
+    if (Temporal.PlainDate.compare(targetDate, nowDate) > 0) {
+      return null; // Future date
+    }
+    if (Temporal.PlainDate.compare(targetDate, nowDate) === 0) {
+      return latestPastAtTimes(targetDate, times, tz, now);
+    }
+    return latestAtTimes(targetDate, times, tz);
+  } else {
+    // Named date - find most recent occurrence
+    const { month, day } = dateSpec;
+    const monthNum = monthNumber(month);
+
+    const thisYear = Temporal.PlainDate.from({
+      year: nowDate.year,
+      month: monthNum,
+      day,
+    });
+    const lastYear = Temporal.PlainDate.from({
+      year: nowDate.year - 1,
+      month: monthNum,
+      day,
+    });
+
+    if (Temporal.PlainDate.compare(thisYear, nowDate) < 0) {
+      targetDate = thisYear;
+    } else if (Temporal.PlainDate.compare(thisYear, nowDate) === 0) {
+      const candidate = latestPastAtTimes(thisYear, times, tz, now);
+      if (candidate !== null) return candidate;
+      targetDate = lastYear;
+    } else {
+      targetDate = lastYear;
+    }
+
+    return latestAtTimes(targetDate, times, tz);
+  }
+}
+
+function prevYearRepeat(
+  expr: Extract<ScheduleExpr, { type: "yearRepeat" }>,
+  tz: string,
+  anchor: string | null,
+  now: ZDT,
+): ZDT | null {
+  const nowInTz = now.withTimeZone(tz);
+  const startDate = nowInTz.toPlainDate();
+  const startYear = startDate.year;
+  const { interval, target, times } = expr;
+
+  const anchorYear = anchor
+    ? Temporal.PlainDate.from(anchor).year
+    : EPOCH_DATE.year;
+
+  const maxIter = interval > 1 ? 8 * interval : 8;
+
+  for (let y = 0; y < maxIter; y++) {
+    const year = startYear - y;
+
+    if (interval > 1) {
+      const yearOffset = year - anchorYear;
+      if (yearOffset < 0 || yearOffset % interval !== 0) {
+        continue;
+      }
+    }
+
+    const targetDate = getYearTargetDate(year, target);
+
+    if (targetDate !== null) {
+      if (Temporal.PlainDate.compare(targetDate, startDate) > 0) {
+        continue; // Future
+      }
+      if (Temporal.PlainDate.compare(targetDate, startDate) === 0) {
+        const candidate = latestPastAtTimes(targetDate, times, tz, now);
+        if (candidate !== null) return candidate;
+      } else {
+        const candidate = latestAtTimes(targetDate, times, tz);
+        if (candidate !== null) return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+// Helper functions for prev*
+
+function latestPastAtTimes(
+  date: Temporal.PlainDate,
+  times: TimeOfDay[],
+  tz: string,
+  now: ZDT,
+): ZDT | null {
+  const sortedTimes = [...times].sort(
+    (a, b) => b.hour * 60 + b.minute - (a.hour * 60 + a.minute),
+  );
+
+  for (const tod of sortedTimes) {
+    const t = toPlainTime(tod);
+    const candidate = atTimeOnDate(date, t, tz);
+    if (Temporal.ZonedDateTime.compare(candidate, now) < 0) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function latestAtTimes(
+  date: Temporal.PlainDate,
+  times: TimeOfDay[],
+  tz: string,
+): ZDT | null {
+  const sortedTimes = [...times].sort(
+    (a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute),
+  );
+
+  if (sortedTimes.length === 0) return null;
+  const latest = sortedTimes[sortedTimes.length - 1];
+  return atTimeOnDate(date, toPlainTime(latest), tz);
+}
+
+function prevMonth(
+  year: number,
+  month: number,
+): { year: number; month: number } {
+  if (month === 1) {
+    return { year: year - 1, month: 12 };
+  }
+  return { year, month: month - 1 };
+}
+
+function prevDuringMonth(
+  date: Temporal.PlainDate,
+  during: MonthName[],
+): Temporal.PlainDate {
+  let { year, month } = prevMonth(date.year, date.month);
+
+  for (let i = 0; i < 12; i++) {
+    const monthName = numberToMonthName(month);
+    if (during.includes(monthName)) {
+      return lastDayOfMonth(year, month);
+    }
+    ({ year, month } = prevMonth(year, month));
+  }
+
+  return date.subtract({ days: 1 });
+}
+
+function numberToMonthName(n: number): MonthName {
+  const names: MonthName[] = [
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
+  ];
+  return names[n - 1];
+}
+
+function getMonthTargetDates(
+  year: number,
+  month: number,
+  target: MonthTarget,
+): Temporal.PlainDate[] {
+  switch (target.type) {
+    case "days": {
+      const expanded = expandMonthTarget(target);
+      return expanded
+        .map((d) => {
+          try {
+            return Temporal.PlainDate.from({ year, month, day: d });
+          } catch {
+            return null;
+          }
+        })
+        .filter((d): d is Temporal.PlainDate => d !== null);
+    }
+    case "lastDay":
+      return [lastDayOfMonth(year, month)];
+    case "lastWeekday":
+      return [lastWeekdayOfMonth(year, month)];
+    case "nearestWeekday": {
+      const d = nearestWeekday(year, month, target.day, target.direction);
+      return d ? [d] : [];
+    }
+    default:
+      return [];
+  }
+}
+
+function getYearTargetDate(
+  year: number,
+  target: YearTarget,
+): Temporal.PlainDate | null {
+  switch (target.type) {
+    case "date": {
+      const monthNum = monthNumber(target.month);
+      try {
+        return Temporal.PlainDate.from({
+          year,
+          month: monthNum,
+          day: target.day,
+        });
+      } catch {
+        return null;
+      }
+    }
+    case "ordinalWeekday": {
+      const monthNum = monthNumber(target.month);
+      return getOrdinalWeekday(year, monthNum, target.ordinal, target.weekday);
+    }
+    case "dayOfMonth": {
+      const monthNum = monthNumber(target.month);
+      try {
+        return Temporal.PlainDate.from({
+          year,
+          month: monthNum,
+          day: target.day,
+        });
+      } catch {
+        return null;
+      }
+    }
+    case "lastWeekday": {
+      const monthNum = monthNumber(target.month);
+      return lastWeekdayOfMonth(year, monthNum);
+    }
+    default:
+      return null;
+  }
+}
+
+function getOrdinalWeekday(
+  year: number,
+  month: number,
+  ordinal: OrdinalPosition,
+  day: Weekday,
+): Temporal.PlainDate | null {
+  if (ordinal === "last") {
+    return lastWeekdayInMonth(year, month, day);
+  }
+  return nthWeekdayOfMonth(year, month, day, ordinalToN(ordinal));
+}
+
+function dayToNumber(day: Weekday): number {
+  const map: Record<Weekday, number> = {
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+    sunday: 7,
+  };
+  return map[day];
+}
+
 // --- Iterator functions ---
 
 /**

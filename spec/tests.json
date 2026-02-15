@@ -3589,6 +3589,389 @@
           ]
         }
       ]
+    },
+    "previous_from": {
+      "description": "Tests for previousFrom() - find most recent occurrence strictly before now",
+      "tests": [
+        {
+          "name": "daily_basic",
+          "expression": "every day at 09:00 in UTC",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "2026-02-06T09:00:00+00:00[UTC]",
+          "description": "Same day, time already passed"
+        },
+        {
+          "name": "daily_before_time",
+          "expression": "every day at 09:00 in UTC",
+          "now": "2026-02-06T08:00:00+00:00[UTC]",
+          "expected": "2026-02-05T09:00:00+00:00[UTC]",
+          "description": "Before today's occurrence, return yesterday"
+        },
+        {
+          "name": "daily_exact_match",
+          "expression": "every day at 09:00 in UTC",
+          "now": "2026-02-06T09:00:00+00:00[UTC]",
+          "expected": "2026-02-05T09:00:00+00:00[UTC]",
+          "description": "Exactly on occurrence time returns previous (strictly before)"
+        },
+        {
+          "name": "weekday_from_monday",
+          "expression": "every weekday at 09:00 in UTC",
+          "now": "2026-02-09T12:00:00+00:00[UTC]",
+          "expected": "2026-02-09T09:00:00+00:00[UTC]",
+          "description": "Monday after 09:00, previous is same day 09:00"
+        },
+        {
+          "name": "weekday_from_saturday",
+          "expression": "every weekday at 09:00 in UTC",
+          "now": "2026-02-07T12:00:00+00:00[UTC]",
+          "expected": "2026-02-06T09:00:00+00:00[UTC]",
+          "description": "Saturday, previous weekday is Friday"
+        },
+        {
+          "name": "weekday_from_sunday",
+          "expression": "every weekday at 09:00 in UTC",
+          "now": "2026-02-08T12:00:00+00:00[UTC]",
+          "expected": "2026-02-06T09:00:00+00:00[UTC]",
+          "description": "Sunday, previous weekday is Friday"
+        },
+        {
+          "name": "weekend_from_monday",
+          "expression": "every weekend at 10:00 in UTC",
+          "now": "2026-02-09T12:00:00+00:00[UTC]",
+          "expected": "2026-02-08T10:00:00+00:00[UTC]",
+          "description": "Monday, previous weekend is Sunday"
+        },
+        {
+          "name": "interval_hours",
+          "expression": "every 2 hours from 09:00 to 17:00 in UTC",
+          "now": "2026-02-06T14:00:00+00:00[UTC]",
+          "expected": "2026-02-06T13:00:00+00:00[UTC]",
+          "description": "Between interval times, return previous slot"
+        },
+        {
+          "name": "interval_before_window",
+          "expression": "every 2 hours from 09:00 to 17:00 in UTC",
+          "now": "2026-02-06T08:00:00+00:00[UTC]",
+          "expected": "2026-02-05T17:00:00+00:00[UTC]",
+          "description": "Before today's window, return last slot yesterday"
+        },
+        {
+          "name": "interval_after_window",
+          "expression": "every 2 hours from 09:00 to 17:00 in UTC",
+          "now": "2026-02-06T20:00:00+00:00[UTC]",
+          "expected": "2026-02-06T17:00:00+00:00[UTC]",
+          "description": "After today's window, return last slot today"
+        },
+        {
+          "name": "interval_minutes",
+          "expression": "every 30 min from 09:00 to 10:00 in UTC",
+          "now": "2026-02-06T09:45:00+00:00[UTC]",
+          "expected": "2026-02-06T09:30:00+00:00[UTC]",
+          "description": "Between minute intervals"
+        },
+        {
+          "name": "weekly_single_day",
+          "expression": "every monday at 09:00 in UTC",
+          "now": "2026-02-11T12:00:00+00:00[UTC]",
+          "expected": "2026-02-09T09:00:00+00:00[UTC]",
+          "description": "Wednesday, previous Monday"
+        },
+        {
+          "name": "weekly_same_day_after",
+          "expression": "every monday at 09:00 in UTC",
+          "now": "2026-02-09T12:00:00+00:00[UTC]",
+          "expected": "2026-02-09T09:00:00+00:00[UTC]",
+          "description": "Monday after 09:00, previous is same day"
+        },
+        {
+          "name": "weekly_same_day_before",
+          "expression": "every monday at 09:00 in UTC",
+          "now": "2026-02-09T08:00:00+00:00[UTC]",
+          "expected": "2026-02-02T09:00:00+00:00[UTC]",
+          "description": "Monday before 09:00, previous is last Monday"
+        },
+        {
+          "name": "biweekly_with_anchor",
+          "expression": "every 2 weeks on monday at 09:00 starting 2026-02-02 in UTC",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "expected": "2026-02-16T09:00:00+00:00[UTC]",
+          "description": "Between biweekly occurrences"
+        },
+        {
+          "name": "biweekly_before_anchor",
+          "expression": "every 2 weeks on monday at 09:00 starting 2026-02-16 in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": null,
+          "description": "Before starting anchor, no previous occurrence"
+        },
+        {
+          "name": "monthly_15th",
+          "expression": "every month on the 15th at 09:00 in UTC",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "expected": "2026-02-15T09:00:00+00:00[UTC]",
+          "description": "After this month's occurrence"
+        },
+        {
+          "name": "monthly_before_day",
+          "expression": "every month on the 15th at 09:00 in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": "2026-01-15T09:00:00+00:00[UTC]",
+          "description": "Before this month's occurrence"
+        },
+        {
+          "name": "monthly_last_day",
+          "expression": "every month on the last day at 09:00 in UTC",
+          "now": "2026-03-15T12:00:00+00:00[UTC]",
+          "expected": "2026-02-28T09:00:00+00:00[UTC]",
+          "description": "Previous last day (Feb has 28 days in 2026)"
+        },
+        {
+          "name": "monthly_day_range",
+          "expression": "every month on the 1st to 3rd at 09:00 in UTC",
+          "now": "2026-02-02T12:00:00+00:00[UTC]",
+          "expected": "2026-02-02T09:00:00+00:00[UTC]",
+          "description": "Within day range, return same day"
+        },
+        {
+          "name": "ordinal_first_monday",
+          "expression": "first monday of every month at 09:00 in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": "2026-02-02T09:00:00+00:00[UTC]",
+          "description": "After first Monday of Feb"
+        },
+        {
+          "name": "ordinal_first_monday_same_day",
+          "expression": "first monday of every month at 09:00 in UTC",
+          "now": "2026-02-02T12:00:00+00:00[UTC]",
+          "expected": "2026-02-02T09:00:00+00:00[UTC]",
+          "description": "On first Monday after 09:00"
+        },
+        {
+          "name": "ordinal_first_monday_before",
+          "expression": "first monday of every month at 09:00 in UTC",
+          "now": "2026-02-02T08:00:00+00:00[UTC]",
+          "expected": "2026-01-05T09:00:00+00:00[UTC]",
+          "description": "On first Monday before 09:00, return last month"
+        },
+        {
+          "name": "ordinal_last_friday",
+          "expression": "last friday of every month at 17:00 in UTC",
+          "now": "2026-03-01T12:00:00+00:00[UTC]",
+          "expected": "2026-02-27T17:00:00+00:00[UTC]",
+          "description": "Previous last Friday"
+        },
+        {
+          "name": "yearly_date",
+          "expression": "every year on dec 25 at 00:00 in UTC",
+          "now": "2026-06-01T12:00:00+00:00[UTC]",
+          "expected": "2025-12-25T00:00:00+00:00[UTC]",
+          "description": "Previous Christmas"
+        },
+        {
+          "name": "yearly_ordinal",
+          "expression": "every year on the first monday of march at 10:00 in UTC",
+          "now": "2026-04-01T12:00:00+00:00[UTC]",
+          "expected": "2026-03-02T10:00:00+00:00[UTC]",
+          "description": "Previous first Monday of March"
+        },
+        {
+          "name": "single_date_after",
+          "expression": "on 2026-02-14 at 14:00 in UTC",
+          "now": "2026-02-15T12:00:00+00:00[UTC]",
+          "expected": "2026-02-14T14:00:00+00:00[UTC]",
+          "description": "After single date, returns that date"
+        },
+        {
+          "name": "single_date_before",
+          "expression": "on 2026-02-14 at 14:00 in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": null,
+          "description": "Before single date, no previous occurrence"
+        },
+        {
+          "name": "single_date_exact",
+          "expression": "on 2026-02-14 at 14:00 in UTC",
+          "now": "2026-02-14T14:00:00+00:00[UTC]",
+          "expected": null,
+          "description": "Exactly on single date time, no previous (strictly before)"
+        },
+        {
+          "name": "single_date_same_day_after",
+          "expression": "on 2026-02-14 at 14:00 in UTC",
+          "now": "2026-02-14T16:00:00+00:00[UTC]",
+          "expected": "2026-02-14T14:00:00+00:00[UTC]",
+          "description": "Same day after the time"
+        },
+        {
+          "name": "with_starting_clause",
+          "expression": "every day at 09:00 starting 2026-02-10 in UTC",
+          "now": "2026-02-12T12:00:00+00:00[UTC]",
+          "expected": "2026-02-12T09:00:00+00:00[UTC]",
+          "description": "After starting, normal behavior"
+        },
+        {
+          "name": "with_starting_clause_boundary",
+          "expression": "every day at 09:00 starting 2026-02-10 in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": "2026-02-10T09:00:00+00:00[UTC]",
+          "description": "On starting day after time"
+        },
+        {
+          "name": "with_starting_clause_before",
+          "expression": "every day at 09:00 starting 2026-02-10 in UTC",
+          "now": "2026-02-08T12:00:00+00:00[UTC]",
+          "expected": null,
+          "description": "Before starting date, no previous"
+        },
+        {
+          "name": "with_starting_clause_on_day_before_time",
+          "expression": "every day at 09:00 starting 2026-02-10 in UTC",
+          "now": "2026-02-10T08:00:00+00:00[UTC]",
+          "expected": null,
+          "description": "On starting day before time, no previous"
+        },
+        {
+          "name": "with_until_clause",
+          "expression": "every day at 09:00 until 2026-02-20 in UTC",
+          "now": "2026-02-15T12:00:00+00:00[UTC]",
+          "expected": "2026-02-15T09:00:00+00:00[UTC]",
+          "description": "Before until date, normal behavior"
+        },
+        {
+          "name": "with_until_clause_after",
+          "expression": "every day at 09:00 until 2026-02-10 in UTC",
+          "now": "2026-02-15T12:00:00+00:00[UTC]",
+          "expected": "2026-02-10T09:00:00+00:00[UTC]",
+          "description": "After until date, returns last valid occurrence"
+        },
+        {
+          "name": "with_except_clause",
+          "expression": "every day at 09:00 except feb 9, feb 10 in UTC",
+          "now": "2026-02-11T12:00:00+00:00[UTC]",
+          "expected": "2026-02-11T09:00:00+00:00[UTC]",
+          "description": "Feb 11 is not excepted"
+        },
+        {
+          "name": "with_except_clause_on_excepted",
+          "expression": "every day at 09:00 except feb 9, feb 10 in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": "2026-02-08T09:00:00+00:00[UTC]",
+          "description": "On excepted date, skips to Feb 8"
+        },
+        {
+          "name": "with_except_clause_before_excepted",
+          "expression": "every day at 09:00 except feb 9, feb 10 in UTC",
+          "now": "2026-02-09T08:00:00+00:00[UTC]",
+          "expected": "2026-02-08T09:00:00+00:00[UTC]",
+          "description": "Before Feb 9 09:00, skips excepted dates"
+        },
+        {
+          "name": "with_during_clause",
+          "expression": "every day at 09:00 during jan, mar in UTC",
+          "now": "2026-02-15T12:00:00+00:00[UTC]",
+          "expected": "2026-01-31T09:00:00+00:00[UTC]",
+          "description": "In February, previous is end of January"
+        },
+        {
+          "name": "with_during_clause_in_valid_month",
+          "expression": "every day at 09:00 during jan, mar in UTC",
+          "now": "2026-03-15T12:00:00+00:00[UTC]",
+          "expected": "2026-03-15T09:00:00+00:00[UTC]",
+          "description": "In March, normal behavior"
+        },
+        {
+          "name": "combined_clauses",
+          "expression": "every weekday at 09:00 except feb 10 until 2026-02-13 during feb in UTC",
+          "now": "2026-02-12T12:00:00+00:00[UTC]",
+          "expected": "2026-02-12T09:00:00+00:00[UTC]",
+          "description": "Combined clauses, Feb 12 is valid"
+        },
+        {
+          "name": "combined_clauses_excepted",
+          "expression": "every weekday at 09:00 except feb 10 until 2026-02-13 during feb in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": "2026-02-09T09:00:00+00:00[UTC]",
+          "description": "Feb 10 excepted, returns Feb 9"
+        },
+        {
+          "name": "multiple_times_per_day",
+          "expression": "every day at 09:00, 12:00, 17:00 in UTC",
+          "now": "2026-02-06T14:00:00+00:00[UTC]",
+          "expected": "2026-02-06T12:00:00+00:00[UTC]",
+          "description": "Between times, return most recent"
+        },
+        {
+          "name": "multiple_times_before_first",
+          "expression": "every day at 09:00, 12:00, 17:00 in UTC",
+          "now": "2026-02-06T08:00:00+00:00[UTC]",
+          "expected": "2026-02-05T17:00:00+00:00[UTC]",
+          "description": "Before first time, return last time yesterday"
+        },
+        {
+          "name": "multiple_times_after_last",
+          "expression": "every day at 09:00, 12:00, 17:00 in UTC",
+          "now": "2026-02-06T20:00:00+00:00[UTC]",
+          "expected": "2026-02-06T17:00:00+00:00[UTC]",
+          "description": "After last time, return last time today"
+        },
+        {
+          "name": "timezone_new_york",
+          "expression": "every day at 09:00 in America/New_York",
+          "now": "2026-02-06T15:00:00-05:00[America/New_York]",
+          "expected": "2026-02-06T09:00:00-05:00[America/New_York]",
+          "description": "Different timezone"
+        },
+        {
+          "name": "timezone_tokyo",
+          "expression": "every day at 09:00 in Asia/Tokyo",
+          "now": "2026-02-06T15:00:00+09:00[Asia/Tokyo]",
+          "expected": "2026-02-06T09:00:00+09:00[Asia/Tokyo]",
+          "description": "Tokyo timezone"
+        },
+        {
+          "name": "dst_spring_forward",
+          "expression": "every day at 02:30 in America/New_York",
+          "now": "2026-03-08T12:00:00-04:00[America/New_York]",
+          "expected": "2026-03-08T03:30:00-04:00[America/New_York]",
+          "description": "On DST spring forward day, 02:30 shifts to 03:30"
+        },
+        {
+          "name": "dst_fall_back",
+          "expression": "every day at 01:30 in America/New_York",
+          "now": "2026-11-02T12:00:00-05:00[America/New_York]",
+          "expected": "2026-11-02T01:30:00-05:00[America/New_York]",
+          "description": "After DST fall back"
+        },
+        {
+          "name": "every_n_days",
+          "expression": "every 3 days at 09:00 starting 2026-02-01 in UTC",
+          "now": "2026-02-08T12:00:00+00:00[UTC]",
+          "expected": "2026-02-07T09:00:00+00:00[UTC]",
+          "description": "Every 3 days, anchored Feb 1"
+        },
+        {
+          "name": "every_n_months",
+          "expression": "every 2 months on the 1st at 09:00 starting 2026-01-01 in UTC",
+          "now": "2026-04-15T12:00:00+00:00[UTC]",
+          "expected": "2026-03-01T09:00:00+00:00[UTC]",
+          "description": "Every 2 months, previous is March"
+        },
+        {
+          "name": "nearest_weekday",
+          "expression": "every month on the nearest weekday to 15th at 09:00 in UTC",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "expected": "2026-02-16T09:00:00+00:00[UTC]",
+          "description": "Feb 15 is Sunday, nearest weekday is 16th"
+        },
+        {
+          "name": "last_weekday_of_month",
+          "expression": "every month on the last weekday at 17:00 in UTC",
+          "now": "2026-03-01T12:00:00+00:00[UTC]",
+          "expected": "2026-02-27T17:00:00+00:00[UTC]",
+          "description": "Last weekday of Feb is 27th (Friday)"
+        }
+      ]
     }
   },
   "cron": {

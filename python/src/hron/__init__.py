@@ -53,6 +53,7 @@ from ._eval import matches as _matches
 from ._eval import next_from as _next_from
 from ._eval import next_n_from as _next_n_from
 from ._eval import occurrences as _occurrences
+from ._eval import previous_from as _previous_from
 from ._parser import parse
 
 
@@ -83,6 +84,14 @@ class Schedule:
 
     def next_n_from(self, now: datetime, n: int) -> list[datetime]:
         return _next_n_from(self._data, now, n)
+
+    def previous_from(self, now: datetime) -> datetime | None:
+        """Compute the most recent occurrence strictly before `now`.
+
+        Returns None if no previous occurrence exists (e.g., before a starting anchor
+        or for single dates in the future).
+        """
+        return _previous_from(self._data, now)
 
     def matches(self, dt: datetime) -> bool:
         return _matches(self._data, dt)

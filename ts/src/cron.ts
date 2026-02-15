@@ -7,7 +7,6 @@ import type {
   MonthTarget,
   OrdinalPosition,
   ScheduleData,
-  ScheduleExpr,
   TimeOfDay,
   Weekday,
 } from "./ast.js";
@@ -338,7 +337,7 @@ function parseMonthField(field: string): MonthName[] {
       }
 
       const step = parseInt(stepStr, 10);
-      if (isNaN(step)) {
+      if (Number.isNaN(step)) {
         throw HronError.cron(`invalid month step value: ${stepStr}`);
       }
       if (step === 0) {
@@ -376,7 +375,7 @@ function parseMonthField(field: string): MonthName[] {
 function parseMonthValue(s: string): MonthName {
   // Try as number first
   const n = parseInt(s, 10);
-  if (!isNaN(n)) {
+  if (!Number.isNaN(n)) {
     return monthFromNumber(n);
   }
   // Try as name
@@ -424,7 +423,7 @@ function tryParseNthWeekday(
     const weekday = cronDowToWeekday(dowNum);
     const nth = parseInt(nthStr, 10);
 
-    if (isNaN(nth) || nth < 1 || nth > 5) {
+    if (Number.isNaN(nth) || nth < 1 || nth > 5) {
       throw HronError.cron(`nth must be 1-5, got ${nthStr}`);
     }
 
@@ -532,7 +531,7 @@ function tryParseNearestWeekday(
   const dayStr = domField.slice(0, -1);
   const day = parseInt(dayStr, 10);
 
-  if (isNaN(day)) {
+  if (Number.isNaN(day)) {
     throw HronError.cron(`invalid W day: ${dayStr}`);
   }
 
@@ -572,7 +571,7 @@ function tryParseInterval(
     const [rangePart, stepStr] = minuteField.split("/");
     const interval = parseInt(stepStr, 10);
 
-    if (isNaN(interval)) {
+    if (Number.isNaN(interval)) {
       throw HronError.cron("invalid minute interval value");
     }
     if (interval === 0) {
@@ -587,7 +586,7 @@ function tryParseInterval(
       const [s, e] = rangePart.split("-");
       fromMinute = parseInt(s, 10);
       toMinute = parseInt(e, 10);
-      if (isNaN(fromMinute) || isNaN(toMinute)) {
+      if (Number.isNaN(fromMinute) || Number.isNaN(toMinute)) {
         throw HronError.cron("invalid minute range");
       }
       if (fromMinute > toMinute) {
@@ -598,7 +597,7 @@ function tryParseInterval(
     } else {
       // Single value with step
       fromMinute = parseInt(rangePart, 10);
-      if (isNaN(fromMinute)) {
+      if (Number.isNaN(fromMinute)) {
         throw HronError.cron("invalid minute value");
       }
       toMinute = 59;
@@ -613,7 +612,7 @@ function tryParseInterval(
       const [s, e] = hourField.split("-");
       fromHour = parseInt(s, 10);
       toHour = parseInt(e, 10);
-      if (isNaN(fromHour) || isNaN(toHour)) {
+      if (Number.isNaN(fromHour) || Number.isNaN(toHour)) {
         throw HronError.cron("invalid hour range");
       }
     } else if (hourField.includes("/")) {
@@ -621,7 +620,7 @@ function tryParseInterval(
       return null;
     } else {
       const h = parseInt(hourField, 10);
-      if (isNaN(h)) {
+      if (Number.isNaN(h)) {
         throw HronError.cron("invalid hour");
       }
       fromHour = h;
@@ -664,7 +663,7 @@ function tryParseInterval(
     const [rangePart, stepStr] = hourField.split("/");
     const interval = parseInt(stepStr, 10);
 
-    if (isNaN(interval)) {
+    if (Number.isNaN(interval)) {
       throw HronError.cron("invalid hour interval value");
     }
     if (interval === 0) {
@@ -679,7 +678,7 @@ function tryParseInterval(
       const [s, e] = rangePart.split("-");
       fromHour = parseInt(s, 10);
       toHour = parseInt(e, 10);
-      if (isNaN(fromHour) || isNaN(toHour)) {
+      if (Number.isNaN(fromHour) || Number.isNaN(toHour)) {
         throw HronError.cron("invalid hour range");
       }
       if (fromHour > toHour) {
@@ -689,7 +688,7 @@ function tryParseInterval(
       }
     } else {
       fromHour = parseInt(rangePart, 10);
-      if (isNaN(fromHour)) {
+      if (Number.isNaN(fromHour)) {
         throw HronError.cron("invalid hour value");
       }
       toHour = 23;
@@ -735,10 +734,10 @@ function parseDomField(field: string): MonthTarget {
         const [s, e] = rangePart.split("-");
         start = parseInt(s, 10);
         end = parseInt(e, 10);
-        if (isNaN(start)) {
+        if (Number.isNaN(start)) {
           throw HronError.cron(`invalid DOM range start: ${s}`);
         }
-        if (isNaN(end)) {
+        if (Number.isNaN(end)) {
           throw HronError.cron(`invalid DOM range end: ${e}`);
         }
         if (start > end) {
@@ -746,14 +745,14 @@ function parseDomField(field: string): MonthTarget {
         }
       } else {
         start = parseInt(rangePart, 10);
-        if (isNaN(start)) {
+        if (Number.isNaN(start)) {
           throw HronError.cron(`invalid DOM value: ${rangePart}`);
         }
         end = 31;
       }
 
       const step = parseInt(stepStr, 10);
-      if (isNaN(step)) {
+      if (Number.isNaN(step)) {
         throw HronError.cron(`invalid DOM step: ${stepStr}`);
       }
       if (step === 0) {
@@ -771,10 +770,10 @@ function parseDomField(field: string): MonthTarget {
       const [startStr, endStr] = part.split("-");
       const start = parseInt(startStr, 10);
       const end = parseInt(endStr, 10);
-      if (isNaN(start)) {
+      if (Number.isNaN(start)) {
         throw HronError.cron(`invalid DOM range start: ${startStr}`);
       }
-      if (isNaN(end)) {
+      if (Number.isNaN(end)) {
         throw HronError.cron(`invalid DOM range end: ${endStr}`);
       }
       if (start > end) {
@@ -786,7 +785,7 @@ function parseDomField(field: string): MonthTarget {
     } else {
       // Single: 15
       const day = parseInt(part, 10);
-      if (isNaN(day)) {
+      if (Number.isNaN(day)) {
         throw HronError.cron(`invalid DOM value: ${part}`);
       }
       validateDom(day);
@@ -831,7 +830,7 @@ function parseCronDow(field: string): DayFilter {
       }
 
       const step = parseInt(stepStr, 10);
-      if (isNaN(step)) {
+      if (Number.isNaN(step)) {
         throw HronError.cron(`invalid DOW step: ${stepStr}`);
       }
       if (step === 0) {
@@ -902,7 +901,7 @@ function parseDowValue(s: string): number {
 function parseDowValueRaw(s: string): number {
   // Try as number first
   const n = parseInt(s, 10);
-  if (!isNaN(n)) {
+  if (!Number.isNaN(n)) {
     if (n > 7) {
       throw HronError.cron(`DOW must be 0-7, got ${n}`);
     }
@@ -951,7 +950,7 @@ function parseSingleValue(
   max: number,
 ): number {
   const value = parseInt(field, 10);
-  if (isNaN(value)) {
+  if (Number.isNaN(value)) {
     throw HronError.cron(`invalid ${name} field: ${field}`);
   }
   if (value < min || value > max) {

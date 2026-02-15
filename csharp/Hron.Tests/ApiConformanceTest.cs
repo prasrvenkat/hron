@@ -68,6 +68,18 @@ public class ApiConformanceTest
     }
 
     [Fact]
+    public void TestPreviousFrom()
+    {
+        var s = Schedule.Parse("every day at 09:00 in UTC");
+        var now = new DateTimeOffset(2026, 2, 6, 12, 0, 0, TimeSpan.Zero);
+        var result = s.PreviousFrom(now);
+        Assert.NotNull(result);
+        // Previous should be today at 09:00
+        Assert.Equal(6, result.Value.Day);
+        Assert.Equal(9, result.Value.Hour);
+    }
+
+    [Fact]
     public void TestMatches()
     {
         var s = Schedule.Parse("every day at 09:00 in UTC");
@@ -224,6 +236,7 @@ public class ApiConformanceTest
         {
             ["nextFrom"] = nameof(Schedule.NextFrom),
             ["nextNFrom"] = nameof(Schedule.NextNFrom),
+            ["previousFrom"] = nameof(Schedule.PreviousFrom),
             ["matches"] = nameof(Schedule.Matches),
             ["occurrences"] = nameof(Schedule.Occurrences),
             ["between"] = nameof(Schedule.Between),

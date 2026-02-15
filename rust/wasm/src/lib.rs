@@ -42,6 +42,19 @@ impl Schedule {
         serde_wasm_bindgen::to_value(&strings).map_err(|e| JsError::new(&e.to_string()))
     }
 
+    /// Compute the most recent occurrence strictly before `now`.
+    #[wasm_bindgen(js_name = "previousFrom")]
+    pub fn previous_from(&self, now: &str) -> Result<Option<String>, JsError> {
+        let now: jiff::Zoned = now
+            .parse()
+            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let result = self
+            .inner
+            .previous_from(&now)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(result.map(|z| z.to_string()))
+    }
+
     /// Check if a datetime matches this schedule.
     pub fn matches(&self, datetime: &str) -> Result<bool, JsError> {
         let dt: jiff::Zoned = datetime

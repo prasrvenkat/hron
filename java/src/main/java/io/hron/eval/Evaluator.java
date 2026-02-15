@@ -191,6 +191,77 @@ public final class Evaluator {
     return next.isPresent() && next.get().equals(dt);
   }
 
+  /**
+   * Computes the most recent occurrence strictly before the given time.
+   *
+   * @param data the schedule data
+   * @param now the reference time (exclusive upper bound)
+   * @param location the timezone
+   * @return the previous occurrence, or empty if none exists
+   */
+  public static Optional<ZonedDateTime> previousFrom(
+      ScheduleData data, ZonedDateTime now, ZoneId location) {
+    // Get anchor date for starting bound
+    LocalDate anchorDate = data.anchor() != null ? LocalDate.parse(data.anchor()) : null;
+
+    // Handle until clause - if now is after until, search from end of until date
+    ZonedDateTime searchFrom = now;
+    if (data.until() != null) {
+      LocalDate untilDate = resolveUntil(data.until(), now.toLocalDate());
+      // If now is after the until date, search from end of until date
+      if (now.toLocalDate().isAfter(untilDate)) {
+        searchFrom = ZonedDateTime.of(untilDate.plusDays(1), LocalTime.MIDNIGHT, location);
+      }
+    }
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+      Optional<ZonedDateTime> candidate =
+          prevCandidate(data.expr(), searchFrom, location, data.anchor(), data.during());
+      if (candidate.isEmpty()) {
+        return Optional.empty();
+      }
+
+      ZonedDateTime t = candidate.get();
+
+      // Check if before anchor
+      if (anchorDate != null && t.toLocalDate().isBefore(anchorDate)) {
+        return Optional.empty();
+      }
+
+      // Check until date - should not return occurrences after until
+      if (data.until() != null) {
+        LocalDate untilDate = resolveUntil(data.until(), now.toLocalDate());
+        if (t.toLocalDate().isAfter(untilDate)) {
+          searchFrom = t;
+          continue;
+        }
+      }
+
+      // Check exception list
+      if (isExcepted(t.toLocalDate(), data.except())) {
+        searchFrom = t;
+        continue;
+      }
+
+      // Check during clause
+      if (!matchesDuring(t.toLocalDate(), data.during())) {
+        // Skip to previous month that matches
+        LocalDate prevMonth = prevDuringMonth(t.toLocalDate(), data.during());
+        if (prevMonth == null) {
+          return Optional.empty();
+        }
+        searchFrom =
+            ZonedDateTime.of(
+                prevMonth.plusMonths(1).withDayOfMonth(1), LocalTime.MIDNIGHT, location);
+        continue;
+      }
+
+      return Optional.of(t);
+    }
+
+    return Optional.empty();
+  }
+
   private static Optional<ZonedDateTime> nextCandidate(
       ScheduleExpr expr,
       ZonedDateTime now,
@@ -205,6 +276,23 @@ public final class Evaluator {
       case OrdinalRepeat or -> nextOrdinalRepeat(or, now, location, anchor);
       case SingleDate sd -> nextSingleDate(sd, now, location);
       case YearRepeat yr -> nextYearRepeat(yr, now, location, anchor);
+    };
+  }
+
+  private static Optional<ZonedDateTime> prevCandidate(
+      ScheduleExpr expr,
+      ZonedDateTime now,
+      ZoneId location,
+      String anchor,
+      List<MonthName> during) {
+    return switch (expr) {
+      case DayRepeat dr -> prevDayRepeat(dr, now, location, anchor);
+      case IntervalRepeat ir -> prevIntervalRepeat(ir, now, location);
+      case WeekRepeat wr -> prevWeekRepeat(wr, now, location, anchor);
+      case MonthRepeat mr -> prevMonthRepeat(mr, now, location, anchor);
+      case OrdinalRepeat or -> prevOrdinalRepeat(or, now, location, anchor);
+      case SingleDate sd -> prevSingleDate(sd, now, location);
+      case YearRepeat yr -> prevYearRepeat(yr, now, location, anchor);
     };
   }
 
@@ -481,6 +569,266 @@ public final class Evaluator {
     return Optional.empty();
   }
 
+  // Previous occurrence methods
+
+  private static Optional<ZonedDateTime> prevDayRepeat(
+      DayRepeat dr, ZonedDateTime now, ZoneId location, String anchor) {
+    LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
+    LocalDate day = now.toLocalDate();
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+      if (dr.interval() > 1) {
+        // Check alignment
+        long daysFromAnchor = ChronoUnit.DAYS.between(anchorDate, day);
+        long mod = daysFromAnchor % dr.interval();
+        if (mod < 0) mod += dr.interval();
+        if (mod != 0) {
+          // Go back to previous aligned day
+          day = day.minusDays(mod);
+          continue;
+        }
+      }
+
+      if (matchesDayFilter(day, dr.days())) {
+        Optional<ZonedDateTime> time = latestPastTime(day, dr.times(), location, now);
+        if (time.isPresent()) {
+          return time;
+        }
+      }
+
+      day = day.minusDays(dr.interval() > 1 ? dr.interval() : 1);
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<ZonedDateTime> prevIntervalRepeat(
+      IntervalRepeat ir, ZonedDateTime now, ZoneId location) {
+    LocalDate day = now.toLocalDate();
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+      if (ir.dayFilter() != null && !matchesDayFilter(day, ir.dayFilter())) {
+        day = day.minusDays(1);
+        continue;
+      }
+
+      int fromMinutes = ir.fromTime().totalMinutes();
+      int toMinutes = ir.toTime().totalMinutes();
+      int step = ir.interval() * (ir.unit() == IntervalUnit.MINUTES ? 1 : 60);
+
+      // Build list of times in window
+      List<Integer> windowTimes = new ArrayList<>();
+      for (int m = fromMinutes; m <= toMinutes; m += step) {
+        windowTimes.add(m);
+      }
+
+      // Search backwards through window
+      int nowMinutes =
+          now.toLocalDate().equals(day) ? now.getHour() * 60 + now.getMinute() : Integer.MAX_VALUE;
+
+      for (int j = windowTimes.size() - 1; j >= 0; j--) {
+        int m = windowTimes.get(j);
+        int hour = m / 60;
+        int minute = m % 60;
+        ZonedDateTime t = atTimeOnDate(day, new TimeOfDay(hour, minute), location);
+
+        if (t.isBefore(now)) {
+          return Optional.of(t);
+        }
+      }
+
+      day = day.minusDays(1);
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<ZonedDateTime> prevWeekRepeat(
+      WeekRepeat wr, ZonedDateTime now, ZoneId location, String anchor) {
+    LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_MONDAY;
+    LocalDate anchorMonday = anchorDate.minusDays(anchorDate.getDayOfWeek().getValue() - 1);
+
+    LocalDate day = now.toLocalDate();
+    LocalDate currentMonday = day.minusDays(day.getDayOfWeek().getValue() - 1);
+
+    // Sort target weekdays in descending order for backwards search
+    List<Weekday> sortedDays = new ArrayList<>(wr.weekDays());
+    sortedDays.sort((a, b) -> Integer.compare(b.number(), a.number()));
+
+    for (int i = 0; i < 54; i++) {
+      long daysBetween = ChronoUnit.DAYS.between(anchorMonday, currentMonday);
+      long weeks = daysBetween / 7;
+
+      // Skip weeks before anchor
+      if (weeks < 0) {
+        return Optional.empty();
+      }
+
+      if (weeks % wr.interval() == 0) {
+        // Aligned week — try each target weekday in reverse order
+        for (Weekday wd : sortedDays) {
+          int dayOffset = wd.number() - 1;
+          LocalDate targetDate = currentMonday.plusDays(dayOffset);
+          Optional<ZonedDateTime> time = latestPastTime(targetDate, wr.times(), location, now);
+          if (time.isPresent()) {
+            return time;
+          }
+        }
+      }
+
+      // Go back to previous aligned week
+      long remainder = weeks % wr.interval();
+      long skipWeeks = remainder == 0 ? wr.interval() : remainder;
+      currentMonday = currentMonday.minusWeeks(skipWeeks);
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<ZonedDateTime> prevMonthRepeat(
+      MonthRepeat mr, ZonedDateTime now, ZoneId location, String anchor) {
+    LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
+    LocalDate day = now.toLocalDate();
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+      // Check month alignment
+      if (mr.interval() > 1) {
+        long monthsFromAnchor =
+            ChronoUnit.MONTHS.between(anchorDate.withDayOfMonth(1), day.withDayOfMonth(1));
+        long mod = monthsFromAnchor % mr.interval();
+        if (mod < 0) mod += mr.interval();
+        if (mod != 0) {
+          // Go back to previous aligned month
+          day = day.withDayOfMonth(1).minusMonths(mod);
+          continue;
+        }
+      }
+
+      // Get target days for this month
+      List<LocalDate> targetDays = getTargetDaysInMonth(day.getYear(), day.getMonth(), mr.target());
+
+      // Sort in reverse order for backwards search
+      targetDays = new ArrayList<>(targetDays);
+      targetDays.sort((a, b) -> b.compareTo(a));
+
+      for (LocalDate targetDay : targetDays) {
+        if (targetDay.isAfter(day)) continue;
+        Optional<ZonedDateTime> time = latestPastTime(targetDay, mr.times(), location, now);
+        if (time.isPresent()) {
+          return time;
+        }
+      }
+
+      // Move to previous month
+      day = day.withDayOfMonth(1).minusMonths(mr.interval() > 1 ? mr.interval() : 1);
+      // Set to last day of that month
+      day = day.plusMonths(1).minusDays(1);
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<ZonedDateTime> prevOrdinalRepeat(
+      OrdinalRepeat or, ZonedDateTime now, ZoneId location, String anchor) {
+    LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
+    LocalDate day = now.toLocalDate();
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+      // Check month alignment
+      if (or.interval() > 1) {
+        long monthsFromAnchor =
+            ChronoUnit.MONTHS.between(anchorDate.withDayOfMonth(1), day.withDayOfMonth(1));
+        long mod = monthsFromAnchor % or.interval();
+        if (mod < 0) mod += or.interval();
+        if (mod != 0) {
+          day = day.withDayOfMonth(1).minusMonths(mod);
+          day = day.plusMonths(1).minusDays(1);
+          continue;
+        }
+      }
+
+      // Find the ordinal weekday in this month
+      Optional<LocalDate> targetDay =
+          nthWeekdayOfMonth(day.getYear(), day.getMonth(), or.weekday(), or.ordinal());
+
+      if (targetDay.isPresent() && !targetDay.get().isAfter(day)) {
+        Optional<ZonedDateTime> time = latestPastTime(targetDay.get(), or.times(), location, now);
+        if (time.isPresent()) {
+          return time;
+        }
+      }
+
+      // Move to previous month
+      day = day.withDayOfMonth(1).minusMonths(or.interval() > 1 ? or.interval() : 1);
+      day = day.plusMonths(1).minusDays(1);
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<ZonedDateTime> prevSingleDate(
+      SingleDate sd, ZonedDateTime now, ZoneId location) {
+    int startYear = now.getYear();
+
+    switch (sd.dateSpec().kind()) {
+      case ISO -> {
+        LocalDate d = LocalDate.parse(sd.dateSpec().date());
+        return latestPastTime(d, sd.times(), location, now);
+      }
+      case NAMED -> {
+        for (int y = 0; y < 8; y++) {
+          int year = startYear - y;
+          LocalDate d = tryCreateDate(year, sd.dateSpec().month().number(), sd.dateSpec().day());
+          if (d == null) {
+            continue;
+          }
+          Optional<ZonedDateTime> time = latestPastTime(d, sd.times(), location, now);
+          if (time.isPresent()) {
+            return time;
+          }
+        }
+        return Optional.empty();
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<ZonedDateTime> prevYearRepeat(
+      YearRepeat yr, ZonedDateTime now, ZoneId location, String anchor) {
+    LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
+    int year = now.getYear();
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+      // Check year alignment
+      if (yr.interval() > 1) {
+        long yearsFromAnchor = year - anchorDate.getYear();
+        long mod = yearsFromAnchor % yr.interval();
+        if (mod < 0) mod += yr.interval();
+        if (mod != 0) {
+          year -= mod;
+          continue;
+        }
+      }
+
+      Optional<LocalDate> targetDay = getYearTargetDay(year, yr.target());
+
+      if (targetDay.isPresent()) {
+        LocalDate day = targetDay.get();
+        if (!day.isAfter(now.toLocalDate())) {
+          Optional<ZonedDateTime> time = latestPastTime(day, yr.times(), location, now);
+          if (time.isPresent()) {
+            return time;
+          }
+        }
+      }
+
+      year -= yr.interval() > 1 ? yr.interval() : 1;
+    }
+
+    return Optional.empty();
+  }
+
   // Helper methods
 
   private static boolean matchesDayFilter(LocalDate d, DayFilter f) {
@@ -503,6 +851,20 @@ public final class Evaluator {
       ZonedDateTime candidate = atTimeOnDate(day, tod, location);
       if (candidate.isAfter(now)) {
         if (best == null || candidate.isBefore(best)) {
+          best = candidate;
+        }
+      }
+    }
+    return Optional.ofNullable(best);
+  }
+
+  private static Optional<ZonedDateTime> latestPastTime(
+      LocalDate day, List<TimeOfDay> times, ZoneId location, ZonedDateTime now) {
+    ZonedDateTime best = null;
+    for (TimeOfDay tod : times) {
+      ZonedDateTime candidate = atTimeOnDate(day, tod, location);
+      if (candidate.isBefore(now)) {
+        if (best == null || candidate.isAfter(best)) {
           best = candidate;
         }
       }
@@ -771,6 +1133,30 @@ public final class Evaluator {
 
     // Wrap to first month of next year
     return LocalDate.of(d.getYear() + 1, months.getFirst(), 1);
+  }
+
+  private static LocalDate prevDuringMonth(LocalDate d, List<MonthName> during) {
+    int currentMonth = d.getMonthValue();
+
+    // Sort months in descending order
+    List<Integer> months = during.stream().map(MonthName::number).sorted((a, b) -> b - a).toList();
+
+    // Find previous month before current
+    for (int m : months) {
+      if (m < currentMonth) {
+        // Return last day of that month
+        LocalDate firstOfMonth = LocalDate.of(d.getYear(), m, 1);
+        return firstOfMonth.plusMonths(1).minusDays(1);
+      }
+    }
+
+    // Wrap to last month of previous year
+    if (!months.isEmpty()) {
+      LocalDate firstOfMonth = LocalDate.of(d.getYear() - 1, months.getFirst(), 1);
+      return firstOfMonth.plusMonths(1).minusDays(1);
+    }
+
+    return null;
   }
 
   private static LocalDate resolveUntil(UntilSpec until, LocalDate now) {
