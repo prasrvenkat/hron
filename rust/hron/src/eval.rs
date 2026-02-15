@@ -1849,10 +1849,8 @@ fn prev_ordinal_repeat(
                 if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
                     return Ok(Some(candidate));
                 }
-            } else {
-                if let Some(candidate) = latest_at_times(date, times, tz)? {
-                    return Ok(Some(candidate));
-                }
+            } else if let Some(candidate) = latest_at_times(date, times, tz)? {
+                return Ok(Some(candidate));
             }
         }
 
@@ -1935,7 +1933,7 @@ fn prev_year_repeat(
     let max_iter = if interval > 1 { 8 * interval as i16 } else { 8 };
 
     for y in 0..max_iter {
-        let year = start_year - y as i16;
+        let year = start_year - y;
 
         // Check interval alignment
         if interval > 1 {
@@ -1976,10 +1974,8 @@ fn prev_year_repeat(
                 if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
                     return Ok(Some(candidate));
                 }
-            } else {
-                if let Some(candidate) = latest_at_times(date, times, tz)? {
-                    return Ok(Some(candidate));
-                }
+            } else if let Some(candidate) = latest_at_times(date, times, tz)? {
+                return Ok(Some(candidate));
             }
         }
     }
