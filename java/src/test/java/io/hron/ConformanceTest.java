@@ -238,9 +238,7 @@ public class ConformanceTest {
                   ZonedDateTime expected = parseZonedDateTime(expectedNode.asText());
                   assertTrue(result.isPresent(), "expected non-null for previousFrom()");
                   assertEquals(
-                      expected.toInstant(),
-                      result.get().toInstant(),
-                      "previousFrom() mismatch");
+                      expected.toInstant(), result.get().toInstant(), "previousFrom() mismatch");
                 }
               }));
     }

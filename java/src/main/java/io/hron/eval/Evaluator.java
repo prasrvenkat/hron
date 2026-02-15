@@ -250,7 +250,9 @@ public final class Evaluator {
         if (prevMonth == null) {
           return Optional.empty();
         }
-        searchFrom = ZonedDateTime.of(prevMonth.plusMonths(1).withDayOfMonth(1), LocalTime.MIDNIGHT, location);
+        searchFrom =
+            ZonedDateTime.of(
+                prevMonth.plusMonths(1).withDayOfMonth(1), LocalTime.MIDNIGHT, location);
         continue;
       }
 
@@ -621,9 +623,8 @@ public final class Evaluator {
       }
 
       // Search backwards through window
-      int nowMinutes = now.toLocalDate().equals(day)
-          ? now.getHour() * 60 + now.getMinute()
-          : Integer.MAX_VALUE;
+      int nowMinutes =
+          now.toLocalDate().equals(day) ? now.getHour() * 60 + now.getMinute() : Integer.MAX_VALUE;
 
       for (int j = windowTimes.size() - 1; j >= 0; j--) {
         int m = windowTimes.get(j);
@@ -751,8 +752,7 @@ public final class Evaluator {
           nthWeekdayOfMonth(day.getYear(), day.getMonth(), or.weekday(), or.ordinal());
 
       if (targetDay.isPresent() && !targetDay.get().isAfter(day)) {
-        Optional<ZonedDateTime> time =
-            latestPastTime(targetDay.get(), or.times(), location, now);
+        Optional<ZonedDateTime> time = latestPastTime(targetDay.get(), or.times(), location, now);
         if (time.isPresent()) {
           return time;
         }

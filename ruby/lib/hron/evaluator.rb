@@ -429,7 +429,7 @@ module Hron
           return candidate if candidate
         end
 
-        d -= (interval > 1 ? interval : 1)
+        d -= (interval > 1) ? interval : 1
       end
 
       nil
