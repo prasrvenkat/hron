@@ -41,6 +41,43 @@ When adding new test cases to `tests.json`:
 2. Include both positive and negative (error) test cases
 3. Run all language test suites to verify the new tests pass
 
+## Error Message Format
+
+All hron implementations should produce error messages with consistent structure.
+
+### Error Types
+
+| Kind | When |
+|------|------|
+| `lex` | Invalid characters, malformed tokens |
+| `parse` | Syntax errors, invalid grammar |
+| `eval` | Runtime evaluation errors |
+| `cron` | Cron conversion errors |
+
+### Error Structure
+
+Each error should include:
+
+1. **kind**: One of: lex, parse, eval, cron
+2. **message**: Human-readable description
+3. **span** (lex/parse only): Start and end positions in input
+4. **input** (lex/parse only): The original input string
+5. **suggestion** (optional): Helpful hint for fixing the error
+
+### Message Format Guidelines
+
+- Use lowercase for error messages
+- Include what was expected: "expected 'at', got 'in'"
+- Include position context: "at position 15"
+- Be specific: "invalid hour 25, must be 0-23"
+
+### Rich Display
+
+Implementations should provide a `displayRich()` method that formats errors with:
+- The error message
+- The input line with position indicator
+- A caret (^) or underline showing the error location
+
 ## Versioning
 
 The spec version is stored in `api.json` under the `version` field. All implementations should validate this version is present.
