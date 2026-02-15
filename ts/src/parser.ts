@@ -177,7 +177,8 @@ class Parser {
     if (k?.type === "monthName") {
       const month = parseMonthName(
         (k as { type: "monthName"; name: string }).name,
-      )!;
+      );
+      if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
       const day = this.parseDayNumber(
         "expected day number after month name in exception",
@@ -200,7 +201,8 @@ class Parser {
     if (k?.type === "monthName") {
       const month = parseMonthName(
         (k as { type: "monthName"; name: string }).name,
-      )!;
+      );
+      if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
       const day = this.parseDayNumber(
         "expected day number after month name in until",
@@ -232,7 +234,8 @@ class Parser {
   private parseEvery(): ScheduleExpr {
     if (!this.peek()) throw this.errorAtEnd("expected repeater");
 
-    const k = this.peekKind()!;
+    const k = this.peekKind();
+    if (!k) throw this.errorAtEnd("expected repeater");
 
     if (k.type === "year") {
       this.advance();
@@ -278,7 +281,8 @@ class Parser {
 
   private parseNumberRepeat(): ScheduleExpr {
     const span = this.currentSpan();
-    const k = this.peekKind()!;
+    const k = this.peekKind();
+    if (!k) throw this.errorAtEnd("expected number");
     const num = (k as { type: "number"; value: number }).value;
     if (num === 0) {
       throw this.error("interval must be at least 1", span);
@@ -312,7 +316,8 @@ class Parser {
   }
 
   private parseIntervalRepeat(interval: number): ScheduleExpr {
-    const k = this.peekKind()!;
+    const k = this.peekKind();
+    if (!k) throw this.errorAtEnd("expected interval unit");
     const unitStr = (k as { type: "intervalUnit"; unit: string }).unit;
     this.advance();
 
@@ -423,9 +428,8 @@ class Parser {
     if (k?.type !== "dayName") {
       throw this.error("expected day name after ordinal", this.currentSpan());
     }
-    const day = parseWeekday(
-      (k as { type: "dayName"; name: string }).name,
-    )! as Weekday;
+    const day = parseWeekday((k as { type: "dayName"; name: string }).name);
+    if (!day) throw this.error("invalid weekday", this.currentSpan());
     this.advance();
 
     this.consumeKind("'of'", (k) => k.type === "of");
@@ -461,7 +465,8 @@ class Parser {
     } else if (k?.type === "monthName") {
       const month = parseMonthName(
         (k as { type: "monthName"; name: string }).name,
-      )!;
+      );
+      if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
       const day = this.parseDayNumber("expected day number after month name");
       target = { type: "date", month, day };
@@ -492,7 +497,8 @@ class Parser {
       if (next?.type === "dayName") {
         const weekday = parseWeekday(
           (next as { type: "dayName"; name: string }).name,
-        )! as Weekday;
+        );
+        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
         this.advance();
         this.consumeKind("'of'", (k) => k.type === "of");
         const month = this.parseMonthNameToken();
@@ -510,7 +516,8 @@ class Parser {
       if (next?.type === "dayName") {
         const weekday = parseWeekday(
           (next as { type: "dayName"; name: string }).name,
-        )! as Weekday;
+        );
+        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
         this.advance();
         this.consumeKind("'of'", (k) => k.type === "of");
         const month = this.parseMonthNameToken();
@@ -541,7 +548,8 @@ class Parser {
     if (k?.type === "monthName") {
       const month = parseMonthName(
         (k as { type: "monthName"; name: string }).name,
-      )!;
+      );
+      if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
       return month;
     }
@@ -585,7 +593,8 @@ class Parser {
     if (k?.type === "monthName") {
       const month = parseMonthName(
         (k as { type: "monthName"; name: string }).name,
-      )!;
+      );
+      if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
       const day = this.parseDayNumber("expected day number after month name");
       return { type: "named", month, day };
@@ -625,9 +634,11 @@ class Parser {
     if (k?.type !== "dayName") {
       throw this.error("expected day name", this.currentSpan());
     }
-    const days: Weekday[] = [
-      parseWeekday((k as { type: "dayName"; name: string }).name)! as Weekday,
-    ];
+    const firstDay = parseWeekday(
+      (k as { type: "dayName"; name: string }).name,
+    );
+    if (!firstDay) throw this.error("invalid weekday", this.currentSpan());
+    const days: Weekday[] = [firstDay];
     this.advance();
 
     while (this.peekKind()?.type === "comma") {
@@ -636,11 +647,11 @@ class Parser {
       if (next?.type !== "dayName") {
         throw this.error("expected day name after ','", this.currentSpan());
       }
-      days.push(
-        parseWeekday(
-          (next as { type: "dayName"; name: string }).name,
-        )! as Weekday,
+      const day = parseWeekday(
+        (next as { type: "dayName"; name: string }).name,
       );
+      if (!day) throw this.error("invalid weekday", this.currentSpan());
+      days.push(day);
       this.advance();
     }
     return days;
