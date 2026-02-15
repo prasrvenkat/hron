@@ -66,6 +66,15 @@ void main() {
         expect(results.length, equals(3));
       });
 
+      test('previousFrom', () {
+        final result = schedule.previousFrom(now);
+        expect(result, isA<TZDateTime?>());
+        expect(result, isNotNull);
+        // Previous should be today at 09:00
+        expect(result!.day, equals(6));
+        expect(result.hour, equals(9));
+      });
+
       test('matches', () {
         final result = schedule.matches(now);
         expect(result, isA<bool>());
@@ -120,6 +129,7 @@ void main() {
           containsAll([
             'nextFrom',
             'nextNFrom',
+            'previousFrom',
             'matches',
             'toCron',
             'toString',
