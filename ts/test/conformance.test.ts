@@ -70,25 +70,9 @@ describe("parse errors", () => {
 // ===========================================================================
 
 describe("eval", () => {
-  const evalSections = [
-    "day_repeat",
-    "interval_repeat",
-    "month_repeat",
-    "ordinal_repeat",
-    "week_repeat",
-    "single_date",
-    "year_repeat",
-    "except",
-    "until",
-    "except_and_until",
-    "n_occurrences",
-    "multi_time",
-    "during",
-    "day_ranges",
-    "leap_year",
-    "dst_spring_forward",
-    "dst_fall_back",
-  ];
+  // Dynamically discover eval sections (skip non-test entries)
+  const skipSections = new Set(["description", "matches", "occurrences", "between", "previous_from"]);
+  const evalSections = Object.keys(spec.eval).filter(s => !skipSections.has(s));
 
   for (const section of evalSections) {
     describe(section, () => {

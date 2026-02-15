@@ -79,25 +79,9 @@ def test_parse_errors(name: str, input_text: str) -> None:
 # Eval conformance
 # ===========================================================================
 
-_EVAL_SECTIONS = [
-    "day_repeat",
-    "interval_repeat",
-    "month_repeat",
-    "ordinal_repeat",
-    "week_repeat",
-    "single_date",
-    "year_repeat",
-    "except",
-    "until",
-    "except_and_until",
-    "n_occurrences",
-    "multi_time",
-    "during",
-    "day_ranges",
-    "leap_year",
-    "dst_spring_forward",
-    "dst_fall_back",
-]
+# Dynamically discover eval sections (skip non-test entries)
+_SKIP_EVAL_SECTIONS = {"description", "matches", "occurrences", "between", "previous_from"}
+_EVAL_SECTIONS = [s for s in _spec["eval"].keys() if s not in _SKIP_EVAL_SECTIONS]
 
 
 def _collect_eval_tests() -> list[tuple[str, dict]]:  # type: ignore[type-arg]
