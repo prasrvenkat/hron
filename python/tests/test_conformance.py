@@ -81,7 +81,7 @@ def test_parse_errors(name: str, input_text: str) -> None:
 
 # Dynamically discover eval sections (skip non-test entries)
 _SKIP_EVAL_SECTIONS = {"description", "matches", "occurrences", "between", "previous_from"}
-_EVAL_SECTIONS = [s for s in _spec["eval"].keys() if s not in _SKIP_EVAL_SECTIONS]
+_EVAL_SECTIONS = [s for s in _spec["eval"] if s not in _SKIP_EVAL_SECTIONS]
 
 
 def _collect_eval_tests() -> list[tuple[str, dict]]:  # type: ignore[type-arg]

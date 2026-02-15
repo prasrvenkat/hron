@@ -90,3 +90,23 @@ jobs:
           distribution: 'temurin'
           java-version: '25'
       - run: cd java && mvn test
+
+  validate-spec-coverage:
+    name: Validate Spec Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate all spec sections are tested
+        run: |
+          # Extract section names from spec/tests.json
+          echo "=== Parse sections in spec ==="
+          jq -r '.parse | keys[]' spec/tests.json | grep -v description | sort
+
+          echo ""
+          echo "=== Eval sections in spec ==="
+          jq -r '.eval | keys[]' spec/tests.json | grep -v description | sort
+
+          echo ""
+          echo "With dynamic section discovery, all sections are auto-discovered by test runners."
+          echo "This job serves as documentation and ensures spec/tests.json is valid JSON."

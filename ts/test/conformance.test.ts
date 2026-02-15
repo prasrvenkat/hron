@@ -71,8 +71,16 @@ describe("parse errors", () => {
 
 describe("eval", () => {
   // Dynamically discover eval sections (skip non-test entries)
-  const skipSections = new Set(["description", "matches", "occurrences", "between", "previous_from"]);
-  const evalSections = Object.keys(spec.eval).filter(s => !skipSections.has(s));
+  const skipSections = new Set([
+    "description",
+    "matches",
+    "occurrences",
+    "between",
+    "previous_from",
+  ]);
+  const evalSections = Object.keys(spec.eval).filter(
+    (s) => !skipSections.has(s),
+  );
 
   for (const section of evalSections) {
     describe(section, () => {

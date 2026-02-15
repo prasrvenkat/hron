@@ -55,7 +55,13 @@ fn main() {
     // --- Eval ---
     // Dynamically discover eval sections (skip non-test entries like "description")
     let eval = &spec["eval"];
-    let skip_eval_sections = ["description", "matches", "occurrences", "between", "previous_from"];
+    let skip_eval_sections = [
+        "description",
+        "matches",
+        "occurrences",
+        "between",
+        "previous_from",
+    ];
     for (section, section_data) in eval.as_object().expect("eval should be an object") {
         if skip_eval_sections.contains(&section.as_str()) {
             continue;
