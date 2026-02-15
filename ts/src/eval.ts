@@ -1345,7 +1345,10 @@ function prevMonthRepeat(
 
   for (let i = 0; i < maxIter; i++) {
     if (interval > 1) {
-      const monthOffset = monthsBetweenYM(anchorDate, Temporal.PlainDate.from({ year, month, day: 1 }));
+      const monthOffset = monthsBetweenYM(
+        anchorDate,
+        Temporal.PlainDate.from({ year, month, day: 1 }),
+      );
       if (monthOffset < 0 || monthOffset % interval !== 0) {
         ({ year, month } = prevMonth(year, month));
         continue;
@@ -1392,7 +1395,10 @@ function prevOrdinalRepeat(
 
   for (let i = 0; i < maxIter; i++) {
     if (interval > 1) {
-      const monthOffset = monthsBetweenYM(anchorDate, Temporal.PlainDate.from({ year, month, day: 1 }));
+      const monthOffset = monthsBetweenYM(
+        anchorDate,
+        Temporal.PlainDate.from({ year, month, day: 1 }),
+      );
       if (monthOffset < 0 || monthOffset % interval !== 0) {
         ({ year, month } = prevMonth(year, month));
         continue;
