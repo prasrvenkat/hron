@@ -53,26 +53,22 @@ fn main() {
     }
 
     // --- Eval ---
+    // Dynamically discover eval sections (skip non-test entries like "description")
     let eval = &spec["eval"];
-    for section in [
-        "day_repeat",
-        "interval_repeat",
-        "month_repeat",
-        "ordinal_repeat",
-        "week_repeat",
-        "single_date",
-        "year_repeat",
-        "except",
-        "until",
-        "except_and_until",
-        "n_occurrences",
-        "multi_time",
-        "during",
-        "day_ranges",
-        "leap_year",
-        "dst_spring_forward",
-        "dst_fall_back",
-    ] {
+    let skip_eval_sections = [
+        "description",
+        "matches",
+        "occurrences",
+        "between",
+        "previous_from",
+    ];
+    for (section, section_data) in eval.as_object().expect("eval should be an object") {
+        if skip_eval_sections.contains(&section.as_str()) {
+            continue;
+        }
+        if section_data.get("tests").is_none() {
+            continue;
+        }
         for (i, case) in iter_tests(&eval[section]).enumerate() {
             let name = test_name(case, i);
             emit(

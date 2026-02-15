@@ -129,27 +129,19 @@ void main() {
   // =========================================================================
 
   group('eval', () {
-    const evalSections = [
-      'day_repeat',
-      'interval_repeat',
-      'month_repeat',
-      'ordinal_repeat',
-      'week_repeat',
-      'single_date',
-      'year_repeat',
-      'except',
-      'until',
-      'except_and_until',
-      'n_occurrences',
-      'multi_time',
-      'during',
-      'day_ranges',
-      'leap_year',
-      'dst_spring_forward',
-      'dst_fall_back',
-    ];
+    // Dynamically discover eval sections (skip non-test entries)
+    const skipSections = {
+      'description',
+      'matches',
+      'occurrences',
+      'between',
+      'previous_from',
+    };
 
     final evalMap = spec['eval'] as Map<String, dynamic>;
+    final evalSections = evalMap.keys
+        .where((s) => !skipSections.contains(s))
+        .toList();
 
     for (final section in evalSections) {
       group(section, () {

@@ -275,7 +275,7 @@ ScheduleData _parseCronShortcut(String cron) {
   }
 }
 
-/// Parse month field into a List<MonthName> for the `during` clause.
+/// Parse month field into a `List<MonthName>` for the `during` clause.
 List<MonthName> _parseMonthField(String field) {
   if (field == '*') return [];
 

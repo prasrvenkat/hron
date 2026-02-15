@@ -7,6 +7,60 @@ require_relative "ast"
 require_relative "error"
 
 module Hron
+  # =============================================================================
+  # Iteration Safety Limits
+  # =============================================================================
+  # MAX_ITERATIONS (1000): Maximum iterations for next_from/previous_from loops.
+  # Prevents infinite loops when searching for valid occurrences.
+  #
+  # Expression-specific limits:
+  # - Day repeat: 8 days (covers one week + margin)
+  # - Week repeat: 54 weeks (covers one year + margin)
+  # - Month repeat: 24 * interval months (covers 2 years scaled by interval)
+  # - Year repeat: 8 * interval years (covers reasonable future horizon)
+  #
+  # These limits are generous safety bounds. In practice, valid schedules
+  # find occurrences within the first few iterations.
+  # =============================================================================
+
+  # =============================================================================
+  # DST (Daylight Saving Time) Handling
+  # =============================================================================
+  # When resolving a wall-clock time to an instant:
+  #
+  # 1. DST Gap (Spring Forward):
+  #    - Time doesn't exist (e.g., 2:30 AM during spring forward)
+  #    - Solution: Push forward to the next valid time after the gap
+  #    - Example: 2:30 AM -> 3:00 AM (or 3:30 AM depending on gap size)
+  #
+  # 2. DST Fold (Fall Back):
+  #    - Time is ambiguous (e.g., 1:30 AM occurs twice)
+  #    - Solution: Use first occurrence (fold=0 / pre-transition time)
+  #    - This matches user expectation for scheduling
+  #
+  # All implementations use the same algorithm for cross-language consistency.
+  # =============================================================================
+
+  # =============================================================================
+  # Interval Alignment (Anchor Date)
+  # =============================================================================
+  # For schedules with interval > 1 (e.g., "every 3 days"), we need to
+  # determine which dates are valid based on alignment with an anchor.
+  #
+  # Formula: (date_offset - anchor_offset) mod interval == 0
+  #
+  # Where:
+  #   - date_offset: days/weeks/months from epoch to candidate date
+  #   - anchor_offset: days/weeks/months from epoch to anchor date
+  #   - interval: the repeat interval (e.g., 3 for "every 3 days")
+  #
+  # Default anchor: Epoch (1970-01-01)
+  # Custom anchor: Set via "starting YYYY-MM-DD" clause
+  #
+  # For week repeats, we use epoch Monday (1970-01-05) as the reference
+  # point to align week boundaries correctly.
+  # =============================================================================
+
   EPOCH_DATE = Date.new(1970, 1, 1)
   EPOCH_MONDAY = Date.new(1970, 1, 5)
 

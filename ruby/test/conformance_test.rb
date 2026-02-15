@@ -23,25 +23,9 @@ class ConformanceTest < Minitest::Test
     case_insensitivity
   ].freeze
 
-  EVAL_SECTIONS = %w[
-    day_repeat
-    interval_repeat
-    month_repeat
-    ordinal_repeat
-    week_repeat
-    single_date
-    year_repeat
-    except
-    until
-    except_and_until
-    n_occurrences
-    multi_time
-    during
-    day_ranges
-    leap_year
-    dst_spring_forward
-    dst_fall_back
-  ].freeze
+  # Dynamically discover eval sections (skip non-test entries)
+  SKIP_EVAL_SECTIONS = %w[description matches occurrences between previous_from].freeze
+  EVAL_SECTIONS = SPEC["eval"].keys.reject { |s| SKIP_EVAL_SECTIONS.include?(s) }.freeze
 
   # ===========================================================================
   # Parse conformance tests

@@ -13,7 +13,56 @@ import java.util.Spliterators;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-/** Evaluates schedule expressions to compute next occurrences. */
+/**
+ * Evaluates schedule expressions to compute next occurrences.
+ *
+ * <h2>Iteration Safety Limits</h2>
+ *
+ * <p>MAX_ITERATIONS (1000): Maximum iterations for nextFrom/previousFrom loops. Prevents infinite
+ * loops when searching for valid occurrences.
+ *
+ * <p>Expression-specific limits:
+ *
+ * <ul>
+ *   <li>Day repeat: 8 days (covers one week + margin)
+ *   <li>Week repeat: 54 weeks (covers one year + margin)
+ *   <li>Month repeat: 24 * interval months (covers 2 years scaled by interval)
+ *   <li>Year repeat: 8 * interval years (covers reasonable future horizon)
+ * </ul>
+ *
+ * <p>These limits are generous safety bounds. In practice, valid schedules find occurrences within
+ * the first few iterations.
+ *
+ * <h2>DST (Daylight Saving Time) Handling</h2>
+ *
+ * <p>When resolving a wall-clock time to an instant:
+ *
+ * <ol>
+ *   <li><b>DST Gap (Spring Forward):</b> Time doesn't exist (e.g., 2:30 AM during spring forward).
+ *       Solution: Push forward to the next valid time after the gap.
+ *   <li><b>DST Fold (Fall Back):</b> Time is ambiguous (e.g., 1:30 AM occurs twice). Solution: Use
+ *       first occurrence (pre-transition time).
+ * </ol>
+ *
+ * <p>All implementations use the same algorithm for cross-language consistency.
+ *
+ * <h2>Interval Alignment (Anchor Date)</h2>
+ *
+ * <p>For schedules with interval &gt; 1 (e.g., "every 3 days"), we determine which dates are valid
+ * based on alignment with an anchor.
+ *
+ * <p>Formula: (date_offset - anchor_offset) mod interval == 0
+ *
+ * <ul>
+ *   <li>date_offset: days/weeks/months from epoch to candidate date
+ *   <li>anchor_offset: days/weeks/months from epoch to anchor date
+ *   <li>interval: the repeat interval (e.g., 3 for "every 3 days")
+ * </ul>
+ *
+ * <p>Default anchor: Epoch (1970-01-01). Custom anchor: Set via "starting YYYY-MM-DD" clause.
+ *
+ * <p>For week repeats, we use epoch Monday (1970-01-05) as the reference point.
+ */
 public final class Evaluator {
   /** Maximum iterations to prevent infinite loops. */
   private static final int MAX_ITERATIONS = 1000;

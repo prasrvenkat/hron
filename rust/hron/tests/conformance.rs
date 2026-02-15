@@ -71,8 +71,8 @@ fn run_eval(section: &str, index: usize) {
 
     let now = case["now"]
         .as_str()
-        .map(|s| parse_zoned(s))
-        .unwrap_or_else(|| default_now());
+        .map(parse_zoned)
+        .unwrap_or_else(default_now);
 
     // ---- next (full timestamp) ----
     if let Some(expected_val) = case.get("next") {
