@@ -875,10 +875,7 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
         }
 
         // Apply during filter
-        if has_during
-            && !handles_during_internally
-            && !matches_during(c_date, &schedule.during)
-        {
+        if has_during && !handles_during_internally && !matches_during(c_date, &schedule.during) {
             // Skip backward to last day of previous valid during month
             let skip_to = prev_during_month(c_date, &schedule.during);
             current = at_time_on_date(skip_to, Time::new(23, 59, 59, 0).unwrap(), &tz)?
@@ -1886,8 +1883,7 @@ fn prev_single_date(
         DateSpec::Named { month, day } => {
             // Named dates repeat yearly, find the most recent one
             let this_year = Date::new(now_date.year(), month.number() as i8, *day as i8).ok();
-            let last_year =
-                Date::new(now_date.year() - 1, month.number() as i8, *day as i8).ok();
+            let last_year = Date::new(now_date.year() - 1, month.number() as i8, *day as i8).ok();
 
             if let Some(d) = this_year {
                 if d < now_date {

@@ -1211,9 +1211,7 @@ function prevDayRepeat(
   }
 
   // Interval > 1
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_DATE;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
   const offset = daysBetween(anchorDate, date);
   const remainder = ((offset % interval) + interval) % interval;
   const alignedDate =
@@ -1256,7 +1254,9 @@ function prevIntervalRepeat(
     const searchUntil = Math.min(nowMinutes, toMinutes);
 
     if (searchUntil >= fromMinutes) {
-      const slotsInRange = Math.floor((searchUntil - fromMinutes) / stepMinutes);
+      const slotsInRange = Math.floor(
+        (searchUntil - fromMinutes) / stepMinutes,
+      );
       let lastSlotMinutes = fromMinutes + slotsInRange * stepMinutes;
 
       if (d === 0 && lastSlotMinutes >= nowMinutes) {
@@ -1289,9 +1289,7 @@ function prevWeekRepeat(
   const dayOfWeek = date.dayOfWeek; // 1=Mon, 7=Sun
   const currentMonday = date.subtract({ days: dayOfWeek - 1 });
 
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_MONDAY;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_MONDAY;
   const anchorDayOfWeek = anchorDate.dayOfWeek;
   const anchorMonday = anchorDate.subtract({ days: anchorDayOfWeek - 1 });
 
@@ -1338,9 +1336,7 @@ function prevMonthRepeat(
   const startDate = nowInTz.toPlainDate();
   const { interval, target, times } = expr;
 
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_DATE;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
 
   let year = startDate.year;
   let month = startDate.month;
@@ -1387,9 +1383,7 @@ function prevOrdinalRepeat(
   const startDate = nowInTz.toPlainDate();
   const { interval, ordinal, day, times } = expr;
 
-  const anchorDate = anchor
-    ? Temporal.PlainDate.from(anchor)
-    : EPOCH_DATE;
+  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
 
   let year = startDate.year;
   let month = startDate.month;
@@ -1557,7 +1551,10 @@ function latestAtTimes(
   return atTimeOnDate(date, toPlainTime(latest), tz);
 }
 
-function prevMonth(year: number, month: number): { year: number; month: number } {
+function prevMonth(
+  year: number,
+  month: number,
+): { year: number; month: number } {
   if (month === 1) {
     return { year: year - 1, month: 12 };
   }
@@ -1583,8 +1580,18 @@ function prevDuringMonth(
 
 function numberToMonthName(n: number): MonthName {
   const names: MonthName[] = [
-    "jan", "feb", "mar", "apr", "may", "jun",
-    "jul", "aug", "sep", "oct", "nov", "dec",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
   ];
   return names[n - 1];
 }
@@ -1628,7 +1635,11 @@ function getYearTargetDate(
     case "date": {
       const monthNum = monthNumber(target.month);
       try {
-        return Temporal.PlainDate.from({ year, month: monthNum, day: target.day });
+        return Temporal.PlainDate.from({
+          year,
+          month: monthNum,
+          day: target.day,
+        });
       } catch {
         return null;
       }
@@ -1640,7 +1651,11 @@ function getYearTargetDate(
     case "dayOfMonth": {
       const monthNum = monthNumber(target.month);
       try {
-        return Temporal.PlainDate.from({ year, month: monthNum, day: target.day });
+        return Temporal.PlainDate.from({
+          year,
+          month: monthNum,
+          day: target.day,
+        });
       } catch {
         return null;
       }
@@ -1666,21 +1681,15 @@ function getOrdinalWeekday(
   return nthWeekdayOfMonth(year, month, day, ordinalToN(ordinal));
 }
 
-function ordinalToN(ordinal: OrdinalPosition): number {
-  switch (ordinal) {
-    case "first": return 1;
-    case "second": return 2;
-    case "third": return 3;
-    case "fourth": return 4;
-    case "fifth": return 5;
-    default: return 1;
-  }
-}
-
 function dayToNumber(day: Weekday): number {
   const map: Record<Weekday, number> = {
-    monday: 1, tuesday: 2, wednesday: 3, thursday: 4,
-    friday: 5, saturday: 6, sunday: 7,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+    sunday: 7,
   };
   return map[day];
 }

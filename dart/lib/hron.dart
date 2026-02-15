@@ -87,7 +87,8 @@ class Schedule {
   /// Returns the most recent occurrence strictly before [now], or `null` if none exists.
   ///
   /// For schedules with a `starting` clause, returns `null` if the result would be before the start date.
-  TZDateTime? previousFrom(TZDateTime now) => eval_impl.previousFrom(_data, now);
+  TZDateTime? previousFrom(TZDateTime now) =>
+      eval_impl.previousFrom(_data, now);
 
   /// Returns `true` if [datetime] matches this schedule.
   bool matches(TZDateTime datetime) => eval_impl.matches(_data, datetime);

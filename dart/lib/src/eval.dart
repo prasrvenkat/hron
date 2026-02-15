@@ -461,8 +461,9 @@ TZDateTime? previousFrom(ScheduleData schedule, TZDateTime now) {
   final tzName = _resolveTz(schedule.timezone);
   final loc = _getLocation(tzName);
 
-  final anchorDate =
-      schedule.anchor != null ? _parseIsoDateUtc(schedule.anchor!) : null;
+  final anchorDate = schedule.anchor != null
+      ? _parseIsoDateUtc(schedule.anchor!)
+      : null;
 
   final parsedExceptions = _ParsedExceptions.from(schedule.except);
   final hasExceptions = schedule.except.isNotEmpty;
