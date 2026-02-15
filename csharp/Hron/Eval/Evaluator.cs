@@ -5,6 +5,41 @@ namespace Hron.Eval;
 /// <summary>
 /// Evaluates schedule expressions to compute next occurrences.
 /// </summary>
+/// <remarks>
+/// <para><strong>Iteration Safety Limits</strong></para>
+/// <para>MaxIterations (1000): Maximum iterations for NextFrom/PreviousFrom loops.
+/// Prevents infinite loops when searching for valid occurrences.</para>
+/// <list type="bullet">
+///   <item><description>Day repeat: 8 days (covers one week + margin)</description></item>
+///   <item><description>Week repeat: 54 weeks (covers one year + margin)</description></item>
+///   <item><description>Month repeat: 24 * interval months (covers 2 years scaled by interval)</description></item>
+///   <item><description>Year repeat: 8 * interval years (covers reasonable future horizon)</description></item>
+/// </list>
+/// <para>These limits are generous safety bounds. In practice, valid schedules
+/// find occurrences within the first few iterations.</para>
+///
+/// <para><strong>DST (Daylight Saving Time) Handling</strong></para>
+/// <para>When resolving a wall-clock time to an instant:</para>
+/// <list type="number">
+///   <item><description>DST Gap (Spring Forward): Time doesn't exist (e.g., 2:30 AM during spring forward).
+///       Solution: Push forward to the next valid time after the gap.</description></item>
+///   <item><description>DST Fold (Fall Back): Time is ambiguous (e.g., 1:30 AM occurs twice).
+///       Solution: Use first occurrence (pre-transition time).</description></item>
+/// </list>
+/// <para>All implementations use the same algorithm for cross-language consistency.</para>
+///
+/// <para><strong>Interval Alignment (Anchor Date)</strong></para>
+/// <para>For schedules with interval &gt; 1 (e.g., "every 3 days"), we determine which dates are
+/// valid based on alignment with an anchor.</para>
+/// <para>Formula: (date_offset - anchor_offset) mod interval == 0</para>
+/// <list type="bullet">
+///   <item><description>date_offset: days/weeks/months from epoch to candidate date</description></item>
+///   <item><description>anchor_offset: days/weeks/months from epoch to anchor date</description></item>
+///   <item><description>interval: the repeat interval (e.g., 3 for "every 3 days")</description></item>
+/// </list>
+/// <para>Default anchor: Epoch (1970-01-01). Custom anchor: Set via "starting YYYY-MM-DD" clause.</para>
+/// <para>For week repeats, we use epoch Monday (1970-01-05) as the reference point.</para>
+/// </remarks>
 public static class Evaluator
 {
     /// <summary>Maximum iterations to prevent infinite loops.</summary>
