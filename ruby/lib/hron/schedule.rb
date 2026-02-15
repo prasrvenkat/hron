@@ -42,6 +42,11 @@ module Hron
       Evaluator.next_n_from(@data, now, n)
     end
 
+    # Get the most recent occurrence strictly before the given time
+    def previous_from(now)
+      Evaluator.previous_from(@data, now)
+    end
+
     # Check if the schedule matches the given datetime
     def matches(dt)
       Evaluator.matches(@data, dt)

@@ -136,6 +136,29 @@ class ConformanceTest < Minitest::Test
   end
 
   # ===========================================================================
+  # Eval previous_from conformance tests
+  # ===========================================================================
+
+  SPEC["eval"]["previous_from"]["tests"].each do |tc|
+    test_name = tc["name"] || tc["expression"]
+    define_method("test_previous_from_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
+      schedule = Hron::Schedule.parse(tc["expression"])
+      now = TestHelper.parse_zoned(tc["now"])
+      result = schedule.previous_from(now)
+
+      if tc["expected"].nil?
+        assert_nil result
+      else
+        refute_nil result, "Expected previous occurrence but got nil"
+        expected = tc["expected"]
+        match = expected.match(/\[(.+)\]$/)
+        tz_name = match ? match[1] : "UTC"
+        assert_equal expected, TestHelper.format_zoned(result, tz_name)
+      end
+    end
+  end
+
+  # ===========================================================================
   # Eval matches conformance tests
   # ===========================================================================
 
