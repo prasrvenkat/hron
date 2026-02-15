@@ -169,6 +169,85 @@ fn run_eval_matches(index: usize) {
     );
 }
 
+fn run_eval_occurrences(index: usize) {
+    let case = &SPEC["eval"]["occurrences"]["tests"][index];
+    let expr_str = case["expression"].as_str().unwrap();
+    let from_str = case["from"].as_str().unwrap();
+    let take = case["take"].as_u64().unwrap() as usize;
+    let expected: Vec<&str> = case["expected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+
+    let schedule =
+        Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
+    let from = parse_zoned(from_str);
+
+    let results: Vec<jiff::Zoned> = schedule
+        .occurrences(&from)
+        .take(take)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_else(|e| panic!("occurrences error for '{expr_str}': {e}"));
+
+    let got: Vec<String> = results.iter().map(|z| z.to_string()).collect();
+
+    assert_eq!(
+        got.len(),
+        expected.len(),
+        "occurrences length mismatch for '{expr_str}': got {got:?}"
+    );
+    for (j, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+        assert_eq!(g, e, "occurrences[{j}] mismatch for '{expr_str}'");
+    }
+}
+
+fn run_eval_between(index: usize) {
+    let case = &SPEC["eval"]["between"]["tests"][index];
+    let expr_str = case["expression"].as_str().unwrap();
+    let from_str = case["from"].as_str().unwrap();
+    let to_str = case["to"].as_str().unwrap();
+
+    let schedule =
+        Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
+    let from = parse_zoned(from_str);
+    let to = parse_zoned(to_str);
+
+    let results: Vec<jiff::Zoned> = schedule
+        .between(&from, &to)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_else(|e| panic!("between error for '{expr_str}': {e}"));
+
+    // Check expected array or expected_count
+    if let Some(expected_arr) = case.get("expected") {
+        let expected: Vec<&str> = expected_arr
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+
+        let got: Vec<String> = results.iter().map(|z| z.to_string()).collect();
+
+        assert_eq!(
+            got.len(),
+            expected.len(),
+            "between length mismatch for '{expr_str}': got {got:?}"
+        );
+        for (j, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(g, e, "between[{j}] mismatch for '{expr_str}'");
+        }
+    } else if let Some(expected_count) = case.get("expected_count") {
+        let count = expected_count.as_u64().unwrap() as usize;
+        assert_eq!(
+            results.len(),
+            count,
+            "between count mismatch for '{expr_str}'"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Cron
 // ---------------------------------------------------------------------------

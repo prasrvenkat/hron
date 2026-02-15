@@ -96,6 +96,28 @@ fn main() {
         );
     }
 
+    // --- Eval occurrences ---
+    for (i, case) in iter_tests(&eval["occurrences"]).enumerate() {
+        let name = test_name(case, i);
+        emit_flat(
+            &mut f,
+            &format!("eval_occurrences_{name}"),
+            "run_eval_occurrences",
+            i,
+        );
+    }
+
+    // --- Eval between ---
+    for (i, case) in iter_tests(&eval["between"]).enumerate() {
+        let name = test_name(case, i);
+        emit_flat(
+            &mut f,
+            &format!("eval_between_{name}"),
+            "run_eval_between",
+            i,
+        );
+    }
+
     // --- Cron ---
     let cron = &spec["cron"];
     for (i, case) in iter_tests(&cron["to_cron"]).enumerate() {
