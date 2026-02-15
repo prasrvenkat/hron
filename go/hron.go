@@ -97,6 +97,13 @@ func (s *Schedule) NextNFrom(now time.Time, n int) []time.Time {
 	return nextNFrom(s.data, now, n)
 }
 
+// PreviousFrom computes the most recent occurrence strictly before now.
+// Returns nil if there is no previous occurrence (e.g., before a starting anchor
+// or for single dates in the future).
+func (s *Schedule) PreviousFrom(now time.Time) *time.Time {
+	return previousFrom(s.data, now)
+}
+
 // Matches checks if a datetime matches this schedule.
 func (s *Schedule) Matches(dt time.Time) bool {
 	return matches(s.data, dt)

@@ -81,6 +81,18 @@ type BetweenTest struct {
 	ExpectedCount int      `json:"expected_count,omitempty"`
 }
 
+type PreviousFromGroup struct {
+	Tests []PreviousFromTest `json:"tests"`
+}
+
+type PreviousFromTest struct {
+	Name        string  `json:"name"`
+	Expression  string  `json:"expression"`
+	Description string  `json:"description,omitempty"`
+	Now         string  `json:"now"`
+	Expected    *string `json:"expected"`
+}
+
 type CronSpec struct {
 	ToCron         ToCronGroup        `json:"to_cron"`
 	ToCronErrors   ToCronErrorGroup   `json:"to_cron_errors"`
@@ -442,6 +454,50 @@ func TestBetween(t *testing.T) {
 						if !results[i].Equal(expected) {
 							t.Errorf("Between()[%d] = %v, want %v", i, results[i], expected)
 						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestPreviousFrom(t *testing.T) {
+	spec := loadSpec(t)
+
+	// Parse the previous_from section
+	var group PreviousFromGroup
+	if err := json.Unmarshal(spec.Eval["previous_from"], &group); err != nil {
+		t.Fatalf("failed to parse previous_from section: %v", err)
+	}
+
+	for _, tc := range group.Tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			s, err := ParseSchedule(tc.Expression)
+			if err != nil {
+				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
+			}
+
+			now, err := parseZonedDateTime(tc.Now)
+			if err != nil {
+				t.Fatalf("failed to parse now %q: %v", tc.Now, err)
+			}
+
+			result := s.PreviousFrom(now)
+
+			if tc.Expected == nil {
+				if result != nil {
+					t.Errorf("PreviousFrom() = %v, want nil", result)
+				}
+			} else {
+				if result == nil {
+					t.Errorf("PreviousFrom() = nil, want %v", *tc.Expected)
+				} else {
+					expected, err := parseZonedDateTime(*tc.Expected)
+					if err != nil {
+						t.Fatalf("failed to parse expected %q: %v", *tc.Expected, err)
+					}
+					if !result.Equal(expected) {
+						t.Errorf("PreviousFrom() = %v, want %v", result, expected)
 					}
 				}
 			}

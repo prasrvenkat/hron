@@ -107,6 +107,14 @@ func TestInstanceMethods(t *testing.T) {
 		}
 	})
 
+	// Test PreviousFrom
+	t.Run("previousFrom", func(t *testing.T) {
+		result := s.PreviousFrom(now)
+		if result == nil {
+			t.Error("PreviousFrom() returned nil")
+		}
+	})
+
 	// Test Matches
 	t.Run("matches", func(t *testing.T) {
 		// Just verify the method exists and returns a bool
@@ -222,13 +230,14 @@ func TestSpecCoverage(t *testing.T) {
 	}
 
 	instanceMethodMap := map[string]string{
-		"nextFrom":    "NextFrom",
-		"nextNFrom":   "NextNFrom",
-		"matches":     "Matches",
-		"occurrences": "Occurrences",
-		"between":     "Between",
-		"toCron":      "ToCron",
-		"toString":    "String",
+		"nextFrom":     "NextFrom",
+		"nextNFrom":    "NextNFrom",
+		"previousFrom": "PreviousFrom",
+		"matches":      "Matches",
+		"occurrences":  "Occurrences",
+		"between":      "Between",
+		"toCron":       "ToCron",
+		"toString":     "String",
 	}
 
 	getterMap := map[string]string{
