@@ -4,8 +4,14 @@ import io.hron.ast.*;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /** Evaluates schedule expressions to compute next occurrences. */
 public final class Evaluator {
@@ -101,6 +107,73 @@ public final class Evaluator {
     }
 
     return results;
+  }
+
+  /**
+   * Returns a lazy stream of occurrences starting after the given time.
+   *
+   * @param data the schedule data
+   * @param from the reference time (exclusive)
+   * @param location the timezone
+   * @return a stream of occurrences
+   */
+  public static Stream<ZonedDateTime> occurrences(
+      ScheduleData data, ZonedDateTime from, ZoneId location) {
+    Iterator<ZonedDateTime> iterator =
+        new Iterator<>() {
+          private ZonedDateTime current = from;
+          private ZonedDateTime next = null;
+          private boolean hasNext = false;
+          private boolean computed = false;
+
+          private void computeNext() {
+            if (!computed) {
+              Optional<ZonedDateTime> result = nextFrom(data, current, location);
+              if (result.isPresent()) {
+                next = result.get();
+                current = next.plusMinutes(1);
+                hasNext = true;
+              } else {
+                hasNext = false;
+              }
+              computed = true;
+            }
+          }
+
+          @Override
+          public boolean hasNext() {
+            computeNext();
+            return hasNext;
+          }
+
+          @Override
+          public ZonedDateTime next() {
+            computeNext();
+            if (!hasNext) {
+              throw new NoSuchElementException();
+            }
+            computed = false;
+            return next;
+          }
+        };
+
+    return StreamSupport.stream(
+        Spliterators.spliteratorUnknownSize(iterator, Spliterator.ORDERED | Spliterator.NONNULL),
+        false);
+  }
+
+  /**
+   * Returns a lazy stream of occurrences where from < occurrence <= to.
+   *
+   * @param data the schedule data
+   * @param from the start time (exclusive)
+   * @param to the end time (inclusive)
+   * @param location the timezone
+   * @return a stream of occurrences in the range
+   */
+  public static Stream<ZonedDateTime> between(
+      ScheduleData data, ZonedDateTime from, ZonedDateTime to, ZoneId location) {
+    return occurrences(data, from, location).takeWhile(dt -> !dt.isAfter(to));
   }
 
   /**
@@ -219,9 +292,10 @@ public final class Evaluator {
       long weeks = daysBetween / 7;
 
       // Skip weeks before anchor
+      // When weeks_since_anchor < 0, anchorMonday is in the future
+      // Use anchorMonday directly as the first aligned week
       if (weeks < 0) {
-        long skip = (-weeks + wr.interval() - 1) / wr.interval();
-        currentMonday = currentMonday.plusWeeks(skip * wr.interval());
+        currentMonday = anchorMonday;
         continue;
       }
 

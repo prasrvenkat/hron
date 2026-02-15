@@ -153,6 +153,59 @@ describe("eval matches", () => {
   }
 });
 
+describe("eval occurrences", () => {
+  const tests = spec.eval.occurrences.tests;
+  for (const tc of tests) {
+    const name = tc.name ?? tc.expression;
+    it(name, () => {
+      const schedule = Schedule.parse(tc.expression);
+      const from = parseZoned(tc.from);
+      const take = tc.take as number;
+      const expected: string[] = tc.expected;
+
+      const results: Temporal.ZonedDateTime[] = [];
+      let count = 0;
+      for (const dt of schedule.occurrences(from)) {
+        if (count >= take) break;
+        results.push(dt);
+        count++;
+      }
+
+      expect(results.length).toBe(expected.length);
+      for (let j = 0; j < expected.length; j++) {
+        expect(results[j].toString()).toBe(expected[j]);
+      }
+    });
+  }
+});
+
+describe("eval between", () => {
+  const tests = spec.eval.between.tests;
+  for (const tc of tests) {
+    const name = tc.name ?? tc.expression;
+    it(name, () => {
+      const schedule = Schedule.parse(tc.expression);
+      const from = parseZoned(tc.from);
+      const to = parseZoned(tc.to);
+
+      const results: Temporal.ZonedDateTime[] = [];
+      for (const dt of schedule.between(from, to)) {
+        results.push(dt);
+      }
+
+      if ("expected" in tc) {
+        const expected: string[] = tc.expected;
+        expect(results.length).toBe(expected.length);
+        for (let j = 0; j < expected.length; j++) {
+          expect(results[j].toString()).toBe(expected[j]);
+        }
+      } else if ("expected_count" in tc) {
+        expect(results.length).toBe(tc.expected_count);
+      }
+    });
+  }
+});
+
 // ===========================================================================
 // Cron conformance
 // ===========================================================================

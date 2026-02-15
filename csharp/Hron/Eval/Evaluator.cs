@@ -92,6 +92,39 @@ public static class Evaluator
     }
 
     /// <summary>
+    /// Returns a lazy enumerable of occurrences starting after the given time.
+    /// </summary>
+    public static IEnumerable<DateTimeOffset> Occurrences(ScheduleData data, DateTimeOffset from, TimeZoneInfo location)
+    {
+        var current = from;
+        while (true)
+        {
+            var next = NextFrom(data, current, location);
+            if (next is null)
+            {
+                yield break;
+            }
+            yield return next.Value;
+            current = next.Value.AddMinutes(1);
+        }
+    }
+
+    /// <summary>
+    /// Returns a lazy enumerable of occurrences where from &lt; occurrence &lt;= to.
+    /// </summary>
+    public static IEnumerable<DateTimeOffset> Between(ScheduleData data, DateTimeOffset from, DateTimeOffset to, TimeZoneInfo location)
+    {
+        foreach (var dt in Occurrences(data, from, location))
+        {
+            if (dt > to)
+            {
+                yield break;
+            }
+            yield return dt;
+        }
+    }
+
+    /// <summary>
     /// Checks if a datetime matches the schedule.
     /// </summary>
     public static bool Matches(ScheduleData data, DateTimeOffset dt, TimeZoneInfo location)
@@ -206,10 +239,11 @@ public static class Evaluator
             var weeks = daysBetween / 7;
 
             // Skip weeks before anchor
+            // When weeks_since_anchor < 0, anchorMonday is in the future
+            // Use anchorMonday directly as the first aligned week
             if (weeks < 0)
             {
-                var skip = (-weeks + wr.Interval - 1) / wr.Interval;
-                currentMonday = currentMonday.AddDays((int)(skip * wr.Interval * 7));
+                currentMonday = anchorMonday;
                 continue;
             }
 

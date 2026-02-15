@@ -110,6 +110,30 @@ public sealed class Schedule
     }
 
     /// <summary>
+    /// Returns a lazy enumerable of occurrences starting after the given time.
+    /// </summary>
+    /// <param name="from">The reference time (exclusive)</param>
+    /// <returns>An enumerable of occurrences</returns>
+    public IEnumerable<DateTimeOffset> Occurrences(DateTimeOffset from)
+    {
+        var fromInTz = TimeZoneInfo.ConvertTime(from, _zoneInfo);
+        return Evaluator.Occurrences(_data, fromInTz, _zoneInfo);
+    }
+
+    /// <summary>
+    /// Returns a lazy enumerable of occurrences where from &lt; occurrence &lt;= to.
+    /// </summary>
+    /// <param name="from">The start time (exclusive)</param>
+    /// <param name="to">The end time (inclusive)</param>
+    /// <returns>An enumerable of occurrences in the range</returns>
+    public IEnumerable<DateTimeOffset> Between(DateTimeOffset from, DateTimeOffset to)
+    {
+        var fromInTz = TimeZoneInfo.ConvertTime(from, _zoneInfo);
+        var toInTz = TimeZoneInfo.ConvertTime(to, _zoneInfo);
+        return Evaluator.Between(_data, fromInTz, toInTz, _zoneInfo);
+    }
+
+    /// <summary>
     /// Converts this schedule to a 5-field cron expression.
     /// </summary>
     /// <returns>The cron expression</returns>

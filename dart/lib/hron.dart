@@ -87,6 +87,17 @@ class Schedule {
   /// Returns `true` if [datetime] matches this schedule.
   bool matches(TZDateTime datetime) => eval_impl.matches(_data, datetime);
 
+  /// Returns a lazy iterable of occurrences starting after [from].
+  /// The iterable is unbounded for repeating schedules (will iterate forever unless limited),
+  /// but respects the `until` clause if specified in the schedule.
+  Iterable<TZDateTime> occurrences(TZDateTime from) =>
+      eval_impl.occurrences(_data, from);
+
+  /// Returns a bounded iterable of occurrences where `from < occurrence <= to`.
+  /// The iterable yields occurrences strictly after [from] and up to and including [to].
+  Iterable<TZDateTime> between(TZDateTime from, TZDateTime to) =>
+      eval_impl.between(_data, from, to);
+
   /// Converts this schedule to a standard 5-field cron expression.
   ///
   /// Throws [HronError] if the schedule cannot be expressed in cron format

@@ -750,10 +750,9 @@ TZDateTime? _nextWeekRepeat(
   for (var i = 0; i < 54; i++) {
     final weeks = _weeksBetween(anchorMonday, currentMonday);
 
-    // Skip weeks before anchor
+    // Skip weeks before anchor - anchor Monday is always the first aligned week
     if (weeks < 0) {
-      final skip = (-weeks + interval - 1) ~/ interval;
-      currentMonday = currentMonday.add(Duration(days: skip * interval * 7));
+      currentMonday = anchorMonday;
       continue;
     }
 
@@ -1034,4 +1033,33 @@ TZDateTime? _nextYearRepeat(
   }
 
   return null;
+}
+
+// --- Iterator functions ---
+
+/// Returns a lazy iterable of occurrences starting after [from].
+/// The iterator is unbounded for repeating schedules (will iterate forever unless limited),
+/// but respects the `until` clause if specified in the schedule.
+Iterable<TZDateTime> occurrences(ScheduleData schedule, TZDateTime from) sync* {
+  var current = from;
+  while (true) {
+    final next = nextFrom(schedule, current);
+    if (next == null) return;
+    // Advance cursor by 1 minute to avoid returning same occurrence
+    current = next.add(const Duration(minutes: 1));
+    yield next;
+  }
+}
+
+/// Returns a bounded iterable of occurrences where `from < occurrence <= to`.
+/// The iterator yields occurrences strictly after [from] and up to and including [to].
+Iterable<TZDateTime> between(
+  ScheduleData schedule,
+  TZDateTime from,
+  TZDateTime to,
+) sync* {
+  for (final dt in occurrences(schedule, from)) {
+    if (dt.isAfter(to)) return;
+    yield dt;
+  }
 }

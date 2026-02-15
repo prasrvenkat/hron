@@ -308,6 +308,32 @@ module Hron
       results
     end
 
+    # Returns a lazy Enumerator of occurrences starting after `from`.
+    # The iterator respects the `until` clause if specified.
+    def self.occurrences(schedule, from)
+      Enumerator.new do |yielder|
+        current = from
+        loop do
+          nxt = next_from(schedule, current)
+          break unless nxt
+
+          yielder << nxt
+          current = nxt + 60 # Add 1 minute
+        end
+      end.lazy
+    end
+
+    # Returns a lazy Enumerator of occurrences where from < occurrence <= to.
+    def self.between(schedule, from, to)
+      Enumerator.new do |yielder|
+        occurrences(schedule, from).each do |dt|
+          break if dt > to
+
+          yielder << dt
+        end
+      end.lazy
+    end
+
     def self.matches(schedule, dt)
       tz = TzResolver.resolve(schedule.timezone)
       # Convert to local time in the target timezone
@@ -592,8 +618,9 @@ module Hron
         weeks = EvalHelpers.weeks_between(anchor_monday, current_monday)
 
         if weeks.negative?
-          skip = (-weeks + interval - 1) / interval
-          current_monday += skip * interval * 7
+          # When weeks_since_anchor < 0, anchor_monday is in the future
+          # Use anchor_monday directly as the first aligned week
+          current_monday = anchor_monday
           next
         end
 

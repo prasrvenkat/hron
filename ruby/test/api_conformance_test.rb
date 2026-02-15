@@ -17,6 +17,8 @@ class ApiConformanceTest < Minitest::Test
     "nextFrom" => "next_from",
     "nextNFrom" => "next_n_from",
     "matches" => "matches",
+    "occurrences" => "occurrences",
+    "between" => "between",
     "toCron" => "to_cron",
     "toString" => "to_s"
   }.freeze

@@ -278,6 +278,104 @@ public partial class ConformanceTest
         Assert.Equal(expected, result);
     }
 
+    // Occurrences tests
+
+    public static TheoryData<string, string, string, int, string[]> GetOccurrencesTests()
+    {
+        var data = new TheoryData<string, string, string, int, string[]>();
+        if (!Spec.RootElement.GetProperty("eval").TryGetProperty("occurrences", out var occurrencesSection)) return data;
+        if (!occurrencesSection.TryGetProperty("tests", out var tests)) return data;
+
+        foreach (var tc in tests.EnumerateArray())
+        {
+            var name = tc.GetProperty("name").GetString()!;
+            var expression = tc.GetProperty("expression").GetString()!;
+            var from = tc.GetProperty("from").GetString()!;
+            var take = tc.GetProperty("take").GetInt32();
+            var expected = tc.GetProperty("expected").EnumerateArray().Select(e => e.GetString()!).ToArray();
+            data.Add(name, expression, from, take, expected);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(GetOccurrencesTests))]
+    public void OccurrencesTests(string _name, string expression, string fromStr, int take, string[] expectedStrs)
+    {
+        _ = _name; // Used for test display
+        var s = Schedule.Parse(expression);
+        var from = ParseZonedDateTime(fromStr);
+        var results = s.Occurrences(from).Take(take).ToList();
+
+        Assert.Equal(expectedStrs.Length, results.Count);
+
+        for (var i = 0; i < expectedStrs.Length; i++)
+        {
+            var expected = ParseZonedDateTime(expectedStrs[i]);
+            Assert.Equal(expected.ToUniversalTime(), results[i].ToUniversalTime());
+        }
+    }
+
+    // Between tests
+
+    public static TheoryData<string, string, string, string, string[]?, int?> GetBetweenTests()
+    {
+        var data = new TheoryData<string, string, string, string, string[]?, int?>();
+        if (!Spec.RootElement.GetProperty("eval").TryGetProperty("between", out var betweenSection)) return data;
+        if (!betweenSection.TryGetProperty("tests", out var tests)) return data;
+
+        foreach (var tc in tests.EnumerateArray())
+        {
+            var name = tc.GetProperty("name").GetString()!;
+            var expression = tc.GetProperty("expression").GetString()!;
+            var from = tc.GetProperty("from").GetString()!;
+            var to = tc.GetProperty("to").GetString()!;
+
+            string[]? expected = null;
+            int? expectedCount = null;
+
+            if (tc.TryGetProperty("expected", out var expectedProp))
+            {
+                expected = expectedProp.EnumerateArray().Select(e => e.GetString()!).ToArray();
+            }
+            if (tc.TryGetProperty("expected_count", out var expectedCountProp))
+            {
+                expectedCount = expectedCountProp.GetInt32();
+            }
+
+            data.Add(name, expression, from, to, expected, expectedCount);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(GetBetweenTests))]
+    public void BetweenTests(string _name, string expression, string fromStr, string toStr, string[]? expectedStrs, int? expectedCount)
+    {
+        _ = _name; // Used for test display
+        var s = Schedule.Parse(expression);
+        var from = ParseZonedDateTime(fromStr);
+        var to = ParseZonedDateTime(toStr);
+        var results = s.Between(from, to).ToList();
+
+        if (expectedStrs is not null)
+        {
+            Assert.Equal(expectedStrs.Length, results.Count);
+
+            for (var i = 0; i < expectedStrs.Length; i++)
+            {
+                var expected = ParseZonedDateTime(expectedStrs[i]);
+                Assert.Equal(expected.ToUniversalTime(), results[i].ToUniversalTime());
+            }
+        }
+        else if (expectedCount.HasValue)
+        {
+            Assert.Equal(expectedCount.Value, results.Count);
+        }
+    }
+
     // Cron tests
 
     public static TheoryData<string, string, string> GetToCronTests()

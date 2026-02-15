@@ -9,6 +9,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
  * The main entry point for parsing and evaluating hron schedule expressions.
@@ -106,6 +107,30 @@ public final class Schedule {
   public boolean matches(ZonedDateTime datetime) {
     ZonedDateTime dtInTz = datetime.withZoneSameInstant(zoneId);
     return Evaluator.matches(data, dtInTz, zoneId);
+  }
+
+  /**
+   * Returns a lazy stream of occurrences starting after the given time.
+   *
+   * @param from the reference time (exclusive)
+   * @return a stream of occurrences
+   */
+  public Stream<ZonedDateTime> occurrences(ZonedDateTime from) {
+    ZonedDateTime fromInTz = from.withZoneSameInstant(zoneId);
+    return Evaluator.occurrences(data, fromInTz, zoneId);
+  }
+
+  /**
+   * Returns a lazy stream of occurrences where from < occurrence <= to.
+   *
+   * @param from the start time (exclusive)
+   * @param to the end time (inclusive)
+   * @return a stream of occurrences in the range
+   */
+  public Stream<ZonedDateTime> between(ZonedDateTime from, ZonedDateTime to) {
+    ZonedDateTime fromInTz = from.withZoneSameInstant(zoneId);
+    ZonedDateTime toInTz = to.withZoneSameInstant(zoneId);
+    return Evaluator.between(data, fromInTz, toInTz, zoneId);
   }
 
   /**

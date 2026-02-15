@@ -4,7 +4,7 @@ import type { Temporal } from "@js-temporal/polyfill";
 import type { ScheduleData, ScheduleExpr } from "./ast.js";
 import { fromCron, toCron } from "./cron.js";
 import { display } from "./display.js";
-import { matches, nextFrom, nextNFrom } from "./eval.js";
+import { between, matches, nextFrom, nextNFrom, occurrences } from "./eval.js";
 import { parse } from "./parser.js";
 
 export class Schedule {
@@ -47,6 +47,28 @@ export class Schedule {
   /** Check if a datetime matches this schedule. */
   matches(datetime: Temporal.ZonedDateTime): boolean {
     return matches(this.data, datetime);
+  }
+
+  /**
+   * Returns a lazy iterator of occurrences starting after `from`.
+   * The iterator is unbounded for repeating schedules (will iterate forever unless limited),
+   * but respects the `until` clause if specified in the schedule.
+   */
+  *occurrences(
+    from: Temporal.ZonedDateTime,
+  ): Generator<Temporal.ZonedDateTime, void, unknown> {
+    yield* occurrences(this.data, from);
+  }
+
+  /**
+   * Returns a bounded iterator of occurrences where `from < occurrence <= to`.
+   * The iterator yields occurrences strictly after `from` and up to and including `to`.
+   */
+  *between(
+    from: Temporal.ZonedDateTime,
+    to: Temporal.ZonedDateTime,
+  ): Generator<Temporal.ZonedDateTime, void, unknown> {
+    yield* between(this.data, from, to);
   }
 
   /** Convert this schedule to a 5-field cron expression. */

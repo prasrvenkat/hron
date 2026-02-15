@@ -222,11 +222,13 @@ func TestSpecCoverage(t *testing.T) {
 	}
 
 	instanceMethodMap := map[string]string{
-		"nextFrom":  "NextFrom",
-		"nextNFrom": "NextNFrom",
-		"matches":   "Matches",
-		"toCron":    "ToCron",
-		"toString":  "String",
+		"nextFrom":    "NextFrom",
+		"nextNFrom":   "NextNFrom",
+		"matches":     "Matches",
+		"occurrences": "Occurrences",
+		"between":     "Between",
+		"toCron":      "ToCron",
+		"toString":    "String",
 	}
 
 	getterMap := map[string]string{

@@ -150,6 +150,56 @@ class ConformanceTest < Minitest::Test
   end
 
   # ===========================================================================
+  # Occurrences conformance tests
+  # ===========================================================================
+
+  SPEC["eval"]["occurrences"]["tests"].each do |tc|
+    test_name = tc["name"] || tc["expression"]
+    define_method("test_occurrences_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
+      schedule = Hron::Schedule.parse(tc["expression"])
+      from = TestHelper.parse_zoned(tc["from"])
+      take_count = tc["take"]
+      expected = tc["expected"]
+
+      results = schedule.occurrences(from).take(take_count).to_a
+
+      assert_equal expected.length, results.length, "occurrences count mismatch"
+      expected.each_with_index do |e, i|
+        match = e.match(/\[(.+)\]$/)
+        tz_name = match ? match[1] : "UTC"
+        assert_equal e, TestHelper.format_zoned(results[i], tz_name), "occurrences[#{i}] mismatch"
+      end
+    end
+  end
+
+  # ===========================================================================
+  # Between conformance tests
+  # ===========================================================================
+
+  SPEC["eval"]["between"]["tests"].each do |tc|
+    test_name = tc["name"] || tc["expression"]
+    define_method("test_between_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
+      schedule = Hron::Schedule.parse(tc["expression"])
+      from = TestHelper.parse_zoned(tc["from"])
+      to = TestHelper.parse_zoned(tc["to"])
+
+      results = schedule.between(from, to).to_a
+
+      if tc["expected"]
+        expected = tc["expected"]
+        assert_equal expected.length, results.length, "between count mismatch"
+        expected.each_with_index do |e, i|
+          match = e.match(/\[(.+)\]$/)
+          tz_name = match ? match[1] : "UTC"
+          assert_equal e, TestHelper.format_zoned(results[i], tz_name), "between[#{i}] mismatch"
+        end
+      elsif tc["expected_count"]
+        assert_equal tc["expected_count"], results.length
+      end
+    end
+  end
+
+  # ===========================================================================
   # Cron conformance tests
   # ===========================================================================
 
