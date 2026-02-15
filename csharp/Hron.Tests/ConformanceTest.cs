@@ -246,6 +246,47 @@ public partial class ConformanceTest
         Assert.Equal(expectedLength, results.Count);
     }
 
+    // PreviousFrom tests
+
+    public static TheoryData<string, string, string, string?> GetPreviousFromTests()
+    {
+        var data = new TheoryData<string, string, string, string?>();
+        if (!Spec.RootElement.GetProperty("eval").TryGetProperty("previous_from", out var previousFromSection)) return data;
+        if (!previousFromSection.TryGetProperty("tests", out var tests)) return data;
+
+        foreach (var tc in tests.EnumerateArray())
+        {
+            var name = tc.TryGetProperty("name", out var nameProp) ? nameProp.GetString()! : tc.GetProperty("expression").GetString()!;
+            var expression = tc.GetProperty("expression").GetString()!;
+            var now = tc.GetProperty("now").GetString()!;
+            var expected = tc.GetProperty("expected").ValueKind == JsonValueKind.Null ? null : tc.GetProperty("expected").GetString();
+            data.Add(name, expression, now, expected);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(GetPreviousFromTests))]
+    public void PreviousFromTests(string _name, string expression, string nowStr, string? expectedStr)
+    {
+        _ = _name; // Used for test display
+        var s = Schedule.Parse(expression);
+        var now = ParseZonedDateTime(nowStr);
+        var result = s.PreviousFrom(now);
+
+        if (expectedStr is null)
+        {
+            Assert.Null(result);
+        }
+        else
+        {
+            Assert.NotNull(result);
+            var expected = ParseZonedDateTime(expectedStr);
+            Assert.Equal(expected.ToUniversalTime(), result.Value.ToUniversalTime());
+        }
+    }
+
     // Matches tests
 
     public static TheoryData<string, string, string, bool> GetMatchesTests()

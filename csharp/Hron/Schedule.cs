@@ -99,6 +99,17 @@ public sealed class Schedule
     }
 
     /// <summary>
+    /// Computes the most recent occurrence strictly before the given time.
+    /// </summary>
+    /// <param name="now">The reference time (exclusive upper bound)</param>
+    /// <returns>The previous occurrence, or null if none exists</returns>
+    public DateTimeOffset? PreviousFrom(DateTimeOffset now)
+    {
+        var nowInTz = TimeZoneInfo.ConvertTime(now, _zoneInfo);
+        return Evaluator.PreviousFrom(_data, nowInTz, _zoneInfo);
+    }
+
+    /// <summary>
     /// Checks if a datetime matches this schedule.
     /// </summary>
     /// <param name="dateTime">The datetime to check</param>

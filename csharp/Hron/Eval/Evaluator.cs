@@ -135,6 +135,77 @@ public static class Evaluator
         return next.HasValue && next.Value == dt;
     }
 
+    /// <summary>
+    /// Computes the most recent occurrence strictly before the given time.
+    /// </summary>
+    public static DateTimeOffset? PreviousFrom(ScheduleData data, DateTimeOffset now, TimeZoneInfo location)
+    {
+        // Get anchor date for starting bound
+        DateOnly? anchorDate = data.Anchor is not null ? DateOnly.Parse(data.Anchor) : null;
+
+        // Handle until clause - if now is after until, search from end of until date
+        var searchFrom = now;
+        if (data.Until is not null)
+        {
+            var untilDate = ResolveUntil(data.Until, DateOnly.FromDateTime(now.DateTime));
+            if (DateOnly.FromDateTime(now.DateTime) > untilDate)
+            {
+                searchFrom = AtTimeOnDate(untilDate.AddDays(1), new TimeOfDay(0, 0), location);
+            }
+        }
+
+        for (var i = 0; i < MaxIterations; i++)
+        {
+            var candidate = PrevCandidate(data.Expr, searchFrom, location, data.Anchor, data.During);
+            if (candidate is null)
+            {
+                return null;
+            }
+
+            var t = candidate.Value;
+
+            // Check if before anchor
+            if (anchorDate.HasValue && DateOnly.FromDateTime(t.DateTime) < anchorDate.Value)
+            {
+                return null;
+            }
+
+            // Check until date - should not return occurrences after until
+            if (data.Until is not null)
+            {
+                var untilDate = ResolveUntil(data.Until, DateOnly.FromDateTime(now.DateTime));
+                if (DateOnly.FromDateTime(t.DateTime) > untilDate)
+                {
+                    searchFrom = t;
+                    continue;
+                }
+            }
+
+            // Check exception list
+            if (IsExcepted(DateOnly.FromDateTime(t.DateTime), data.Except))
+            {
+                searchFrom = t;
+                continue;
+            }
+
+            // Check during clause
+            if (!MatchesDuring(DateOnly.FromDateTime(t.DateTime), data.During))
+            {
+                var prevMonth = PrevDuringMonth(DateOnly.FromDateTime(t.DateTime), data.During);
+                if (prevMonth is null)
+                {
+                    return null;
+                }
+                searchFrom = AtTimeOnDate(new DateOnly(prevMonth.Value.Year, prevMonth.Value.Month, 1).AddMonths(1), new TimeOfDay(0, 0), location);
+                continue;
+            }
+
+            return t;
+        }
+
+        return null;
+    }
+
     private static DateTimeOffset? NextCandidate(IScheduleExpr expr, DateTimeOffset now, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName>? during = null)
     {
         return expr switch
@@ -146,6 +217,21 @@ public static class Evaluator
             OrdinalRepeat or => NextOrdinalRepeat(or, now, location, anchor),
             SingleDate sd => NextSingleDate(sd, now, location),
             YearRepeat yr => NextYearRepeat(yr, now, location, anchor),
+            _ => null
+        };
+    }
+
+    private static DateTimeOffset? PrevCandidate(IScheduleExpr expr, DateTimeOffset now, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName>? during = null)
+    {
+        return expr switch
+        {
+            DayRepeat dr => PrevDayRepeat(dr, now, location, anchor),
+            IntervalRepeat ir => PrevIntervalRepeat(ir, now, location),
+            WeekRepeat wr => PrevWeekRepeat(wr, now, location, anchor),
+            MonthRepeat mr => PrevMonthRepeat(mr, now, location, anchor),
+            OrdinalRepeat or => PrevOrdinalRepeat(or, now, location, anchor),
+            SingleDate sd => PrevSingleDate(sd, now, location),
+            YearRepeat yr => PrevYearRepeat(yr, now, location, anchor),
             _ => null
         };
     }
@@ -451,6 +537,277 @@ public static class Evaluator
         return null;
     }
 
+    // Previous occurrence methods
+
+    private static DateTimeOffset? PrevDayRepeat(DayRepeat dr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    {
+        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
+        var day = DateOnly.FromDateTime(now.DateTime);
+
+        for (var i = 0; i < MaxIterations; i++)
+        {
+            if (dr.Interval > 1)
+            {
+                var daysFromAnchor = day.DayNumber - anchorDate.DayNumber;
+                var mod = daysFromAnchor % dr.Interval;
+                if (mod < 0) mod += dr.Interval;
+                if (mod != 0)
+                {
+                    day = day.AddDays(-mod);
+                    continue;
+                }
+            }
+
+            if (MatchesDayFilter(day, dr.Days))
+            {
+                var time = LatestPastTime(day, dr.Times, location, now);
+                if (time.HasValue)
+                {
+                    return time;
+                }
+            }
+
+            day = day.AddDays(-(dr.Interval > 1 ? dr.Interval : 1));
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? PrevIntervalRepeat(IntervalRepeat ir, DateTimeOffset now, TimeZoneInfo location)
+    {
+        var day = DateOnly.FromDateTime(now.DateTime);
+
+        for (var i = 0; i < MaxIterations; i++)
+        {
+            if (ir.DayFilter is not null && !MatchesDayFilter(day, ir.DayFilter))
+            {
+                day = day.AddDays(-1);
+                continue;
+            }
+
+            var fromMinutes = ir.FromTime.TotalMinutes;
+            var toMinutes = ir.ToTime.TotalMinutes;
+            var step = ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
+
+            // Build list of times in window
+            var windowTimes = new List<int>();
+            for (var m = fromMinutes; m <= toMinutes; m += step)
+            {
+                windowTimes.Add(m);
+            }
+
+            // Search backwards through window
+            for (var j = windowTimes.Count - 1; j >= 0; j--)
+            {
+                var m = windowTimes[j];
+                var hour = m / 60;
+                var minute = m % 60;
+                var t = AtTimeOnDate(day, new TimeOfDay(hour, minute), location);
+
+                if (t < now)
+                {
+                    return t;
+                }
+            }
+
+            day = day.AddDays(-1);
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? PrevWeekRepeat(WeekRepeat wr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    {
+        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochMonday;
+        var anchorMonday = anchorDate.AddDays(-((int)anchorDate.DayOfWeek == 0 ? 6 : (int)anchorDate.DayOfWeek - 1));
+
+        var day = DateOnly.FromDateTime(now.DateTime);
+        var currentMonday = day.AddDays(-((int)day.DayOfWeek == 0 ? 6 : (int)day.DayOfWeek - 1));
+
+        // Sort target weekdays in descending order
+        var sortedDays = wr.WeekDays.OrderByDescending(w => w.Number()).ToList();
+
+        for (var i = 0; i < 54; i++)
+        {
+            var daysBetween = currentMonday.DayNumber - anchorMonday.DayNumber;
+            var weeks = daysBetween / 7;
+
+            if (weeks < 0)
+            {
+                return null;
+            }
+
+            if (weeks % wr.Interval == 0)
+            {
+                foreach (var wd in sortedDays)
+                {
+                    var dayOffset = wd.Number() - 1;
+                    var targetDate = currentMonday.AddDays(dayOffset);
+                    var time = LatestPastTime(targetDate, wr.Times, location, now);
+                    if (time.HasValue)
+                    {
+                        return time;
+                    }
+                }
+            }
+
+            var remainder = weeks % wr.Interval;
+            var skipWeeks = remainder == 0 ? wr.Interval : remainder;
+            currentMonday = currentMonday.AddDays(-(int)skipWeeks * 7);
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? PrevMonthRepeat(MonthRepeat mr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    {
+        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
+        var day = DateOnly.FromDateTime(now.DateTime);
+
+        for (var i = 0; i < MaxIterations; i++)
+        {
+            if (mr.Interval > 1)
+            {
+                var monthsFromAnchor = (day.Year - anchorDate.Year) * 12 + (day.Month - anchorDate.Month);
+                var mod = monthsFromAnchor % mr.Interval;
+                if (mod < 0) mod += mr.Interval;
+                if (mod != 0)
+                {
+                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(-mod);
+                    day = LastDayOfMonth(day.Year, day.Month);
+                    continue;
+                }
+            }
+
+            var targetDays = GetTargetDaysInMonth(day.Year, day.Month, mr.Target).OrderByDescending(d => d).ToList();
+
+            foreach (var targetDay in targetDays)
+            {
+                if (targetDay > day) continue;
+                var time = LatestPastTime(targetDay, mr.Times, location, now);
+                if (time.HasValue)
+                {
+                    return time;
+                }
+            }
+
+            day = new DateOnly(day.Year, day.Month, 1).AddMonths(-(mr.Interval > 1 ? mr.Interval : 1));
+            day = LastDayOfMonth(day.Year, day.Month);
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? PrevOrdinalRepeat(OrdinalRepeat or, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    {
+        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
+        var day = DateOnly.FromDateTime(now.DateTime);
+
+        for (var i = 0; i < MaxIterations; i++)
+        {
+            if (or.Interval > 1)
+            {
+                var monthsFromAnchor = (day.Year - anchorDate.Year) * 12 + (day.Month - anchorDate.Month);
+                var mod = monthsFromAnchor % or.Interval;
+                if (mod < 0) mod += or.Interval;
+                if (mod != 0)
+                {
+                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(-mod);
+                    day = LastDayOfMonth(day.Year, day.Month);
+                    continue;
+                }
+            }
+
+            var targetDay = NthWeekdayOfMonth(day.Year, day.Month, or.WeekdayValue, or.Ordinal);
+
+            if (targetDay.HasValue && targetDay.Value <= day)
+            {
+                var time = LatestPastTime(targetDay.Value, or.Times, location, now);
+                if (time.HasValue)
+                {
+                    return time;
+                }
+            }
+
+            day = new DateOnly(day.Year, day.Month, 1).AddMonths(-(or.Interval > 1 ? or.Interval : 1));
+            day = LastDayOfMonth(day.Year, day.Month);
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? PrevSingleDate(SingleDate sd, DateTimeOffset now, TimeZoneInfo location)
+    {
+        var startYear = now.Year;
+
+        switch (sd.DateSpec.Kind)
+        {
+            case DateSpecKind.Iso:
+                var d = DateOnly.Parse(sd.DateSpec.Date!);
+                return LatestPastTime(d, sd.Times, location, now);
+
+            case DateSpecKind.Named:
+                for (var y = 0; y < 8; y++)
+                {
+                    var year = startYear - y;
+                    var date = TryCreateDate(year, sd.DateSpec.Month!.Value.Number(), sd.DateSpec.Day);
+                    if (date is null)
+                    {
+                        continue;
+                    }
+                    var time = LatestPastTime(date.Value, sd.Times, location, now);
+                    if (time.HasValue)
+                    {
+                        return time;
+                    }
+                }
+                return null;
+
+            default:
+                return null;
+        }
+    }
+
+    private static DateTimeOffset? PrevYearRepeat(YearRepeat yr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    {
+        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
+        var year = now.Year;
+
+        for (var i = 0; i < MaxIterations; i++)
+        {
+            if (yr.Interval > 1)
+            {
+                var yearsFromAnchor = year - anchorDate.Year;
+                var mod = yearsFromAnchor % yr.Interval;
+                if (mod < 0) mod += yr.Interval;
+                if (mod != 0)
+                {
+                    year -= mod;
+                    continue;
+                }
+            }
+
+            var targetDay = GetYearTargetDay(year, yr.Target);
+
+            if (targetDay.HasValue)
+            {
+                var day = targetDay.Value;
+                if (day <= DateOnly.FromDateTime(now.DateTime))
+                {
+                    var time = LatestPastTime(day, yr.Times, location, now);
+                    if (time.HasValue)
+                    {
+                        return time;
+                    }
+                }
+            }
+
+            year -= yr.Interval > 1 ? yr.Interval : 1;
+        }
+
+        return null;
+    }
+
     // Helper methods
 
     private static bool MatchesDayFilter(DateOnly d, DayFilter f)
@@ -475,6 +832,23 @@ public static class Evaluator
             if (candidate > now)
             {
                 if (best is null || candidate < best)
+                {
+                    best = candidate;
+                }
+            }
+        }
+        return best;
+    }
+
+    private static DateTimeOffset? LatestPastTime(DateOnly day, IReadOnlyList<TimeOfDay> times, TimeZoneInfo location, DateTimeOffset now)
+    {
+        DateTimeOffset? best = null;
+        foreach (var tod in times)
+        {
+            var candidate = AtTimeOnDate(day, tod, location);
+            if (candidate < now)
+            {
+                if (best is null || candidate > best)
                 {
                     best = candidate;
                 }
@@ -727,6 +1101,31 @@ public static class Evaluator
 
         // Wrap to first month of next year
         return new DateOnly(d.Year + 1, months[0], 1);
+    }
+
+    private static DateOnly? PrevDuringMonth(DateOnly d, IReadOnlyList<MonthName> during)
+    {
+        var currentMonth = d.Month;
+
+        // Sort months in descending order
+        var months = during.Select(m => m.Number()).OrderByDescending(m => m).ToList();
+
+        // Find previous month before current
+        foreach (var m in months)
+        {
+            if (m < currentMonth)
+            {
+                return LastDayOfMonth(d.Year, m);
+            }
+        }
+
+        // Wrap to last month of previous year
+        if (months.Count > 0)
+        {
+            return LastDayOfMonth(d.Year - 1, months[0]);
+        }
+
+        return null;
     }
 
     private static DateOnly ResolveUntil(UntilSpec until, DateOnly now)
