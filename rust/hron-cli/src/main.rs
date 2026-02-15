@@ -13,11 +13,11 @@ struct Cli {
     #[arg(short, long, default_value = "1")]
     n: u32,
 
-    /// Start of range for between query (ISO 8601 datetime)
+    /// Start time for iterator query (ISO 8601 datetime). Shows up to 100 occurrences unless --to is specified.
     #[arg(long, conflicts_with = "n")]
     from: Option<String>,
 
-    /// End of range for between query (ISO 8601 datetime)
+    /// End of range for --from query (ISO 8601 datetime). When specified, shows all occurrences in (from, to].
     #[arg(long, requires = "from")]
     to: Option<String>,
 
