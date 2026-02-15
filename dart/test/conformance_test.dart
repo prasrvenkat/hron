@@ -139,8 +139,9 @@ void main() {
     };
 
     final evalMap = spec['eval'] as Map<String, dynamic>;
-    final evalSections =
-        evalMap.keys.where((s) => !skipSections.contains(s)).toList();
+    final evalSections = evalMap.keys
+        .where((s) => !skipSections.contains(s))
+        .toList();
 
     for (final section in evalSections) {
       group(section, () {
