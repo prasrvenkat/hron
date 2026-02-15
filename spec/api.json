@@ -46,6 +46,12 @@
         "description": "Compute the next `n` occurrences after `now`."
       },
       {
+        "name": "previousFrom",
+        "params": [{ "name": "now", "type": "ZonedDateTime" }],
+        "returns": "ZonedDateTime?",
+        "description": "Compute the most recent occurrence strictly before `now`. Returns null if no previous occurrence exists (e.g., before a starting anchor or for single dates in the future)."
+      },
+      {
         "name": "matches",
         "params": [{ "name": "datetime", "type": "ZonedDateTime" }],
         "returns": "bool",
