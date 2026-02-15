@@ -4,7 +4,7 @@ import type { Temporal } from "@js-temporal/polyfill";
 import type { ScheduleData, ScheduleExpr } from "./ast.js";
 import { fromCron, toCron } from "./cron.js";
 import { display } from "./display.js";
-import { between, matches, nextFrom, nextNFrom, occurrences } from "./eval.js";
+import { between, matches, nextFrom, nextNFrom, occurrences, previousFrom } from "./eval.js";
 import { parse } from "./parser.js";
 
 export class Schedule {
@@ -42,6 +42,11 @@ export class Schedule {
   /** Compute the next `n` occurrences after `now`. */
   nextNFrom(now: Temporal.ZonedDateTime, n: number): Temporal.ZonedDateTime[] {
     return nextNFrom(this.data, now, n);
+  }
+
+  /** Compute the most recent occurrence strictly before `now`. */
+  previousFrom(now: Temporal.ZonedDateTime): Temporal.ZonedDateTime | null {
+    return previousFrom(this.data, now);
   }
 
   /** Check if a datetime matches this schedule. */
