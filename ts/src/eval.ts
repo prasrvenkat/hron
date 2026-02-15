@@ -1157,7 +1157,7 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
  */
 function prevExpr(
   schedule: ScheduleData,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   anchor: string | null,
   now: ZDT,
 ): ZDT | null {
@@ -1185,7 +1185,7 @@ function prevExpr(
 
 function prevDayRepeat(
   expr: Extract<ScheduleExpr, { type: "dayRepeat" }>,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   anchor: string | null,
   now: ZDT,
 ): ZDT | null {
@@ -1232,7 +1232,7 @@ function prevDayRepeat(
 
 function prevIntervalRepeat(
   expr: Extract<ScheduleExpr, { type: "intervalRepeat" }>,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   now: ZDT,
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
@@ -1278,7 +1278,7 @@ function prevIntervalRepeat(
 
 function prevWeekRepeat(
   expr: Extract<ScheduleExpr, { type: "weekRepeat" }>,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   anchor: string | null,
   now: ZDT,
 ): ZDT | null {
@@ -1328,7 +1328,7 @@ function prevWeekRepeat(
 
 function prevMonthRepeat(
   expr: Extract<ScheduleExpr, { type: "monthRepeat" }>,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   anchor: string | null,
   now: ZDT,
 ): ZDT | null {
@@ -1345,7 +1345,7 @@ function prevMonthRepeat(
 
   for (let i = 0; i < maxIter; i++) {
     if (interval > 1) {
-      const monthOffset = monthsBetweenYM(anchorDate, { year, month });
+      const monthOffset = monthsBetweenYM(anchorDate, Temporal.PlainDate.from({ year, month, day: 1 }));
       if (monthOffset < 0 || monthOffset % interval !== 0) {
         ({ year, month } = prevMonth(year, month));
         continue;
@@ -1375,7 +1375,7 @@ function prevMonthRepeat(
 
 function prevOrdinalRepeat(
   expr: Extract<ScheduleExpr, { type: "ordinalRepeat" }>,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   anchor: string | null,
   now: ZDT,
 ): ZDT | null {
@@ -1392,7 +1392,7 @@ function prevOrdinalRepeat(
 
   for (let i = 0; i < maxIter; i++) {
     if (interval > 1) {
-      const monthOffset = monthsBetweenYM(anchorDate, { year, month });
+      const monthOffset = monthsBetweenYM(anchorDate, Temporal.PlainDate.from({ year, month, day: 1 }));
       if (monthOffset < 0 || monthOffset % interval !== 0) {
         ({ year, month } = prevMonth(year, month));
         continue;
@@ -1421,7 +1421,7 @@ function prevOrdinalRepeat(
 
 function prevSingleDate(
   expr: Extract<ScheduleExpr, { type: "singleDate" }>,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   now: ZDT,
 ): ZDT | null {
   const nowInTz = now.withTimeZone(tz);
@@ -1442,7 +1442,7 @@ function prevSingleDate(
   } else {
     // Named date - find most recent occurrence
     const { month, day } = dateSpec;
-    const monthNum = monthNameToNumber(month);
+    const monthNum = monthNumber(month);
 
     const thisYear = Temporal.PlainDate.from({
       year: nowDate.year,
@@ -1471,7 +1471,7 @@ function prevSingleDate(
 
 function prevYearRepeat(
   expr: Extract<ScheduleExpr, { type: "yearRepeat" }>,
-  tz: Temporal.TimeZone | string,
+  tz: string,
   anchor: string | null,
   now: ZDT,
 ): ZDT | null {
@@ -1520,7 +1520,7 @@ function prevYearRepeat(
 function latestPastAtTimes(
   date: Temporal.PlainDate,
   times: TimeOfDay[],
-  tz: Temporal.TimeZone | string,
+  tz: string,
   now: ZDT,
 ): ZDT | null {
   const sortedTimes = [...times].sort(
@@ -1540,7 +1540,7 @@ function latestPastAtTimes(
 function latestAtTimes(
   date: Temporal.PlainDate,
   times: TimeOfDay[],
-  tz: Temporal.TimeZone | string,
+  tz: string,
 ): ZDT | null {
   const sortedTimes = [...times].sort(
     (a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute),
