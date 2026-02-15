@@ -223,6 +223,70 @@ void main() {
   });
 
   // =========================================================================
+  // Occurrences conformance
+  // =========================================================================
+
+  group('occurrences', () {
+    final evalMap = spec['eval'] as Map<String, dynamic>;
+    final occurrencesData = evalMap['occurrences'] as Map<String, dynamic>;
+    final tests = occurrencesData['tests'] as List<dynamic>;
+    for (final tc in tests) {
+      final name = (tc['name'] ?? tc['expression']) as String;
+      test(name, () {
+        final schedule = Schedule.parse(tc['expression'] as String);
+        final from = parseZoned(tc['from'] as String);
+        final take = tc['take'] as int;
+        final expected = (tc['expected'] as List<dynamic>).cast<String>();
+
+        final results = schedule.occurrences(from).take(take).toList();
+
+        expect(results.length, equals(expected.length));
+        for (var i = 0; i < expected.length; i++) {
+          expect(
+            formatZoned(results[i]),
+            equals(expected[i]),
+            reason: 'occurrences[$i] mismatch',
+          );
+        }
+      });
+    }
+  });
+
+  // =========================================================================
+  // Between conformance
+  // =========================================================================
+
+  group('between', () {
+    final evalMap = spec['eval'] as Map<String, dynamic>;
+    final betweenData = evalMap['between'] as Map<String, dynamic>;
+    final tests = betweenData['tests'] as List<dynamic>;
+    for (final tc in tests) {
+      final name = (tc['name'] ?? tc['expression']) as String;
+      test(name, () {
+        final schedule = Schedule.parse(tc['expression'] as String);
+        final from = parseZoned(tc['from'] as String);
+        final to = parseZoned(tc['to'] as String);
+
+        final results = schedule.between(from, to).toList();
+
+        if (tc.containsKey('expected')) {
+          final expected = (tc['expected'] as List<dynamic>).cast<String>();
+          expect(results.length, equals(expected.length));
+          for (var i = 0; i < expected.length; i++) {
+            expect(
+              formatZoned(results[i]),
+              equals(expected[i]),
+              reason: 'between[$i] mismatch',
+            );
+          }
+        } else if (tc.containsKey('expected_count')) {
+          expect(results.length, equals(tc['expected_count']));
+        }
+      });
+    }
+  });
+
+  // =========================================================================
   // Cron conformance
   // =========================================================================
 

@@ -82,6 +82,40 @@ impl Schedule {
     pub fn timezone(&self) -> Option<String> {
         self.inner.timezone().map(|s| s.to_string())
     }
+
+    /// Returns occurrences starting after `from`, limited to `limit` results.
+    /// Returns an array of datetime strings.
+    pub fn occurrences(&self, from: &str, limit: u32) -> Result<JsValue, JsError> {
+        let from: jiff::Zoned = from
+            .parse()
+            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let results: Vec<String> = self
+            .inner
+            .occurrences(&from)
+            .take(limit as usize)
+            .map(|r| r.map(|z| z.to_string()))
+            .collect::<Result<_, _>>()
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Returns occurrences in the range (from, to], where from is exclusive and to is inclusive.
+    /// Returns an array of datetime strings.
+    pub fn between(&self, from: &str, to: &str) -> Result<JsValue, JsError> {
+        let from: jiff::Zoned = from
+            .parse()
+            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let to: jiff::Zoned = to
+            .parse()
+            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let results: Vec<String> = self
+            .inner
+            .between(&from, &to)
+            .map(|r| r.map(|z| z.to_string()))
+            .collect::<Result<_, _>>()
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()))
+    }
 }
 
 /// Parse a cron expression and return an hron Schedule.

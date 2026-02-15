@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar
 import contextlib
+from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -663,10 +664,9 @@ def _next_week_repeat(
     for _ in range(54):
         weeks = _weeks_between(anchor_monday, current_monday)
 
-        # Skip weeks before anchor
+        # Skip weeks before anchor - anchor Monday is always the first aligned week
         if weeks < 0:
-            skip = (-weeks + interval - 1) // interval
-            current_monday += timedelta(days=skip * interval * 7)
+            current_monday = anchor_monday
             continue
 
         if weeks % interval == 0:
@@ -890,3 +890,33 @@ def _next_year_repeat(
                 return candidate
 
     return None
+
+
+# --- Iterator functions ---
+
+
+def occurrences(schedule: ScheduleData, from_: datetime) -> Iterator[datetime]:
+    """Returns a lazy iterator of occurrences starting after `from_`.
+
+    The iterator is unbounded for repeating schedules (will iterate forever unless limited),
+    but respects the `until` clause if specified in the schedule.
+    """
+    current = from_
+    while True:
+        nxt = next_from(schedule, current)
+        if nxt is None:
+            return
+        # Advance cursor by 1 minute to avoid returning same occurrence
+        current = nxt + timedelta(minutes=1)
+        yield nxt
+
+
+def between(schedule: ScheduleData, from_: datetime, to: datetime) -> Iterator[datetime]:
+    """Returns a bounded iterator of occurrences where `from_ < occurrence <= to`.
+
+    The iterator yields occurrences strictly after `from_` and up to and including `to`.
+    """
+    for dt in occurrences(schedule, from_):
+        if dt > to:
+            return
+        yield dt

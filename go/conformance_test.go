@@ -54,6 +54,33 @@ type EvalTest struct {
 	NextNLength int      `json:"next_n_length,omitempty"`
 }
 
+type OccurrencesGroup struct {
+	Tests []OccurrencesTest `json:"tests"`
+}
+
+type OccurrencesTest struct {
+	Name        string   `json:"name"`
+	Expression  string   `json:"expression"`
+	Description string   `json:"description,omitempty"`
+	From        string   `json:"from"`
+	Take        int      `json:"take"`
+	Expected    []string `json:"expected"`
+}
+
+type BetweenGroup struct {
+	Tests []BetweenTest `json:"tests"`
+}
+
+type BetweenTest struct {
+	Name          string   `json:"name"`
+	Expression    string   `json:"expression"`
+	Description   string   `json:"description,omitempty"`
+	From          string   `json:"from"`
+	To            string   `json:"to"`
+	Expected      []string `json:"expected,omitempty"`
+	ExpectedCount int      `json:"expected_count,omitempty"`
+}
+
 type CronSpec struct {
 	ToCron         ToCronGroup        `json:"to_cron"`
 	ToCronErrors   ToCronErrorGroup   `json:"to_cron_errors"`
@@ -221,8 +248,8 @@ func TestEval(t *testing.T) {
 	}
 
 	for section, raw := range spec.Eval {
-		// Skip non-test entries like "description"
-		if section == "description" {
+		// Skip non-test entries like "description", and special sections handled separately
+		if section == "description" || section == "occurrences" || section == "between" || section == "matches" {
 			continue
 		}
 
@@ -315,6 +342,108 @@ func TestEval(t *testing.T) {
 						}
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestOccurrences(t *testing.T) {
+	spec := loadSpec(t)
+
+	// Parse the occurrences section
+	var group OccurrencesGroup
+	if err := json.Unmarshal(spec.Eval["occurrences"], &group); err != nil {
+		t.Fatalf("failed to parse occurrences section: %v", err)
+	}
+
+	for _, tc := range group.Tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			s, err := ParseSchedule(tc.Expression)
+			if err != nil {
+				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
+			}
+
+			from, err := parseZonedDateTime(tc.From)
+			if err != nil {
+				t.Fatalf("failed to parse from %q: %v", tc.From, err)
+			}
+
+			var results []time.Time
+			count := 0
+			for dt := range s.Occurrences(from) {
+				if count >= tc.Take {
+					break
+				}
+				results = append(results, dt)
+				count++
+			}
+
+			if len(results) != len(tc.Expected) {
+				t.Errorf("Occurrences() returned %d results, want %d", len(results), len(tc.Expected))
+			} else {
+				for i, expectedStr := range tc.Expected {
+					expected, err := parseZonedDateTime(expectedStr)
+					if err != nil {
+						t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
+					}
+					if !results[i].Equal(expected) {
+						t.Errorf("Occurrences()[%d] = %v, want %v", i, results[i], expected)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestBetween(t *testing.T) {
+	spec := loadSpec(t)
+
+	// Parse the between section
+	var group BetweenGroup
+	if err := json.Unmarshal(spec.Eval["between"], &group); err != nil {
+		t.Fatalf("failed to parse between section: %v", err)
+	}
+
+	for _, tc := range group.Tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			s, err := ParseSchedule(tc.Expression)
+			if err != nil {
+				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
+			}
+
+			from, err := parseZonedDateTime(tc.From)
+			if err != nil {
+				t.Fatalf("failed to parse from %q: %v", tc.From, err)
+			}
+
+			to, err := parseZonedDateTime(tc.To)
+			if err != nil {
+				t.Fatalf("failed to parse to %q: %v", tc.To, err)
+			}
+
+			var results []time.Time
+			for dt := range s.Between(from, to) {
+				results = append(results, dt)
+			}
+
+			if tc.ExpectedCount > 0 {
+				if len(results) != tc.ExpectedCount {
+					t.Errorf("Between() returned %d results, want %d", len(results), tc.ExpectedCount)
+				}
+			} else {
+				if len(results) != len(tc.Expected) {
+					t.Errorf("Between() returned %d results, want %d", len(results), len(tc.Expected))
+				} else {
+					for i, expectedStr := range tc.Expected {
+						expected, err := parseZonedDateTime(expectedStr)
+						if err != nil {
+							t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
+						}
+						if !results[i].Equal(expected) {
+							t.Errorf("Between()[%d] = %v, want %v", i, results[i], expected)
+						}
+					}
+				}
 			}
 		})
 	}

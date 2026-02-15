@@ -328,7 +328,6 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   const parsedExceptions = parseExceptions(schedule.except);
   const hasExceptions = schedule.except.length > 0;
   const hasDuring = schedule.during.length > 0;
-  const needsTzConversion = untilDate !== null || hasDuring || hasExceptions;
 
   // Check if expression is NearestWeekday with direction (can cross month boundaries)
   const handlesDuringInternally =
@@ -349,13 +348,11 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
     if (candidate === null) return null;
 
     // Convert to target tz once for all filter checks
-    const cDate = needsTzConversion
-      ? candidate.withTimeZone(tz).toPlainDate()
-      : null;
+    const cDate = candidate.withTimeZone(tz).toPlainDate();
 
     // Apply until filter
     if (untilDate) {
-      if (Temporal.PlainDate.compare(cDate!, untilDate) > 0) {
+      if (Temporal.PlainDate.compare(cDate, untilDate) > 0) {
         return null;
       }
     }
@@ -365,17 +362,17 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
     if (
       hasDuring &&
       !handlesDuringInternally &&
-      !matchesDuring(cDate!, schedule.during)
+      !matchesDuring(cDate, schedule.during)
     ) {
       // Skip ahead to 1st of next valid during month
-      const skipTo = nextDuringMonth(cDate!, schedule.during);
+      const skipTo = nextDuringMonth(cDate, schedule.during);
       current = atTimeOnDate(skipTo, MIDNIGHT, tz).subtract({ seconds: 1 });
       continue;
     }
 
     // Apply except filter
-    if (hasExceptions && isExceptedParsed(cDate!, parsedExceptions)) {
-      const nextDay = cDate!.add({ days: 1 });
+    if (hasExceptions && isExceptedParsed(cDate, parsedExceptions)) {
+      const nextDay = cDate.add({ days: 1 });
       current = atTimeOnDate(nextDay, MIDNIGHT, tz).subtract({ seconds: 1 });
       continue;
     }
@@ -782,10 +779,9 @@ function nextWeekRepeat(
   for (let i = 0; i < 54; i++) {
     const weeks = weeksBetween(anchorMonday, currentMonday);
 
-    // Skip weeks before anchor
+    // Skip weeks before anchor - anchor Monday is always the first aligned week
     if (weeks < 0) {
-      const skip = Math.ceil(-weeks / interval);
-      currentMonday = currentMonday.add({ days: skip * interval * 7 });
+      currentMonday = anchorMonday;
       continue;
     }
 
@@ -1085,4 +1081,40 @@ function nextYearRepeat(
   }
 
   return null;
+}
+
+// --- Iterator functions ---
+
+/**
+ * Returns a lazy iterator of occurrences starting after `from`.
+ * The iterator is unbounded for repeating schedules (will iterate forever unless limited),
+ * but respects the `until` clause if specified in the schedule.
+ */
+export function* occurrences(
+  schedule: ScheduleData,
+  from: ZDT,
+): Generator<ZDT, void, unknown> {
+  let current = from;
+  for (;;) {
+    const next = nextFrom(schedule, current);
+    if (next === null) return;
+    // Advance cursor by 1 minute to avoid returning same occurrence
+    current = next.add({ minutes: 1 });
+    yield next;
+  }
+}
+
+/**
+ * Returns a bounded iterator of occurrences where `from < occurrence <= to`.
+ * The iterator yields occurrences strictly after `from` and up to and including `to`.
+ */
+export function* between(
+  schedule: ScheduleData,
+  from: ZDT,
+  to: ZDT,
+): Generator<ZDT, void, unknown> {
+  for (const dt of occurrences(schedule, from)) {
+    if (Temporal.ZonedDateTime.compare(dt, to) > 0) return;
+    yield dt;
+  }
 }

@@ -52,6 +52,21 @@
         "description": "Check if a datetime matches this schedule."
       },
       {
+        "name": "occurrences",
+        "params": [{ "name": "from", "type": "ZonedDateTime" }],
+        "returns": "Iterator<ZonedDateTime>",
+        "description": "Lazy iterator of occurrences starting after from (unbounded)."
+      },
+      {
+        "name": "between",
+        "params": [
+          { "name": "from", "type": "ZonedDateTime" },
+          { "name": "to", "type": "ZonedDateTime" }
+        ],
+        "returns": "Iterator<ZonedDateTime>",
+        "description": "Lazy iterator of occurrences where from < occurrence <= to (bounded)."
+      },
+      {
         "name": "toCron",
         "params": [],
         "returns": "string",

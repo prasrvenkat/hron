@@ -100,6 +100,8 @@ class TestSpecCoverage:
         "nextFrom": "next_from",
         "nextNFrom": "next_n_from",
         "matches": "matches",
+        "occurrences": "occurrences",
+        "between": "between",
         "toCron": "to_cron",
         "toString": "__str__",
     }

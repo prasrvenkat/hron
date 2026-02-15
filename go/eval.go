@@ -1,6 +1,7 @@
 package hron
 
 import (
+	"iter"
 	"time"
 )
 
@@ -474,10 +475,9 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 	for i := 0; i < 54; i++ {
 		weeks := weeksBetween(dateOnly(anchorMonday), currentMonday)
 
-		// Skip weeks before anchor
+		// Skip weeks before anchor - anchor Monday is always the first aligned week
 		if weeks < 0 {
-			skip := (-weeks + interval - 1) / interval
-			currentMonday = currentMonday.AddDate(0, 0, skip*interval*7)
+			currentMonday = anchorMonday
 			continue
 		}
 
@@ -744,4 +744,41 @@ func nextYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *tim
 	}
 
 	return nil
+}
+
+// --- Iterator functions ---
+
+// Occurrences returns a lazy iterator of occurrences starting after `from`.
+// The iterator is unbounded for repeating schedules (will iterate forever unless limited),
+// but respects the `until` clause if specified in the schedule.
+func Occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
+	return func(yield func(time.Time) bool) {
+		current := from
+		for {
+			next := schedule.NextFrom(current)
+			if next == nil {
+				return
+			}
+			// Advance cursor by 1 minute to avoid returning same occurrence
+			current = next.Add(time.Minute)
+			if !yield(*next) {
+				return
+			}
+		}
+	}
+}
+
+// Between returns a bounded iterator of occurrences where `from < occurrence <= to`.
+// The iterator yields occurrences strictly after `from` and up to and including `to`.
+func Between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
+	return func(yield func(time.Time) bool) {
+		for dt := range Occurrences(schedule, from) {
+			if dt.After(to) {
+				return
+			}
+			if !yield(dt) {
+				return
+			}
+		}
+	}
 }

@@ -238,6 +238,97 @@ public class ConformanceTest {
     return tests.stream();
   }
 
+  // Occurrences tests
+
+  @TestFactory
+  Stream<DynamicTest> occurrencesTests() {
+    List<DynamicTest> tests = new ArrayList<>();
+    JsonNode occurrencesSection = SPEC.get("eval").get("occurrences");
+    if (occurrencesSection == null) return tests.stream();
+
+    JsonNode testsNode = occurrencesSection.get("tests");
+    if (testsNode == null || !testsNode.isArray()) return tests.stream();
+
+    for (JsonNode tc : testsNode) {
+      String name = "occurrences/" + tc.get("name").asText();
+      String expression = tc.get("expression").asText();
+      String fromStr = tc.get("from").asText();
+      int take = tc.get("take").asInt();
+      List<String> expectedStrs =
+          MAPPER.convertValue(tc.get("expected"), new TypeReference<List<String>>() {});
+
+      tests.add(
+          DynamicTest.dynamicTest(
+              name,
+              () -> {
+                Schedule s = Schedule.parse(expression);
+                ZonedDateTime from = parseZonedDateTime(fromStr);
+
+                List<ZonedDateTime> results = s.occurrences(from).limit(take).toList();
+
+                assertEquals(expectedStrs.size(), results.size(), "occurrences() count mismatch");
+
+                for (int i = 0; i < expectedStrs.size(); i++) {
+                  ZonedDateTime expected = parseZonedDateTime(expectedStrs.get(i));
+                  assertEquals(
+                      expected.toInstant(),
+                      results.get(i).toInstant(),
+                      "occurrences()[" + i + "] mismatch");
+                }
+              }));
+    }
+    return tests.stream();
+  }
+
+  // Between tests
+
+  @TestFactory
+  Stream<DynamicTest> betweenTests() {
+    List<DynamicTest> tests = new ArrayList<>();
+    JsonNode betweenSection = SPEC.get("eval").get("between");
+    if (betweenSection == null) return tests.stream();
+
+    JsonNode testsNode = betweenSection.get("tests");
+    if (testsNode == null || !testsNode.isArray()) return tests.stream();
+
+    for (JsonNode tc : testsNode) {
+      String name = "between/" + tc.get("name").asText();
+      String expression = tc.get("expression").asText();
+      String fromStr = tc.get("from").asText();
+      String toStr = tc.get("to").asText();
+
+      tests.add(
+          DynamicTest.dynamicTest(
+              name,
+              () -> {
+                Schedule s = Schedule.parse(expression);
+                ZonedDateTime from = parseZonedDateTime(fromStr);
+                ZonedDateTime to = parseZonedDateTime(toStr);
+
+                List<ZonedDateTime> results = s.between(from, to).toList();
+
+                if (tc.has("expected")) {
+                  List<String> expectedStrs =
+                      MAPPER.convertValue(tc.get("expected"), new TypeReference<List<String>>() {});
+
+                  assertEquals(expectedStrs.size(), results.size(), "between() count mismatch");
+
+                  for (int i = 0; i < expectedStrs.size(); i++) {
+                    ZonedDateTime expected = parseZonedDateTime(expectedStrs.get(i));
+                    assertEquals(
+                        expected.toInstant(),
+                        results.get(i).toInstant(),
+                        "between()[" + i + "] mismatch");
+                  }
+                } else if (tc.has("expected_count")) {
+                  int expectedCount = tc.get("expected_count").asInt();
+                  assertEquals(expectedCount, results.size(), "between() count mismatch");
+                }
+              }));
+    }
+    return tests.stream();
+  }
+
   // Cron tests
 
   @TestFactory

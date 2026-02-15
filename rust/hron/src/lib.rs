@@ -191,6 +191,50 @@ impl Schedule {
     pub fn timezone(&self) -> Option<&str> {
         self.timezone.as_deref()
     }
+
+    /// Returns a lazy iterator of occurrences starting after `from`.
+    ///
+    /// The iterator yields `Result<Zoned, ScheduleError>` values. It is unbounded
+    /// for repeating schedules (will iterate forever unless limited), but respects
+    /// the `until` clause if specified in the schedule.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
+    /// let from: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
+    ///
+    /// // Take first 5 occurrences
+    /// let first_5: Vec<_> = schedule.occurrences(&from).take(5).collect::<Result<_, _>>().unwrap();
+    /// assert_eq!(first_5.len(), 5);
+    /// assert_eq!(first_5[0].to_string(), "2025-06-15T09:00:00+00:00[UTC]");
+    /// ```
+    pub fn occurrences(&self, from: &Zoned) -> eval::Occurrences<'_> {
+        eval::Occurrences::new(self, from.clone())
+    }
+
+    /// Returns a bounded iterator of occurrences in the range `(from, to]`.
+    ///
+    /// The iterator yields occurrences strictly after `from` and up to and including `to`.
+    /// This is useful for querying all occurrences within a specific date range.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
+    /// let from: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
+    /// let to: jiff::Zoned = "2025-06-18T10:00:00+00:00[UTC]".parse().unwrap();
+    ///
+    /// let occurrences: Vec<_> = schedule.between(&from, &to).collect::<Result<_, _>>().unwrap();
+    /// assert_eq!(occurrences.len(), 4); // June 15, 16, 17, 18 at 09:00
+    /// ```
+    pub fn between(&self, from: &Zoned, to: &Zoned) -> eval::BoundedOccurrences<'_> {
+        eval::between(self, from, to)
+    }
 }
 
 impl FromStr for Schedule {

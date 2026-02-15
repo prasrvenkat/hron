@@ -211,6 +211,8 @@ public class ApiConformanceTest {
             "nextFrom", "nextFrom",
             "nextNFrom", "nextNFrom",
             "matches", "matches",
+            "occurrences", "occurrences",
+            "between", "between",
             "toCron", "toCron",
             "toString", "toString");
 

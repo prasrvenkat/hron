@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime
 
 from ._ast import (
@@ -47,9 +48,11 @@ from ._ast import (
 from ._cron import from_cron, to_cron
 from ._display import display
 from ._error import HronError, HronErrorKind, Span
+from ._eval import between as _between
 from ._eval import matches as _matches
 from ._eval import next_from as _next_from
 from ._eval import next_n_from as _next_n_from
+from ._eval import occurrences as _occurrences
 from ._parser import parse
 
 
@@ -83,6 +86,21 @@ class Schedule:
 
     def matches(self, dt: datetime) -> bool:
         return _matches(self._data, dt)
+
+    def occurrences(self, from_: datetime) -> Iterator[datetime]:
+        """Returns a lazy iterator of occurrences starting after `from_`.
+
+        The iterator is unbounded for repeating schedules (will iterate forever unless limited),
+        but respects the `until` clause if specified in the schedule.
+        """
+        return _occurrences(self._data, from_)
+
+    def between(self, from_: datetime, to: datetime) -> Iterator[datetime]:
+        """Returns a bounded iterator of occurrences where `from_ < occurrence <= to`.
+
+        The iterator yields occurrences strictly after `from_` and up to and including `to`.
+        """
+        return _between(self._data, from_, to)
 
     def to_cron(self) -> str:
         return to_cron(self._data)

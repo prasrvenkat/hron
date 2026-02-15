@@ -225,6 +225,8 @@ public class ApiConformanceTest
             ["nextFrom"] = nameof(Schedule.NextFrom),
             ["nextNFrom"] = nameof(Schedule.NextNFrom),
             ["matches"] = nameof(Schedule.Matches),
+            ["occurrences"] = nameof(Schedule.Occurrences),
+            ["between"] = nameof(Schedule.Between),
             ["toCron"] = nameof(Schedule.ToCron),
             ["toString"] = "ToString"
         };

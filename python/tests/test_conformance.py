@@ -169,6 +169,61 @@ def test_eval_matches(name: str, tc: dict) -> None:  # type: ignore[type-arg]
 
 
 # ===========================================================================
+# Eval occurrences conformance
+# ===========================================================================
+
+_OCCURRENCES_TESTS = [
+    (tc.get("name", tc["expression"]), tc) for tc in _spec["eval"]["occurrences"]["tests"]
+]
+_OCCURRENCES_IDS = [t[0] for t in _OCCURRENCES_TESTS]
+
+
+@pytest.mark.parametrize("name,tc", _OCCURRENCES_TESTS, ids=_OCCURRENCES_IDS)
+def test_eval_occurrences(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+    schedule = Schedule.parse(tc["expression"])
+    from_ = parse_zoned(tc["from"])
+    take = tc["take"]
+    expected: list[str] = tc["expected"]
+
+    results = []
+    for i, dt in enumerate(schedule.occurrences(from_)):
+        if i >= take:
+            break
+        results.append(dt)
+
+    assert len(results) == len(expected)
+    for j, (r, e) in enumerate(zip(results, expected, strict=True)):
+        assert format_zoned(r) == e, f"occurrences[{j}] mismatch"
+
+
+# ===========================================================================
+# Eval between conformance
+# ===========================================================================
+
+_BETWEEN_TESTS = [
+    (tc.get("name", tc["expression"]), tc) for tc in _spec["eval"]["between"]["tests"]
+]
+_BETWEEN_IDS = [t[0] for t in _BETWEEN_TESTS]
+
+
+@pytest.mark.parametrize("name,tc", _BETWEEN_TESTS, ids=_BETWEEN_IDS)
+def test_eval_between(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+    schedule = Schedule.parse(tc["expression"])
+    from_ = parse_zoned(tc["from"])
+    to = parse_zoned(tc["to"])
+
+    results = list(schedule.between(from_, to))
+
+    if "expected" in tc:
+        expected: list[str] = tc["expected"]
+        assert len(results) == len(expected)
+        for j, (r, e) in enumerate(zip(results, expected, strict=True)):
+            assert format_zoned(r) == e, f"between[{j}] mismatch"
+    elif "expected_count" in tc:
+        assert len(results) == tc["expected_count"]
+
+
+# ===========================================================================
 # Cron conformance
 # ===========================================================================
 

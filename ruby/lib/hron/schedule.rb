@@ -47,6 +47,16 @@ module Hron
       Evaluator.matches(@data, dt)
     end
 
+    # Returns a lazy Enumerator of occurrences starting after `from`
+    def occurrences(from)
+      Evaluator.occurrences(@data, from)
+    end
+
+    # Returns a lazy Enumerator of occurrences where from < occurrence <= to
+    def between(from, to)
+      Evaluator.between(@data, from, to)
+    end
+
     # Convert to 5-field cron expression
     def to_cron
       Cron.to_cron(@data)

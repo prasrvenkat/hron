@@ -21,7 +21,10 @@
 //	}
 package hron
 
-import "time"
+import (
+	"iter"
+	"time"
+)
 
 // Schedule represents a parsed hron schedule.
 type Schedule struct {
@@ -97,6 +100,19 @@ func (s *Schedule) NextNFrom(now time.Time, n int) []time.Time {
 // Matches checks if a datetime matches this schedule.
 func (s *Schedule) Matches(dt time.Time) bool {
 	return matches(s.data, dt)
+}
+
+// Occurrences returns a lazy iterator of occurrences starting after `from`.
+// The iterator is unbounded for repeating schedules (will iterate forever unless limited),
+// but respects the `until` clause if specified in the schedule.
+func (s *Schedule) Occurrences(from time.Time) iter.Seq[time.Time] {
+	return Occurrences(s, from)
+}
+
+// Between returns a bounded iterator of occurrences where `from < occurrence <= to`.
+// The iterator yields occurrences strictly after `from` and up to and including `to`.
+func (s *Schedule) Between(from, to time.Time) iter.Seq[time.Time] {
+	return Between(s, from, to)
 }
 
 // ToCron converts this schedule to a 5-field cron expression.

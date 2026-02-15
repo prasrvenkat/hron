@@ -505,21 +505,76 @@ pub fn next_n_from(
     now: &Zoned,
     n: usize,
 ) -> Result<Vec<Zoned>, ScheduleError> {
-    let mut results = Vec::with_capacity(n);
-    let mut current = now.clone();
-    for _ in 0..n {
-        match next_from(schedule, &current)? {
-            Some(next) => {
-                // Advance current to just after this occurrence
-                current = next
-                    .checked_add(jiff::Span::new().minutes(1))
-                    .map_err(|e| ScheduleError::eval(format!("overflow: {e}")))?;
-                results.push(next);
-            }
-            None => break,
+    Occurrences::new(schedule, now.clone()).take(n).collect()
+}
+
+/// Lazy iterator over schedule occurrences starting after a given datetime.
+pub struct Occurrences<'a> {
+    schedule: &'a Schedule,
+    current: Zoned,
+}
+
+impl<'a> Occurrences<'a> {
+    /// Create a new iterator starting after `from`.
+    pub fn new(schedule: &'a Schedule, from: Zoned) -> Self {
+        Self {
+            schedule,
+            current: from,
         }
     }
-    Ok(results)
+}
+
+impl Iterator for Occurrences<'_> {
+    type Item = Result<Zoned, ScheduleError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match next_from(self.schedule, &self.current) {
+            Ok(Some(dt)) => {
+                // Advance cursor by 1 minute to avoid returning same occurrence
+                match dt.checked_add(jiff::Span::new().minutes(1)) {
+                    Ok(c) => self.current = c,
+                    Err(e) => return Some(Err(ScheduleError::eval(format!("overflow: {e}")))),
+                }
+                Some(Ok(dt))
+            }
+            Ok(None) => None, // No more occurrences
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+/// Bounded iterator for occurrences where from < occurrence <= to.
+pub struct BoundedOccurrences<'a> {
+    inner: Occurrences<'a>,
+    to: Zoned,
+}
+
+impl<'a> BoundedOccurrences<'a> {
+    /// Create a new bounded iterator for occurrences in the range (from, to].
+    pub fn new(schedule: &'a Schedule, from: Zoned, to: Zoned) -> Self {
+        Self {
+            inner: Occurrences::new(schedule, from),
+            to,
+        }
+    }
+}
+
+impl Iterator for BoundedOccurrences<'_> {
+    type Item = Result<Zoned, ScheduleError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner.next() {
+            Some(Ok(dt)) if dt <= self.to => Some(Ok(dt)),
+            Some(Ok(_)) => None, // Past end bound
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
+    }
+}
+
+/// Create a bounded iterator of occurrences in the range (from, to].
+pub fn between<'a>(schedule: &'a Schedule, from: &Zoned, to: &Zoned) -> BoundedOccurrences<'a> {
+    BoundedOccurrences::new(schedule, from.clone(), to.clone())
 }
 
 /// Check if a datetime matches the schedule.
@@ -922,10 +977,8 @@ fn next_week_repeat(
     // target day's time hasn't passed, otherwise the next aligned week).
     let weeks_since_anchor = weeks_between(anchor_monday, current_monday);
     let first_aligned_monday = if weeks_since_anchor < 0 {
-        let skip = (-weeks_since_anchor + interval as i64 - 1) / interval as i64;
-        current_monday
-            .checked_add(jiff::Span::new().days(skip * interval as i64 * 7))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?
+        // Current week is before anchor week, so anchor_monday is the first aligned week
+        anchor_monday
     } else {
         let remainder = weeks_since_anchor % (interval as i64);
         if remainder == 0 {
