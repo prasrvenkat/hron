@@ -207,6 +207,46 @@ public class ConformanceTest {
     return tests.stream();
   }
 
+  // PreviousFrom tests
+
+  @TestFactory
+  Stream<DynamicTest> previousFromTests() {
+    List<DynamicTest> tests = new ArrayList<>();
+    JsonNode previousFromSection = SPEC.get("eval").get("previous_from");
+    if (previousFromSection == null) return tests.stream();
+
+    JsonNode testsNode = previousFromSection.get("tests");
+    if (testsNode == null || !testsNode.isArray()) return tests.stream();
+
+    for (JsonNode tc : testsNode) {
+      String name = tc.has("name") ? tc.get("name").asText() : tc.get("expression").asText();
+      String expression = tc.get("expression").asText();
+      String nowStr = tc.get("now").asText();
+
+      tests.add(
+          DynamicTest.dynamicTest(
+              "previous_from/" + name,
+              () -> {
+                Schedule s = Schedule.parse(expression);
+                ZonedDateTime now = parseZonedDateTime(nowStr);
+                var result = s.previousFrom(now);
+
+                JsonNode expectedNode = tc.get("expected");
+                if (expectedNode.isNull()) {
+                  assertTrue(result.isEmpty(), "expected null for previousFrom()");
+                } else {
+                  ZonedDateTime expected = parseZonedDateTime(expectedNode.asText());
+                  assertTrue(result.isPresent(), "expected non-null for previousFrom()");
+                  assertEquals(
+                      expected.toInstant(),
+                      result.get().toInstant(),
+                      "previousFrom() mismatch");
+                }
+              }));
+    }
+    return tests.stream();
+  }
+
   // Matches tests
 
   @TestFactory

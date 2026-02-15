@@ -65,6 +65,17 @@ public class ApiConformanceTest {
   }
 
   @Test
+  void testPreviousFrom() throws HronException {
+    Schedule s = Schedule.parse("every day at 09:00 in UTC");
+    ZonedDateTime now = ZonedDateTime.of(2026, 2, 6, 12, 0, 0, 0, ZoneId.of("UTC"));
+    var result = s.previousFrom(now);
+    assertTrue(result.isPresent());
+    // Previous should be today at 09:00
+    assertEquals(6, result.get().getDayOfMonth());
+    assertEquals(9, result.get().getHour());
+  }
+
+  @Test
   void testMatches() throws HronException {
     Schedule s = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime matchTime = ZonedDateTime.of(2026, 2, 10, 9, 0, 0, 0, ZoneId.of("UTC"));
@@ -207,14 +218,15 @@ public class ApiConformanceTest {
     JsonNode instanceMethods = schedule.get("instanceMethods");
 
     Map<String, String> expectedMethods =
-        Map.of(
-            "nextFrom", "nextFrom",
-            "nextNFrom", "nextNFrom",
-            "matches", "matches",
-            "occurrences", "occurrences",
-            "between", "between",
-            "toCron", "toCron",
-            "toString", "toString");
+        Map.ofEntries(
+            Map.entry("nextFrom", "nextFrom"),
+            Map.entry("nextNFrom", "nextNFrom"),
+            Map.entry("previousFrom", "previousFrom"),
+            Map.entry("matches", "matches"),
+            Map.entry("occurrences", "occurrences"),
+            Map.entry("between", "between"),
+            Map.entry("toCron", "toCron"),
+            Map.entry("toString", "toString"));
 
     for (JsonNode method : instanceMethods) {
       String name = method.get("name").asText();
