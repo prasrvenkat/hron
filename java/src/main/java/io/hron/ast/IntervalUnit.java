@@ -2,7 +2,9 @@ package io.hron.ast;
 
 /** Represents the unit of an interval (minutes or hours). */
 public enum IntervalUnit {
+  /** Minutes unit. */
   MINUTES("min"),
+  /** Hours unit. */
   HOURS("hours");
 
   private final String displayName;

@@ -5,12 +5,19 @@ import java.util.Optional;
 
 /** Represents a day of the week. */
 public enum Weekday {
+  /** Monday. */
   MONDAY(1, "monday"),
+  /** Tuesday. */
   TUESDAY(2, "tuesday"),
+  /** Wednesday. */
   WEDNESDAY(3, "wednesday"),
+  /** Thursday. */
   THURSDAY(4, "thursday"),
+  /** Friday. */
   FRIDAY(5, "friday"),
+  /** Saturday. */
   SATURDAY(6, "saturday"),
+  /** Sunday. */
   SUNDAY(7, "sunday");
 
   private final int isoNumber;

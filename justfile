@@ -126,6 +126,7 @@ lint-csharp:
 
 lint-java:
     cd java && mvn fmt:check
+    cd java && mvn javadoc:jar -q
 
 # Rust build
 build-rust:

@@ -5,11 +5,17 @@ import java.util.Optional;
 
 /** Represents an ordinal position (first, second, etc.). */
 public enum OrdinalPosition {
+  /** First. */
   FIRST(1, "first"),
+  /** Second. */
   SECOND(2, "second"),
+  /** Third. */
   THIRD(3, "third"),
+  /** Fourth. */
   FOURTH(4, "fourth"),
+  /** Fifth. */
   FIFTH(5, "fifth"),
+  /** Last. */
   LAST(-1, "last");
 
   private final int number;

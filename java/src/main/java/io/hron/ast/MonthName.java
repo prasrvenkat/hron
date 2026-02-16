@@ -5,17 +5,29 @@ import java.util.Optional;
 
 /** Represents a month of the year. */
 public enum MonthName {
+  /** January. */
   JANUARY(1, "jan"),
+  /** February. */
   FEBRUARY(2, "feb"),
+  /** March. */
   MARCH(3, "mar"),
+  /** April. */
   APRIL(4, "apr"),
+  /** May. */
   MAY(5, "may"),
+  /** June. */
   JUNE(6, "jun"),
+  /** July. */
   JULY(7, "jul"),
+  /** August. */
   AUGUST(8, "aug"),
+  /** September. */
   SEPTEMBER(9, "sep"),
+  /** October. */
   OCTOBER(10, "oct"),
+  /** November. */
   NOVEMBER(11, "nov"),
+  /** December. */
   DECEMBER(12, "dec");
 
   private final int monthNumber;

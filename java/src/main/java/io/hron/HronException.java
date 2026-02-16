@@ -4,9 +4,16 @@ import java.util.Optional;
 
 /** Exception thrown for errors in hron parsing, evaluation, or cron conversion. */
 public final class HronException extends Exception {
+  /** The error kind. */
   private final ErrorKind kind;
+
+  /** The source span where the error occurred. */
   private final Span span;
+
+  /** The original input string. */
   private final String input;
+
+  /** An optional suggestion for fixing the error. */
   private final String suggestion;
 
   private HronException(

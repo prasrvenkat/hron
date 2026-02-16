@@ -33,58 +33,124 @@ public record Token(
     int timeMinute,
     String isoDateVal,
     String timezoneVal) {
-  /** Creates a simple keyword token. */
+  /**
+   * Creates a simple keyword token.
+   *
+   * @param kind the token kind
+   * @param span the source span
+   * @return a new keyword token
+   */
   public static Token keyword(TokenKind kind, Span span) {
     return new Token(kind, span, null, null, null, null, 0, 0, 0, null, null);
   }
 
-  /** Creates a day name token. */
+  /**
+   * Creates a day name token.
+   *
+   * @param day the weekday value
+   * @param span the source span
+   * @return a new day name token
+   */
   public static Token dayName(Weekday day, Span span) {
     return new Token(TokenKind.DAY_NAME, span, day, null, null, null, 0, 0, 0, null, null);
   }
 
-  /** Creates a month name token. */
+  /**
+   * Creates a month name token.
+   *
+   * @param month the month value
+   * @param span the source span
+   * @return a new month name token
+   */
   public static Token monthName(MonthName month, Span span) {
     return new Token(TokenKind.MONTH_NAME, span, null, month, null, null, 0, 0, 0, null, null);
   }
 
-  /** Creates an ordinal token. */
+  /**
+   * Creates an ordinal token.
+   *
+   * @param ord the ordinal position
+   * @param span the source span
+   * @return a new ordinal token
+   */
   public static Token ordinal(OrdinalPosition ord, Span span) {
     return new Token(TokenKind.ORDINAL, span, null, null, ord, null, 0, 0, 0, null, null);
   }
 
-  /** Creates an interval unit token. */
+  /**
+   * Creates an interval unit token.
+   *
+   * @param unit the interval unit
+   * @param span the source span
+   * @return a new interval unit token
+   */
   public static Token intervalUnit(IntervalUnit unit, Span span) {
     return new Token(TokenKind.INTERVAL_UNIT, span, null, null, null, unit, 0, 0, 0, null, null);
   }
 
-  /** Creates a number token. */
+  /**
+   * Creates a number token.
+   *
+   * @param value the numeric value
+   * @param span the source span
+   * @return a new number token
+   */
   public static Token number(int value, Span span) {
     return new Token(TokenKind.NUMBER, span, null, null, null, null, value, 0, 0, null, null);
   }
 
-  /** Creates an ordinal number token (e.g., "1st", "15th"). */
+  /**
+   * Creates an ordinal number token (e.g., "1st", "15th").
+   *
+   * @param value the numeric value
+   * @param span the source span
+   * @return a new ordinal number token
+   */
   public static Token ordinalNumber(int value, Span span) {
     return new Token(
         TokenKind.ORDINAL_NUMBER, span, null, null, null, null, value, 0, 0, null, null);
   }
 
-  /** Creates a time token. */
+  /**
+   * Creates a time token.
+   *
+   * @param hour the hour value
+   * @param minute the minute value
+   * @param span the source span
+   * @return a new time token
+   */
   public static Token time(int hour, int minute, Span span) {
     return new Token(TokenKind.TIME, span, null, null, null, null, 0, hour, minute, null, null);
   }
 
-  /** Creates an ISO date token. */
+  /**
+   * Creates an ISO date token.
+   *
+   * @param date the ISO date string
+   * @param span the source span
+   * @return a new ISO date token
+   */
   public static Token isoDate(String date, Span span) {
     return new Token(TokenKind.ISO_DATE, span, null, null, null, null, 0, 0, 0, date, null);
   }
 
-  /** Creates a comma token. */
+  /**
+   * Creates a comma token.
+   *
+   * @param span the source span
+   * @return a new comma token
+   */
   public static Token comma(Span span) {
     return new Token(TokenKind.COMMA, span, null, null, null, null, 0, 0, 0, null, null);
   }
 
-  /** Creates a timezone token. */
+  /**
+   * Creates a timezone token.
+   *
+   * @param tz the timezone string
+   * @param span the source span
+   * @return a new timezone token
+   */
   public static Token timezone(String tz, Span span) {
     return new Token(TokenKind.TIMEZONE, span, null, null, null, null, 0, 0, 0, null, tz);
   }
