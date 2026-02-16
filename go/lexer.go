@@ -1,8 +1,8 @@
 package hron
 
 import (
+	"strconv"
 	"strings"
-	"unicode"
 )
 
 // TokenKind represents the type of token.
@@ -177,8 +177,14 @@ func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
 		}
 		minDigits := l.input[minStart:l.pos]
 		if len(minDigits) == 2 {
-			hour := parseInt(digits)
-			minute := parseInt(minDigits)
+			hour, err := strconv.Atoi(digits)
+			if err != nil {
+				return Token{}, LexError("invalid time hour", Span{start, l.pos}, l.input)
+			}
+			minute, err := strconv.Atoi(minDigits)
+			if err != nil {
+				return Token{}, LexError("invalid time minute", Span{start, l.pos}, l.input)
+			}
 			if hour > 23 || minute > 59 {
 				return Token{}, LexError("invalid time", Span{start, l.pos}, l.input)
 			}
@@ -186,7 +192,10 @@ func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
 		}
 	}
 
-	num := parseInt(digits)
+	num, err := strconv.Atoi(digits)
+	if err != nil {
+		return Token{}, LexError("invalid number", Span{start, l.pos}, l.input)
+	}
 
 	// Check for ordinal suffix: st, nd, rd, th
 	if l.pos+1 < len(l.input) {
@@ -317,7 +326,7 @@ func isDigit(b byte) bool {
 }
 
 func isAlpha(b byte) bool {
-	return unicode.IsLetter(rune(b))
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 func isAlphanumeric(b byte) bool {
@@ -328,10 +337,3 @@ func isWhitespace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
-func parseInt(s string) int {
-	n := 0
-	for _, ch := range s {
-		n = n*10 + int(ch-'0')
-	}
-	return n
-}

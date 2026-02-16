@@ -198,6 +198,26 @@ module Hron
       raise error("invalid date: #{date_str}", current_span)
     end
 
+    def validate_named_date(month, day)
+      max = case month
+            when MonthName::JAN then 31
+            when MonthName::FEB then 29
+            when MonthName::MAR then 31
+            when MonthName::APR then 30
+            when MonthName::MAY then 31
+            when MonthName::JUN then 30
+            when MonthName::JUL then 31
+            when MonthName::AUG then 31
+            when MonthName::SEP then 30
+            when MonthName::OCT then 31
+            when MonthName::NOV then 30
+            when MonthName::DEC then 31
+            end
+      return if day >= 1 && day <= max
+
+      raise error("invalid day #{day} for #{month} (max #{max})", current_span)
+    end
+
     def parse_exception
       k = peek_kind
       if k.is_a?(TIsoDate)
@@ -209,6 +229,7 @@ module Hron
         month = k.name
         advance
         day = parse_day_number("expected day number after month name in exception")
+        validate_named_date(month, day)
         return NamedException.new(month, day)
       end
       raise error("expected ISO date or month-day in exception", current_span)
@@ -225,6 +246,7 @@ module Hron
         month = k.name
         advance
         day = parse_day_number("expected day number after month name in until")
+        validate_named_date(month, day)
         return NamedUntil.new(month, day)
       end
       raise error("expected ISO date or month-day after 'until'", current_span)
@@ -398,6 +420,7 @@ module Hron
         month = k.name
         advance
         day = parse_day_number("expected day number after month name")
+        validate_named_date(month, day)
         target = YearDateTarget.new(month, day)
       else
         raise error("expected month name or 'the' after 'every year on'", current_span)
@@ -448,6 +471,7 @@ module Hron
         advance
         consume_keyword("'of'", TokenKind::OF)
         month = parse_month_name_token
+        validate_named_date(month, day)
         return YearDayOfMonthTarget.new(day, month)
       end
 
@@ -495,6 +519,7 @@ module Hron
         month = k.name
         advance
         day = parse_day_number("expected day number after month name")
+        validate_named_date(month, day)
         return NamedDate.new(month, day)
       end
       raise error("expected date (ISO date or month name)", current_span)
@@ -552,6 +577,8 @@ module Hron
       raise error("expected ordinal day number", current_span) unless k.is_a?(TOrdinalNumber)
 
       start = k.value
+      span = current_span
+      raise error("invalid day number #{start} (must be 1-31)", span) if start < 1 || start > 31
       advance
 
       if peek_kind == TokenKind::TO
@@ -560,7 +587,10 @@ module Hron
         raise error("expected ordinal day number after 'to'", current_span) unless nk.is_a?(TOrdinalNumber)
 
         end_day = nk.value
+        end_span = current_span
+        raise error("invalid day number #{end_day} (must be 1-31)", end_span) if end_day < 1 || end_day > 31
         advance
+        raise error("invalid day range: #{start} to #{end_day} (start must be <= end)", current_span) if start > end_day
         return DayRange.new(start, end_day)
       end
 

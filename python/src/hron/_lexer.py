@@ -329,7 +329,7 @@ class _Lexer:
                 tokens.append(self._lex_number_or_time_or_date())
                 continue
 
-            if ch.isalpha():
+            if ch.isascii() and ch.isalpha():
                 tokens.append(self._lex_word())
                 continue
 
@@ -409,7 +409,8 @@ class _Lexer:
     def _lex_word(self) -> Token:
         start = self._pos
         while self._pos < len(self._input) and (
-            self._input[self._pos].isalnum() or self._input[self._pos] == "_"
+            (self._input[self._pos].isascii() and self._input[self._pos].isalnum())
+            or self._input[self._pos] == "_"
         ):
             self._pos += 1
         word = self._input[start : self._pos].lower()

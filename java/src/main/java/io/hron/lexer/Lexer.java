@@ -190,7 +190,7 @@ public final class Lexer {
   }
 
   private static boolean isAlpha(char c) {
-    return Character.isLetter(c);
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
   }
 
   private static boolean isAlphanumeric(char c) {

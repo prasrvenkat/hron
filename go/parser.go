@@ -220,8 +220,12 @@ func (p *parser) parseException() (ExceptionSpec, error) {
 	case TokenMonthName:
 		month := tok.MonthNameVal
 		p.advance()
+		dayPos := p.currentSpan().Start
 		day, err := p.parseDayNumber("expected day number after month name in exception")
 		if err != nil {
+			return ExceptionSpec{}, err
+		}
+		if err := p.validateNamedDate(month, day, dayPos); err != nil {
 			return ExceptionSpec{}, err
 		}
 		return NewNamedException(month, day), nil
@@ -246,14 +250,38 @@ func (p *parser) parseUntilSpec() (UntilSpec, error) {
 	case TokenMonthName:
 		month := tok.MonthNameVal
 		p.advance()
+		dayPos := p.currentSpan().Start
 		day, err := p.parseDayNumber("expected day number after month name in until")
 		if err != nil {
+			return UntilSpec{}, err
+		}
+		if err := p.validateNamedDate(month, day, dayPos); err != nil {
 			return UntilSpec{}, err
 		}
 		return NewNamedUntil(month, day), nil
 	default:
 		return UntilSpec{}, p.error("expected ISO date or month-day after 'until'", p.currentSpan())
 	}
+}
+
+func (p *parser) validateDayNumber(n int) error {
+	if n < 1 || n > 31 {
+		return p.error(fmt.Sprintf("invalid day number %d (must be 1-31)", n), p.currentSpan())
+	}
+	return nil
+}
+
+func (p *parser) validateNamedDate(month MonthName, day int, pos int) error {
+	maxDays := map[MonthName]int{
+		Jan: 31, Feb: 29, Mar: 31, Apr: 30,
+		May: 31, Jun: 30, Jul: 31, Aug: 31,
+		Sep: 30, Oct: 31, Nov: 30, Dec: 31,
+	}
+	max := maxDays[month]
+	if day > max {
+		return p.error(fmt.Sprintf("invalid day %d for %s (max %d)", day, month, max), Span{pos, pos})
+	}
+	return nil
 }
 
 func (p *parser) parseDayNumber(errorMsg string) (int, error) {
@@ -264,9 +292,15 @@ func (p *parser) parseDayNumber(errorMsg string) (int, error) {
 
 	switch tok.Kind {
 	case TokenNumber:
+		if err := p.validateDayNumber(tok.NumberVal); err != nil {
+			return 0, err
+		}
 		p.advance()
 		return tok.NumberVal, nil
 	case TokenOrdinalNumber:
+		if err := p.validateDayNumber(tok.NumberVal); err != nil {
+			return 0, err
+		}
 		p.advance()
 		return tok.NumberVal, nil
 	default:
@@ -507,6 +541,9 @@ func (p *parser) parseNearestWeekdayTarget() (MonthTarget, error) {
 	}
 	tok := p.peek()
 	day := tok.NumberVal
+	if day < 1 || day > 31 {
+		return MonthTarget{}, p.error(fmt.Sprintf("invalid day number %d (must be 1-31)", day), p.currentSpan())
+	}
 	p.advance()
 
 	return NewNearestWeekdayTarget(day, direction), nil
@@ -531,8 +568,12 @@ func (p *parser) parseYearRepeat(interval int) (ScheduleExpr, error) {
 		tok := p.peek()
 		month := tok.MonthNameVal
 		p.advance()
+		dayPos := p.currentSpan().Start
 		day, err := p.parseDayNumber("expected day number after month name")
 		if err != nil {
+			return ScheduleExpr{}, err
+		}
+		if err := p.validateNamedDate(month, day, dayPos); err != nil {
 			return ScheduleExpr{}, err
 		}
 		target = NewYearDateTarget(month, day)
@@ -613,12 +654,19 @@ func (p *parser) parseYearTargetAfterThe() (YearTarget, error) {
 	case TokenOrdinalNumber:
 		tok := p.peek()
 		day := tok.NumberVal
+		if day < 1 || day > 31 {
+			return YearTarget{}, p.error(fmt.Sprintf("invalid day number %d (must be 1-31)", day), p.currentSpan())
+		}
+		dayPos := p.currentSpan().Start
 		p.advance()
 		if _, err := p.consume("'of'", TokenOf); err != nil {
 			return YearTarget{}, err
 		}
 		month, err := p.parseMonthNameToken()
 		if err != nil {
+			return YearTarget{}, err
+		}
+		if err := p.validateNamedDate(month, day, dayPos); err != nil {
 			return YearTarget{}, err
 		}
 		return NewYearDayOfMonthTarget(day, month), nil
@@ -694,8 +742,12 @@ func (p *parser) parseDateTarget() (DateSpec, error) {
 	case TokenMonthName:
 		month := tok.MonthNameVal
 		p.advance()
+		dayPos := p.currentSpan().Start
 		day, err := p.parseDayNumber("expected day number after month name")
 		if err != nil {
+			return DateSpec{}, err
+		}
+		if err := p.validateNamedDate(month, day, dayPos); err != nil {
 			return DateSpec{}, err
 		}
 		return NewNamedDate(month, day), nil
@@ -772,6 +824,9 @@ func (p *parser) parseOrdinalDaySpec() (DayOfMonthSpec, error) {
 	}
 	tok := p.peek()
 	start := tok.NumberVal
+	if start < 1 || start > 31 {
+		return DayOfMonthSpec{}, p.error(fmt.Sprintf("invalid day number %d (must be 1-31)", start), p.currentSpan())
+	}
 	p.advance()
 
 	if p.peekKind() == TokenTo {
@@ -781,7 +836,13 @@ func (p *parser) parseOrdinalDaySpec() (DayOfMonthSpec, error) {
 		}
 		tok := p.peek()
 		end := tok.NumberVal
+		if end < 1 || end > 31 {
+			return DayOfMonthSpec{}, p.error(fmt.Sprintf("invalid day number %d (must be 1-31)", end), p.currentSpan())
+		}
 		p.advance()
+		if start > end {
+			return DayOfMonthSpec{}, p.error(fmt.Sprintf("invalid day range: %d to %d (start must be <= end)", start, end), p.currentSpan())
+		}
 		return NewDayRange(start, end), nil
 	}
 
