@@ -249,7 +249,6 @@ public static class Evaluator
             IntervalRepeat ir => NextIntervalRepeat(ir, now, location),
             WeekRepeat wr => NextWeekRepeat(wr, now, location, anchor),
             MonthRepeat mr => NextMonthRepeat(mr, now, location, anchor, during),
-            OrdinalRepeat or => NextOrdinalRepeat(or, now, location, anchor),
             SingleDate sd => NextSingleDate(sd, now, location),
             YearRepeat yr => NextYearRepeat(yr, now, location, anchor),
             _ => null
@@ -264,7 +263,6 @@ public static class Evaluator
             IntervalRepeat ir => PrevIntervalRepeat(ir, now, location),
             WeekRepeat wr => PrevWeekRepeat(wr, now, location, anchor),
             MonthRepeat mr => PrevMonthRepeat(mr, now, location, anchor),
-            OrdinalRepeat or => PrevOrdinalRepeat(or, now, location, anchor),
             SingleDate sd => PrevSingleDate(sd, now, location),
             YearRepeat yr => PrevYearRepeat(yr, now, location, anchor),
             _ => null
@@ -454,45 +452,6 @@ public static class Evaluator
 
             // Move to next month
             day = new DateOnly(day.Year, day.Month, 1).AddMonths(mr.Interval > 1 ? mr.Interval : 1);
-        }
-
-        return null;
-    }
-
-    private static DateTimeOffset? NextOrdinalRepeat(OrdinalRepeat or, DateTimeOffset now, TimeZoneInfo location, string? anchor)
-    {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var day = DateOnly.FromDateTime(now.DateTime);
-
-        for (var i = 0; i < MaxIterations; i++)
-        {
-            // Check month alignment
-            if (or.Interval > 1)
-            {
-                var monthsFromAnchor = (day.Year - anchorDate.Year) * 12 + (day.Month - anchorDate.Month);
-                var mod = monthsFromAnchor % or.Interval;
-                if (mod < 0) mod += or.Interval;
-                if (mod != 0)
-                {
-                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(or.Interval - mod);
-                    continue;
-                }
-            }
-
-            // Find the ordinal weekday in this month
-            var targetDay = NthWeekdayOfMonth(day.Year, day.Month, or.WeekdayValue, or.Ordinal);
-
-            if (targetDay.HasValue && targetDay.Value >= day)
-            {
-                var time = EarliestFutureTime(targetDay.Value, or.Times, location, now);
-                if (time.HasValue)
-                {
-                    return time;
-                }
-            }
-
-            // Move to next month
-            day = new DateOnly(day.Year, day.Month, 1).AddMonths(or.Interval > 1 ? or.Interval : 1);
         }
 
         return null;
@@ -733,44 +692,6 @@ public static class Evaluator
         return null;
     }
 
-    private static DateTimeOffset? PrevOrdinalRepeat(OrdinalRepeat or, DateTimeOffset now, TimeZoneInfo location, string? anchor)
-    {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var day = DateOnly.FromDateTime(now.DateTime);
-
-        for (var i = 0; i < MaxIterations; i++)
-        {
-            if (or.Interval > 1)
-            {
-                var monthsFromAnchor = (day.Year - anchorDate.Year) * 12 + (day.Month - anchorDate.Month);
-                var mod = monthsFromAnchor % or.Interval;
-                if (mod < 0) mod += or.Interval;
-                if (mod != 0)
-                {
-                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(-mod);
-                    day = LastDayOfMonth(day.Year, day.Month);
-                    continue;
-                }
-            }
-
-            var targetDay = NthWeekdayOfMonth(day.Year, day.Month, or.WeekdayValue, or.Ordinal);
-
-            if (targetDay.HasValue && targetDay.Value <= day)
-            {
-                var time = LatestPastTime(targetDay.Value, or.Times, location, now);
-                if (time.HasValue)
-                {
-                    return time;
-                }
-            }
-
-            day = new DateOnly(day.Year, day.Month, 1).AddMonths(-(or.Interval > 1 ? or.Interval : 1));
-            day = LastDayOfMonth(day.Year, day.Month);
-        }
-
-        return null;
-    }
-
     private static DateTimeOffset? PrevSingleDate(SingleDate sd, DateTimeOffset now, TimeZoneInfo location)
     {
         var startYear = now.Year;
@@ -933,6 +854,10 @@ public static class Evaluator
             MonthTargetKind.NearestWeekday =>
                 NearestWeekday(year, month, target.NearestWeekdayDay, target.NearestWeekdayDirection) is { } nw
                     ? [nw]
+                    : [],
+            MonthTargetKind.OrdinalWeekday =>
+                NthWeekdayOfMonth(year, month, target.WeekdayValue!.Value, target.OrdinalValue!.Value) is { } ow
+                    ? [ow]
                     : [],
             _ => []
         };

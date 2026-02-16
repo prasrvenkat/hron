@@ -31,7 +31,6 @@ public static class CronConverter
             IntervalRepeat ir => IntervalRepeatToCron(ir),
             WeekRepeat => throw HronException.Cron("not expressible as cron (multi-week intervals not supported)"),
             MonthRepeat mr => MonthRepeatToCron(mr),
-            OrdinalRepeat => throw HronException.Cron("not expressible as cron (ordinal weekday of month not supported)"),
             SingleDate => throw HronException.Cron("not expressible as cron (single dates are not repeating)"),
             YearRepeat => throw HronException.Cron("not expressible as cron (yearly schedules not supported in 5-field cron)"),
             _ => throw new ArgumentException($"Unknown expression type: {data.Expr.GetType()}", nameof(data))
@@ -105,6 +104,7 @@ public static class CronConverter
             MonthTargetKind.NearestWeekday when mr.Target.NearestWeekdayDirection.HasValue =>
                 throw HronException.Cron("not expressible as cron (directional nearest weekday not supported)"),
             MonthTargetKind.NearestWeekday => $"{t.Minute} {t.Hour} {mr.Target.NearestWeekdayDay}W * *",
+            MonthTargetKind.OrdinalWeekday => throw HronException.Cron("not expressible as cron (ordinal weekday of month not supported)"),
             _ => throw new ArgumentException("Unknown month target kind")
         };
     }
@@ -387,7 +387,7 @@ public static class CronConverter
             var minute = ParseSingleValue(minuteField, "minute", 0, 59);
             var hour = ParseSingleValue(hourField, "hour", 0, 23);
 
-            return ScheduleData.Of(new OrdinalRepeat(1, ordinal, weekday, [new TimeOfDay(hour, minute)]))
+            return ScheduleData.Of(new MonthRepeat(1, MonthTarget.OrdinalWeekday(ordinal, weekday), [new TimeOfDay(hour, minute)]))
                 .WithDuring(during);
         }
 
@@ -406,7 +406,7 @@ public static class CronConverter
             var minute = ParseSingleValue(minuteField, "minute", 0, 59);
             var hour = ParseSingleValue(hourField, "hour", 0, 23);
 
-            return ScheduleData.Of(new OrdinalRepeat(1, OrdinalPosition.Last, weekday, [new TimeOfDay(hour, minute)]))
+            return ScheduleData.Of(new MonthRepeat(1, MonthTarget.OrdinalWeekday(OrdinalPosition.Last, weekday), [new TimeOfDay(hour, minute)]))
                 .WithDuring(during);
         }
 

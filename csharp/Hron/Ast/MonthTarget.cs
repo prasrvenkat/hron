@@ -18,7 +18,9 @@ public sealed record MonthTarget(
     MonthTargetKind Kind,
     IReadOnlyList<DayOfMonthSpec> Specs,
     int NearestWeekdayDay = 0,
-    NearestDirection? NearestWeekdayDirection = null)
+    NearestDirection? NearestWeekdayDirection = null,
+    OrdinalPosition? OrdinalValue = null,
+    Weekday? WeekdayValue = null)
 {
     /// <summary>
     /// Creates a month target for specific days.
@@ -45,6 +47,14 @@ public sealed record MonthTarget(
     /// <param name="direction">Optional direction preference (null for standard cron W behavior).</param>
     public static MonthTarget NearestWeekday(int day, NearestDirection? direction = null) =>
         new(MonthTargetKind.NearestWeekday, [], day, direction);
+
+    /// <summary>
+    /// Creates a month target for an ordinal weekday (e.g., first monday, last friday).
+    /// </summary>
+    /// <param name="ordinal">The ordinal position (first, second, ..., last).</param>
+    /// <param name="weekday">The day of the week.</param>
+    public static MonthTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday) =>
+        new(MonthTargetKind.OrdinalWeekday, [], OrdinalValue: ordinal, WeekdayValue: weekday);
 
     /// <summary>
     /// Returns all days specified by this target (for DAYS kind only).
@@ -77,5 +87,7 @@ public enum MonthTargetKind
     /// <summary>The last weekday (Mon-Fri) of the month.</summary>
     LastWeekday,
     /// <summary>Nearest weekday to a given day of the month.</summary>
-    NearestWeekday
+    NearestWeekday,
+    /// <summary>Ordinal weekday of month (e.g., first monday, last friday).</summary>
+    OrdinalWeekday
 }
