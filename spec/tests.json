@@ -792,7 +792,7 @@
           "canonical": "every 2 weeks on monday at 09:00 except dec 25"
         },
         {
-          "name": "on_ordinal_repeat",
+          "name": "on_ordinal_weekday",
           "input": "every month on the first monday at 10:00 except jan 1",
           "canonical": "every month on the first monday at 10:00 except jan 1"
         },
@@ -846,7 +846,7 @@
           "canonical": "every month on the 1st at 09:00 until 2026-12-31"
         },
         {
-          "name": "on_ordinal_repeat",
+          "name": "on_ordinal_weekday",
           "input": "every month on the first monday at 10:00 until 2026-12-31",
           "canonical": "every month on the first monday at 10:00 until 2026-12-31"
         },
@@ -949,7 +949,7 @@
           "canonical": "every month on the 1st at 09:00 during jan, jul"
         },
         {
-          "name": "on_ordinal_repeat",
+          "name": "on_ordinal_weekday",
           "input": "every month on the first monday at 10:00 during mar",
           "canonical": "every month on the first monday at 10:00 during mar"
         },
@@ -2478,7 +2478,7 @@
           "next": "2026-03-01T09:00:00+00:00[UTC]"
         },
         {
-          "name": "ordinal_repeat",
+          "name": "ordinal_weekday",
           "expression": "every month on the first monday at 10:00, 14:00 in UTC",
           "description": "Feb first Monday (Feb 2) passed, next = Mar 2 at 10:00",
           "next": "2026-03-02T10:00:00+00:00[UTC]"
@@ -2673,7 +2673,7 @@
           "next": "2026-03-01T09:00:00+00:00[UTC]"
         },
         {
-          "name": "ordinal_repeat",
+          "name": "ordinal_weekday",
           "expression": "every month on the first monday at 10:00 during mar in UTC",
           "description": "ordinal + during: Feb excluded, first Monday of Mar = Mar 2",
           "next_date": "2026-03-02"
