@@ -536,13 +536,6 @@ fn next_expr(
             times,
         } => next_month_repeat(*interval, target, times, tz, anchor, now, during),
 
-        ScheduleExpr::OrdinalRepeat {
-            interval,
-            ordinal,
-            day,
-            times,
-        } => next_ordinal_repeat(*interval, *ordinal, *day, times, tz, anchor, now),
-
         ScheduleExpr::SingleDate { date, times } => next_single_date(date, times, tz, now),
 
         ScheduleExpr::YearRepeat {
@@ -751,35 +744,26 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                         None => Ok(false),
                     }
                 }
-            }
-        }
-        ScheduleExpr::OrdinalRepeat {
-            interval,
-            ordinal,
-            day,
-            times,
-        } => {
-            if !time_matches_with_dst(date, times, &tz, &zdt)? {
-                return Ok(false);
-            }
-            if *interval > 1 {
-                let anchor_date = schedule.anchor.unwrap_or(*EPOCH_DATE);
-                let month_offset = months_between_ym(anchor_date, date);
-                if month_offset < 0 || month_offset % (*interval as i64) != 0 {
-                    return Ok(false);
+                MonthTarget::OrdinalWeekday { ordinal, weekday } => {
+                    let target_date = match ordinal {
+                        OrdinalPosition::Last => {
+                            last_weekday_in_month(date.year(), date.month(), *weekday)
+                        }
+                        _ => {
+                            match nth_weekday_of_month(
+                                date.year(),
+                                date.month(),
+                                *weekday,
+                                ordinal_to_n(*ordinal),
+                            ) {
+                                Some(d) => d,
+                                None => return Ok(false),
+                            }
+                        }
+                    };
+                    Ok(date == target_date)
                 }
             }
-            let target_date = match ordinal {
-                OrdinalPosition::Last => last_weekday_in_month(date.year(), date.month(), *day),
-                _ => {
-                    let n = ordinal_to_n(*ordinal);
-                    match nth_weekday_of_month(date.year(), date.month(), *day, n) {
-                        Some(d) => d,
-                        None => return Ok(false),
-                    }
-                }
-            };
-            Ok(date == target_date)
         }
         ScheduleExpr::SingleDate {
             date: date_spec,
@@ -990,13 +974,6 @@ fn prev_expr(
             target,
             times,
         } => prev_month_repeat(*interval, target, times, tz, anchor, now, during),
-
-        ScheduleExpr::OrdinalRepeat {
-            interval,
-            ordinal,
-            day,
-            times,
-        } => prev_ordinal_repeat(*interval, *ordinal, *day, times, tz, anchor, now),
 
         ScheduleExpr::SingleDate { date, times } => prev_single_date(date, times, tz, now),
 
@@ -1351,6 +1328,12 @@ fn next_month_repeat(
                     None => vec![],
                 }
             }
+            MonthTarget::OrdinalWeekday { ordinal, weekday } => match ordinal {
+                OrdinalPosition::Last => vec![last_weekday_in_month(year, month, *weekday)],
+                _ => nth_weekday_of_month(year, month, *weekday, ordinal_to_n(*ordinal))
+                    .into_iter()
+                    .collect(),
+            },
         };
 
         // For each candidate date, try all times and find the earliest future one
@@ -1369,63 +1352,6 @@ fn next_month_repeat(
         }
 
         // Next month
-        month += 1;
-        if month > 12 {
-            month = 1;
-            year += 1;
-        }
-    }
-
-    Ok(None)
-}
-
-fn next_ordinal_repeat(
-    interval: u32,
-    ordinal: OrdinalPosition,
-    day: Weekday,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-
-    let mut year = now_in_tz.date().year();
-    let mut month = now_in_tz.date().month();
-
-    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
-    let max_iter = if interval > 1 {
-        24 * interval as usize
-    } else {
-        24
-    };
-
-    // Search forward
-    for _ in 0..max_iter {
-        // Check interval alignment
-        if interval > 1 {
-            let cur = Date::new(year, month, 1).unwrap();
-            let month_offset = months_between_ym(anchor_date, cur);
-            if month_offset < 0 || month_offset.rem_euclid(interval as i64) != 0 {
-                month += 1;
-                if month > 12 {
-                    month = 1;
-                    year += 1;
-                }
-                continue;
-            }
-        }
-        let target_date = match ordinal {
-            OrdinalPosition::Last => Some(last_weekday_in_month(year, month, day)),
-            _ => nth_weekday_of_month(year, month, day, ordinal_to_n(ordinal)),
-        };
-
-        if let Some(date) = target_date {
-            if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
-                return Ok(Some(candidate));
-            }
-        }
-
         month += 1;
         if month > 12 {
             month = 1;
@@ -1827,6 +1753,12 @@ fn prev_month_repeat(
                     None => vec![],
                 }
             }
+            MonthTarget::OrdinalWeekday { ordinal, weekday } => match ordinal {
+                OrdinalPosition::Last => vec![last_weekday_in_month(year, month, *weekday)],
+                _ => nth_weekday_of_month(year, month, *weekday, ordinal_to_n(*ordinal))
+                    .into_iter()
+                    .collect(),
+            },
         };
 
         for date in target_dates {
@@ -1847,67 +1779,6 @@ fn prev_month_repeat(
         }
 
         // Go to previous month
-        if month == 1 {
-            month = 12;
-            year -= 1;
-        } else {
-            month -= 1;
-        }
-    }
-
-    Ok(None)
-}
-
-fn prev_ordinal_repeat(
-    interval: u32,
-    ordinal: OrdinalPosition,
-    day: Weekday,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let start_date = now_in_tz.date();
-    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
-
-    let max_iter = if interval > 1 { 24 * interval } else { 24 };
-
-    let mut year = start_date.year();
-    let mut month = start_date.month();
-
-    for _ in 0..max_iter {
-        // Check interval alignment
-        if interval > 1 {
-            let month_offset = months_between_ym(anchor_date, Date::new(year, month, 1).unwrap());
-            if month_offset < 0 || month_offset.rem_euclid(interval as i64) != 0 {
-                if month == 1 {
-                    month = 12;
-                    year -= 1;
-                } else {
-                    month -= 1;
-                }
-                continue;
-            }
-        }
-
-        let target_date = match ordinal {
-            OrdinalPosition::Last => Some(last_weekday_in_month(year, month, day)),
-            _ => nth_weekday_of_month(year, month, day, ordinal_to_n(ordinal)),
-        };
-
-        if let Some(date) = target_date {
-            if date > start_date {
-                // Future, go to previous month
-            } else if date == start_date {
-                if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
-                    return Ok(Some(candidate));
-                }
-            } else if let Some(candidate) = latest_at_times(date, times, tz)? {
-                return Ok(Some(candidate));
-            }
-        }
-
         if month == 1 {
             month = 12;
             year -= 1;
@@ -2140,7 +2011,7 @@ mod tests {
 
     #[test]
     fn test_next_ordinal_first_monday() {
-        let s = parse("first monday of every month at 10:00 in UTC").unwrap();
+        let s = parse("every month on the first monday at 10:00 in UTC").unwrap();
         let now = fixed_now();
         let next = next_from(&s, &now).unwrap().unwrap();
         // First Monday of March 2026 = March 2

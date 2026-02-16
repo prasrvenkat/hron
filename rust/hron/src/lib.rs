@@ -360,26 +360,6 @@ impl Serialize for Schedule {
                 map.serialize_entry("target", target)?;
                 map.serialize_entry("times", times)?;
             }
-            ScheduleExpr::OrdinalRepeat {
-                interval,
-                ordinal,
-                day,
-                times,
-            } => {
-                map.serialize_entry("kind", "every")?;
-                if *interval > 1 {
-                    map.serialize_entry(
-                        "interval",
-                        &serde_json::json!({
-                            "value": interval,
-                            "unit": "months"
-                        }),
-                    )?;
-                }
-                map.serialize_entry("ordinal", ordinal)?;
-                map.serialize_entry("day", day)?;
-                map.serialize_entry("times", times)?;
-            }
             ScheduleExpr::SingleDate { date, times } => {
                 map.serialize_entry("kind", "on")?;
                 match date {

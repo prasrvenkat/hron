@@ -59,10 +59,11 @@ fn bench_eval(c: &mut Criterion) {
         b.iter(|| month_repeat.next_from(black_box(&now)).unwrap());
     });
 
-    // OrdinalRepeat
-    let ordinal_repeat = Schedule::parse("first monday of every month at 10:00 in UTC").unwrap();
-    group.bench_function("ordinal_repeat", |b| {
-        b.iter(|| ordinal_repeat.next_from(black_box(&now)).unwrap());
+    // OrdinalWeekday (MonthRepeat)
+    let ordinal_weekday =
+        Schedule::parse("every month on the first monday at 10:00 in UTC").unwrap();
+    group.bench_function("ordinal_weekday", |b| {
+        b.iter(|| ordinal_weekday.next_from(black_box(&now)).unwrap());
     });
 
     // YearRepeat

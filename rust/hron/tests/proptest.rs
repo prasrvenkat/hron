@@ -112,9 +112,9 @@ fn arb_hron_expression() -> impl Strategy<Value = String> {
                 };
                 format!("every month on the {d}{suffix} at {t} in UTC")
             }),
-        // OrdinalRepeat: "first monday of every month at 10:00 in UTC"
+        // OrdinalWeekday (MonthRepeat): "every month on the first monday at 10:00 in UTC"
         (arb_ordinal(), arb_weekday_name(), arb_time_list())
-            .prop_map(|(o, d, t)| format!("{o} {d} of every month at {t} in UTC")),
+            .prop_map(|(o, d, t)| format!("every month on the {o} {d} at {t} in UTC")),
         // YearRepeat: "every year on dec 25 at 00:00 in UTC"
         (arb_month(), 1u8..29, arb_time_list())
             .prop_map(|(m, d, t)| format!("every year on {m} {d} at {t} in UTC")),

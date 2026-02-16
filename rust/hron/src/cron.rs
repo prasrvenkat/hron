@@ -116,12 +116,11 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
                     }
                     Ok(format!("{} {} {}W * *", time.minute, time.hour, day))
                 }
+                MonthTarget::OrdinalWeekday { .. } => Err(ScheduleError::cron(
+                    "not expressible as cron (ordinal weekday of month not supported)",
+                )),
             }
         }
-
-        ScheduleExpr::OrdinalRepeat { .. } => Err(ScheduleError::cron(
-            "not expressible as cron (ordinal weekday of month not supported)",
-        )),
 
         ScheduleExpr::SingleDate { .. } => Err(ScheduleError::cron(
             "not expressible as cron (single dates are not repeating)",
@@ -416,10 +415,9 @@ fn try_parse_nth_weekday(
         let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
         let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
 
-        let mut schedule = Schedule::new(ScheduleExpr::OrdinalRepeat {
+        let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
             interval: 1,
-            ordinal,
-            day: weekday,
+            target: MonthTarget::OrdinalWeekday { ordinal, weekday },
             times: vec![TimeOfDay { hour, minute }],
         });
         schedule.during = during.to_vec();
@@ -441,10 +439,12 @@ fn try_parse_nth_weekday(
         let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
         let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
 
-        let mut schedule = Schedule::new(ScheduleExpr::OrdinalRepeat {
+        let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
             interval: 1,
-            ordinal: OrdinalPosition::Last,
-            day: weekday,
+            target: MonthTarget::OrdinalWeekday {
+                ordinal: OrdinalPosition::Last,
+                weekday,
+            },
             times: vec![TimeOfDay { hour, minute }],
         });
         schedule.during = during.to_vec();
@@ -1036,7 +1036,7 @@ mod tests {
 
     #[test]
     fn test_to_cron_not_expressible_ordinal() {
-        let s = parse("first monday of every month at 10:00").unwrap();
+        let s = parse("every month on the first monday at 10:00").unwrap();
         assert!(to_cron(&s).is_err());
     }
 
@@ -1106,7 +1106,7 @@ mod tests {
     #[test]
     fn test_from_cron_nth_weekday() {
         let s = from_cron("0 9 * * 1#1").unwrap();
-        assert_eq!(s.to_string(), "first monday of every month at 09:00");
+        assert_eq!(s.to_string(), "every month on the first monday at 09:00");
     }
 
     #[test]

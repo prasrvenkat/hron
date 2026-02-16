@@ -82,7 +82,7 @@ impl<'a> Parser<'a> {
 
     // --- Grammar productions ---
 
-    // expression = every_expr | on_expr | ordinal_repeat
+    // expression = every_expr | on_expr
     fn parse_expression(&mut self) -> Result<Schedule, ScheduleError> {
         let span = self.current_span();
         let expr = match self.peek().map(|t| &t.kind) {
@@ -94,15 +94,8 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.parse_on()?
             }
-            // ordinal_repeat: "first monday of every month at 10:00"
-            Some(TokenKind::Ordinal(_)) => self.parse_ordinal_repeat()?,
-            // "last" can start ordinal_repeat too
-            Some(TokenKind::Last) => self.parse_ordinal_repeat()?,
             _ => {
-                return Err(self.error(
-                    "expected 'every', 'on', or an ordinal (first, second, ...)".into(),
-                    span,
-                ));
+                return Err(self.error("expected 'every' or 'on'".into(), span));
             }
         };
 
@@ -439,11 +432,37 @@ impl<'a> Parser<'a> {
                         self.advance();
                         MonthTarget::LastWeekday
                     }
+                    Some(TokenKind::DayName(name)) => {
+                        let weekday = parse_weekday(name).unwrap();
+                        self.advance();
+                        MonthTarget::OrdinalWeekday {
+                            ordinal: OrdinalPosition::Last,
+                            weekday,
+                        }
+                    }
                     _ => {
                         let span = self.current_span();
-                        return Err(
-                            self.error("expected 'day' or 'weekday' after 'last'".into(), span)
-                        );
+                        return Err(self.error(
+                            "expected 'day', 'weekday', or day name after 'last'".into(),
+                            span,
+                        ));
+                    }
+                }
+            }
+            Some(TokenKind::Ordinal(_)) => {
+                let ordinal = self.parse_ordinal_position()?;
+                match self.peek().map(|t| &t.kind) {
+                    Some(TokenKind::DayName(name)) => {
+                        let weekday = parse_weekday(name).unwrap();
+                        self.advance();
+                        MonthTarget::OrdinalWeekday { ordinal, weekday }
+                    }
+                    _ => {
+                        let span = self.current_span();
+                        return Err(self.error(
+                            "expected day name after ordinal in monthly expression".into(),
+                            span,
+                        ));
                     }
                 }
             }
@@ -458,7 +477,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let span = self.current_span();
                 return Err(self.error(
-                    "expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'".into(),
+                    "expected ordinal day (1st, 15th), 'last', ordinal (first, second, ...), or '[next|previous] nearest' after 'the'".into(),
                     span,
                 ));
             }
@@ -510,51 +529,6 @@ impl<'a> Parser<'a> {
                 Err(self.error("expected ordinal day number".into(), span))
             }
         }
-    }
-
-    // ordinal_repeat: "first monday of every [N] month[s] at HH:MM"
-    fn parse_ordinal_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
-        let ordinal = self.parse_ordinal_position()?;
-
-        let day_name = match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::DayName(name)) => {
-                let d = parse_weekday(name).unwrap();
-                self.advance();
-                d
-            }
-            _ => {
-                let span = self.current_span();
-                return Err(self.error("expected day name after ordinal".into(), span));
-            }
-        };
-
-        self.consume_kind("'of'", |k| matches!(k, TokenKind::Of))?;
-        self.consume_kind("'every'", |k| matches!(k, TokenKind::Every))?;
-
-        // Optional interval: "of every 2 months" vs "of every month"
-        let interval = match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Number(n)) => {
-                let n = *n;
-                if n == 0 {
-                    let span = self.peek().unwrap().span;
-                    return Err(self.error("interval must be at least 1".into(), span));
-                }
-                self.advance();
-                n
-            }
-            _ => 1,
-        };
-
-        self.consume_kind("'month'", |k| matches!(k, TokenKind::Month))?;
-        self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
-        let times = self.parse_time_list()?;
-
-        Ok(ScheduleExpr::OrdinalRepeat {
-            interval,
-            ordinal,
-            day: day_name,
-            times,
-        })
     }
 
     // year_repeat: "every [N] year[s] on <year_target> at HH:MM"
@@ -1088,17 +1062,17 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ordinal_repeat() {
-        let s = parse("first monday of every month at 10:00").unwrap();
+    fn test_parse_ordinal_weekday() {
+        let s = parse("every month on the first monday at 10:00").unwrap();
         match &s.expr {
-            ScheduleExpr::OrdinalRepeat {
-                ordinal,
-                day,
-                times,
-                ..
-            } => {
-                assert_eq!(*ordinal, OrdinalPosition::First);
-                assert_eq!(*day, Weekday::Monday);
+            ScheduleExpr::MonthRepeat { target, times, .. } => {
+                assert_eq!(
+                    *target,
+                    MonthTarget::OrdinalWeekday {
+                        ordinal: OrdinalPosition::First,
+                        weekday: Weekday::Monday,
+                    }
+                );
                 assert_eq!(
                     *times,
                     vec![TimeOfDay {
@@ -1107,19 +1081,24 @@ mod tests {
                     }]
                 );
             }
-            _ => panic!("expected OrdinalRepeat"),
+            _ => panic!("expected MonthRepeat"),
         }
     }
 
     #[test]
-    fn test_parse_last_ordinal() {
-        let s = parse("last friday of every month at 16:00").unwrap();
+    fn test_parse_last_weekday_name() {
+        let s = parse("every month on the last friday at 16:00").unwrap();
         match &s.expr {
-            ScheduleExpr::OrdinalRepeat { ordinal, day, .. } => {
-                assert_eq!(*ordinal, OrdinalPosition::Last);
-                assert_eq!(*day, Weekday::Friday);
+            ScheduleExpr::MonthRepeat { target, .. } => {
+                assert_eq!(
+                    *target,
+                    MonthTarget::OrdinalWeekday {
+                        ordinal: OrdinalPosition::Last,
+                        weekday: Weekday::Friday,
+                    }
+                );
             }
-            _ => panic!("expected OrdinalRepeat"),
+            _ => panic!("expected MonthRepeat"),
         }
     }
 
