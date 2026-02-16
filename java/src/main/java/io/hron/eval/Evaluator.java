@@ -212,7 +212,7 @@ public final class Evaluator {
   }
 
   /**
-   * Returns a lazy stream of occurrences where from < occurrence <= to.
+   * Returns a lazy stream of occurrences where from &lt; occurrence &lt;= to.
    *
    * @param data the schedule data
    * @param from the start time (exclusive)
