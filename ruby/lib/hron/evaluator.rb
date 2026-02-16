@@ -453,8 +453,6 @@ module Hron
         prev_week_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
       when MonthRepeat
         prev_month_repeat(expr.interval, expr.target, expr.times, tz, anchor, now)
-      when OrdinalRepeat
-        prev_ordinal_repeat(expr.interval, expr.ordinal, expr.day, expr.times, tz, anchor, now)
       when SingleDateExpr
         prev_single_date(expr.date, expr.times, tz, now)
       when YearRepeat
@@ -603,6 +601,13 @@ module Hron
         when NearestWeekdayTarget
           nw = EvalHelpers.nearest_weekday(year, month, target.day, target.direction)
           date_candidates << nw if nw
+        when OrdinalWeekdayTarget
+          ordinal_date = if target.ordinal == OrdinalPosition::LAST
+            EvalHelpers.last_weekday_in_month(year, month, target.weekday)
+          else
+            EvalHelpers.nth_weekday_of_month(year, month, target.weekday, OrdinalPosition.to_n(target.ordinal))
+          end
+          date_candidates << ordinal_date if ordinal_date
         end
 
         # Sort in descending order for backwards search
@@ -610,49 +615,6 @@ module Hron
 
         date_candidates.each do |dc|
           candidate = EvalHelpers.latest_past_at_times(dc, times, tz, now)
-          return candidate if candidate
-        end
-
-        month -= 1
-        if month < 1
-          month = 12
-          year -= 1
-        end
-      end
-
-      nil
-    end
-
-    def self.prev_ordinal_repeat(interval, ordinal, day, times, tz, anchor, now)
-      now_local = tz.utc_to_local(now.utc)
-      year = now_local.year
-      month = now_local.month
-
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-      max_iter = (interval > 1) ? 24 * interval : 24
-
-      max_iter.times do
-        if interval > 1
-          cur = Date.new(year, month, 1)
-          month_offset = EvalHelpers.months_between_ym(anchor_date, cur)
-          if month_offset.negative? || (month_offset % interval) != 0
-            month -= 1
-            if month < 1
-              month = 12
-              year -= 1
-            end
-            next
-          end
-        end
-
-        ordinal_date = if ordinal == OrdinalPosition::LAST
-          EvalHelpers.last_weekday_in_month(year, month, day)
-        else
-          EvalHelpers.nth_weekday_of_month(year, month, day, OrdinalPosition.to_n(ordinal))
-        end
-
-        if ordinal_date
-          candidate = EvalHelpers.latest_past_at_times(ordinal_date, times, tz, now)
           return candidate if candidate
         end
 
@@ -766,8 +728,6 @@ module Hron
         next_week_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
       when MonthRepeat
         next_month_repeat(expr.interval, expr.target, expr.times, tz, anchor, now, during)
-      when OrdinalRepeat
-        next_ordinal_repeat(expr.interval, expr.ordinal, expr.day, expr.times, tz, anchor, now)
       when SingleDateExpr
         next_single_date(expr.date, expr.times, tz, now)
       when YearRepeat
@@ -821,25 +781,6 @@ module Hron
         end
         matches_month_target(expr.target, d)
 
-      when OrdinalRepeat
-        return false unless time_matches.call(expr.times)
-
-        if expr.interval > 1
-          anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-          month_offset = EvalHelpers.months_between_ym(anchor_date, d)
-          return false if month_offset.negative? || (month_offset % expr.interval) != 0
-        end
-
-        ordinal_target = if expr.ordinal == OrdinalPosition::LAST
-          EvalHelpers.last_weekday_in_month(d.year, d.month, expr.day)
-        else
-          EvalHelpers.nth_weekday_of_month(d.year, d.month, expr.day,
-            OrdinalPosition.to_n(expr.ordinal))
-        end
-        return false unless ordinal_target
-
-        d == ordinal_target
-
       when SingleDateExpr
         return false unless time_matches.call(expr.times)
 
@@ -884,6 +825,13 @@ module Hron
       when NearestWeekdayTarget
         target_date = EvalHelpers.nearest_weekday(d.year, d.month, target.day, target.direction)
         target_date && d == target_date
+      when OrdinalWeekdayTarget
+        ordinal_date = if target.ordinal == OrdinalPosition::LAST
+          EvalHelpers.last_weekday_in_month(d.year, d.month, target.weekday)
+        else
+          EvalHelpers.nth_weekday_of_month(d.year, d.month, target.weekday, OrdinalPosition.to_n(target.ordinal))
+        end
+        ordinal_date && d == ordinal_date
       else
         false
       end
@@ -1106,6 +1054,13 @@ module Hron
         when NearestWeekdayTarget
           nw = EvalHelpers.nearest_weekday(year, month, target.day, target.direction)
           date_candidates << nw if nw
+        when OrdinalWeekdayTarget
+          ordinal_date = if target.ordinal == OrdinalPosition::LAST
+            EvalHelpers.last_weekday_in_month(year, month, target.weekday)
+          else
+            EvalHelpers.nth_weekday_of_month(year, month, target.weekday, OrdinalPosition.to_n(target.ordinal))
+          end
+          date_candidates << ordinal_date if ordinal_date
         end
 
         best = nil
@@ -1114,49 +1069,6 @@ module Hron
           best = candidate if candidate && (best.nil? || candidate < best)
         end
         return best if best
-
-        month += 1
-        if month > 12
-          month = 1
-          year += 1
-        end
-      end
-
-      nil
-    end
-
-    def self.next_ordinal_repeat(interval, ordinal, day, times, tz, anchor, now)
-      now_local = tz.utc_to_local(now.utc)
-      year = now_local.year
-      month = now_local.month
-
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-      max_iter = (interval > 1) ? 24 * interval : 24
-
-      max_iter.times do
-        if interval > 1
-          cur = Date.new(year, month, 1)
-          month_offset = EvalHelpers.months_between_ym(anchor_date, cur)
-          if month_offset.negative? || (month_offset % interval) != 0
-            month += 1
-            if month > 12
-              month = 1
-              year += 1
-            end
-            next
-          end
-        end
-
-        ordinal_date = if ordinal == OrdinalPosition::LAST
-          EvalHelpers.last_weekday_in_month(year, month, day)
-        else
-          EvalHelpers.nth_weekday_of_month(year, month, day, OrdinalPosition.to_n(ordinal))
-        end
-
-        if ordinal_date
-          candidate = EvalHelpers.earliest_future_at_times(ordinal_date, times, tz, now)
-          return candidate if candidate
-        end
 
         month += 1
         if month > 12

@@ -83,12 +83,11 @@ module Hron
           end
 
           "#{time.minute} #{time.hour} #{expr.target.day}W * *"
+        when OrdinalWeekdayTarget
+          raise HronError.cron("not expressible as cron (ordinal weekday of month not supported)")
         else
-          raise HronError.cron("not expressible as cron (last weekday of month not supported)")
+          raise HronError.cron("not expressible as cron (unsupported month target)")
         end
-
-      when OrdinalRepeat
-        raise HronError.cron("not expressible as cron (ordinal weekday of month not supported)")
 
       when SingleDateExpr
         raise HronError.cron("not expressible as cron (single dates are not repeating)")
@@ -334,7 +333,7 @@ module Hron
         hour = parse_single_value(hour_field, "hour", 0, 23)
 
         return ScheduleData.new(
-          expr: OrdinalRepeat.new(1, ordinal, weekday, [TimeOfDay.new(hour, minute)]),
+          expr: MonthRepeat.new(1, OrdinalWeekdayTarget.new(ordinal, weekday), [TimeOfDay.new(hour, minute)]),
           during: during
         )
       end
@@ -351,7 +350,7 @@ module Hron
         hour = parse_single_value(hour_field, "hour", 0, 23)
 
         return ScheduleData.new(
-          expr: OrdinalRepeat.new(1, OrdinalPosition::LAST, weekday, [TimeOfDay.new(hour, minute)]),
+          expr: MonthRepeat.new(1, OrdinalWeekdayTarget.new(OrdinalPosition::LAST, weekday), [TimeOfDay.new(hour, minute)]),
           during: during
         )
       end

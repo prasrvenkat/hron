@@ -92,10 +92,8 @@ module Hron
       when TokenKind::ON
         advance
         expr = parse_on
-      when TOrdinal, TokenKind::LAST
-        expr = parse_ordinal_repeat
       else
-        raise error("expected 'every', 'on', or an ordinal (first, second, ...)", span)
+        raise error("expected 'every' or 'on'", span)
       end
 
       parse_trailing_clauses(expr)
@@ -359,50 +357,33 @@ module Hron
         elsif nk == TokenKind::WEEKDAY_KW
           advance
           target = LastWeekdayTarget.new
+        elsif nk.is_a?(TDayName)
+          weekday = nk.name
+          advance
+          target = OrdinalWeekdayTarget.new(OrdinalPosition::LAST, weekday)
         else
-          raise error("expected 'day' or 'weekday' after 'last'", current_span)
+          raise error("expected 'day', 'weekday', or day name after 'last'", current_span)
         end
+      elsif k.is_a?(TOrdinal)
+        ordinal = parse_ordinal_position
+        nk = peek_kind
+        raise error("expected day name after ordinal", current_span) unless nk.is_a?(TDayName)
+
+        weekday = nk.name
+        advance
+        target = OrdinalWeekdayTarget.new(ordinal, weekday)
       elsif k.is_a?(TOrdinalNumber)
         specs = parse_ordinal_day_list
         target = DaysTarget.new(specs)
       elsif k == TokenKind::NEXT || k == TokenKind::PREVIOUS || k == TokenKind::NEAREST
         target = parse_nearest_weekday_target
       else
-        raise error("expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'", current_span)
+        raise error("expected ordinal day (1st, 15th), 'last', ordinal (first..fifth), or '[next|previous] nearest' after 'the'", current_span)
       end
 
       consume_keyword("'at'", TokenKind::AT)
       times = parse_time_list
       MonthRepeat.new(interval, target, times)
-    end
-
-    def parse_ordinal_repeat
-      ordinal = parse_ordinal_position
-
-      k = peek_kind
-      raise error("expected day name after ordinal", current_span) unless k.is_a?(TDayName)
-
-      day = k.name
-      advance
-
-      consume_keyword("'of'", TokenKind::OF)
-      consume_keyword("'every'", TokenKind::EVERY)
-
-      # "of every [N] month(s) at ..."
-      interval = 1
-      nk = peek_kind
-      if nk.is_a?(TNumber)
-        interval = nk.value
-        raise error("interval must be at least 1", current_span) if interval.zero?
-
-        advance
-      end
-
-      consume_keyword("'month'", TokenKind::MONTH)
-      consume_keyword("'at'", TokenKind::AT)
-      times = parse_time_list
-
-      OrdinalRepeat.new(interval, ordinal, day, times)
     end
 
     def parse_year_repeat(interval)
