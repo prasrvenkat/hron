@@ -264,7 +264,8 @@ public final class Evaluator {
           yield false;
         }
         if (dr.interval() > 1) {
-          LocalDate anchorDate = data.anchor() != null ? LocalDate.parse(data.anchor()) : EPOCH_DATE;
+          LocalDate anchorDate =
+              data.anchor() != null ? LocalDate.parse(data.anchor()) : EPOCH_DATE;
           long dayOffset = ChronoUnit.DAYS.between(anchorDate, date);
           yield dayOffset >= 0 && dayOffset % dr.interval() == 0;
         }
@@ -292,7 +293,8 @@ public final class Evaluator {
         if (!timeMatchesWithDst(date, wr.times(), location, dt)) {
           yield false;
         }
-        LocalDate anchorDate = data.anchor() != null ? LocalDate.parse(data.anchor()) : EPOCH_MONDAY;
+        LocalDate anchorDate =
+            data.anchor() != null ? LocalDate.parse(data.anchor()) : EPOCH_MONDAY;
         long weeks = ChronoUnit.DAYS.between(anchorDate, date) / 7;
         yield weeks >= 0 && weeks % wr.interval() == 0;
       }
@@ -301,7 +303,8 @@ public final class Evaluator {
           yield false;
         }
         if (mr.interval() > 1) {
-          LocalDate anchorDate = data.anchor() != null ? LocalDate.parse(data.anchor()) : EPOCH_DATE;
+          LocalDate anchorDate =
+              data.anchor() != null ? LocalDate.parse(data.anchor()) : EPOCH_DATE;
           long monthOffset =
               ChronoUnit.MONTHS.between(anchorDate.withDayOfMonth(1), date.withDayOfMonth(1));
           if (monthOffset < 0 || monthOffset % mr.interval() != 0) {
@@ -327,7 +330,9 @@ public final class Evaluator {
         }
         if (yr.interval() > 1) {
           int anchorYear =
-              data.anchor() != null ? LocalDate.parse(data.anchor()).getYear() : EPOCH_DATE.getYear();
+              data.anchor() != null
+                  ? LocalDate.parse(data.anchor()).getYear()
+                  : EPOCH_DATE.getYear();
           long yearOffset = date.getYear() - anchorYear;
           if (yearOffset < 0 || yearOffset % yr.interval() != 0) {
             yield false;
@@ -338,9 +343,7 @@ public final class Evaluator {
     };
   }
 
-  /**
-   * Checks if a time matches any of the scheduled times, accounting for DST gaps.
-   */
+  /** Checks if a time matches any of the scheduled times, accounting for DST gaps. */
   private static boolean timeMatchesWithDst(
       LocalDate date, List<TimeOfDay> times, ZoneId location, ZonedDateTime dt) {
     for (TimeOfDay tod : times) {
@@ -358,9 +361,7 @@ public final class Evaluator {
     return false;
   }
 
-  /**
-   * Checks if a date matches a month target.
-   */
+  /** Checks if a date matches a month target. */
   private static boolean matchesMonthTarget(LocalDate date, MonthTarget target) {
     return switch (target.kind()) {
       case DAYS -> target.expandDays().contains(date.getDayOfMonth());
@@ -369,7 +370,10 @@ public final class Evaluator {
       case NEAREST_WEEKDAY -> {
         Optional<LocalDate> nwd =
             nearestWeekday(
-                date.getYear(), date.getMonth(), target.nearestWeekdayDay(), target.nearestDirection());
+                date.getYear(),
+                date.getMonth(),
+                target.nearestWeekdayDay(),
+                target.nearestDirection());
         yield nwd.isPresent() && date.equals(nwd.get());
       }
       case ORDINAL_WEEKDAY -> {
@@ -380,26 +384,21 @@ public final class Evaluator {
     };
   }
 
-  /**
-   * Checks if a date matches a year target.
-   */
+  /** Checks if a date matches a year target. */
   private static boolean matchesYearTarget(LocalDate date, YearTarget target) {
     return switch (target.kind()) {
       case DATE ->
-          date.getMonthValue() == target.month().number()
-              && date.getDayOfMonth() == target.day();
+          date.getMonthValue() == target.month().number() && date.getDayOfMonth() == target.day();
       case ORDINAL_WEEKDAY -> {
         if (date.getMonthValue() != target.month().number()) {
           yield false;
         }
         Optional<LocalDate> ord =
-            nthWeekdayOfMonth(
-                date.getYear(), date.getMonth(), target.weekday(), target.ordinal());
+            nthWeekdayOfMonth(date.getYear(), date.getMonth(), target.weekday(), target.ordinal());
         yield ord.isPresent() && date.equals(ord.get());
       }
       case DAY_OF_MONTH ->
-          date.getMonthValue() == target.month().number()
-              && date.getDayOfMonth() == target.day();
+          date.getMonthValue() == target.month().number() && date.getDayOfMonth() == target.day();
       case LAST_WEEKDAY -> {
         if (date.getMonthValue() != target.month().number()) {
           yield false;

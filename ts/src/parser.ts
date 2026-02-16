@@ -604,11 +604,7 @@ class Parser {
     return { type: "singleDate", date, times };
   }
 
-  private validateNamedDate(
-    month: MonthName,
-    day: number,
-    pos: number,
-  ): void {
+  private validateNamedDate(month: MonthName, day: number, pos: number): void {
     const maxDays: Record<MonthName, number> = {
       jan: 31,
       feb: 29,
@@ -625,10 +621,10 @@ class Parser {
     };
     const max = maxDays[month];
     if (day > max) {
-      throw this.error(
-        `invalid day ${day} for ${month} (max ${max})`,
-        { start: pos, end: pos },
-      );
+      throw this.error(`invalid day ${day} for ${month} (max ${max})`, {
+        start: pos,
+        end: pos,
+      });
     }
   }
 

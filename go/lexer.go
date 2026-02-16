@@ -336,4 +336,3 @@ func isAlphanumeric(b byte) bool {
 func isWhitespace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
-

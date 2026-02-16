@@ -736,9 +736,9 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                             last_weekday_in_month(date.year(), date.month(), *weekday)
                         }
                         _ => {
-                            match ordinal_to_n(*ordinal)
-                                .and_then(|n| nth_weekday_of_month(date.year(), date.month(), *weekday, n))
-                            {
+                            match ordinal_to_n(*ordinal).and_then(|n| {
+                                nth_weekday_of_month(date.year(), date.month(), *weekday, n)
+                            }) {
                                 Some(d) => d,
                                 None => return Ok(false),
                             }
@@ -799,9 +799,9 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                             last_weekday_in_month(date.year(), date.month(), *weekday)
                         }
                         _ => {
-                            match ordinal_to_n(*ordinal)
-                                .and_then(|n| nth_weekday_of_month(date.year(), date.month(), *weekday, n))
-                            {
+                            match ordinal_to_n(*ordinal).and_then(|n| {
+                                nth_weekday_of_month(date.year(), date.month(), *weekday, n)
+                            }) {
                                 Some(d) => d,
                                 None => return Ok(false),
                             }

@@ -242,10 +242,18 @@ class _Parser:
 
     def _validate_named_date(self, month: MonthName, day: int, pos: int) -> None:
         max_days = {
-            MonthName.JAN: 31, MonthName.FEB: 29, MonthName.MAR: 31,
-            MonthName.APR: 30, MonthName.MAY: 31, MonthName.JUN: 30,
-            MonthName.JUL: 31, MonthName.AUG: 31, MonthName.SEP: 30,
-            MonthName.OCT: 31, MonthName.NOV: 30, MonthName.DEC: 31,
+            MonthName.JAN: 31,
+            MonthName.FEB: 29,
+            MonthName.MAR: 31,
+            MonthName.APR: 30,
+            MonthName.MAY: 31,
+            MonthName.JUN: 30,
+            MonthName.JUL: 31,
+            MonthName.AUG: 31,
+            MonthName.SEP: 30,
+            MonthName.OCT: 31,
+            MonthName.NOV: 30,
+            MonthName.DEC: 31,
         }
         mx = max_days[month]
         if day > mx:
@@ -516,9 +524,7 @@ class _Parser:
         if isinstance(k, TOrdinalNumber):
             day = k.value
             if day < 1 or day > 31:
-                raise self._error(
-                    f"invalid day number {day} (must be 1-31)", self.current_span()
-                )
+                raise self._error(f"invalid day number {day} (must be 1-31)", self.current_span())
             day_pos = self.current_span().start
             self.advance()
             self._consume("'of'", TOf)
@@ -620,9 +626,7 @@ class _Parser:
             raise self._error("expected ordinal day number", self.current_span())
         start = k.value
         if start < 1 or start > 31:
-            raise self._error(
-                f"invalid day number {start} (must be 1-31)", self.current_span()
-            )
+            raise self._error(f"invalid day number {start} (must be 1-31)", self.current_span())
         self.advance()
 
         if isinstance(self.peek_kind(), TTo):
@@ -632,9 +636,7 @@ class _Parser:
                 raise self._error("expected ordinal day number after 'to'", self.current_span())
             end = nk.value
             if end < 1 or end > 31:
-                raise self._error(
-                    f"invalid day number {end} (must be 1-31)", self.current_span()
-                )
+                raise self._error(f"invalid day number {end} (must be 1-31)", self.current_span())
             self.advance()
             if start > end:
                 raise self._error(

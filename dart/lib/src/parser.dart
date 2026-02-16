@@ -626,10 +626,7 @@ class _Parser {
     final start = k.value;
     final startSpan = currentSpan();
     if (start < 1 || start > 31) {
-      throw error(
-        'invalid day number $start (must be 1-31)',
-        startSpan,
-      );
+      throw error('invalid day number $start (must be 1-31)', startSpan);
     }
     advance();
 
@@ -642,10 +639,7 @@ class _Parser {
       final end = next.value;
       final endSpan = currentSpan();
       if (end < 1 || end > 31) {
-        throw error(
-          'invalid day number $end (must be 1-31)',
-          endSpan,
-        );
+        throw error('invalid day number $end (must be 1-31)', endSpan);
       }
       advance();
       if (start > end) {

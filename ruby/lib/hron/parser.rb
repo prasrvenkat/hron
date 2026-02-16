@@ -200,20 +200,20 @@ module Hron
 
     def validate_named_date(month, day)
       max = case month
-            when MonthName::JAN then 31
-            when MonthName::FEB then 29
-            when MonthName::MAR then 31
-            when MonthName::APR then 30
-            when MonthName::MAY then 31
-            when MonthName::JUN then 30
-            when MonthName::JUL then 31
-            when MonthName::AUG then 31
-            when MonthName::SEP then 30
-            when MonthName::OCT then 31
-            when MonthName::NOV then 30
-            when MonthName::DEC then 31
-            end
-      return if day >= 1 && day <= max
+      when MonthName::JAN then 31
+      when MonthName::FEB then 29
+      when MonthName::MAR then 31
+      when MonthName::APR then 30
+      when MonthName::MAY then 31
+      when MonthName::JUN then 30
+      when MonthName::JUL then 31
+      when MonthName::AUG then 31
+      when MonthName::SEP then 30
+      when MonthName::OCT then 31
+      when MonthName::NOV then 30
+      when MonthName::DEC then 31
+      end
+      return if day.between?(1, max)
 
       raise error("invalid day #{day} for #{month} (max #{max})", current_span)
     end

@@ -65,7 +65,7 @@ impl<'a> Parser<'a> {
 
     /// Validate a day number is in range 1-31, returning u8.
     fn validate_day_number(&self, n: u32) -> Result<u8, ScheduleError> {
-        if n < 1 || n > 31 {
+        if !(1..=31).contains(&n) {
             return Err(self.error(
                 format!("invalid day number {n} (must be 1-31)"),
                 self.current_span(),
@@ -75,7 +75,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Validate a named date (month + day) has a valid day for that month.
-    fn validate_named_date(&self, month: MonthName, day: u8, span: Span) -> Result<(), ScheduleError> {
+    fn validate_named_date(
+        &self,
+        month: MonthName,
+        day: u8,
+        span: Span,
+    ) -> Result<(), ScheduleError> {
         let max = match month {
             MonthName::January => 31,
             MonthName::February => 29,
@@ -840,7 +845,10 @@ impl<'a> Parser<'a> {
             if start > end {
                 let span = self.current_span();
                 return Err(self.error(
-                    format!("invalid day range: {} to {} (start must be <= end)", start, end),
+                    format!(
+                        "invalid day range: {} to {} (start must be <= end)",
+                        start, end
+                    ),
                     span,
                 ));
             }
