@@ -113,10 +113,8 @@ func (p *parser) parseExpression() (*ScheduleData, error) {
 	case TokenOn:
 		p.advance()
 		expr, err = p.parseOn()
-	case TokenOrdinal, TokenLast:
-		expr, err = p.parseOrdinalRepeat()
 	default:
-		return nil, p.error("expected 'every', 'on', or an ordinal (first, second, ...)", span)
+		return nil, p.error("expected 'every' or 'on'", span)
 	}
 
 	if err != nil {
@@ -431,9 +429,28 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 		case TokenWeekday:
 			p.advance()
 			target = NewLastWeekdayTarget()
+		case TokenDayName:
+			// "last monday" etc.
+			tok := p.peek()
+			weekday := tok.DayNameVal
+			p.advance()
+			target = NewOrdinalWeekdayTarget(Last, weekday)
 		default:
-			return ScheduleExpr{}, p.error("expected 'day' or 'weekday' after 'last'", p.currentSpan())
+			return ScheduleExpr{}, p.error("expected 'day', 'weekday', or day name after 'last'", p.currentSpan())
 		}
+	case TokenOrdinal:
+		// "first monday", "second tuesday", etc.
+		ordinal, err := p.parseOrdinalPosition()
+		if err != nil {
+			return ScheduleExpr{}, err
+		}
+		if p.peekKind() != TokenDayName {
+			return ScheduleExpr{}, p.error("expected day name after ordinal", p.currentSpan())
+		}
+		tok := p.peek()
+		weekday := tok.DayNameVal
+		p.advance()
+		target = NewOrdinalWeekdayTarget(ordinal, weekday)
 	case TokenOrdinalNumber:
 		specs, err := p.parseOrdinalDayList()
 		if err != nil {
@@ -448,7 +465,7 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 		}
 	default:
 		return ScheduleExpr{}, p.error(
-			"expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'",
+			"expected ordinal day (1st, 15th), 'last', ordinal (first, second, ...), or '[next|previous] nearest' after 'the'",
 			p.currentSpan(),
 		)
 	}
@@ -493,51 +510,6 @@ func (p *parser) parseNearestWeekdayTarget() (MonthTarget, error) {
 	p.advance()
 
 	return NewNearestWeekdayTarget(day, direction), nil
-}
-
-func (p *parser) parseOrdinalRepeat() (ScheduleExpr, error) {
-	ordinal, err := p.parseOrdinalPosition()
-	if err != nil {
-		return ScheduleExpr{}, err
-	}
-
-	tok := p.peek()
-	if tok == nil || tok.Kind != TokenDayName {
-		return ScheduleExpr{}, p.error("expected day name after ordinal", p.currentSpan())
-	}
-	day := tok.DayNameVal
-	p.advance()
-
-	if _, err := p.consume("'of'", TokenOf); err != nil {
-		return ScheduleExpr{}, err
-	}
-	if _, err := p.consume("'every'", TokenEvery); err != nil {
-		return ScheduleExpr{}, err
-	}
-
-	// "of every [N] month(s) at ..."
-	interval := 1
-	if p.peekKind() == TokenNumber {
-		tok := p.peek()
-		interval = tok.NumberVal
-		if interval == 0 {
-			return ScheduleExpr{}, p.error("interval must be at least 1", p.currentSpan())
-		}
-		p.advance()
-	}
-
-	if _, err := p.consume("'month'", TokenMonth); err != nil {
-		return ScheduleExpr{}, err
-	}
-	if _, err := p.consume("'at'", TokenAt); err != nil {
-		return ScheduleExpr{}, err
-	}
-	times, err := p.parseTimeList()
-	if err != nil {
-		return ScheduleExpr{}, err
-	}
-
-	return NewOrdinalRepeat(interval, ordinal, day, times), nil
 }
 
 func (p *parser) parseYearRepeat(interval int) (ScheduleExpr, error) {

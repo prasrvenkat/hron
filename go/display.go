@@ -49,8 +49,6 @@ func displayExpr(expr ScheduleExpr) string {
 		return displayWeekRepeat(expr)
 	case ScheduleExprKindMonth:
 		return displayMonthRepeat(expr)
-	case ScheduleExprKindOrdinal:
-		return displayOrdinalRepeat(expr)
 	case ScheduleExprKindSingleDate:
 		return displaySingleDate(expr)
 	case ScheduleExprKindYear:
@@ -89,15 +87,6 @@ func displayMonthRepeat(expr ScheduleExpr) string {
 		return fmt.Sprintf("every %d months on the %s at %s", expr.Interval, targetStr, formatTimeList(expr.Times))
 	}
 	return fmt.Sprintf("every month on the %s at %s", targetStr, formatTimeList(expr.Times))
-}
-
-func displayOrdinalRepeat(expr ScheduleExpr) string {
-	if expr.Interval > 1 {
-		return fmt.Sprintf("%s %s of every %d months at %s",
-			expr.Ordinal.String(), expr.OrdinalDay.String(), expr.Interval, formatTimeList(expr.Times))
-	}
-	return fmt.Sprintf("%s %s of every month at %s",
-		expr.Ordinal.String(), expr.OrdinalDay.String(), formatTimeList(expr.Times))
 }
 
 func displaySingleDate(expr ScheduleExpr) string {
@@ -146,6 +135,8 @@ func displayMonthTarget(target MonthTarget) string {
 		}
 		sb.WriteString(fmt.Sprintf("nearest weekday to %s", ordinalNumber(target.Day)))
 		return sb.String()
+	case MonthTargetKindOrdinalWeekday:
+		return fmt.Sprintf("%s %s", target.Ordinal.String(), target.Weekday.String())
 	default:
 		return ""
 	}

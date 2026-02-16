@@ -78,10 +78,9 @@ func ToCron(schedule *ScheduleData) (string, error) {
 				return "", CronError("not expressible as cron (directional nearest weekday not supported)")
 			}
 			return fmt.Sprintf("%d %d %dW * *", t.Minute, t.Hour, expr.MonthTarget.Day), nil
+		case MonthTargetKindOrdinalWeekday:
+			return "", CronError("not expressible as cron (ordinal weekday of month not supported)")
 		}
-
-	case ScheduleExprKindOrdinal:
-		return "", CronError("not expressible as cron (ordinal weekday of month not supported)")
 
 	case ScheduleExprKindSingleDate:
 		return "", CronError("not expressible as cron (single dates are not repeating)")
@@ -385,7 +384,8 @@ func tryParseNthWeekday(minuteField, hourField, domField, dowField string, durin
 			return nil, false, err
 		}
 
-		schedule := NewScheduleData(NewOrdinalRepeat(1, ordinal, weekday, []TimeOfDay{{hour, minute}}))
+		target := NewOrdinalWeekdayTarget(ordinal, weekday)
+		schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{{hour, minute}}))
 		schedule.During = during
 		return schedule, true, nil
 	}
@@ -415,7 +415,8 @@ func tryParseNthWeekday(minuteField, hourField, domField, dowField string, durin
 			return nil, false, err
 		}
 
-		schedule := NewScheduleData(NewOrdinalRepeat(1, Last, weekday, []TimeOfDay{{hour, minute}}))
+		target := NewOrdinalWeekdayTarget(Last, weekday)
+		schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{{hour, minute}}))
 		schedule.During = during
 		return schedule, true, nil
 	}

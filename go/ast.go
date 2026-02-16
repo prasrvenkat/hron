@@ -289,6 +289,7 @@ const (
 	MonthTargetKindLastDay
 	MonthTargetKindLastWeekday
 	MonthTargetKindNearestWeekday
+	MonthTargetKindOrdinalWeekday
 )
 
 // NearestDirection represents the direction for nearest weekday calculations.
@@ -309,6 +310,8 @@ type MonthTarget struct {
 	Specs     []DayOfMonthSpec // Only used when Kind == MonthTargetKindDays
 	Day       int              // Only used when Kind == MonthTargetKindNearestWeekday
 	Direction NearestDirection // Only used when Kind == MonthTargetKindNearestWeekday
+	Ordinal   OrdinalPosition  // Only used when Kind == MonthTargetKindOrdinalWeekday
+	Weekday   Weekday          // Only used when Kind == MonthTargetKindOrdinalWeekday
 }
 
 // NewDaysTarget creates a month target for specific days.
@@ -329,6 +332,11 @@ func NewLastWeekdayTarget() MonthTarget {
 // NewNearestWeekdayTarget creates a month target for the nearest weekday to a given day.
 func NewNearestWeekdayTarget(day int, direction NearestDirection) MonthTarget {
 	return MonthTarget{Kind: MonthTargetKindNearestWeekday, Day: day, Direction: direction}
+}
+
+// NewOrdinalWeekdayTarget creates a month target for an ordinal weekday (e.g., first monday, last friday).
+func NewOrdinalWeekdayTarget(ordinal OrdinalPosition, weekday Weekday) MonthTarget {
+	return MonthTarget{Kind: MonthTargetKindOrdinalWeekday, Ordinal: ordinal, Weekday: weekday}
 }
 
 // ExpandDays returns all days specified by this target.
@@ -478,12 +486,11 @@ const (
 	ScheduleExprKindDay
 	ScheduleExprKindWeek
 	ScheduleExprKindMonth
-	ScheduleExprKindOrdinal
 	ScheduleExprKindSingleDate
 	ScheduleExprKindYear
 )
 
-// ScheduleExpr represents a schedule expression (one of the 7 variants).
+// ScheduleExpr represents a schedule expression (one of the 6 variants).
 type ScheduleExpr struct {
 	Kind ScheduleExprKind
 
@@ -505,10 +512,6 @@ type ScheduleExpr struct {
 
 	// MonthRepeat fields
 	MonthTarget MonthTarget
-
-	// OrdinalRepeat fields
-	Ordinal    OrdinalPosition
-	OrdinalDay Weekday
 
 	// SingleDateExpr fields
 	DateSpec DateSpec
@@ -556,17 +559,6 @@ func NewMonthRepeat(interval int, target MonthTarget, times []TimeOfDay) Schedul
 		Interval:    interval,
 		MonthTarget: target,
 		Times:       times,
-	}
-}
-
-// NewOrdinalRepeat creates an ordinal repeat expression.
-func NewOrdinalRepeat(interval int, ordinal OrdinalPosition, day Weekday, times []TimeOfDay) ScheduleExpr {
-	return ScheduleExpr{
-		Kind:       ScheduleExprKindOrdinal,
-		Interval:   interval,
-		Ordinal:    ordinal,
-		OrdinalDay: day,
-		Times:      times,
 	}
 }
 
