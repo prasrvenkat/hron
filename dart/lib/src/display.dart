@@ -118,9 +118,10 @@ String _displayYearRepeat(YearRepeat expr) {
   } else if (target is DayOfMonthTarget) {
     targetStr =
         'the ${target.day}${ordinalSuffix(target.day)} of ${target.month.name}';
+  } else if (target is LastWeekdayYearTarget) {
+    targetStr = 'the last weekday of ${target.month.name}';
   } else {
-    targetStr =
-        'the last weekday of ${(target as LastWeekdayYearTarget).month.name}';
+    throw ArgumentError('unknown year target: ${target.runtimeType}');
   }
   if (expr.interval > 1) {
     return 'every ${expr.interval} years on $targetStr at ${_formatTimeList(expr.times)}';
