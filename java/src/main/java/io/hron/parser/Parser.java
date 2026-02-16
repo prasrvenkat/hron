@@ -6,6 +6,8 @@ import io.hron.ast.*;
 import io.hron.lexer.Lexer;
 import io.hron.lexer.Token;
 import io.hron.lexer.TokenKind;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -507,6 +509,14 @@ public final class Parser {
     return new SingleDate(dateSpec, times);
   }
 
+  private void validateIsoDate(String dateStr, Span span) throws HronException {
+    try {
+      LocalDate.parse(dateStr);
+    } catch (DateTimeParseException e) {
+      throw parseError("invalid date: " + dateStr, span);
+    }
+  }
+
   private DateSpec parseDateSpec() throws HronException {
     Token tok = peek();
     if (tok == null) {
@@ -514,6 +524,7 @@ public final class Parser {
     }
 
     if (tok.kind() == TokenKind.ISO_DATE) {
+      validateIsoDate(tok.isoDateVal(), tok.span());
       pos++;
       return DateSpec.iso(tok.isoDateVal());
     }
@@ -564,6 +575,7 @@ public final class Parser {
     }
 
     if (tok.kind() == TokenKind.ISO_DATE) {
+      validateIsoDate(tok.isoDateVal(), tok.span());
       pos++;
       return ExceptionSpec.iso(tok.isoDateVal());
     }
@@ -580,6 +592,7 @@ public final class Parser {
     }
 
     if (tok.kind() == TokenKind.ISO_DATE) {
+      validateIsoDate(tok.isoDateVal(), tok.span());
       pos++;
       return UntilSpec.iso(tok.isoDateVal());
     }
@@ -596,6 +609,7 @@ public final class Parser {
     }
 
     if (tok.kind() == TokenKind.ISO_DATE) {
+      validateIsoDate(tok.isoDateVal(), tok.span());
       pos++;
       return tok.isoDateVal();
     }

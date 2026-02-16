@@ -184,10 +184,17 @@ impl<'a> Parser<'a> {
         Ok(exceptions)
     }
 
+    fn validate_iso_date(&self, d: &str) -> Result<(), ScheduleError> {
+        d.parse::<jiff::civil::Date>()
+            .map_err(|_| self.error(format!("invalid date: {d}"), self.current_span()))?;
+        Ok(())
+    }
+
     fn parse_exception(&mut self) -> Result<Exception, ScheduleError> {
         match self.peek().map(|t| &t.kind) {
             Some(TokenKind::IsoDate(d)) => {
                 let d = d.clone();
+                self.validate_iso_date(&d)?;
                 self.advance();
                 Ok(Exception::Iso(d))
             }
@@ -226,6 +233,7 @@ impl<'a> Parser<'a> {
         match self.peek().map(|t| &t.kind) {
             Some(TokenKind::IsoDate(d)) => {
                 let d = d.clone();
+                self.validate_iso_date(&d)?;
                 self.advance();
                 Ok(UntilSpec::Iso(d))
             }
@@ -730,6 +738,7 @@ impl<'a> Parser<'a> {
         match self.peek().map(|t| &t.kind) {
             Some(TokenKind::IsoDate(d)) => {
                 let d = d.clone();
+                self.validate_iso_date(&d)?;
                 self.advance();
                 Ok(DateSpec::Iso(d))
             }

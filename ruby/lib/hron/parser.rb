@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "date"
 require_relative "ast"
 require_relative "error"
 require_relative "lexer"
@@ -135,6 +136,7 @@ module Hron
         k = peek_kind
         raise error("expected ISO date (YYYY-MM-DD) after 'starting'", current_span) unless k.is_a?(TIsoDate)
 
+        validate_iso_date(k.date)
         anchor = k.date
         advance
         schedule = ScheduleData.new(
@@ -192,9 +194,16 @@ module Hron
       exceptions
     end
 
+    def validate_iso_date(date_str)
+      Date.iso8601(date_str)
+    rescue Date::Error
+      raise error("invalid date: #{date_str}", current_span)
+    end
+
     def parse_exception
       k = peek_kind
       if k.is_a?(TIsoDate)
+        validate_iso_date(k.date)
         advance
         return IsoException.new(k.date)
       end
@@ -210,6 +219,7 @@ module Hron
     def parse_until_spec
       k = peek_kind
       if k.is_a?(TIsoDate)
+        validate_iso_date(k.date)
         advance
         return IsoUntil.new(k.date)
       end
@@ -496,6 +506,7 @@ module Hron
     def parse_date_target
       k = peek_kind
       if k.is_a?(TIsoDate)
+        validate_iso_date(k.date)
         advance
         return IsoDate.new(k.date)
       end

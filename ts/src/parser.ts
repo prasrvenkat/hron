@@ -127,7 +127,9 @@ class Parser {
       this.advance();
       const k = this.peekKind();
       if (k?.type === "isoDate") {
-        schedule.anchor = (k as { type: "isoDate"; date: string }).date;
+        const startDate = (k as { type: "isoDate"; date: string }).date;
+        this.validateIsoDate(startDate);
+        schedule.anchor = startDate;
         this.advance();
       } else {
         throw this.error(
@@ -171,6 +173,7 @@ class Parser {
     const k = this.peekKind();
     if (k?.type === "isoDate") {
       const date = (k as { type: "isoDate"; date: string }).date;
+      this.validateIsoDate(date);
       this.advance();
       return { type: "iso", date };
     }
@@ -195,6 +198,7 @@ class Parser {
     const k = this.peekKind();
     if (k?.type === "isoDate") {
       const date = (k as { type: "isoDate"; date: string }).date;
+      this.validateIsoDate(date);
       this.advance();
       return { type: "iso", date };
     }
@@ -582,11 +586,29 @@ class Parser {
     return { type: "singleDate", date, times };
   }
 
+  private validateIsoDate(dateStr: string): void {
+    const parts = dateStr.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (month < 1 || month > 12 || day < 1) {
+      throw this.error(`invalid date: ${dateStr}`, this.currentSpan());
+    }
+    const daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0) {
+      daysInMonth[2] = 29;
+    }
+    if (day > daysInMonth[month]) {
+      throw this.error(`invalid date: ${dateStr}`, this.currentSpan());
+    }
+  }
+
   private parseDateTarget(): DateSpec {
     const k = this.peekKind();
 
     if (k?.type === "isoDate") {
       const date = (k as { type: "isoDate"; date: string }).date;
+      this.validateIsoDate(date);
       this.advance();
       return { type: "iso", date };
     }
