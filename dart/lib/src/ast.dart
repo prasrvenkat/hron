@@ -216,6 +216,13 @@ class NearestWeekdayTarget extends MonthTarget {
   NearestWeekdayTarget(this.day, [this.direction]);
 }
 
+/// Ordinal weekday of month: "first monday", "last friday", etc.
+class OrdinalWeekdayMonthTarget extends MonthTarget {
+  final OrdinalPosition ordinal;
+  final Weekday weekday;
+  OrdinalWeekdayMonthTarget(this.ordinal, this.weekday);
+}
+
 /// Target specification for yearly schedules.
 sealed class YearTarget {}
 
@@ -291,8 +298,7 @@ class NamedUntil extends UntilSpec {
 /// - [IntervalRepeat]: "every 30 min from 9am to 5pm"
 /// - [DayRepeat]: "every day at 9am"
 /// - [WeekRepeat]: "every week on monday at 9am"
-/// - [MonthRepeat]: "on the 1st of every month at 9am"
-/// - [OrdinalRepeat]: "on the first monday of every month at 9am"
+/// - [MonthRepeat]: "every month on the 1st at 9am"
 /// - [SingleDate]: "on Jan 1 at 12:00"
 /// - [YearRepeat]: "every year on Jan 1 at 12:00"
 sealed class ScheduleExpr {}
@@ -329,15 +335,6 @@ class MonthRepeat extends ScheduleExpr {
   final MonthTarget target;
   final List<TimeOfDay> times;
   MonthRepeat(this.interval, this.target, this.times);
-}
-
-/// Schedule repeating on ordinal weekdays (e.g., "first monday of every month").
-class OrdinalRepeat extends ScheduleExpr {
-  final int interval;
-  final OrdinalPosition ordinal;
-  final Weekday day;
-  final List<TimeOfDay> times;
-  OrdinalRepeat(this.interval, this.ordinal, this.day, this.times);
 }
 
 /// A one-time schedule on a specific date (e.g., "on Jan 1 at 12:00").

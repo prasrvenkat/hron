@@ -76,20 +76,15 @@ module Hron
           end
           day = expr.target.day
           "#{prefix}nearest weekday to #{day}#{ordinal_suffix(day)}"
+        when OrdinalWeekdayTarget
+          "#{expr.target.ordinal} #{expr.target.weekday}"
         else
-          "last weekday"
+          raise "unknown month target: #{expr.target.class}"
         end
         if expr.interval > 1
           "every #{expr.interval} months on the #{target_str} at #{format_time_list(expr.times)}"
         else
           "every month on the #{target_str} at #{format_time_list(expr.times)}"
-        end
-
-      when OrdinalRepeat
-        if expr.interval > 1
-          "#{expr.ordinal} #{expr.day} of every #{expr.interval} months at #{format_time_list(expr.times)}"
-        else
-          "#{expr.ordinal} #{expr.day} of every month at #{format_time_list(expr.times)}"
         end
 
       when SingleDateExpr

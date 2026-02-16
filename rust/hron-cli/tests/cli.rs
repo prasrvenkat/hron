@@ -37,7 +37,7 @@ fn test_interval_expression() {
 #[test]
 fn test_ordinal_expression() {
     hron()
-        .arg("first monday of every month at 10:00 in UTC")
+        .arg("every month on the first monday at 10:00 in UTC")
         .assert()
         .success();
 }

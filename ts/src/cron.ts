@@ -125,6 +125,11 @@ export function toCron(schedule: ScheduleData): string {
           "not expressible as cron (last weekday of month not supported)",
         );
       }
+      if (target.type === "ordinalWeekday") {
+        throw HronError.cron(
+          "not expressible as cron (ordinal weekday of month not supported)",
+        );
+      }
       // nearestWeekday
       if (target.direction !== null) {
         throw HronError.cron(
@@ -133,11 +138,6 @@ export function toCron(schedule: ScheduleData): string {
       }
       return `${time.minute} ${time.hour} ${target.day}W * *`;
     }
-
-    case "ordinalRepeat":
-      throw HronError.cron(
-        "not expressible as cron (ordinal weekday of month not supported)",
-      );
 
     case "singleDate":
       throw HronError.cron(
@@ -443,10 +443,9 @@ function tryParseNthWeekday(
     };
 
     const schedule = newScheduleData({
-      type: "ordinalRepeat",
+      type: "monthRepeat",
       interval: 1,
-      ordinal: ordinalMap[nth],
-      day: weekday,
+      target: { type: "ordinalWeekday", ordinal: ordinalMap[nth], weekday },
       times: [{ hour, minute }],
     });
     schedule.during = during;
@@ -467,10 +466,9 @@ function tryParseNthWeekday(
     const hour = parseSingleValue(hourField, "hour", 0, 23);
 
     const schedule = newScheduleData({
-      type: "ordinalRepeat",
+      type: "monthRepeat",
       interval: 1,
-      ordinal: "last",
-      day: weekday,
+      target: { type: "ordinalWeekday", ordinal: "last", weekday },
       times: [{ hour, minute }],
     });
     schedule.during = during;

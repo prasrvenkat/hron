@@ -513,90 +513,86 @@
           "name": "previous_nearest_weekday_1st",
           "input": "every month on the previous nearest weekday to 1st at 09:00",
           "canonical": "every month on the previous nearest weekday to 1st at 09:00"
-        }
-      ]
-    },
-    "ordinal_repeat": {
-      "tests": [
-        {
-          "name": "first_monday",
-          "input": "first monday of every month at 10:00",
-          "canonical": "first monday of every month at 10:00"
         },
         {
-          "name": "second_tuesday",
-          "input": "second tuesday of every month at 14:30",
-          "canonical": "second tuesday of every month at 14:30"
+          "name": "ordinal_first_monday",
+          "input": "every month on the first monday at 10:00",
+          "canonical": "every month on the first monday at 10:00"
         },
         {
-          "name": "third_wednesday",
-          "input": "third wednesday of every month at 09:00",
-          "canonical": "third wednesday of every month at 09:00"
+          "name": "ordinal_second_tuesday",
+          "input": "every month on the second tuesday at 14:30",
+          "canonical": "every month on the second tuesday at 14:30"
         },
         {
-          "name": "fourth_thursday",
-          "input": "fourth thursday of every month at 11:00",
-          "canonical": "fourth thursday of every month at 11:00"
+          "name": "ordinal_third_wednesday",
+          "input": "every month on the third wednesday at 09:00",
+          "canonical": "every month on the third wednesday at 09:00"
         },
         {
-          "name": "fifth_friday",
-          "input": "fifth friday of every month at 16:00",
-          "canonical": "fifth friday of every month at 16:00"
+          "name": "ordinal_fourth_thursday",
+          "input": "every month on the fourth thursday at 11:00",
+          "canonical": "every month on the fourth thursday at 11:00"
         },
         {
-          "name": "last_friday",
-          "input": "last friday of every month at 16:00",
-          "canonical": "last friday of every month at 16:00"
+          "name": "ordinal_fifth_friday",
+          "input": "every month on the fifth friday at 16:00",
+          "canonical": "every month on the fifth friday at 16:00"
         },
         {
-          "name": "last_sunday",
-          "input": "last sunday of every month at 08:00",
-          "canonical": "last sunday of every month at 08:00"
+          "name": "ordinal_last_friday",
+          "input": "every month on the last friday at 16:00",
+          "canonical": "every month on the last friday at 16:00"
         },
         {
-          "name": "first_saturday",
-          "input": "first saturday of every month at 10:00",
-          "canonical": "first saturday of every month at 10:00"
+          "name": "ordinal_last_sunday",
+          "input": "every month on the last sunday at 08:00",
+          "canonical": "every month on the last sunday at 08:00"
         },
         {
-          "name": "multi_time_first_monday",
-          "input": "first monday of every month at 10:00, 14:00",
-          "canonical": "first monday of every month at 10:00, 14:00"
+          "name": "ordinal_first_saturday",
+          "input": "every month on the first saturday at 10:00",
+          "canonical": "every month on the first saturday at 10:00"
         },
         {
-          "name": "multi_time_last_friday",
-          "input": "last friday of every month at 9:00, 17:00",
-          "canonical": "last friday of every month at 09:00, 17:00"
+          "name": "ordinal_multi_time_first_monday",
+          "input": "every month on the first monday at 10:00, 14:00",
+          "canonical": "every month on the first monday at 10:00, 14:00"
         },
         {
-          "name": "first_monday_every_2_months",
-          "input": "first monday of every 2 months at 10:00",
-          "canonical": "first monday of every 2 months at 10:00"
+          "name": "ordinal_multi_time_last_friday",
+          "input": "every month on the last friday at 9:00, 17:00",
+          "canonical": "every month on the last friday at 09:00, 17:00"
         },
         {
-          "name": "first_monday_every_3_months",
-          "input": "first monday of every 3 months at 10:00",
-          "canonical": "first monday of every 3 months at 10:00"
+          "name": "ordinal_first_monday_every_2_months",
+          "input": "every 2 months on the first monday at 10:00",
+          "canonical": "every 2 months on the first monday at 10:00"
         },
         {
-          "name": "last_friday_every_2_months",
-          "input": "last friday of every 2 months at 16:00",
-          "canonical": "last friday of every 2 months at 16:00"
+          "name": "ordinal_first_monday_every_3_months",
+          "input": "every 3 months on the first monday at 10:00",
+          "canonical": "every 3 months on the first monday at 10:00"
         },
         {
-          "name": "second_tuesday_every_3_months",
-          "input": "second tuesday of every 3 months at 14:30",
-          "canonical": "second tuesday of every 3 months at 14:30"
+          "name": "ordinal_last_friday_every_2_months",
+          "input": "every 2 months on the last friday at 16:00",
+          "canonical": "every 2 months on the last friday at 16:00"
         },
         {
-          "name": "first_monday_every_2_months_multi_time",
-          "input": "first monday of every 2 months at 10:00, 14:00",
-          "canonical": "first monday of every 2 months at 10:00, 14:00"
+          "name": "ordinal_second_tuesday_every_3_months",
+          "input": "every 3 months on the second tuesday at 14:30",
+          "canonical": "every 3 months on the second tuesday at 14:30"
         },
         {
-          "name": "every_1_month_ordinal_normalized",
-          "input": "first monday of every 1 month at 10:00",
-          "canonical": "first monday of every month at 10:00"
+          "name": "ordinal_first_monday_every_2_months_multi_time",
+          "input": "every 2 months on the first monday at 10:00, 14:00",
+          "canonical": "every 2 months on the first monday at 10:00, 14:00"
+        },
+        {
+          "name": "ordinal_every_1_month_normalized",
+          "input": "every 1 month on the first monday at 10:00",
+          "canonical": "every month on the first monday at 10:00"
         }
       ]
     },
@@ -796,9 +792,9 @@
           "canonical": "every 2 weeks on monday at 09:00 except dec 25"
         },
         {
-          "name": "on_ordinal_repeat",
-          "input": "first monday of every month at 10:00 except jan 1",
-          "canonical": "first monday of every month at 10:00 except jan 1"
+          "name": "on_ordinal_weekday",
+          "input": "every month on the first monday at 10:00 except jan 1",
+          "canonical": "every month on the first monday at 10:00 except jan 1"
         },
         {
           "name": "on_single_date",
@@ -850,9 +846,9 @@
           "canonical": "every month on the 1st at 09:00 until 2026-12-31"
         },
         {
-          "name": "on_ordinal_repeat",
-          "input": "first monday of every month at 10:00 until 2026-12-31",
-          "canonical": "first monday of every month at 10:00 until 2026-12-31"
+          "name": "on_ordinal_weekday",
+          "input": "every month on the first monday at 10:00 until 2026-12-31",
+          "canonical": "every month on the first monday at 10:00 until 2026-12-31"
         },
         {
           "name": "on_year_repeat",
@@ -910,8 +906,8 @@
         },
         {
           "name": "ordinal_interval_with_starting",
-          "input": "first monday of every 2 months at 10:00 starting 2026-01-01",
-          "canonical": "first monday of every 2 months at 10:00 starting 2026-01-01"
+          "input": "every 2 months on the first monday at 10:00 starting 2026-01-01",
+          "canonical": "every 2 months on the first monday at 10:00 starting 2026-01-01"
         }
       ]
     },
@@ -953,9 +949,9 @@
           "canonical": "every month on the 1st at 09:00 during jan, jul"
         },
         {
-          "name": "on_ordinal_repeat",
-          "input": "first monday of every month at 10:00 during mar",
-          "canonical": "first monday of every month at 10:00 during mar"
+          "name": "on_ordinal_weekday",
+          "input": "every month on the first monday at 10:00 during mar",
+          "canonical": "every month on the first monday at 10:00 during mar"
         },
         {
           "name": "on_week_repeat",
@@ -1013,8 +1009,8 @@
         },
         {
           "name": "australia_sydney",
-          "input": "first monday of every month at 10:00 in Australia/Sydney",
-          "canonical": "first monday of every month at 10:00 in Australia/Sydney"
+          "input": "every month on the first monday at 10:00 in Australia/Sydney",
+          "canonical": "every month on the first monday at 10:00 in Australia/Sydney"
         },
         {
           "name": "america_new_york",
@@ -1262,7 +1258,7 @@
       },
       {
         "name": "zero_ordinal_interval",
-        "input": "first monday of every 0 months at 10:00",
+        "input": "every 0 months on the first monday at 10:00",
         "description": "zero interval"
       },
       {
@@ -1647,46 +1643,42 @@
           "expression": "every month on the previous nearest weekday to 1st at 09:00 during mar in UTC",
           "description": "Mar 1, 2026 is Sunday, previous nearest crosses to Friday Feb 27",
           "next_date": "2026-02-27"
-        }
-      ]
-    },
-    "ordinal_repeat": {
-      "tests": [
+        },
         {
-          "name": "first_monday",
-          "expression": "first monday of every month at 10:00 in UTC",
+          "name": "ordinal_first_monday",
+          "expression": "every month on the first monday at 10:00 in UTC",
           "description": "Feb first Monday (Feb 2) passed, next = Mar 2",
           "next_date": "2026-03-02"
         },
         {
-          "name": "last_friday",
-          "expression": "last friday of every month at 16:00 in UTC",
+          "name": "ordinal_last_friday",
+          "expression": "every month on the last friday at 16:00 in UTC",
           "next_date": "2026-02-27"
         },
         {
-          "name": "second_tuesday",
-          "expression": "second tuesday of every month at 14:30 in UTC",
+          "name": "ordinal_second_tuesday",
+          "expression": "every month on the second tuesday at 14:30 in UTC",
           "next_date": "2026-02-10"
         },
         {
-          "name": "third_wednesday",
-          "expression": "third wednesday of every month at 09:00 in UTC",
+          "name": "ordinal_third_wednesday",
+          "expression": "every month on the third wednesday at 09:00 in UTC",
           "next_date": "2026-02-18"
         },
         {
-          "name": "fourth_thursday",
-          "expression": "fourth thursday of every month at 11:00 in UTC",
+          "name": "ordinal_fourth_thursday",
+          "expression": "every month on the fourth thursday at 11:00 in UTC",
           "next_date": "2026-02-26"
         },
         {
-          "name": "fifth_friday_skips_months",
-          "expression": "fifth friday of every month at 16:00 in UTC",
+          "name": "ordinal_fifth_friday_skips_months",
+          "expression": "every month on the fifth friday at 16:00 in UTC",
           "description": "Feb/Mar/Apr have no 5th Friday, May 29 does",
           "next_date": "2026-05-29"
         },
         {
-          "name": "first_monday_every_2_months",
-          "expression": "first monday of every 2 months at 10:00 in UTC",
+          "name": "ordinal_first_monday_every_2_months",
+          "expression": "every 2 months on the first monday at 10:00 in UTC",
           "description": "epoch anchor, aligned months: Mar (674), May (676), Jul (678), Sep (680)",
           "next_n": [
             "2026-03-02T10:00:00+00:00[UTC]",
@@ -1696,8 +1688,8 @@
           ]
         },
         {
-          "name": "first_monday_every_3_months",
-          "expression": "first monday of every 3 months at 10:00 in UTC",
+          "name": "ordinal_first_monday_every_3_months",
+          "expression": "every 3 months on the first monday at 10:00 in UTC",
           "description": "epoch anchor, aligned months: Apr (675), Jul (678), Oct (681), Jan 2027 (684)",
           "next_n": [
             "2026-04-06T10:00:00+00:00[UTC]",
@@ -1707,8 +1699,8 @@
           ]
         },
         {
-          "name": "last_friday_every_2_months",
-          "expression": "last friday of every 2 months at 16:00 in UTC",
+          "name": "ordinal_last_friday_every_2_months",
+          "expression": "every 2 months on the last friday at 16:00 in UTC",
           "description": "epoch anchor, aligned months: Mar, May, Jul, Sep",
           "next_n": [
             "2026-03-27T16:00:00+00:00[UTC]",
@@ -1718,8 +1710,8 @@
           ]
         },
         {
-          "name": "first_monday_every_2_months_with_starting",
-          "expression": "first monday of every 2 months at 10:00 starting 2026-01-01 in UTC",
+          "name": "ordinal_first_monday_every_2_months_with_starting",
+          "expression": "every 2 months on the first monday at 10:00 starting 2026-01-01 in UTC",
           "description": "anchor Jan 2026, aligned months: Jan(0), Mar(2), May(4), Jul(6). Now is Feb so first is Mar",
           "next_n": [
             "2026-03-02T10:00:00+00:00[UTC]",
@@ -1730,7 +1722,7 @@
         },
         {
           "name": "ordinal_interval_with_except",
-          "expression": "first monday of every 2 months at 10:00 except 2026-05-04 starting 2026-01-01 in UTC",
+          "expression": "every 2 months on the first monday at 10:00 except 2026-05-04 starting 2026-01-01 in UTC",
           "description": "bimonthly ordinal + except: skip May 4, next aligned is Jul 6",
           "next_n_count": 4,
           "next_n": [
@@ -1742,7 +1734,7 @@
         },
         {
           "name": "ordinal_interval_with_until",
-          "expression": "first monday of every 2 months at 10:00 until 2026-09-01 starting 2026-01-01 in UTC",
+          "expression": "every 2 months on the first monday at 10:00 until 2026-09-01 starting 2026-01-01 in UTC",
           "description": "bimonthly ordinal + until: fires Mar, May, Jul only (Sep 7 > Sep 1)",
           "next_n_count": 10,
           "next_n": [
@@ -1752,8 +1744,8 @@
           ]
         },
         {
-          "name": "last_friday_quarterly",
-          "expression": "last friday of every 3 months at 17:00 starting 2026-01-01 in UTC",
+          "name": "ordinal_last_friday_quarterly",
+          "expression": "every 3 months on the last friday at 17:00 starting 2026-01-01 in UTC",
           "description": "quarterly last friday: Apr, Jul, Oct, Jan",
           "next_n_count": 4,
           "next_n": [
@@ -2087,7 +2079,7 @@
         {
           "name": "every_4_years_feb_29",
           "expression": "every 4 years on feb 29 at 09:00 starting 2024-01-01 in UTC",
-          "description": "anchor 2024 (leap year), aligned years: 2024,2028,2032,2036 \u2014 all leap years",
+          "description": "anchor 2024 (leap year), aligned years: 2024,2028,2032,2036 — all leap years",
           "next_n": [
             "2028-02-29T09:00:00+00:00[UTC]",
             "2032-02-29T09:00:00+00:00[UTC]",
@@ -2155,7 +2147,7 @@
         },
         {
           "name": "ordinal_skip_months",
-          "expression": "first monday of every month at 10:00 except 2026-03-02 in UTC",
+          "expression": "every month on the first monday at 10:00 except 2026-03-02 in UTC",
           "description": "skip Mar 2, get Apr/May/Jun first Mondays",
           "next_n": [
             "2026-04-06T10:00:00+00:00[UTC]",
@@ -2227,7 +2219,7 @@
         },
         {
           "name": "ordinal_with_until",
-          "expression": "first monday of every month at 10:00 until 2026-06-01 in UTC",
+          "expression": "every month on the first monday at 10:00 until 2026-06-01 in UTC",
           "description": "ordinal with until",
           "next_n_count": 10,
           "next_n_length": 4
@@ -2422,7 +2414,7 @@
         },
         {
           "name": "five_first_mondays",
-          "expression": "first monday of every month at 10:00 in UTC",
+          "expression": "every month on the first monday at 10:00 in UTC",
           "next_n": [
             "2026-03-02T10:00:00+00:00[UTC]",
             "2026-04-06T10:00:00+00:00[UTC]",
@@ -2486,8 +2478,8 @@
           "next": "2026-03-01T09:00:00+00:00[UTC]"
         },
         {
-          "name": "ordinal_repeat",
-          "expression": "first monday of every month at 10:00, 14:00 in UTC",
+          "name": "ordinal_weekday",
+          "expression": "every month on the first monday at 10:00, 14:00 in UTC",
           "description": "Feb first Monday (Feb 2) passed, next = Mar 2 at 10:00",
           "next": "2026-03-02T10:00:00+00:00[UTC]"
         },
@@ -2681,8 +2673,8 @@
           "next": "2026-03-01T09:00:00+00:00[UTC]"
         },
         {
-          "name": "ordinal_repeat",
-          "expression": "first monday of every month at 10:00 during mar in UTC",
+          "name": "ordinal_weekday",
+          "expression": "every month on the first monday at 10:00 during mar in UTC",
           "description": "ordinal + during: Feb excluded, first Monday of Mar = Mar 2",
           "next_date": "2026-03-02"
         },
@@ -2945,28 +2937,28 @@
         },
         {
           "name": "ordinal_first_monday",
-          "expression": "first monday of every month at 10:00 in UTC",
+          "expression": "every month on the first monday at 10:00 in UTC",
           "datetime": "2026-03-02T10:00:00+00:00[UTC]",
           "expected": true,
           "description": "ordinal match first monday"
         },
         {
           "name": "ordinal_wrong_week",
-          "expression": "first monday of every month at 10:00 in UTC",
+          "expression": "every month on the first monday at 10:00 in UTC",
           "datetime": "2026-03-09T10:00:00+00:00[UTC]",
           "expected": false,
           "description": "ordinal wrong week"
         },
         {
           "name": "ordinal_last_friday_match",
-          "expression": "last friday of every month at 16:00 in UTC",
+          "expression": "every month on the last friday at 16:00 in UTC",
           "datetime": "2026-02-27T16:00:00+00:00[UTC]",
           "expected": true,
           "description": "ordinal match last friday"
         },
         {
           "name": "ordinal_last_friday_wrong_week",
-          "expression": "last friday of every month at 16:00 in UTC",
+          "expression": "every month on the last friday at 16:00 in UTC",
           "datetime": "2026-02-20T16:00:00+00:00[UTC]",
           "expected": false,
           "description": "ordinal wrong week"
@@ -3197,14 +3189,14 @@
         },
         {
           "name": "ordinal_interval_aligned",
-          "expression": "first monday of every 2 months at 10:00 in UTC",
+          "expression": "every 2 months on the first monday at 10:00 in UTC",
           "datetime": "2026-03-02T10:00:00+00:00[UTC]",
           "expected": true,
           "description": "ordinal 2-month: aligned"
         },
         {
           "name": "ordinal_interval_not_aligned",
-          "expression": "first monday of every 2 months at 10:00 in UTC",
+          "expression": "every 2 months on the first monday at 10:00 in UTC",
           "datetime": "2026-04-06T10:00:00+00:00[UTC]",
           "expected": false,
           "description": "ordinal 2-month: not aligned"
@@ -3627,7 +3619,7 @@
         },
         {
           "name": "ordinal_first_5",
-          "expression": "first monday of every month at 09:00 in UTC",
+          "expression": "every month on the first monday at 09:00 in UTC",
           "from": "2026-01-01T00:00:00+00:00[UTC]",
           "take": 5,
           "expected": [
@@ -3667,7 +3659,9 @@
           "expression": "on 2026-02-14 at 14:00 in UTC",
           "from": "2026-02-01T00:00:00+00:00[UTC]",
           "take": 5,
-          "expected": ["2026-02-14T14:00:00+00:00[UTC]"],
+          "expected": [
+            "2026-02-14T14:00:00+00:00[UTC]"
+          ],
           "description": "Single date yields 1 occurrence then terminates"
         },
         {
@@ -3762,7 +3756,9 @@
           "expression": "every day at 09:00 in UTC",
           "from": "2026-02-06T12:00:00+00:00[UTC]",
           "take": 1,
-          "expected": ["2026-02-07T09:00:00+00:00[UTC]"]
+          "expected": [
+            "2026-02-07T09:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -3965,7 +3961,7 @@
         },
         {
           "name": "ordinal_first_monday",
-          "expression": "first monday of every month at 09:00 in UTC",
+          "expression": "every month on the first monday at 09:00 in UTC",
           "from": "2026-01-01T00:00:00+00:00[UTC]",
           "to": "2026-04-01T00:00:00+00:00[UTC]",
           "expected": [
@@ -3976,7 +3972,7 @@
         },
         {
           "name": "ordinal_last_friday",
-          "expression": "last friday of every month at 17:00 in UTC",
+          "expression": "every month on the last friday at 17:00 in UTC",
           "from": "2026-01-01T00:00:00+00:00[UTC]",
           "to": "2026-04-01T00:00:00+00:00[UTC]",
           "expected": [
@@ -3987,7 +3983,7 @@
         },
         {
           "name": "ordinal_every_n_months",
-          "expression": "second tuesday of every 2 months at 10:00 starting 2026-01-01 in UTC",
+          "expression": "every 2 months on the second tuesday at 10:00 starting 2026-01-01 in UTC",
           "from": "2026-01-01T00:00:00+00:00[UTC]",
           "to": "2026-06-01T00:00:00+00:00[UTC]",
           "expected": [
@@ -4034,7 +4030,9 @@
           "expression": "on 2026-02-14 at 14:00 in UTC",
           "from": "2026-02-01T00:00:00+00:00[UTC]",
           "to": "2026-02-28T23:59:00+00:00[UTC]",
-          "expected": ["2026-02-14T14:00:00+00:00[UTC]"]
+          "expected": [
+            "2026-02-14T14:00:00+00:00[UTC]"
+          ]
         },
         {
           "name": "single_occurrence_out_of_range",
@@ -4350,28 +4348,28 @@
         },
         {
           "name": "ordinal_first_monday",
-          "expression": "first monday of every month at 09:00 in UTC",
+          "expression": "every month on the first monday at 09:00 in UTC",
           "now": "2026-02-10T12:00:00+00:00[UTC]",
           "expected": "2026-02-02T09:00:00+00:00[UTC]",
           "description": "After first Monday of Feb"
         },
         {
           "name": "ordinal_first_monday_same_day",
-          "expression": "first monday of every month at 09:00 in UTC",
+          "expression": "every month on the first monday at 09:00 in UTC",
           "now": "2026-02-02T12:00:00+00:00[UTC]",
           "expected": "2026-02-02T09:00:00+00:00[UTC]",
           "description": "On first Monday after 09:00"
         },
         {
           "name": "ordinal_first_monday_before",
-          "expression": "first monday of every month at 09:00 in UTC",
+          "expression": "every month on the first monday at 09:00 in UTC",
           "now": "2026-02-02T08:00:00+00:00[UTC]",
           "expected": "2026-01-05T09:00:00+00:00[UTC]",
           "description": "On first Monday before 09:00, return last month"
         },
         {
           "name": "ordinal_last_friday",
-          "expression": "last friday of every month at 17:00 in UTC",
+          "expression": "every month on the last friday at 17:00 in UTC",
           "now": "2026-03-01T12:00:00+00:00[UTC]",
           "expected": "2026-02-27T17:00:00+00:00[UTC]",
           "description": "Previous last Friday"
@@ -4730,12 +4728,12 @@
         },
         {
           "name": "ordinal",
-          "hron": "first monday of every month at 10:00",
+          "hron": "every month on the first monday at 10:00",
           "description": "ordinal weekday"
         },
         {
           "name": "ordinal_last",
-          "hron": "last friday of every month at 16:00",
+          "hron": "every month on the last friday at 16:00",
           "description": "ordinal last"
         },
         {
@@ -4805,7 +4803,7 @@
         },
         {
           "name": "ordinal_interval",
-          "hron": "first monday of every 2 months at 10:00",
+          "hron": "every 2 months on the first monday at 10:00",
           "description": "ordinal with month interval"
         },
         {
@@ -5156,52 +5154,52 @@
         {
           "name": "nth_weekday_first_monday",
           "cron": "0 9 * * 1#1",
-          "hron": "first monday of every month at 09:00"
+          "hron": "every month on the first monday at 09:00"
         },
         {
           "name": "nth_weekday_second_tuesday",
           "cron": "0 9 * * 2#2",
-          "hron": "second tuesday of every month at 09:00"
+          "hron": "every month on the second tuesday at 09:00"
         },
         {
           "name": "nth_weekday_third_wednesday",
           "cron": "0 9 * * 3#3",
-          "hron": "third wednesday of every month at 09:00"
+          "hron": "every month on the third wednesday at 09:00"
         },
         {
           "name": "nth_weekday_fourth_thursday",
           "cron": "0 9 * * 4#4",
-          "hron": "fourth thursday of every month at 09:00"
+          "hron": "every month on the fourth thursday at 09:00"
         },
         {
           "name": "nth_weekday_fifth_friday",
           "cron": "0 9 * * 5#5",
-          "hron": "fifth friday of every month at 09:00"
+          "hron": "every month on the fifth friday at 09:00"
         },
         {
           "name": "nth_weekday_last_friday",
           "cron": "0 9 * * 5L",
-          "hron": "last friday of every month at 09:00"
+          "hron": "every month on the last friday at 09:00"
         },
         {
           "name": "nth_weekday_last_monday",
           "cron": "0 9 * * 1L",
-          "hron": "last monday of every month at 09:00"
+          "hron": "every month on the last monday at 09:00"
         },
         {
           "name": "nth_weekday_first_sunday",
           "cron": "0 9 * * 0#1",
-          "hron": "first sunday of every month at 09:00"
+          "hron": "every month on the first sunday at 09:00"
         },
         {
           "name": "nth_weekday_last_sunday",
           "cron": "0 9 * * 0L",
-          "hron": "last sunday of every month at 09:00"
+          "hron": "every month on the last sunday at 09:00"
         },
         {
           "name": "nth_weekday_named",
           "cron": "0 9 * * SUN#1",
-          "hron": "first sunday of every month at 09:00"
+          "hron": "every month on the first sunday at 09:00"
         },
         {
           "name": "dow_range_with_7",

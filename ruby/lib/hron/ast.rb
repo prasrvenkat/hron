@@ -178,6 +178,7 @@ module Hron
   LastDayTarget = Data.define
   LastWeekdayTarget = Data.define
   NearestWeekdayTarget = Data.define(:day, :direction) # day: 1-31, direction: nil or NearestDirection
+  OrdinalWeekdayTarget = Data.define(:ordinal, :weekday)
 
   # --- Year target variants ---
 
@@ -207,7 +208,6 @@ module Hron
   DayRepeat = Data.define(:interval, :days, :times)
   WeekRepeat = Data.define(:interval, :days, :times)
   MonthRepeat = Data.define(:interval, :target, :times)
-  OrdinalRepeat = Data.define(:interval, :ordinal, :day, :times)
   SingleDateExpr = Data.define(:date, :times)
   YearRepeat = Data.define(:interval, :target, :times)
 

@@ -56,7 +56,6 @@ public static class Display
         IntervalRepeat ir => RenderIntervalRepeat(ir),
         WeekRepeat wr => RenderWeekRepeat(wr),
         MonthRepeat mr => RenderMonthRepeat(mr),
-        OrdinalRepeat or => RenderOrdinalRepeat(or),
         SingleDate sd => RenderSingleDate(sd),
         YearRepeat yr => RenderYearRepeat(yr),
         _ => throw new ArgumentException($"Unknown expression type: {expr.GetType()}", nameof(expr))
@@ -96,15 +95,6 @@ public static class Display
         return $"every month on the {targetStr} at {FormatTimeList(mr.Times)}";
     }
 
-    private static string RenderOrdinalRepeat(OrdinalRepeat or)
-    {
-        if (or.Interval > 1)
-        {
-            return $"{or.Ordinal.ToDisplayString()} {or.WeekdayValue.ToDisplayString()} of every {or.Interval} months at {FormatTimeList(or.Times)}";
-        }
-        return $"{or.Ordinal.ToDisplayString()} {or.WeekdayValue.ToDisplayString()} of every month at {FormatTimeList(or.Times)}";
-    }
-
     private static string RenderSingleDate(SingleDate sd)
         => $"on {RenderDateSpec(sd.DateSpec)} at {FormatTimeList(sd.Times)}";
 
@@ -133,6 +123,7 @@ public static class Display
         MonthTargetKind.LastWeekday => "last weekday",
         MonthTargetKind.Days => FormatOrdinalDaySpecs(target.Specs),
         MonthTargetKind.NearestWeekday => RenderNearestWeekday(target),
+        MonthTargetKind.OrdinalWeekday => $"{target.OrdinalValue!.Value.ToDisplayString()} {target.WeekdayValue!.Value.ToDisplayString()}",
         _ => throw new ArgumentOutOfRangeException()
     };
 

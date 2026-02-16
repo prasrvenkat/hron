@@ -62,7 +62,8 @@ export type MonthTarget =
   | { type: "days"; specs: DayOfMonthSpec[] }
   | { type: "lastDay" }
   | { type: "lastWeekday" }
-  | { type: "nearestWeekday"; day: number; direction: NearestDirection | null };
+  | { type: "nearestWeekday"; day: number; direction: NearestDirection | null }
+  | { type: "ordinalWeekday"; ordinal: OrdinalPosition; weekday: Weekday };
 
 // --- Year target ---
 
@@ -117,13 +118,6 @@ export type ScheduleExpr =
       type: "monthRepeat";
       interval: number;
       target: MonthTarget;
-      times: TimeOfDay[];
-    }
-  | {
-      type: "ordinalRepeat";
-      interval: number;
-      ordinal: OrdinalPosition;
-      day: Weekday;
       times: TimeOfDay[];
     }
   | { type: "singleDate"; date: DateSpec; times: TimeOfDay[] }

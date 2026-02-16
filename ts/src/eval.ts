@@ -483,16 +483,6 @@ function nextExpr(
         now,
         during,
       );
-    case "ordinalRepeat":
-      return nextOrdinalRepeat(
-        expr.interval,
-        expr.ordinal,
-        expr.day,
-        expr.times,
-        tz,
-        anchor,
-        now,
-      );
     case "singleDate":
       return nextSingleDate(expr.date, expr.times, tz, now);
     case "yearRepeat":
@@ -603,6 +593,25 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
         const lastWd = lastWeekdayOfMonth(date.year, date.month);
         return Temporal.PlainDate.compare(date, lastWd) === 0;
       }
+      if (target.type === "ordinalWeekday") {
+        let targetDate: PD | null;
+        if (target.ordinal === "last") {
+          targetDate = lastWeekdayInMonth(
+            date.year,
+            date.month,
+            target.weekday,
+          );
+        } else {
+          targetDate = nthWeekdayOfMonth(
+            date.year,
+            date.month,
+            target.weekday,
+            ordinalToN(target.ordinal),
+          );
+        }
+        if (!targetDate) return false;
+        return Temporal.PlainDate.compare(date, targetDate) === 0;
+      }
       // nearestWeekday
       const targetDate = nearestWeekday(
         date.year,
@@ -610,32 +619,6 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
         target.day,
         target.direction,
       );
-      if (!targetDate) return false;
-      return Temporal.PlainDate.compare(date, targetDate) === 0;
-    }
-    case "ordinalRepeat": {
-      if (!timeMatchesWithDst(schedule.expr.times)) return false;
-      if (schedule.expr.interval > 1) {
-        const anchorDate = schedule.anchor
-          ? Temporal.PlainDate.from(schedule.anchor)
-          : EPOCH_DATE;
-        const monthOffset = monthsBetweenYM(anchorDate, date);
-        if (monthOffset < 0 || monthOffset % schedule.expr.interval !== 0) {
-          return false;
-        }
-      }
-      const { ordinal, day } = schedule.expr;
-      let targetDate: PD | null;
-      if (ordinal === "last") {
-        targetDate = lastWeekdayInMonth(date.year, date.month, day);
-      } else {
-        targetDate = nthWeekdayOfMonth(
-          date.year,
-          date.month,
-          day,
-          ordinalToN(ordinal),
-        );
-      }
       if (!targetDate) return false;
       return Temporal.PlainDate.compare(date, targetDate) === 0;
     }
@@ -926,6 +909,21 @@ function nextMonthRepeat(
       dateCandidates.push(lastDayOfMonth(year, month));
     } else if (target.type === "lastWeekday") {
       dateCandidates.push(lastWeekdayOfMonth(year, month));
+    } else if (target.type === "ordinalWeekday") {
+      let owDate: PD | null;
+      if (target.ordinal === "last") {
+        owDate = lastWeekdayInMonth(year, month, target.weekday);
+      } else {
+        owDate = nthWeekdayOfMonth(
+          year,
+          month,
+          target.weekday,
+          ordinalToN(target.ordinal),
+        );
+      }
+      if (owDate) {
+        dateCandidates.push(owDate);
+      }
     } else {
       // nearestWeekday
       const nwDate = nearestWeekday(year, month, target.day, target.direction);
@@ -947,59 +945,6 @@ function nextMonthRepeat(
       }
     }
     if (best) return best;
-
-    month++;
-    if (month > 12) {
-      month = 1;
-      year++;
-    }
-  }
-
-  return null;
-}
-
-function nextOrdinalRepeat(
-  interval: number,
-  ordinal: OrdinalPosition,
-  day: Weekday,
-  times: TimeOfDay[],
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  let year = nowInTz.year;
-  let month = nowInTz.month;
-
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
-  const maxIter = interval > 1 ? 24 * interval : 24;
-
-  for (let i = 0; i < maxIter; i++) {
-    // Check interval alignment
-    if (interval > 1) {
-      const cur = Temporal.PlainDate.from({ year, month, day: 1 });
-      const monthOffset = monthsBetweenYM(anchorDate, cur);
-      if (monthOffset < 0 || euclideanMod(monthOffset, interval) !== 0) {
-        month++;
-        if (month > 12) {
-          month = 1;
-          year++;
-        }
-        continue;
-      }
-    }
-
-    let targetDate: PD | null;
-    if (ordinal === "last") {
-      targetDate = lastWeekdayInMonth(year, month, day);
-    } else {
-      targetDate = nthWeekdayOfMonth(year, month, day, ordinalToN(ordinal));
-    }
-
-    if (targetDate) {
-      const candidate = earliestFutureAtTimes(targetDate, times, tz, now);
-      if (candidate) return candidate;
-    }
 
     month++;
     if (month > 12) {
@@ -1226,8 +1171,6 @@ function prevExpr(
       return prevWeekRepeat(expr, tz, anchor, now);
     case "monthRepeat":
       return prevMonthRepeat(expr, tz, anchor, now);
-    case "ordinalRepeat":
-      return prevOrdinalRepeat(expr, tz, anchor, now);
     case "singleDate":
       return prevSingleDate(expr, tz, now);
     case "yearRepeat":
@@ -1420,55 +1363,6 @@ function prevMonthRepeat(
         if (candidate !== null) return candidate;
       } else {
         const candidate = latestAtTimes(d, times, tz);
-        if (candidate !== null) return candidate;
-      }
-    }
-
-    ({ year, month } = prevMonth(year, month));
-  }
-
-  return null;
-}
-
-function prevOrdinalRepeat(
-  expr: Extract<ScheduleExpr, { type: "ordinalRepeat" }>,
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const startDate = nowInTz.toPlainDate();
-  const { interval, ordinal, day, times } = expr;
-
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
-
-  let year = startDate.year;
-  let month = startDate.month;
-
-  const maxIter = interval > 1 ? 24 * interval : 24;
-
-  for (let i = 0; i < maxIter; i++) {
-    if (interval > 1) {
-      const monthOffset = monthsBetweenYM(
-        anchorDate,
-        Temporal.PlainDate.from({ year, month, day: 1 }),
-      );
-      if (monthOffset < 0 || monthOffset % interval !== 0) {
-        ({ year, month } = prevMonth(year, month));
-        continue;
-      }
-    }
-
-    const targetDate = getOrdinalWeekday(year, month, ordinal, day);
-
-    if (targetDate !== null) {
-      if (Temporal.PlainDate.compare(targetDate, startDate) > 0) {
-        // Future, skip
-      } else if (Temporal.PlainDate.compare(targetDate, startDate) === 0) {
-        const candidate = latestPastAtTimes(targetDate, times, tz, now);
-        if (candidate !== null) return candidate;
-      } else {
-        const candidate = latestAtTimes(targetDate, times, tz);
         if (candidate !== null) return candidate;
       }
     }
@@ -1680,6 +1574,10 @@ function getMonthTargetDates(
       return [lastWeekdayOfMonth(year, month)];
     case "nearestWeekday": {
       const d = nearestWeekday(year, month, target.day, target.direction);
+      return d ? [d] : [];
+    }
+    case "ordinalWeekday": {
+      const d = getOrdinalWeekday(year, month, target.ordinal, target.weekday);
       return d ? [d] : [];
     }
     default:

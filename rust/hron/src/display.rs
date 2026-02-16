@@ -111,31 +111,11 @@ impl fmt::Display for ScheduleExpr {
                         }
                         write!(f, "nearest weekday to {}{}", day, ordinal_suffix(*day))?;
                     }
+                    MonthTarget::OrdinalWeekday { ordinal, weekday } => {
+                        write!(f, "{} {}", ordinal.as_str(), weekday.as_str())?;
+                    }
                 }
                 write!(f, " at ")?;
-                write_time_list(f, times)?;
-            }
-            ScheduleExpr::OrdinalRepeat {
-                interval,
-                ordinal,
-                day,
-                times,
-            } => {
-                if *interval > 1 {
-                    write!(
-                        f,
-                        "{} {} of every {interval} months at ",
-                        ordinal.as_str(),
-                        day.as_str()
-                    )?;
-                } else {
-                    write!(
-                        f,
-                        "{} {} of every month at ",
-                        ordinal.as_str(),
-                        day.as_str()
-                    )?;
-                }
                 write_time_list(f, times)?;
             }
             ScheduleExpr::SingleDate { date, times } => {
@@ -318,9 +298,9 @@ mod tests {
     }
 
     #[test]
-    fn test_roundtrip_ordinal() {
-        let s = parse("first monday of every month at 10:00").unwrap();
-        assert_eq!(s.to_string(), "first monday of every month at 10:00");
+    fn test_roundtrip_ordinal_weekday() {
+        let s = parse("every month on the first monday at 10:00").unwrap();
+        assert_eq!(s.to_string(), "every month on the first monday at 10:00");
     }
 
     #[test]

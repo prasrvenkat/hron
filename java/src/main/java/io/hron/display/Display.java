@@ -53,7 +53,6 @@ public final class Display {
       case IntervalRepeat ir -> renderIntervalRepeat(ir);
       case WeekRepeat wr -> renderWeekRepeat(wr);
       case MonthRepeat mr -> renderMonthRepeat(mr);
-      case OrdinalRepeat or -> renderOrdinalRepeat(or);
       case SingleDate sd -> renderSingleDate(sd);
       case YearRepeat yr -> renderYearRepeat(yr);
     };
@@ -92,16 +91,6 @@ public final class Display {
           "every %d months on the %s at %s", mr.interval(), targetStr, formatTimeList(mr.times()));
     }
     return String.format("every month on the %s at %s", targetStr, formatTimeList(mr.times()));
-  }
-
-  private static String renderOrdinalRepeat(OrdinalRepeat or) {
-    if (or.interval() > 1) {
-      return String.format(
-          "%s %s of every %d months at %s",
-          or.ordinal(), or.weekday(), or.interval(), formatTimeList(or.times()));
-    }
-    return String.format(
-        "%s %s of every month at %s", or.ordinal(), or.weekday(), formatTimeList(or.times()));
   }
 
   private static String renderSingleDate(SingleDate sd) {
@@ -143,6 +132,7 @@ public final class Display {
         sb.append(ordinalNumber(target.nearestWeekdayDay()));
         yield sb.toString();
       }
+      case ORDINAL_WEEKDAY -> String.format("%s %s", target.ordinal(), target.weekday());
     };
   }
 

@@ -5,17 +5,16 @@
 schedule       = expression , [ except_clause ] , [ until_clause ]
                , [ starting_clause ] , [ during_clause ] , [ timezone_clause ] ;
 
-expression     = every_expr | on_expr | ordinal_expr ;
+expression     = every_expr | on_expr ;
 
 every_expr     = "every" , repeater ;
 on_expr        = "on" , date_target , "at" , time_list ;
-ordinal_expr   = ordinal , day_name , "of" , "every" , [ number ] , ( "month" | "months" ) , "at" , time_list ;
 
 (* --- Repeaters --- *)
 (* Interval semantics: for day/month/year repeat, when interval > 1, *)
 (* the schedule fires only on dates aligned with the anchor: *)
 (*   day_repeat:  (date - anchor) mod interval == 0  *)
-(*   month_repeat/ordinal_expr: (month_offset - anchor_month_offset) mod interval == 0 *)
+(*   month_repeat: (month_offset - anchor_month_offset) mod interval == 0 *)
 (*   year_repeat: (year - anchor_year) mod interval == 0 *)
 (* Default anchor: epoch (1970-01-01). The 'starting' clause overrides it. *)
 
@@ -66,7 +65,7 @@ day_name       = "monday"  | "tuesday" | "wednesday" | "thursday"
 
 (* --- Month targets --- *)
 
-month_target   = ordinal_day_spec_list | last_target | nearest_weekday_target ;
+month_target   = ordinal_day_spec_list | last_target | nearest_weekday_target | ordinal_weekday_target ;
 ordinal_day_spec_list = ordinal_day_spec , { "," , ordinal_day_spec } ;
 ordinal_day_spec = ordinal_day , [ "to" , ordinal_day ] ;
 ordinal_day    = number , ordinal_suffix ;
@@ -74,6 +73,7 @@ ordinal_suffix = "st" | "nd" | "rd" | "th" ;
 last_target    = "last" , ( "day" | "weekday" ) ;
 nearest_weekday_target = [ direction ] , "nearest" , "weekday" , "to" , ordinal_day ;
 direction      = "next" | "previous" ;
+ordinal_weekday_target = ordinal , day_name ;  (* ordinal includes "last", so "last monday" is parsed here *)
 
 (* --- Date targets (for "on" expressions) --- *)
 

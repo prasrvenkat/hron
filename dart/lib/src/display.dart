@@ -48,7 +48,6 @@ String _displayExpr(ScheduleExpr expr) => switch (expr) {
   WeekRepeat() =>
     'every ${expr.interval} weeks on ${_formatDayList(expr.days)} at ${_formatTimeList(expr.times)}',
   MonthRepeat() => _displayMonthRepeat(expr),
-  OrdinalRepeat() => _displayOrdinalRepeat(expr),
   SingleDate() => _displaySingleDate(expr),
   YearRepeat() => _displayYearRepeat(expr),
 };
@@ -69,13 +68,6 @@ String _displayDayRepeat(DayRepeat expr) {
   return 'every ${_displayDayFilter(expr.days)} at ${_formatTimeList(expr.times)}';
 }
 
-String _displayOrdinalRepeat(OrdinalRepeat expr) {
-  if (expr.interval > 1) {
-    return '${expr.ordinal.name} ${expr.day.name} of every ${expr.interval} months at ${_formatTimeList(expr.times)}';
-  }
-  return '${expr.ordinal.name} ${expr.day.name} of every month at ${_formatTimeList(expr.times)}';
-}
-
 String _displayMonthRepeat(MonthRepeat expr) {
   String targetStr;
   final target = expr.target;
@@ -93,8 +85,10 @@ String _displayMonthRepeat(MonthRepeat expr) {
     };
     targetStr =
         '${dirPrefix}nearest weekday to ${target.day}${ordinalSuffix(target.day)}';
+  } else if (target is OrdinalWeekdayMonthTarget) {
+    targetStr = '${target.ordinal.name} ${target.weekday.name}';
   } else {
-    targetStr = 'last weekday';
+    throw ArgumentError('unknown month target: ${target.runtimeType}');
   }
   if (expr.interval > 1) {
     return 'every ${expr.interval} months on the $targetStr at ${_formatTimeList(expr.times)}';

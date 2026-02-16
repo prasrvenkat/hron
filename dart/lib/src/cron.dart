@@ -115,13 +115,13 @@ String toCron(ScheduleData schedule) {
         }
         return '${time.minute} ${time.hour} ${target.day}W * *';
       }
+      if (target is OrdinalWeekdayMonthTarget) {
+        throw HronError.cron(
+          'not expressible as cron (ordinal weekday of month not supported)',
+        );
+      }
       throw HronError.cron(
         'not expressible as cron (last weekday of month not supported)',
-      );
-
-    case OrdinalRepeat():
-      throw HronError.cron(
-        'not expressible as cron (ordinal weekday of month not supported)',
       );
 
     case SingleDate():
@@ -410,7 +410,9 @@ ScheduleData? _tryParseNthWeekday(
     final hour = _parseSingleValue(hourField, 'hour', 0, 23);
 
     final schedule = ScheduleData(
-      OrdinalRepeat(1, ordinal, weekday, [TimeOfDay(hour, minute)]),
+      MonthRepeat(1, OrdinalWeekdayMonthTarget(ordinal, weekday), [
+        TimeOfDay(hour, minute),
+      ]),
     );
     schedule.during = during;
     return schedule;
@@ -430,7 +432,7 @@ ScheduleData? _tryParseNthWeekday(
     final hour = _parseSingleValue(hourField, 'hour', 0, 23);
 
     final schedule = ScheduleData(
-      OrdinalRepeat(1, OrdinalPosition.last, weekday, [
+      MonthRepeat(1, OrdinalWeekdayMonthTarget(OrdinalPosition.last, weekday), [
         TimeOfDay(hour, minute),
       ]),
     );

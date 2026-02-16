@@ -22,7 +22,7 @@ from ._ast import (
     NamedUntil,
     NearestDirection,
     NearestWeekdayTarget,
-    OrdinalRepeat,
+    OrdinalWeekdayTarget,
     ScheduleData,
     ScheduleExpr,
     SingleDateExpr,
@@ -102,16 +102,11 @@ def _display_expr(expr: ScheduleExpr) -> str:
                     elif direction == NearestDirection.PREVIOUS:
                         prefix = "previous "
                     target_str = f"{prefix}nearest weekday to {day}{_ordinal_suffix(day)}"
-                case _:
-                    target_str = "last weekday"
+                case OrdinalWeekdayTarget(ordinal=ordinal, weekday=weekday):
+                    target_str = f"{ordinal} {weekday}"
             if interval > 1:
                 return f"every {interval} months on the {target_str} at {_format_time_list(times)}"
             return f"every month on the {target_str} at {_format_time_list(times)}"
-
-        case OrdinalRepeat(interval=interval, ordinal=ordinal, day=day, times=times):
-            if interval > 1:
-                return f"{ordinal} {day} of every {interval} months at {_format_time_list(times)}"
-            return f"{ordinal} {day} of every month at {_format_time_list(times)}"
 
         case SingleDateExpr(date=date_spec, times=times):
             match date_spec:

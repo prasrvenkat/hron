@@ -58,9 +58,9 @@ public class ScheduleTest {
   }
 
   @Test
-  void testParseOrdinalRepeat() throws HronException {
-    Schedule s = Schedule.parse("first monday of every month at 10:00");
-    assertEquals("first monday of every month at 10:00", s.toString());
+  void testParseOrdinalWeekday() throws HronException {
+    Schedule s = Schedule.parse("every month on the first monday at 10:00");
+    assertEquals("every month on the first monday at 10:00", s.toString());
   }
 
   @Test

@@ -267,7 +267,15 @@ class NearestWeekdayTarget:
     direction: NearestDirection | None = None
 
 
-MonthTarget = DaysTarget | LastDayTarget | LastWeekdayTarget | NearestWeekdayTarget
+@dataclass(frozen=True, slots=True)
+class OrdinalWeekdayTarget:
+    ordinal: OrdinalPosition
+    weekday: Weekday
+
+
+MonthTarget = (
+    DaysTarget | LastDayTarget | LastWeekdayTarget | NearestWeekdayTarget | OrdinalWeekdayTarget
+)
 
 
 # --- Year target ---
@@ -387,14 +395,6 @@ class MonthRepeat:
 
 
 @dataclass(frozen=True, slots=True)
-class OrdinalRepeat:
-    interval: int
-    ordinal: OrdinalPosition
-    day: Weekday
-    times: tuple[TimeOfDay, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class SingleDateExpr:
     date: DateSpec
     times: tuple[TimeOfDay, ...]
@@ -407,15 +407,7 @@ class YearRepeat:
     times: tuple[TimeOfDay, ...]
 
 
-ScheduleExpr = (
-    IntervalRepeat
-    | DayRepeat
-    | WeekRepeat
-    | MonthRepeat
-    | OrdinalRepeat
-    | SingleDateExpr
-    | YearRepeat
-)
+ScheduleExpr = IntervalRepeat | DayRepeat | WeekRepeat | MonthRepeat | SingleDateExpr | YearRepeat
 
 
 # --- Schedule data (top-level) ---

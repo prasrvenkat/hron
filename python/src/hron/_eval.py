@@ -32,7 +32,7 @@ from ._ast import (
     NearestDirection,
     NearestWeekdayTarget,
     OrdinalPosition,
-    OrdinalRepeat,
+    OrdinalWeekdayTarget,
     ScheduleData,
     ScheduleExpr,
     SingleDateExpr,
@@ -418,8 +418,6 @@ def _next_expr(
             return _next_week_repeat(interval, days, times, tz, anchor, now)
         case MonthRepeat(interval=interval, target=target, times=times):
             return _next_month_repeat(interval, target, times, tz, anchor, now, during)
-        case OrdinalRepeat(interval=interval, ordinal=ordinal, day=day, times=times):
-            return _next_ordinal_repeat(interval, ordinal, day, times, tz, anchor, now)
         case SingleDateExpr(date=date_spec, times=times):
             return _next_single_date(date_spec, times, tz, now)
         case YearRepeat(interval=interval, target=target, times=times):
@@ -530,25 +528,17 @@ def matches(schedule: ScheduleData, dt: datetime) -> bool:
                 case NearestWeekdayTarget(day=target_day, direction=direction):
                     target_date = _nearest_weekday(d.year, d.month, target_day, direction)
                     return target_date is not None and d == target_date
-
-        case OrdinalRepeat(interval=interval, ordinal=ordinal, day=day, times=times):
-            if not time_matches_with_dst(times):
-                return False
-            if interval > 1:
-                anchor_date = (
-                    date.fromisoformat(schedule.anchor) if schedule.anchor else _EPOCH_DATE
-                )
-                month_offset = _months_between_ym(anchor_date, d)
-                if month_offset < 0 or month_offset % interval != 0:
-                    return False
-            ordinal_target: date | None
-            if ordinal == OrdinalPosition.LAST:
-                ordinal_target = _last_weekday_in_month(d.year, d.month, day)
-            else:
-                ordinal_target = _nth_weekday_of_month(d.year, d.month, day, ordinal.to_n())
-            if ordinal_target is None:
-                return False
-            return d == ordinal_target
+                case OrdinalWeekdayTarget(ordinal=ordinal, weekday=weekday):
+                    ordinal_target: date | None
+                    if ordinal == OrdinalPosition.LAST:
+                        ordinal_target = _last_weekday_in_month(d.year, d.month, weekday)
+                    else:
+                        ordinal_target = _nth_weekday_of_month(
+                            d.year, d.month, weekday, ordinal.to_n()
+                        )
+                    if ordinal_target is None:
+                        return False
+                    return d == ordinal_target
 
         case SingleDateExpr(date=date_spec, times=times):
             if not time_matches_with_dst(times):
@@ -803,6 +793,13 @@ def _next_month_repeat(
                 nearest_date = _nearest_weekday(year, month, target_day, direction)
                 if nearest_date is not None:
                     date_candidates.append(nearest_date)
+            case OrdinalWeekdayTarget(ordinal=ordinal, weekday=weekday):
+                if ordinal == OrdinalPosition.LAST:
+                    ordinal_date: date | None = _last_weekday_in_month(year, month, weekday)
+                else:
+                    ordinal_date = _nth_weekday_of_month(year, month, weekday, ordinal.to_n())
+                if ordinal_date is not None:
+                    date_candidates.append(ordinal_date)
 
         best: datetime | None = None
         for dc in date_candidates:
@@ -811,52 +808,6 @@ def _next_month_repeat(
                 best = candidate
         if best:
             return best
-
-        month += 1
-        if month > 12:
-            month = 1
-            year += 1
-
-    return None
-
-
-def _next_ordinal_repeat(
-    interval: int,
-    ordinal: OrdinalPosition,
-    day: Weekday,
-    times: tuple[TimeOfDay, ...],
-    tz: ZoneInfo,
-    anchor: str | None,
-    now: datetime,
-) -> datetime | None:
-    now_in_tz = now.astimezone(tz)
-    year = now_in_tz.year
-    month = now_in_tz.month
-
-    anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
-    max_iter = 24 * interval if interval > 1 else 24
-
-    for _ in range(max_iter):
-        # Check interval alignment
-        if interval > 1:
-            cur = date(year, month, 1)
-            month_offset = _months_between_ym(anchor_date, cur)
-            if month_offset < 0 or month_offset % interval != 0:
-                month += 1
-                if month > 12:
-                    month = 1
-                    year += 1
-                continue
-
-        if ordinal == OrdinalPosition.LAST:
-            ordinal_date: date | None = _last_weekday_in_month(year, month, day)
-        else:
-            ordinal_date = _nth_weekday_of_month(year, month, day, ordinal.to_n())
-
-        if ordinal_date is not None:
-            candidate = _earliest_future_at_times(ordinal_date, times, tz, now)
-            if candidate:
-                return candidate
 
         month += 1
         if month > 12:
@@ -1054,8 +1005,6 @@ def _prev_expr(
             return _prev_week_repeat(interval, days, times, tz, anchor, now)
         case MonthRepeat(interval=interval, target=target, times=times):
             return _prev_month_repeat(interval, target, times, tz, anchor, now)
-        case OrdinalRepeat(interval=interval, ordinal=ordinal, day=day, times=times):
-            return _prev_ordinal_repeat(interval, ordinal, day, times, tz, anchor, now)
         case SingleDateExpr(date=date_spec, times=times):
             return _prev_single_date(date_spec, times, tz, now)
         case YearRepeat(interval=interval, target=target, times=times):
@@ -1297,6 +1246,13 @@ def _prev_month_repeat(
                 nearest_date = _nearest_weekday(year, month, target_day, direction)
                 if nearest_date is not None:
                     date_candidates.append(nearest_date)
+            case OrdinalWeekdayTarget(ordinal=ordinal, weekday=weekday):
+                if ordinal == OrdinalPosition.LAST:
+                    ordinal_date: date | None = _last_weekday_in_month(year, month, weekday)
+                else:
+                    ordinal_date = _nth_weekday_of_month(year, month, weekday, ordinal.to_n())
+                if ordinal_date is not None:
+                    date_candidates.append(ordinal_date)
 
         # Sort in reverse order for latest first
         for dc in sorted(date_candidates, reverse=True):
@@ -1308,61 +1264,6 @@ def _prev_month_repeat(
                     return candidate
             else:
                 candidate = _latest_at_times(dc, times, tz)
-                if candidate is not None:
-                    return candidate
-
-        month -= 1
-        if month < 1:
-            month = 12
-            year -= 1
-
-    return None
-
-
-def _prev_ordinal_repeat(
-    interval: int,
-    ordinal: OrdinalPosition,
-    day: Weekday,
-    times: tuple[TimeOfDay, ...],
-    tz: ZoneInfo,
-    anchor: str | None,
-    now: datetime,
-) -> datetime | None:
-    now_in_tz = now.astimezone(tz)
-    start_date = now_in_tz.date()
-    year = start_date.year
-    month = start_date.month
-
-    anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
-    max_iter = 24 * interval if interval > 1 else 24
-
-    for _ in range(max_iter):
-        # Check interval alignment
-        if interval > 1:
-            cur = date(year, month, 1)
-            month_offset = _months_between_ym(anchor_date, cur)
-            if month_offset < 0 or month_offset % interval != 0:
-                month -= 1
-                if month < 1:
-                    month = 12
-                    year -= 1
-                continue
-
-        if ordinal == OrdinalPosition.LAST:
-            ordinal_date: date | None = _last_weekday_in_month(year, month, day)
-        else:
-            ordinal_date = _nth_weekday_of_month(year, month, day, ordinal.to_n())
-
-        if ordinal_date is not None:
-            if ordinal_date > start_date:
-                # Future, skip
-                pass
-            elif ordinal_date == start_date:
-                candidate = _latest_past_at_times(ordinal_date, times, tz, now)
-                if candidate is not None:
-                    return candidate
-            else:
-                candidate = _latest_at_times(ordinal_date, times, tz)
                 if candidate is not None:
                     return candidate
 

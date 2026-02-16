@@ -55,13 +55,6 @@ pub enum ScheduleExpr {
         target: MonthTarget,
         times: Vec<TimeOfDay>,
     },
-    /// `first monday of every month at 10:00`, `first monday of every 2 months at 10:00`
-    OrdinalRepeat {
-        interval: u32,
-        ordinal: OrdinalPosition,
-        day: Weekday,
-        times: Vec<TimeOfDay>,
-    },
     /// `on feb 14 at 9:00, 17:00`
     SingleDate {
         date: DateSpec,
@@ -333,6 +326,11 @@ pub enum MonthTarget {
     NearestWeekday {
         day: u8,
         direction: Option<NearestDirection>,
+    },
+    /// Ordinal weekday of month: `first monday`, `last friday`, etc.
+    OrdinalWeekday {
+        ordinal: OrdinalPosition,
+        weekday: Weekday,
     },
 }
 

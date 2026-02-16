@@ -66,13 +66,8 @@ class _Parser {
     } else if (kind is OnToken) {
       advance();
       expr = _parseOn();
-    } else if (kind is OrdinalToken || kind is LastToken) {
-      expr = _parseOrdinalRepeat();
     } else {
-      throw error(
-        "expected 'every', 'on', or an ordinal (first, second, ...)",
-        span,
-      );
+      throw error("expected 'every' or 'on'", span);
     }
 
     return _parseTrailingClauses(expr);
@@ -314,8 +309,28 @@ class _Parser {
       } else if (next is WeekdayKeyToken) {
         advance();
         target = LastWeekdayTarget();
+      } else if (next is DayNameToken) {
+        final weekday = next.name;
+        advance();
+        target = OrdinalWeekdayMonthTarget(OrdinalPosition.last, weekday);
       } else {
-        throw error("expected 'day' or 'weekday' after 'last'", currentSpan());
+        throw error(
+          "expected 'day', 'weekday', or day name after 'last'",
+          currentSpan(),
+        );
+      }
+    } else if (k is OrdinalToken) {
+      final ordinal = _parseOrdinalPosition();
+      final next = peekKind();
+      if (next is DayNameToken) {
+        final weekday = next.name;
+        advance();
+        target = OrdinalWeekdayMonthTarget(ordinal, weekday);
+      } else {
+        throw error(
+          'expected day name after ordinal in monthly expression',
+          currentSpan(),
+        );
       }
     } else if (k is OrdinalNumberToken) {
       final specs = _parseOrdinalDayList();
@@ -324,7 +339,7 @@ class _Parser {
       target = _parseNearestWeekdayTarget();
     } else {
       throw error(
-        "expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'",
+        "expected ordinal day (1st, 15th), 'last', ordinal, or '[next|previous] nearest' after 'the'",
         currentSpan(),
       );
     }
@@ -362,38 +377,6 @@ class _Parser {
       return k.value;
     }
     throw error('expected ordinal day number', currentSpan());
-  }
-
-  ScheduleExpr _parseOrdinalRepeat() {
-    final ordinal = _parseOrdinalPosition();
-
-    final k = peekKind();
-    if (k is! DayNameToken) {
-      throw error('expected day name after ordinal', currentSpan());
-    }
-    final day = k.name;
-    advance();
-
-    consumeKind("'of'", (k) => k is OfToken);
-    consumeKind("'every'", (k) => k is EveryToken);
-
-    // Optional interval: "of every 2 months" vs "of every month"
-    int interval = 1;
-    final next = peekKind();
-    if (next is NumberToken) {
-      interval = next.value;
-      final intervalSpan = currentSpan();
-      advance();
-      if (interval == 0) {
-        throw error('interval must be at least 1', intervalSpan);
-      }
-    }
-
-    consumeKind("'month'", (k) => k is MonthToken);
-    consumeKind("'at'", (k) => k is AtToken);
-    final times = _parseTimeList();
-
-    return OrdinalRepeat(interval, ordinal, day, times);
   }
 
   ScheduleExpr _parseYearRepeat(int interval) {

@@ -127,9 +127,7 @@ public sealed class Parser
         {
             TokenKind.Every => ParseEveryExpr(),
             TokenKind.On => ParseSingleDate(),
-            TokenKind.Ordinal => ParseOrdinalRepeat(),
-            TokenKind.Last => ParseOrdinalRepeat(),
-            _ => throw ParseError("expected 'every', 'on', or ordinal position", tok.Span)
+            _ => throw ParseError("expected 'every' or 'on'", tok.Span)
         };
     }
 
@@ -336,7 +334,20 @@ public sealed class Parser
                 _pos++;
                 return MonthTarget.LastWeekday();
             }
-            throw ParseError("expected 'day' or 'weekday' after 'last'", next?.Span ?? EndSpan());
+            if (next is not null && next.Kind == TokenKind.DayName)
+            {
+                var weekday = _tokens[_pos++].DayNameVal!.Value;
+                return MonthTarget.OrdinalWeekday(OrdinalPosition.Last, weekday);
+            }
+            throw ParseError("expected 'day', 'weekday', or day name after 'last'", next?.Span ?? EndSpan());
+        }
+
+        // Check for ordinal + day name (e.g., "first monday")
+        if (tok.Kind == TokenKind.Ordinal)
+        {
+            var ordinal = _tokens[_pos++].OrdinalVal!.Value;
+            var dayTok = Expect(TokenKind.DayName);
+            return MonthTarget.OrdinalWeekday(ordinal, dayTok.DayNameVal!.Value);
         }
 
         // Check for [next|previous] nearest weekday to <day>
@@ -403,47 +414,6 @@ public sealed class Parser
         }
 
         return DayOfMonthSpec.Single(start);
-    }
-
-    private IScheduleExpr ParseOrdinalRepeat()
-    {
-        OrdinalPosition ordinal;
-        var tok = Peek()!;
-
-        if (tok.Kind == TokenKind.Last)
-        {
-            _pos++;
-            ordinal = OrdinalPosition.Last;
-        }
-        else
-        {
-            tok = Expect(TokenKind.Ordinal);
-            ordinal = tok.OrdinalVal!.Value;
-        }
-
-        var dayTok = Expect(TokenKind.DayName);
-        var weekday = dayTok.DayNameVal!.Value;
-
-        Expect(TokenKind.Of);
-        Expect(TokenKind.Every);
-
-        // Check for "N months"
-        var interval = 1;
-        if (Check(TokenKind.Number))
-        {
-            var numTok = _tokens[_pos++];
-            interval = numTok.NumberVal;
-            if (interval == 0)
-            {
-                throw ParseError("zero interval", numTok.Span);
-            }
-        }
-
-        Expect(TokenKind.Month);
-
-        var times = ParseAtTimes();
-
-        return new OrdinalRepeat(interval, ordinal, weekday, times);
     }
 
     private IScheduleExpr ParseYearRepeat()

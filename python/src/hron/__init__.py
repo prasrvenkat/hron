@@ -29,7 +29,7 @@ from ._ast import (
     NamedException,
     NamedUntil,
     OrdinalPosition,
-    OrdinalRepeat,
+    OrdinalWeekdayTarget,
     ScheduleData,
     ScheduleExpr,
     SingleDateExpr,
@@ -171,7 +171,7 @@ __all__ = [
     "DayRepeat",
     "WeekRepeat",
     "MonthRepeat",
-    "OrdinalRepeat",
+    "OrdinalWeekdayTarget",
     "SingleDateExpr",
     "YearRepeat",
 ]

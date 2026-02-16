@@ -73,6 +73,8 @@ function displayExpr(expr: ScheduleExpr): string {
         targetStr = "last day";
       } else if (expr.target.type === "lastWeekday") {
         targetStr = "last weekday";
+      } else if (expr.target.type === "ordinalWeekday") {
+        targetStr = `${expr.target.ordinal} ${expr.target.weekday}`;
       } else {
         // nearestWeekday
         const { day, direction } = expr.target;
@@ -84,11 +86,6 @@ function displayExpr(expr: ScheduleExpr): string {
       }
       return `every month on the ${targetStr} at ${formatTimeList(expr.times)}`;
     }
-    case "ordinalRepeat":
-      if (expr.interval > 1) {
-        return `${expr.ordinal} ${expr.day} of every ${expr.interval} months at ${formatTimeList(expr.times)}`;
-      }
-      return `${expr.ordinal} ${expr.day} of every month at ${formatTimeList(expr.times)}`;
     case "singleDate": {
       let dateStr: string;
       if (expr.date.type === "named") {

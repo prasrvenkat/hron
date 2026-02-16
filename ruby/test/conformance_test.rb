@@ -11,7 +11,6 @@ class ConformanceTest < Minitest::Test
     interval_repeat
     week_repeat
     month_repeat
-    ordinal_repeat
     single_date
     year_repeat
     except_clause

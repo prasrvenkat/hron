@@ -136,8 +136,6 @@ func nextExprWithDuring(expr ScheduleExpr, loc *time.Location, anchor string, no
 		return nextWeekRepeat(expr.Interval, expr.WeekDays, expr.Times, loc, anchor, now)
 	case ScheduleExprKindMonth:
 		return nextMonthRepeatWithDuring(expr.Interval, expr.MonthTarget, expr.Times, loc, anchor, now, during)
-	case ScheduleExprKindOrdinal:
-		return nextOrdinalRepeat(expr.Interval, expr.Ordinal, expr.OrdinalDay, expr.Times, loc, anchor, now)
 	case ScheduleExprKindSingleDate:
 		return nextSingleDate(expr.DateSpec, expr.Times, loc, now)
 	case ScheduleExprKindYear:
@@ -289,35 +287,21 @@ func matches(schedule *ScheduleData, loc *time.Location, dt time.Time) bool {
 				return false
 			}
 			return d.Year() == nwd.Year() && d.Month() == nwd.Month() && d.Day() == nwd.Day()
-		}
-		return false
-
-	case ScheduleExprKindOrdinal:
-		if !timeMatchesWithDST(schedule.Expr.Times) {
-			return false
-		}
-		if schedule.Expr.Interval > 1 {
-			anchorDate := epochDate
-			if schedule.Anchor != "" {
-				anchorDate, _ = parseISODate(schedule.Anchor)
+		case MonthTargetKindOrdinalWeekday:
+			var ordinalTarget time.Time
+			var ok bool
+			if schedule.Expr.MonthTarget.Ordinal == Last {
+				ordinalTarget = lastWeekdayInMonth(d.Year(), d.Month(), schedule.Expr.MonthTarget.Weekday)
+				ok = true
+			} else {
+				ordinalTarget, ok = nthWeekdayOfMonth(d.Year(), d.Month(), schedule.Expr.MonthTarget.Weekday, schedule.Expr.MonthTarget.Ordinal.ToN())
 			}
-			monthOffset := monthsBetweenYM(dateOnly(anchorDate), d)
-			if monthOffset < 0 || monthOffset%schedule.Expr.Interval != 0 {
+			if !ok {
 				return false
 			}
+			return d.Day() == ordinalTarget.Day()
 		}
-		var ordinalTarget time.Time
-		var ok bool
-		if schedule.Expr.Ordinal == Last {
-			ordinalTarget = lastWeekdayInMonth(d.Year(), d.Month(), schedule.Expr.OrdinalDay)
-			ok = true
-		} else {
-			ordinalTarget, ok = nthWeekdayOfMonth(d.Year(), d.Month(), schedule.Expr.OrdinalDay, schedule.Expr.Ordinal.ToN())
-		}
-		if !ok {
-			return false
-		}
-		return d.Day() == ordinalTarget.Day()
+		return false
 
 	case ScheduleExprKindSingleDate:
 		if !timeMatchesWithDST(schedule.Expr.Times) {
@@ -626,6 +610,14 @@ func nextMonthRepeatWithDuring(interval int, target MonthTarget, times []TimeOfD
 			if nwd, ok := nearestWeekday(year, time.Month(month), target.Day, target.Direction); ok {
 				dateCandidates = append(dateCandidates, nwd)
 			}
+		case MonthTargetKindOrdinalWeekday:
+			if target.Ordinal == Last {
+				dateCandidates = append(dateCandidates, lastWeekdayInMonth(year, time.Month(month), target.Weekday))
+			} else {
+				if od, ok := nthWeekdayOfMonth(year, time.Month(month), target.Weekday, target.Ordinal.ToN()); ok {
+					dateCandidates = append(dateCandidates, od)
+				}
+			}
 		}
 
 		var best *time.Time
@@ -637,61 +629,6 @@ func nextMonthRepeatWithDuring(interval int, target MonthTarget, times []TimeOfD
 		}
 		if best != nil {
 			return best
-		}
-
-		month++
-		if month > 12 {
-			month = 1
-			year++
-		}
-	}
-
-	return nil
-}
-
-func nextOrdinalRepeat(interval int, ordinal OrdinalPosition, day Weekday, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	year := nowInTz.Year()
-	month := int(nowInTz.Month())
-
-	anchorDate := epochDate
-	if anchor != "" {
-		anchorDate, _ = parseISODate(anchor)
-	}
-	maxIter := 24 * interval
-	if interval <= 1 {
-		maxIter = 24
-	}
-
-	for i := 0; i < maxIter; i++ {
-		// Check interval alignment
-		if interval > 1 {
-			cur := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-			monthOffset := monthsBetweenYM(dateOnly(anchorDate), cur)
-			if monthOffset < 0 || monthOffset%interval != 0 {
-				month++
-				if month > 12 {
-					month = 1
-					year++
-				}
-				continue
-			}
-		}
-
-		var ordinalDate time.Time
-		var ok bool
-		if ordinal == Last {
-			ordinalDate = lastWeekdayInMonth(year, time.Month(month), day)
-			ok = true
-		} else {
-			ordinalDate, ok = nthWeekdayOfMonth(year, time.Month(month), day, ordinal.ToN())
-		}
-
-		if ok {
-			candidate := earliestFutureAtTimes(ordinalDate, times, loc, now)
-			if candidate != nil {
-				return candidate
-			}
 		}
 
 		month++
@@ -894,8 +831,6 @@ func prevExpr(expr ScheduleExpr, loc *time.Location, anchor string, now time.Tim
 		return prevWeekRepeat(expr.Interval, expr.WeekDays, expr.Times, loc, anchor, now)
 	case ScheduleExprKindMonth:
 		return prevMonthRepeat(expr.Interval, expr.MonthTarget, expr.Times, loc, anchor, now)
-	case ScheduleExprKindOrdinal:
-		return prevOrdinalRepeat(expr.Interval, expr.Ordinal, expr.OrdinalDay, expr.Times, loc, anchor, now)
 	case ScheduleExprKindSingleDate:
 		return prevSingleDate(expr.DateSpec, expr.Times, loc, now)
 	case ScheduleExprKindYear:
@@ -1195,6 +1130,14 @@ func prevMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *t
 			if nwd, ok := nearestWeekday(year, time.Month(month), target.Day, target.Direction); ok {
 				dateCandidates = append(dateCandidates, nwd)
 			}
+		case MonthTargetKindOrdinalWeekday:
+			if target.Ordinal == Last {
+				dateCandidates = append(dateCandidates, lastWeekdayInMonth(year, time.Month(month), target.Weekday))
+			} else {
+				if od, ok := nthWeekdayOfMonth(year, time.Month(month), target.Weekday, target.Ordinal.ToN()); ok {
+					dateCandidates = append(dateCandidates, od)
+				}
+			}
 		}
 
 		// Sort in reverse order for latest first
@@ -1217,71 +1160,6 @@ func prevMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *t
 				}
 			} else {
 				candidate := latestAtTimes(dc, times, loc)
-				if candidate != nil {
-					return candidate
-				}
-			}
-		}
-
-		month--
-		if month < 1 {
-			month = 12
-			year--
-		}
-	}
-
-	return nil
-}
-
-func prevOrdinalRepeat(interval int, ordinal OrdinalPosition, day Weekday, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	startDate := dateOnly(nowInTz)
-	year := nowInTz.Year()
-	month := int(nowInTz.Month())
-
-	anchorDate := epochDate
-	if anchor != "" {
-		anchorDate, _ = parseISODate(anchor)
-	}
-	maxIter := 24 * interval
-	if interval <= 1 {
-		maxIter = 24
-	}
-
-	for i := 0; i < maxIter; i++ {
-		// Check interval alignment
-		if interval > 1 {
-			cur := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-			monthOffset := monthsBetweenYM(dateOnly(anchorDate), cur)
-			if monthOffset < 0 || monthOffset%interval != 0 {
-				month--
-				if month < 1 {
-					month = 12
-					year--
-				}
-				continue
-			}
-		}
-
-		var ordinalDate time.Time
-		var ok bool
-		if ordinal == Last {
-			ordinalDate = lastWeekdayInMonth(year, time.Month(month), day)
-			ok = true
-		} else {
-			ordinalDate, ok = nthWeekdayOfMonth(year, time.Month(month), day, ordinal.ToN())
-		}
-
-		if ok {
-			if ordinalDate.After(startDate) {
-				// Future, skip
-			} else if ordinalDate.Year() == startDate.Year() && ordinalDate.Month() == startDate.Month() && ordinalDate.Day() == startDate.Day() {
-				candidate := latestPastAtTimes(ordinalDate, times, loc, now)
-				if candidate != nil {
-					return candidate
-				}
-			} else {
-				candidate := latestAtTimes(ordinalDate, times, loc)
 				if candidate != nil {
 					return candidate
 				}

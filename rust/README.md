@@ -16,7 +16,7 @@ Pipeline: `lexer.rs` → `parser.rs` → `eval.rs`
 
 | Module | Purpose |
 |--------|---------|
-| `ast.rs` | `Schedule` wrapping `ScheduleExpr` (7 variants) + shared modifiers |
+| `ast.rs` | `Schedule` wrapping `ScheduleExpr` (6 variants) + shared modifiers |
 | `lexer.rs` | Tokenizer |
 | `parser.rs` | Hand-rolled recursive descent, follows `spec/grammar.ebnf` |
 | `eval.rs` | `next_from`, `next_n_from`, `matches` via jiff |
