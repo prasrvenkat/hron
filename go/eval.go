@@ -62,12 +62,7 @@ import (
 const maxIterations = 1000
 
 // nextFrom computes the next occurrence after now.
-func nextFrom(schedule *ScheduleData, now time.Time) *time.Time {
-	loc, err := resolveTimezone(schedule.Timezone)
-	if err != nil {
-		return nil
-	}
-
+func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.Time {
 	var untilDate *time.Time
 	if schedule.Until != nil {
 		ud := resolveUntil(*schedule.Until, now)
@@ -153,12 +148,12 @@ func nextExprWithDuring(expr ScheduleExpr, loc *time.Location, anchor string, no
 }
 
 // nextNFrom computes the next n occurrences after now.
-func nextNFrom(schedule *ScheduleData, now time.Time, n int) []time.Time {
+func nextNFrom(schedule *ScheduleData, loc *time.Location, now time.Time, n int) []time.Time {
 	var results []time.Time
 	current := now
 
 	for len(results) < n {
-		next := nextFrom(schedule, current)
+		next := nextFrom(schedule, loc, current)
 		if next == nil {
 			break
 		}
@@ -170,12 +165,7 @@ func nextNFrom(schedule *ScheduleData, now time.Time, n int) []time.Time {
 }
 
 // matches checks if a datetime matches this schedule.
-func matches(schedule *ScheduleData, dt time.Time) bool {
-	loc, err := resolveTimezone(schedule.Timezone)
-	if err != nil {
-		return false
-	}
-
+func matches(schedule *ScheduleData, loc *time.Location, dt time.Time) bool {
 	zdt := dt.In(loc)
 	d := dateOnly(zdt)
 
@@ -840,12 +830,7 @@ func Between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
 // --- Previous From ---
 
 // previousFrom computes the most recent occurrence strictly before now.
-func previousFrom(schedule *ScheduleData, now time.Time) *time.Time {
-	loc, err := resolveTimezone(schedule.Timezone)
-	if err != nil {
-		return nil
-	}
-
+func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.Time {
 	hasExceptions := len(schedule.Except) > 0
 	hasDuring := len(schedule.During) > 0
 

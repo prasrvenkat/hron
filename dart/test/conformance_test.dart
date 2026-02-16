@@ -299,6 +299,30 @@ void main() {
   });
 
   // =========================================================================
+  // Eval errors conformance
+  // =========================================================================
+
+  group('eval errors', () {
+    final evalErrors = spec['eval_errors'] as Map<String, dynamic>;
+    final tests = evalErrors['tests'] as List<dynamic>;
+    for (final tc in tests) {
+      final name = (tc['name'] ?? tc['expression']) as String;
+      test(name, () {
+        // Dart validates timezone at eval time, so parse may succeed
+        // but nextFrom should throw. If parse throws, that's also acceptable.
+        // The error may be HronError or a native timezone error.
+        Schedule schedule;
+        try {
+          schedule = Schedule.parse(tc['expression'] as String);
+        } catch (_) {
+          return; // caught at parse — acceptable
+        }
+        expect(() => schedule.nextFrom(defaultNow), throwsException);
+      });
+    }
+  });
+
+  // =========================================================================
   // Cron conformance
   // =========================================================================
 

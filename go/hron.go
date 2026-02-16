@@ -89,24 +89,24 @@ func Validate(input string) bool {
 // NextFrom computes the next occurrence after now.
 // Returns nil if there is no future occurrence.
 func (s *Schedule) NextFrom(now time.Time) *time.Time {
-	return nextFrom(s.data, now)
+	return nextFrom(s.data, s.location, now)
 }
 
 // NextNFrom computes the next n occurrences after now.
 func (s *Schedule) NextNFrom(now time.Time, n int) []time.Time {
-	return nextNFrom(s.data, now, n)
+	return nextNFrom(s.data, s.location, now, n)
 }
 
 // PreviousFrom computes the most recent occurrence strictly before now.
 // Returns nil if there is no previous occurrence (e.g., before a starting anchor
 // or for single dates in the future).
 func (s *Schedule) PreviousFrom(now time.Time) *time.Time {
-	return previousFrom(s.data, now)
+	return previousFrom(s.data, s.location, now)
 }
 
 // Matches checks if a datetime matches this schedule.
 func (s *Schedule) Matches(dt time.Time) bool {
-	return matches(s.data, dt)
+	return matches(s.data, s.location, dt)
 }
 
 // Occurrences returns a lazy iterator of occurrences starting after `from`.

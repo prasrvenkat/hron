@@ -231,6 +231,29 @@ def test_eval_previous_from(name: str, tc: dict) -> None:  # type: ignore[type-a
 
 
 # ===========================================================================
+# Eval errors conformance
+# ===========================================================================
+
+_EVAL_ERROR_TESTS = [
+    (tc.get("name", tc["expression"]), tc["expression"]) for tc in _spec["eval_errors"]["tests"]
+]
+_EVAL_ERROR_IDS = [t[0] for t in _EVAL_ERROR_TESTS]
+
+
+@pytest.mark.parametrize("name,expression", _EVAL_ERROR_TESTS, ids=_EVAL_ERROR_IDS)
+def test_eval_errors(name: str, expression: str) -> None:
+    # Python validates timezone at eval time, so parse may succeed
+    # but next_from should raise. If parse raises, that's also acceptable.
+    # The error may be HronError or ZoneInfoNotFoundError (a KeyError subclass).
+    try:
+        schedule = Schedule.parse(expression)
+    except (HronError, KeyError):
+        return  # caught at parse — acceptable
+    with pytest.raises((HronError, KeyError)):
+        schedule.next_from(_default_now)
+
+
+# ===========================================================================
 # Cron conformance
 # ===========================================================================
 

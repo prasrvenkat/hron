@@ -367,6 +367,37 @@ public class ConformanceTest {
     return tests.stream();
   }
 
+  // Eval error tests
+
+  @TestFactory
+  Stream<DynamicTest> evalErrorTests() {
+    List<DynamicTest> tests = new ArrayList<>();
+    JsonNode evalErrorsNode = SPEC.get("eval_errors");
+    if (evalErrorsNode == null) return tests.stream();
+
+    JsonNode testsNode = evalErrorsNode.get("tests");
+    if (testsNode == null || !testsNode.isArray()) return tests.stream();
+
+    for (JsonNode tc : testsNode) {
+      String name = tc.get("name").asText();
+      String expression = tc.get("expression").asText();
+
+      tests.add(
+          DynamicTest.dynamicTest(
+              name,
+              () -> {
+                // Java validates timezone at construction time (Schedule.parse),
+                // so these should fail at parse time.
+                // The error may be HronException or a native ZoneRulesException.
+                assertThrows(
+                    Exception.class,
+                    () -> Schedule.parse(expression),
+                    "expected error for: " + expression);
+              }));
+    }
+    return tests.stream();
+  }
+
   // Cron tests
 
   @TestFactory

@@ -218,6 +218,28 @@ describe("eval previous_from", () => {
 });
 
 // ===========================================================================
+// Eval errors conformance
+// ===========================================================================
+
+describe("eval errors", () => {
+  const tests = spec.eval_errors.tests;
+  for (const tc of tests) {
+    const name = tc.name ?? tc.expression;
+    it(name, () => {
+      // TS validates timezone at eval time, so parse may succeed
+      // but nextFrom should throw. If parse throws, that's also acceptable.
+      let schedule: Schedule;
+      try {
+        schedule = Schedule.parse(tc.expression);
+      } catch {
+        return; // caught at parse — acceptable
+      }
+      expect(() => schedule.nextFrom(defaultNow)).toThrow();
+    });
+  }
+});
+
+// ===========================================================================
 // Cron conformance
 // ===========================================================================
 
