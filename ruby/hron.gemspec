@@ -9,16 +9,16 @@ Gem::Specification.new do |spec|
   spec.email = ["prasrvenkat@gmail.com"]
 
   spec.summary = "Human-readable cron — a scheduling expression language that is a superset of cron"
-  spec.description = "HRON (Human Readable Object Notation for schedules) is a scheduling expression language " \
+  spec.description = "hron (human-readable cron) is a scheduling expression language " \
                      "that is designed to be easy to read, write, and understand. It is a superset of cron, " \
-                     "meaning any valid cron expression can be converted to and from HRON."
+                     "meaning any valid cron expression can be converted to and from hron."
   spec.homepage = "https://github.com/prasrvenkat/hron"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/prasrvenkat/hron"
-  spec.metadata["changelog_uri"] = "https://github.com/prasrvenkat/hron/blob/main/CHANGELOG.md"
+  spec.metadata["changelog_uri"] = "https://github.com/prasrvenkat/hron/releases"
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.files = Dir.chdir(__dir__) do

@@ -146,6 +146,7 @@ class _Parser {
       final day = _parseDayNumber(
         'expected day number after month name in exception',
       );
+      _validateNamedDate(k.name, day, currentSpan());
       return NamedException(k.name, day);
     }
     throw error('expected ISO date or month-day in exception', currentSpan());
@@ -163,6 +164,7 @@ class _Parser {
       final day = _parseDayNumber(
         'expected day number after month name in until',
       );
+      _validateNamedDate(k.name, day, currentSpan());
       return NamedUntil(k.name, day);
     }
     throw error("expected ISO date or month-day after 'until'", currentSpan());
@@ -171,12 +173,20 @@ class _Parser {
   int _parseDayNumber(String errorMsg) {
     final k = peekKind();
     if (k is NumberToken) {
+      final val = k.value;
+      if (val < 1 || val > 31) {
+        throw error('invalid day number $val (must be 1-31)', currentSpan());
+      }
       advance();
-      return k.value;
+      return val;
     }
     if (k is OrdinalNumberToken) {
+      final val = k.value;
+      if (val < 1 || val > 31) {
+        throw error('invalid day number $val (must be 1-31)', currentSpan());
+      }
       advance();
-      return k.value;
+      return val;
     }
     throw error(errorMsg, currentSpan());
   }
@@ -373,8 +383,12 @@ class _Parser {
   int _parseOrdinalDayNumber() {
     final k = peekKind();
     if (k is OrdinalNumberToken) {
+      final val = k.value;
+      if (val < 1 || val > 31) {
+        throw error('invalid day number $val (must be 1-31)', currentSpan());
+      }
       advance();
-      return k.value;
+      return val;
     }
     throw error('expected ordinal day number', currentSpan());
   }
@@ -392,6 +406,7 @@ class _Parser {
       final month = k.name;
       advance();
       final day = _parseDayNumber('expected day number after month name');
+      _validateNamedDate(month, day, currentSpan());
       target = DateTarget(month, day);
     } else {
       throw error(
@@ -448,9 +463,11 @@ class _Parser {
 
     if (k is OrdinalNumberToken) {
       final day = k.value;
+      final daySpan = currentSpan();
       advance();
       consumeKind("'of'", (k) => k is OfToken);
       final month = _parseMonthNameToken();
+      _validateNamedDate(month, day, daySpan);
       return DayOfMonthTarget(day, month);
     }
 
@@ -494,6 +511,27 @@ class _Parser {
     return SingleDate(date, times);
   }
 
+  void _validateNamedDate(MonthName month, int day, Span span) {
+    final maxDays = {
+      MonthName.jan: 31,
+      MonthName.feb: 29,
+      MonthName.mar: 31,
+      MonthName.apr: 30,
+      MonthName.may: 31,
+      MonthName.jun: 30,
+      MonthName.jul: 31,
+      MonthName.aug: 31,
+      MonthName.sep: 30,
+      MonthName.oct: 31,
+      MonthName.nov: 30,
+      MonthName.dec: 31,
+    };
+    final max = maxDays[month]!;
+    if (day < 1 || day > max) {
+      throw error('invalid day $day for ${month.name} (max $max)', span);
+    }
+  }
+
   void _validateIsoDate(String dateStr) {
     final parsed = DateTime.tryParse(dateStr);
     if (parsed == null) {
@@ -521,6 +559,7 @@ class _Parser {
       final month = k.name;
       advance();
       final day = _parseDayNumber('expected day number after month name');
+      _validateNamedDate(month, day, currentSpan());
       return NamedDate(month, day);
     }
     throw error('expected date (ISO date or month name)', currentSpan());
@@ -585,6 +624,10 @@ class _Parser {
       throw error('expected ordinal day number', currentSpan());
     }
     final start = k.value;
+    final startSpan = currentSpan();
+    if (start < 1 || start > 31) {
+      throw error('invalid day number $start (must be 1-31)', startSpan);
+    }
     advance();
 
     if (peekKind() is ToToken) {
@@ -594,7 +637,17 @@ class _Parser {
         throw error("expected ordinal day number after 'to'", currentSpan());
       }
       final end = next.value;
+      final endSpan = currentSpan();
+      if (end < 1 || end > 31) {
+        throw error('invalid day number $end (must be 1-31)', endSpan);
+      }
       advance();
+      if (start > end) {
+        throw error(
+          'invalid day range: $start to $end (start must be <= end)',
+          currentSpan(),
+        );
+      }
       return DayRange(start, end);
     }
 

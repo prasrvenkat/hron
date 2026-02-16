@@ -373,6 +373,9 @@ public final class Parser {
 
     Token dayTok = expect(TokenKind.ORDINAL_NUMBER);
     int day = dayTok.numberVal();
+    if (day < 1 || day > 31) {
+      throw parseError("invalid day number " + day + " (must be 1-31)", dayTok.span());
+    }
 
     return MonthTarget.nearestWeekday(day, direction);
   }
@@ -393,10 +396,22 @@ public final class Parser {
     Token tok = expect(TokenKind.ORDINAL_NUMBER);
     int start = tok.numberVal();
 
+    if (start < 1 || start > 31) {
+      throw parseError("invalid day number " + start + " (must be 1-31)", tok.span());
+    }
+
     if (check(TokenKind.TO)) {
       pos++;
       Token endTok = expect(TokenKind.ORDINAL_NUMBER);
-      return DayOfMonthSpec.range(start, endTok.numberVal());
+      int end = endTok.numberVal();
+      if (end < 1 || end > 31) {
+        throw parseError("invalid day number " + end + " (must be 1-31)", endTok.span());
+      }
+      if (start > end) {
+        throw parseError(
+            "invalid day range: " + start + " to " + end + " (start must be <= end)", tok.span());
+      }
+      return DayOfMonthSpec.range(start, end);
     }
 
     return DayOfMonthSpec.single(start);
@@ -426,7 +441,8 @@ public final class Parser {
 
     // Named date: month day (e.g., dec 25)
     Token monthTok = expect(TokenKind.MONTH_NAME);
-    Token dayTok = expect(TokenKind.NUMBER);
+    Token dayTok = parseDayNumber();
+    validateNamedDate(monthTok.monthNameVal(), dayTok.numberVal(), dayTok.span());
     return YearTarget.date(monthTok.monthNameVal(), dayTok.numberVal());
   }
 
@@ -471,6 +487,7 @@ public final class Parser {
       int day = tokens.get(pos++).numberVal();
       expect(TokenKind.OF);
       Token monthTok = expect(TokenKind.MONTH_NAME);
+      validateNamedDate(monthTok.monthNameVal(), day, tok.span());
       return YearTarget.dayOfMonth(day, monthTok.monthNameVal());
     }
 
@@ -507,7 +524,8 @@ public final class Parser {
     }
 
     Token monthTok = expect(TokenKind.MONTH_NAME);
-    Token dayTok = expect(TokenKind.NUMBER);
+    Token dayTok = parseDayNumber();
+    validateNamedDate(monthTok.monthNameVal(), dayTok.numberVal(), dayTok.span());
     return DateSpec.named(monthTok.monthNameVal(), dayTok.numberVal());
   }
 
@@ -558,7 +576,8 @@ public final class Parser {
     }
 
     Token monthTok = expect(TokenKind.MONTH_NAME);
-    Token dayTok = expect(TokenKind.NUMBER);
+    Token dayTok = parseDayNumber();
+    validateNamedDate(monthTok.monthNameVal(), dayTok.numberVal(), dayTok.span());
     return ExceptionSpec.named(monthTok.monthNameVal(), dayTok.numberVal());
   }
 
@@ -575,7 +594,8 @@ public final class Parser {
     }
 
     Token monthTok = expect(TokenKind.MONTH_NAME);
-    Token dayTok = expect(TokenKind.NUMBER);
+    Token dayTok = parseDayNumber();
+    validateNamedDate(monthTok.monthNameVal(), dayTok.numberVal(), dayTok.span());
     return UntilSpec.named(monthTok.monthNameVal(), dayTok.numberVal());
   }
 
@@ -619,6 +639,31 @@ public final class Parser {
   }
 
   // Helper methods
+
+  private static final int[] MAX_DAYS = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+  private void validateNamedDate(MonthName month, int day, Span span) throws HronException {
+    int maxDay = MAX_DAYS[month.number()];
+    if (day < 1 || day > maxDay) {
+      throw parseError("invalid day " + day + " for " + month + " (max " + maxDay + ")", span);
+    }
+  }
+
+  private Token parseDayNumber() throws HronException {
+    Token tok = peek();
+    if (tok == null) {
+      throw parseError("expected day number but reached end of input", endSpan());
+    }
+    if (tok.kind() != TokenKind.NUMBER && tok.kind() != TokenKind.ORDINAL_NUMBER) {
+      throw parseError("expected day number but got " + tok.kind(), tok.span());
+    }
+    int day = tok.numberVal();
+    if (day < 1 || day > 31) {
+      throw parseError("invalid day number " + day + " (must be 1-31)", tok.span());
+    }
+    pos++;
+    return tok;
+  }
 
   private Token peek() {
     return pos < tokens.size() ? tokens.get(pos) : null;

@@ -178,9 +178,11 @@ class Parser {
       );
       if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
+      const dayPos = this.currentSpan().start;
       const day = this.parseDayNumber(
         "expected day number after month name in exception",
       );
+      this.validateNamedDate(month, day, dayPos);
       return { type: "named", month, day };
     }
     throw this.error(
@@ -203,9 +205,11 @@ class Parser {
       );
       if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
+      const dayPos = this.currentSpan().start;
       const day = this.parseDayNumber(
         "expected day number after month name in until",
       );
+      this.validateNamedDate(month, day, dayPos);
       return { type: "named", month, day };
     }
     throw this.error(
@@ -218,11 +222,23 @@ class Parser {
     const k = this.peekKind();
     if (k?.type === "number") {
       const n = (k as { type: "number"; value: number }).value;
+      if (n < 1 || n > 31) {
+        throw this.error(
+          `invalid day number ${n} (must be 1-31)`,
+          this.currentSpan(),
+        );
+      }
       this.advance();
       return n;
     }
     if (k?.type === "ordinalNumber") {
       const n = (k as { type: "ordinalNumber"; value: number }).value;
+      if (n < 1 || n > 31) {
+        throw this.error(
+          `invalid day number ${n} (must be 1-31)`,
+          this.currentSpan(),
+        );
+      }
       this.advance();
       return n;
     }
@@ -437,6 +453,12 @@ class Parser {
     const k = this.peekKind();
     if (k?.type === "ordinalNumber") {
       const d = (k as { type: "ordinalNumber"; value: number }).value;
+      if (d < 1 || d > 31) {
+        throw this.error(
+          `invalid day number ${d} (must be 1-31)`,
+          this.currentSpan(),
+        );
+      }
       this.advance();
       return d;
     }
@@ -458,7 +480,9 @@ class Parser {
       );
       if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
+      const dayPos = this.currentSpan().start;
       const day = this.parseDayNumber("expected day number after month name");
+      this.validateNamedDate(month, day, dayPos);
       target = { type: "date", month, day };
     } else {
       throw this.error(
@@ -521,9 +545,17 @@ class Parser {
 
     if (k?.type === "ordinalNumber") {
       const day = (k as { type: "ordinalNumber"; value: number }).value;
+      if (day < 1 || day > 31) {
+        throw this.error(
+          `invalid day number ${day} (must be 1-31)`,
+          this.currentSpan(),
+        );
+      }
+      const dayPos = this.currentSpan().start;
       this.advance();
       this.consumeKind("'of'", (k) => k.type === "of");
       const month = this.parseMonthNameToken();
+      this.validateNamedDate(month, day, dayPos);
       return { type: "dayOfMonth", day, month };
     }
 
@@ -572,6 +604,30 @@ class Parser {
     return { type: "singleDate", date, times };
   }
 
+  private validateNamedDate(month: MonthName, day: number, pos: number): void {
+    const maxDays: Record<MonthName, number> = {
+      jan: 31,
+      feb: 29,
+      mar: 31,
+      apr: 30,
+      may: 31,
+      jun: 30,
+      jul: 31,
+      aug: 31,
+      sep: 30,
+      oct: 31,
+      nov: 30,
+      dec: 31,
+    };
+    const max = maxDays[month];
+    if (day > max) {
+      throw this.error(`invalid day ${day} for ${month} (max ${max})`, {
+        start: pos,
+        end: pos,
+      });
+    }
+  }
+
   private validateIsoDate(dateStr: string): void {
     const parts = dateStr.split("-");
     const year = parseInt(parts[0], 10);
@@ -604,7 +660,9 @@ class Parser {
       );
       if (!month) throw this.error("invalid month name", this.currentSpan());
       this.advance();
+      const dayPos = this.currentSpan().start;
       const day = this.parseDayNumber("expected day number after month name");
+      this.validateNamedDate(month, day, dayPos);
       return { type: "named", month, day };
     }
     throw this.error(
@@ -680,6 +738,12 @@ class Parser {
       throw this.error("expected ordinal day number", this.currentSpan());
     }
     const start = (k as { type: "ordinalNumber"; value: number }).value;
+    if (start < 1 || start > 31) {
+      throw this.error(
+        `invalid day number ${start} (must be 1-31)`,
+        this.currentSpan(),
+      );
+    }
     this.advance();
 
     if (this.peekKind()?.type === "to") {
@@ -692,7 +756,19 @@ class Parser {
         );
       }
       const end = (next as { type: "ordinalNumber"; value: number }).value;
+      if (end < 1 || end > 31) {
+        throw this.error(
+          `invalid day number ${end} (must be 1-31)`,
+          this.currentSpan(),
+        );
+      }
       this.advance();
+      if (start > end) {
+        throw this.error(
+          `invalid day range: ${start} to ${end} (start must be <= end)`,
+          this.currentSpan(),
+        );
+      }
       return { type: "range", start, end };
     }
 

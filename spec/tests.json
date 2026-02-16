@@ -1136,6 +1136,30 @@
           "canonical": "every day at 09:00 during jan"
         }
       ]
+    },
+    "ordinal_in_dates": {
+      "tests": [
+        {
+          "name": "ordinal_in_exception",
+          "input": "every day at 09:00 except dec 25th",
+          "canonical": "every day at 09:00 except dec 25"
+        },
+        {
+          "name": "ordinal_in_until",
+          "input": "every day at 09:00 until dec 31st",
+          "canonical": "every day at 09:00 until dec 31"
+        },
+        {
+          "name": "ordinal_in_single_date",
+          "input": "on feb 14th at 09:00",
+          "canonical": "on feb 14 at 09:00"
+        },
+        {
+          "name": "ordinal_in_year_target",
+          "input": "every year on dec 25th at 00:00",
+          "canonical": "every year on dec 25 at 00:00"
+        }
+      ]
     }
   },
   "parse_errors": {
@@ -1305,6 +1329,46 @@
         "name": "invalid_iso_date_starting",
         "input": "every day at 09:00 starting 2026-06-31",
         "description": "invalid date in starting clause"
+      },
+      {
+        "name": "named_date_feb_31",
+        "input": "every day at 09:00 except feb 31",
+        "error_contains": "invalid"
+      },
+      {
+        "name": "named_date_apr_0",
+        "input": "every day at 09:00 except apr 0",
+        "error_contains": "invalid"
+      },
+      {
+        "name": "named_date_jun_31",
+        "input": "every day at 09:00 until jun 31",
+        "error_contains": "invalid"
+      },
+      {
+        "name": "named_date_feb_30",
+        "input": "on feb 30 at 09:00",
+        "error_contains": "invalid"
+      },
+      {
+        "name": "named_date_apr_31",
+        "input": "every year on apr 31 at 09:00",
+        "error_contains": "invalid"
+      },
+      {
+        "name": "day_range_inverted",
+        "input": "every month on the 15th to 1st at 09:00",
+        "error_contains": "invalid"
+      },
+      {
+        "name": "day_range_day_0",
+        "input": "every month on the 0th at 09:00",
+        "error_contains": "invalid"
+      },
+      {
+        "name": "day_range_day_32",
+        "input": "every month on the 32nd at 09:00",
+        "error_contains": "invalid"
       }
     ]
   },

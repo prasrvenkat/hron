@@ -81,7 +81,7 @@ go get github.com/prasrvenkat/hron/go
 # <dependency>
 #     <groupId>io.hron</groupId>
 #     <artifactId>hron</artifactId>
-#     <version>0.4.2</version>
+#     <version>0.5.1</version>
 # </dependency>
 
 # C# / .NET

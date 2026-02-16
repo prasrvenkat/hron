@@ -31,6 +31,7 @@ describe("parse roundtrip", () => {
     "timezone_clause",
     "combined_clauses",
     "case_insensitivity",
+    "ordinal_in_dates",
   ];
 
   for (const section of parseSections) {
@@ -67,24 +68,17 @@ describe("parse errors", () => {
 // ===========================================================================
 
 describe("eval", () => {
-  const evalSections = [
-    "day_repeat",
-    "interval_repeat",
-    "month_repeat",
-    "week_repeat",
-    "single_date",
-    "year_repeat",
-    "except",
-    "until",
-    "except_and_until",
-    "n_occurrences",
-    "multi_time",
-    "during",
-    "day_ranges",
-    "leap_year",
-    "dst_spring_forward",
-    "dst_fall_back",
-  ];
+  // Dynamically discover eval sections (skip non-test entries)
+  const skipSections = new Set([
+    "description",
+    "matches",
+    "occurrences",
+    "between",
+    "previous_from",
+  ]);
+  const evalSections = Object.keys(spec.eval).filter(
+    (s) => !skipSections.has(s),
+  );
 
   for (const section of evalSections) {
     describe(section, () => {
@@ -164,6 +158,28 @@ describe("eval previous_from", () => {
         expect(result).toBeDefined();
         expect(result).toBe(tc.expected);
       }
+    });
+  }
+});
+
+// ===========================================================================
+// Eval errors conformance
+// ===========================================================================
+
+describe("eval errors", () => {
+  const tests = spec.eval_errors.tests;
+  for (const tc of tests) {
+    const name = tc.name ?? tc.expression;
+    it(name, () => {
+      // WASM validates timezone at parse time or eval time
+      // If parse throws, that's acceptable
+      let schedule: Schedule;
+      try {
+        schedule = Schedule.parse(tc.expression);
+      } catch {
+        return; // caught at parse — acceptable
+      }
+      expect(() => schedule.nextFrom(defaultNow)).toThrow();
     });
   }
 });

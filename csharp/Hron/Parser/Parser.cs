@@ -384,6 +384,10 @@ public sealed class Parser
 
         var dayTok = Expect(TokenKind.OrdinalNumber);
         var day = dayTok.NumberVal;
+        if (day < 1 || day > 31)
+        {
+            throw ParseError($"invalid day number {day} (must be 1-31)", dayTok.Span);
+        }
 
         return MonthTarget.NearestWeekday(day, direction);
     }
@@ -406,11 +410,25 @@ public sealed class Parser
         var tok = Expect(TokenKind.OrdinalNumber);
         var start = tok.NumberVal;
 
+        if (start < 1 || start > 31)
+        {
+            throw ParseError($"invalid day number {start} (must be 1-31)", tok.Span);
+        }
+
         if (Check(TokenKind.To))
         {
             _pos++;
             var endTok = Expect(TokenKind.OrdinalNumber);
-            return DayOfMonthSpec.Range(start, endTok.NumberVal);
+            var end = endTok.NumberVal;
+            if (end < 1 || end > 31)
+            {
+                throw ParseError($"invalid day number {end} (must be 1-31)", endTok.Span);
+            }
+            if (start > end)
+            {
+                throw ParseError($"invalid day range: {start} to {end} (start must be <= end)", tok.Span);
+            }
+            return DayOfMonthSpec.Range(start, end);
         }
 
         return DayOfMonthSpec.Single(start);
@@ -444,7 +462,8 @@ public sealed class Parser
 
         // Named date: month day (e.g., dec 25)
         var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = Expect(TokenKind.Number);
+        var dayTok = ParseDayNumber();
+        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
         return YearTarget.Date(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
     }
 
@@ -496,6 +515,7 @@ public sealed class Parser
             var day = _tokens[_pos++].NumberVal;
             Expect(TokenKind.Of);
             var monthTok = Expect(TokenKind.MonthName);
+            ValidateNamedDate(monthTok.MonthNameVal!.Value, day, tok.Span);
             return YearTarget.DayOfMonth(day, monthTok.MonthNameVal!.Value);
         }
 
@@ -536,7 +556,8 @@ public sealed class Parser
         }
 
         var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = Expect(TokenKind.Number);
+        var dayTok = ParseDayNumber();
+        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
         return DateSpec.Named(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
     }
 
@@ -594,7 +615,8 @@ public sealed class Parser
         }
 
         var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = Expect(TokenKind.Number);
+        var dayTok = ParseDayNumber();
+        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
         return ExceptionSpec.Named(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
     }
 
@@ -614,7 +636,8 @@ public sealed class Parser
         }
 
         var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = Expect(TokenKind.Number);
+        var dayTok = ParseDayNumber();
+        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
         return UntilSpec.Named(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
     }
 
@@ -665,6 +688,37 @@ public sealed class Parser
     }
 
     // Helper methods
+
+    private static readonly int[] MaxDays = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+    private void ValidateNamedDate(MonthName month, int day, Span span)
+    {
+        var maxDay = MaxDays[(int)month];
+        if (day < 1 || day > maxDay)
+        {
+            throw ParseError($"invalid day {day} for {month.ToDisplayString()} (max {maxDay})", span);
+        }
+    }
+
+    private Token ParseDayNumber()
+    {
+        var tok = Peek();
+        if (tok is null)
+        {
+            throw ParseError("expected day number but reached end of input", EndSpan());
+        }
+        if (tok.Kind != TokenKind.Number && tok.Kind != TokenKind.OrdinalNumber)
+        {
+            throw ParseError($"expected day number but got {tok.Kind}", tok.Span);
+        }
+        _pos++;
+        var day = tok.NumberVal;
+        if (day < 1 || day > 31)
+        {
+            throw ParseError($"invalid day number {day} (must be 1-31)", tok.Span);
+        }
+        return tok;
+    }
 
     private Token? Peek() => _pos < _tokens.Count ? _tokens[_pos] : null;
 

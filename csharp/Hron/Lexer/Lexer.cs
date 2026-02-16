@@ -197,7 +197,7 @@ public sealed class Lexer
     }
 
     private static bool IsDigit(char c) => c is >= '0' and <= '9';
-    private static bool IsAlpha(char c) => char.IsLetter(c);
+    private static bool IsAlpha(char c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
     private static bool IsAlphanumeric(char c) => IsAlpha(c) || IsDigit(c);
     private static bool IsWhitespace(char c) => c is ' ' or '\t' or '\n' or '\r';
 

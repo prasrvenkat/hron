@@ -160,14 +160,220 @@ public static class Evaluator
     }
 
     /// <summary>
-    /// Checks if a datetime matches the schedule.
+    /// Checks if a datetime matches the schedule using structural matching.
     /// </summary>
     public static bool Matches(ScheduleData data, DateTimeOffset dt, TimeZoneInfo location)
     {
-        // Check slightly before to see if the next occurrence is at dt
-        var beforeDt = dt.AddTicks(-1);
-        var next = NextFrom(data, beforeDt, location);
-        return next.HasValue && next.Value == dt;
+        var converted = TimeZoneInfo.ConvertTime(dt, location);
+        var date = DateOnly.FromDateTime(converted.DateTime);
+
+        // Check during filter
+        if (!MatchesDuring(date, data.During))
+        {
+            return false;
+        }
+
+        // Check exceptions
+        if (IsExcepted(date, data.Except))
+        {
+            return false;
+        }
+
+        // Check until
+        if (data.Until is not null)
+        {
+            var untilDate = ResolveUntil(data.Until, date);
+            if (date > untilDate)
+            {
+                return false;
+            }
+        }
+
+        return data.Expr switch
+        {
+            DayRepeat dr => MatchesDayRepeat(dr, date, dt, location, data.Anchor),
+            IntervalRepeat ir => MatchesIntervalRepeat(ir, date, converted),
+            WeekRepeat wr => MatchesWeekRepeat(wr, date, dt, location, data.Anchor),
+            MonthRepeat mr => MatchesMonthRepeat(mr, date, dt, location, data.Anchor),
+            SingleDate sd => MatchesSingleDate(sd, date, dt, location),
+            YearRepeat yr => MatchesYearRepeat(yr, date, dt, location, data.Anchor),
+            _ => false
+        };
+    }
+
+    private static bool TimeMatchesWithDst(DateOnly date, IReadOnlyList<TimeOfDay> times, TimeZoneInfo location, DateTimeOffset dt)
+    {
+        var converted = TimeZoneInfo.ConvertTime(dt, location);
+        foreach (var tod in times)
+        {
+            // Direct wall-clock match
+            if (converted.Hour == tod.Hour && converted.Minute == tod.Minute)
+            {
+                return true;
+            }
+            // DST gap check: resolve the scheduled time and compare instants
+            var resolved = AtTimeOnDate(date, tod, location);
+            if (resolved.UtcDateTime == dt.UtcDateTime)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool MatchesDayRepeat(DayRepeat dr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
+    {
+        if (!MatchesDayFilter(date, dr.Days))
+        {
+            return false;
+        }
+        if (!TimeMatchesWithDst(date, dr.Times, location, dt))
+        {
+            return false;
+        }
+        if (dr.Interval > 1)
+        {
+            var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
+            var dayOffset = date.DayNumber - anchorDate.DayNumber;
+            return dayOffset >= 0 && dayOffset % dr.Interval == 0;
+        }
+        return true;
+    }
+
+    private static bool MatchesIntervalRepeat(IntervalRepeat ir, DateOnly date, DateTimeOffset converted)
+    {
+        if (ir.DayFilter is not null && !MatchesDayFilter(date, ir.DayFilter))
+        {
+            return false;
+        }
+        var fromMinutes = ir.FromTime.TotalMinutes;
+        var toMinutes = ir.ToTime.TotalMinutes;
+        var currentMinutes = converted.Hour * 60 + converted.Minute;
+        if (currentMinutes < fromMinutes || currentMinutes > toMinutes)
+        {
+            return false;
+        }
+        var diff = currentMinutes - fromMinutes;
+        var step = ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
+        return diff >= 0 && diff % step == 0;
+    }
+
+    private static bool MatchesWeekRepeat(WeekRepeat wr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
+    {
+        var wd = WeekdayExtensions.FromDayOfWeek(date.DayOfWeek);
+        if (!wr.WeekDays.Contains(wd))
+        {
+            return false;
+        }
+        if (!TimeMatchesWithDst(date, wr.Times, location, dt))
+        {
+            return false;
+        }
+        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochMonday;
+        var daysBetween = date.DayNumber - anchorDate.DayNumber;
+        var weeks = daysBetween / 7;
+        return weeks >= 0 && weeks % wr.Interval == 0;
+    }
+
+    private static bool MatchesMonthRepeat(MonthRepeat mr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
+    {
+        if (!TimeMatchesWithDst(date, mr.Times, location, dt))
+        {
+            return false;
+        }
+        if (mr.Interval > 1)
+        {
+            var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
+            var monthOffset = (date.Year - anchorDate.Year) * 12 + (date.Month - anchorDate.Month);
+            if (monthOffset < 0 || monthOffset % mr.Interval != 0)
+            {
+                return false;
+            }
+        }
+        return MatchesMonthTarget(date, mr.Target);
+    }
+
+    private static bool MatchesMonthTarget(DateOnly date, MonthTarget target)
+    {
+        return target.Kind switch
+        {
+            MonthTargetKind.Days => target.ExpandDays().Contains(date.Day),
+            MonthTargetKind.LastDay => date == LastDayOfMonth(date.Year, date.Month),
+            MonthTargetKind.LastWeekday => date == LastWeekdayOfMonth(date.Year, date.Month),
+            MonthTargetKind.NearestWeekday =>
+                NearestWeekday(date.Year, date.Month, target.NearestWeekdayDay, target.NearestWeekdayDirection) is { } nwd && date == nwd,
+            MonthTargetKind.OrdinalWeekday =>
+                MatchesOrdinalWeekday(date, target),
+            _ => false
+        };
+    }
+
+    private static bool MatchesOrdinalWeekday(DateOnly date, MonthTarget target)
+    {
+        if (target.OrdinalValue == OrdinalPosition.Last)
+        {
+            return date == LastWeekdayInMonth(date.Year, date.Month, target.WeekdayValue!.Value);
+        }
+        var targetDate = NthWeekdayOfMonth(date.Year, date.Month, target.WeekdayValue!.Value, target.OrdinalValue!.Value);
+        return targetDate.HasValue && date == targetDate.Value;
+    }
+
+    private static bool MatchesSingleDate(SingleDate sd, DateOnly date, DateTimeOffset dt, TimeZoneInfo location)
+    {
+        if (!TimeMatchesWithDst(date, sd.Times, location, dt))
+        {
+            return false;
+        }
+        return sd.DateSpec.Kind switch
+        {
+            DateSpecKind.Iso => date == DateOnly.Parse(sd.DateSpec.Date!),
+            DateSpecKind.Named => date.Month == sd.DateSpec.Month!.Value.Number() && date.Day == sd.DateSpec.Day,
+            _ => false
+        };
+    }
+
+    private static bool MatchesYearRepeat(YearRepeat yr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
+    {
+        if (!TimeMatchesWithDst(date, yr.Times, location, dt))
+        {
+            return false;
+        }
+        if (yr.Interval > 1)
+        {
+            var anchorYear = anchor is not null ? DateOnly.Parse(anchor).Year : EpochDate.Year;
+            var yearOffset = date.Year - anchorYear;
+            if (yearOffset < 0 || yearOffset % yr.Interval != 0)
+            {
+                return false;
+            }
+        }
+        return MatchesYearTarget(date, yr.Target);
+    }
+
+    private static bool MatchesYearTarget(DateOnly date, YearTarget target)
+    {
+        return target.Kind switch
+        {
+            YearTargetKind.Date => date.Month == target.Month.Number() && date.Day == target.Day,
+            YearTargetKind.OrdinalWeekday => MatchesYearOrdinalWeekday(date, target),
+            YearTargetKind.DayOfMonth => date.Month == target.Month.Number() && date.Day == target.Day,
+            YearTargetKind.LastWeekday => date.Month == target.Month.Number() && date == LastWeekdayOfMonth(date.Year, date.Month),
+            _ => false
+        };
+    }
+
+    private static bool MatchesYearOrdinalWeekday(DateOnly date, YearTarget target)
+    {
+        if (date.Month != target.Month.Number())
+        {
+            return false;
+        }
+        if (target.Ordinal == OrdinalPosition.Last)
+        {
+            return date == LastWeekdayInMonth(date.Year, date.Month, target.WeekdayValue!.Value);
+        }
+        var targetDate = NthWeekdayOfMonth(date.Year, date.Month, target.WeekdayValue!.Value, target.Ordinal!.Value);
+        return targetDate.HasValue && date == targetDate.Value;
     }
 
     /// <summary>
@@ -824,9 +1030,26 @@ public static class Evaluator
         // Check if the time is invalid (DST gap)
         if (location.IsInvalidTime(dt))
         {
-            // Push forward by the DST gap duration (typically 1 hour)
-            // This preserves the minutes component: 02:30 -> 03:30
-            dt = dt.AddHours(1);
+            // Dynamically detect the gap size by finding the adjustment rules
+            // Get the UTC offset after the gap by adding a safe amount, then compute gap
+            var adjustmentRules = location.GetAdjustmentRules();
+            TimeSpan gapDuration = TimeSpan.FromHours(1); // fallback
+
+            foreach (var rule in adjustmentRules)
+            {
+                if (rule.DateStart <= dt && dt <= rule.DateEnd)
+                {
+                    // The daylight delta tells us the gap size
+                    gapDuration = rule.DaylightDelta;
+                    if (gapDuration < TimeSpan.Zero)
+                    {
+                        gapDuration = -gapDuration;
+                    }
+                    break;
+                }
+            }
+
+            dt = dt.Add(gapDuration);
         }
 
         // For ambiguous times (DST fall back), use the earlier offset (first occurrence)
