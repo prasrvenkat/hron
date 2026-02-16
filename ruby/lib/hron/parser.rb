@@ -255,12 +255,20 @@ module Hron
     def parse_day_number(error_msg)
       k = peek_kind
       if k.is_a?(TNumber)
+        val = k.value
+        if val < 1 || val > 31
+          raise error("invalid day number #{val} (must be 1-31)", current_span)
+        end
         advance
-        return k.value
+        return val
       end
       if k.is_a?(TOrdinalNumber)
+        val = k.value
+        if val < 1 || val > 31
+          raise error("invalid day number #{val} (must be 1-31)", current_span)
+        end
         advance
-        return k.value
+        return val
       end
       raise error(error_msg, current_span)
     end
@@ -618,6 +626,9 @@ module Hron
       k = peek_kind
       if k.is_a?(TOrdinalNumber)
         day = k.value
+        if day < 1 || day > 31
+          raise error("invalid day number #{day} (must be 1-31)", current_span)
+        end
         advance
       else
         raise error("expected ordinal day number after 'to'", current_span)

@@ -384,6 +384,10 @@ public sealed class Parser
 
         var dayTok = Expect(TokenKind.OrdinalNumber);
         var day = dayTok.NumberVal;
+        if (day < 1 || day > 31)
+        {
+            throw ParseError($"invalid day number {day} (must be 1-31)", dayTok.Span);
+        }
 
         return MonthTarget.NearestWeekday(day, direction);
     }
@@ -408,7 +412,7 @@ public sealed class Parser
 
         if (start < 1 || start > 31)
         {
-            throw ParseError("day must be between 1 and 31", tok.Span);
+            throw ParseError($"invalid day number {start} (must be 1-31)", tok.Span);
         }
 
         if (Check(TokenKind.To))
@@ -418,11 +422,11 @@ public sealed class Parser
             var end = endTok.NumberVal;
             if (end < 1 || end > 31)
             {
-                throw ParseError("day must be between 1 and 31", endTok.Span);
+                throw ParseError($"invalid day number {end} (must be 1-31)", endTok.Span);
             }
             if (start > end)
             {
-                throw ParseError("range start must be <= end", tok.Span);
+                throw ParseError($"invalid day range: {start} to {end} (start must be <= end)", tok.Span);
             }
             return DayOfMonthSpec.Range(start, end);
         }
@@ -511,6 +515,7 @@ public sealed class Parser
             var day = _tokens[_pos++].NumberVal;
             Expect(TokenKind.Of);
             var monthTok = Expect(TokenKind.MonthName);
+            ValidateNamedDate(monthTok.MonthNameVal!.Value, day, tok.Span);
             return YearTarget.DayOfMonth(day, monthTok.MonthNameVal!.Value);
         }
 
@@ -691,7 +696,7 @@ public sealed class Parser
         var maxDay = MaxDays[(int)month];
         if (day < 1 || day > maxDay)
         {
-            throw ParseError($"invalid day {day} for {month.ToDisplayString()}", span);
+            throw ParseError($"invalid day {day} for {month.ToDisplayString()} (max {maxDay})", span);
         }
     }
 
@@ -707,6 +712,11 @@ public sealed class Parser
             throw ParseError($"expected day number but got {tok.Kind}", tok.Span);
         }
         _pos++;
+        var day = tok.NumberVal;
+        if (day < 1 || day > 31)
+        {
+            throw ParseError($"invalid day number {day} (must be 1-31)", tok.Span);
+        }
         return tok;
     }
 

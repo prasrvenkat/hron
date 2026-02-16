@@ -173,12 +173,20 @@ class _Parser {
   int _parseDayNumber(String errorMsg) {
     final k = peekKind();
     if (k is NumberToken) {
+      final val = k.value;
+      if (val < 1 || val > 31) {
+        throw error('invalid day number $val (must be 1-31)', currentSpan());
+      }
       advance();
-      return k.value;
+      return val;
     }
     if (k is OrdinalNumberToken) {
+      final val = k.value;
+      if (val < 1 || val > 31) {
+        throw error('invalid day number $val (must be 1-31)', currentSpan());
+      }
       advance();
-      return k.value;
+      return val;
     }
     throw error(errorMsg, currentSpan());
   }
@@ -375,8 +383,12 @@ class _Parser {
   int _parseOrdinalDayNumber() {
     final k = peekKind();
     if (k is OrdinalNumberToken) {
+      final val = k.value;
+      if (val < 1 || val > 31) {
+        throw error('invalid day number $val (must be 1-31)', currentSpan());
+      }
       advance();
-      return k.value;
+      return val;
     }
     throw error('expected ordinal day number', currentSpan());
   }

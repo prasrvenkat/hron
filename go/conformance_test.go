@@ -638,23 +638,43 @@ func TestCronRoundtrip(t *testing.T) {
 	}
 }
 
+type MatchesGroup struct {
+	Tests []MatchesTest `json:"tests"`
+}
+
+type MatchesTest struct {
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+	Datetime   string `json:"datetime"`
+	Expected   bool   `json:"expected"`
+}
+
 func TestMatches(t *testing.T) {
-	// Basic matches test
-	s, err := ParseSchedule("every day at 09:00 in UTC")
-	if err != nil {
-		t.Fatal(err)
+	spec := loadSpec(t)
+
+	// Parse the matches section
+	var group MatchesGroup
+	if err := json.Unmarshal(spec.Eval["matches"], &group); err != nil {
+		t.Fatalf("failed to parse matches section: %v", err)
 	}
 
-	// Should match at 09:00
-	matchTime := time.Date(2026, 2, 10, 9, 0, 0, 0, time.UTC)
-	if !s.Matches(matchTime) {
-		t.Errorf("expected to match at %v", matchTime)
-	}
+	for _, tc := range group.Tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			s, err := ParseSchedule(tc.Expression)
+			if err != nil {
+				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
+			}
 
-	// Should not match at 10:00
-	noMatchTime := time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC)
-	if s.Matches(noMatchTime) {
-		t.Errorf("expected not to match at %v", noMatchTime)
+			dt, err := parseZonedDateTime(tc.Datetime)
+			if err != nil {
+				t.Fatalf("failed to parse datetime %q: %v", tc.Datetime, err)
+			}
+
+			got := s.Matches(dt)
+			if got != tc.Expected {
+				t.Errorf("Matches(%q, %v) = %v, want %v", tc.Expression, dt, got, tc.Expected)
+			}
+		})
 	}
 }
 
