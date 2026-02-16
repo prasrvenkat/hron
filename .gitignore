@@ -23,6 +23,7 @@ dist/
 
 # Node / TypeScript
 node_modules/
+.pnpm-store/
 ts/dist/
 *.tsbuildinfo
 
