@@ -110,7 +110,7 @@ pub enum YearTarget {
 }
 
 /// Time of day (hours and minutes).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TimeOfDay {
     pub hour: u8,
     pub minute: u8,
@@ -131,12 +131,18 @@ impl<'de> Deserialize<'de> for TimeOfDay {
         if parts.len() != 2 {
             return Err(serde::de::Error::custom("expected HH:MM"));
         }
-        let hour = parts[0]
+        let hour: u8 = parts[0]
             .parse()
             .map_err(|_| serde::de::Error::custom("invalid hour"))?;
-        let minute = parts[1]
+        let minute: u8 = parts[1]
             .parse()
             .map_err(|_| serde::de::Error::custom("invalid minute"))?;
+        if hour > 23 {
+            return Err(serde::de::Error::custom("hour must be 0-23"));
+        }
+        if minute > 59 {
+            return Err(serde::de::Error::custom("minute must be 0-59"));
+        }
         Ok(TimeOfDay { hour, minute })
     }
 }

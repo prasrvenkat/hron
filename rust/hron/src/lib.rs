@@ -16,7 +16,7 @@ pub mod cron;
 pub mod display;
 pub mod error;
 pub mod eval;
-pub mod lexer;
+pub(crate) mod lexer;
 pub mod parser;
 
 pub use ast::{Schedule, ScheduleExpr};
