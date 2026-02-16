@@ -63,6 +63,60 @@ impl<'a> Parser<'a> {
         ScheduleError::parse(message, span, self.input, None)
     }
 
+    /// Validate a day number is in range 1-31, returning u8.
+    fn validate_day_number(&self, n: u32) -> Result<u8, ScheduleError> {
+        if n < 1 || n > 31 {
+            return Err(self.error(
+                format!("invalid day number {n} (must be 1-31)"),
+                self.current_span(),
+            ));
+        }
+        Ok(n as u8)
+    }
+
+    /// Validate a named date (month + day) has a valid day for that month.
+    fn validate_named_date(&self, month: MonthName, day: u8, span: Span) -> Result<(), ScheduleError> {
+        let max = match month {
+            MonthName::January => 31,
+            MonthName::February => 29,
+            MonthName::March => 31,
+            MonthName::April => 30,
+            MonthName::May => 31,
+            MonthName::June => 30,
+            MonthName::July => 31,
+            MonthName::August => 31,
+            MonthName::September => 30,
+            MonthName::October => 31,
+            MonthName::November => 30,
+            MonthName::December => 31,
+        };
+        if day < 1 || day > max {
+            return Err(self.error(
+                format!("invalid day {} for {} (max {})", day, month.as_str(), max),
+                span,
+            ));
+        }
+        Ok(())
+    }
+
+    /// Parse a day number (Number or OrdinalNumber token), validating it's 1-31.
+    fn parse_day_number(&mut self, context: &str) -> Result<(u8, Span), ScheduleError> {
+        let span = self.current_span();
+        match self.peek().map(|t| &t.kind) {
+            Some(TokenKind::Number(n)) => {
+                let d = self.validate_day_number(*n)?;
+                self.advance();
+                Ok((d, span))
+            }
+            Some(TokenKind::OrdinalNumber(n)) => {
+                let d = self.validate_day_number(*n)?;
+                self.advance();
+                Ok((d, span))
+            }
+            _ => Err(self.error(format!("expected day number {context}"), span)),
+        }
+    }
+
     fn consume_kind(
         &mut self,
         expected: &str,
@@ -194,25 +248,8 @@ impl<'a> Parser<'a> {
             Some(TokenKind::MonthName(m)) => {
                 let month = parse_month_name(m).unwrap();
                 self.advance();
-                let day = match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::Number(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    Some(TokenKind::OrdinalNumber(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        return Err(self.error(
-                            "expected day number after month name in exception".into(),
-                            span,
-                        ));
-                    }
-                };
+                let (day, day_span) = self.parse_day_number("after month name in exception")?;
+                self.validate_named_date(month, day, day_span)?;
                 Ok(Exception::Named { month, day })
             }
             _ => {
@@ -233,23 +270,8 @@ impl<'a> Parser<'a> {
             Some(TokenKind::MonthName(m)) => {
                 let month = parse_month_name(m).unwrap();
                 self.advance();
-                let day = match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::Number(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    Some(TokenKind::OrdinalNumber(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        return Err(self
-                            .error("expected day number after month name in until".into(), span));
-                    }
-                };
+                let (day, day_span) = self.parse_day_number("after month name in until")?;
+                self.validate_named_date(month, day, day_span)?;
                 Ok(UntilSpec::Named { month, day })
             }
             _ => {
@@ -520,7 +542,7 @@ impl<'a> Parser<'a> {
     fn parse_ordinal_day_number(&mut self) -> Result<u8, ScheduleError> {
         match self.peek().map(|t| &t.kind) {
             Some(TokenKind::OrdinalNumber(n)) => {
-                let d = *n as u8;
+                let d = self.validate_day_number(*n)?;
                 self.advance();
                 Ok(d)
             }
@@ -545,22 +567,8 @@ impl<'a> Parser<'a> {
             Some(TokenKind::MonthName(m)) => {
                 let month = parse_month_name(m).unwrap();
                 self.advance();
-                let day = match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::Number(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    Some(TokenKind::OrdinalNumber(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        return Err(self.error("expected day number after month name".into(), span));
-                    }
-                };
+                let (day, day_span) = self.parse_day_number("after month name")?;
+                self.validate_named_date(month, day, day_span)?;
                 YearTarget::Date { month, day }
             }
             _ => {
@@ -642,10 +650,12 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(TokenKind::OrdinalNumber(n)) => {
-                let day = *n as u8;
+                let day = self.validate_day_number(*n)?;
+                let day_span = self.current_span();
                 self.advance();
                 self.consume_kind("'of'", |k| matches!(k, TokenKind::Of))?;
                 let month = self.parse_month_name_token()?;
+                self.validate_named_date(month, day, day_span)?;
                 Ok(YearTarget::DayOfMonth { day, month })
             }
             _ => {
@@ -719,22 +729,8 @@ impl<'a> Parser<'a> {
             Some(TokenKind::MonthName(m)) => {
                 let month = parse_month_name(m).unwrap();
                 self.advance();
-                let day = match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::Number(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    Some(TokenKind::OrdinalNumber(n)) => {
-                        let d = *n as u8;
-                        self.advance();
-                        d
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        return Err(self.error("expected day number after month name".into(), span));
-                    }
-                };
+                let (day, day_span) = self.parse_day_number("after month name")?;
+                self.validate_named_date(month, day, day_span)?;
                 Ok(DateSpec::Named { month, day })
             }
             _ => {
@@ -817,7 +813,7 @@ impl<'a> Parser<'a> {
     fn parse_ordinal_day_spec(&mut self) -> Result<DayOfMonthSpec, ScheduleError> {
         let start = match self.peek().map(|t| &t.kind) {
             Some(TokenKind::OrdinalNumber(n)) => {
-                let d = *n as u8;
+                let d = self.validate_day_number(*n)?;
                 self.advance();
                 d
             }
@@ -832,7 +828,7 @@ impl<'a> Parser<'a> {
             self.advance(); // skip "to"
             let end = match self.peek().map(|t| &t.kind) {
                 Some(TokenKind::OrdinalNumber(n)) => {
-                    let d = *n as u8;
+                    let d = self.validate_day_number(*n)?;
                     self.advance();
                     d
                 }
@@ -841,6 +837,13 @@ impl<'a> Parser<'a> {
                     return Err(self.error("expected ordinal day number after 'to'".into(), span));
                 }
             };
+            if start > end {
+                let span = self.current_span();
+                return Err(self.error(
+                    format!("invalid day range: {} to {} (start must be <= end)", start, end),
+                    span,
+                ));
+            }
             Ok(DayOfMonthSpec::Range(start, end))
         } else {
             Ok(DayOfMonthSpec::Single(start))
