@@ -29,7 +29,7 @@ from ._ast import (
     NearestDirection,
     NearestWeekdayTarget,
     OrdinalPosition,
-    OrdinalRepeat,
+    OrdinalWeekdayTarget,
     ScheduleData,
     ScheduleExpr,
     SingleDateExpr,
@@ -149,12 +149,8 @@ class _Parser:
             case TOn():
                 self.advance()
                 expr = self._parse_on()
-            case TOrdinal() | TLast():
-                expr = self._parse_ordinal_repeat()
             case _:
-                raise self._error(
-                    "expected 'every', 'on', or an ordinal (first, second, ...)", span
-                )
+                raise self._error("expected 'every' or 'on'", span)
 
         return self._parse_trailing_clauses(expr)
 
@@ -362,8 +358,23 @@ class _Parser:
             elif isinstance(nk, TWeekday):
                 self.advance()
                 target = LastWeekdayTarget()
+            elif isinstance(nk, TDayName):
+                weekday = nk.name
+                self.advance()
+                target = OrdinalWeekdayTarget(OrdinalPosition.LAST, weekday)
             else:
-                raise self._error("expected 'day' or 'weekday' after 'last'", self.current_span())
+                raise self._error(
+                    "expected 'day', 'weekday', or day name after 'last'", self.current_span()
+                )
+        elif isinstance(k, TOrdinal):
+            ordinal = self._parse_ordinal_position()
+            nk = self.peek_kind()
+            if isinstance(nk, TDayName):
+                weekday = nk.name
+                self.advance()
+                target = OrdinalWeekdayTarget(ordinal, weekday)
+            else:
+                raise self._error("expected day name after ordinal", self.current_span())
         elif isinstance(k, TOrdinalNumber):
             specs = self._parse_ordinal_day_list()
             target = DaysTarget(tuple(specs))
@@ -371,7 +382,8 @@ class _Parser:
             target = self._parse_nearest_weekday_target()
         else:
             raise self._error(
-                "expected ordinal day, 'last', or '[next|previous] nearest' after 'the'",
+                "expected ordinal day, ordinal position, 'last',"
+                " or '[next|previous] nearest' after 'the'",
                 self.current_span(),
             )
 
@@ -404,33 +416,6 @@ class _Parser:
             self.advance()
             return k.value
         raise self._error("expected ordinal day number", self.current_span())
-
-    def _parse_ordinal_repeat(self) -> ScheduleExpr:
-        ordinal = self._parse_ordinal_position()
-
-        k = self.peek_kind()
-        if not isinstance(k, TDayName):
-            raise self._error("expected day name after ordinal", self.current_span())
-        day = k.name
-        self.advance()
-
-        self._consume("'of'", TOf)
-        self._consume("'every'", TEvery)
-
-        # "of every [N] month(s) at ..."
-        interval = 1
-        nk = self.peek_kind()
-        if isinstance(nk, TNumber):
-            interval = nk.value
-            if interval == 0:
-                raise self._error("interval must be at least 1", self.current_span())
-            self.advance()
-
-        self._consume("'month'", TMonth)
-        self._consume("'at'", TAt)
-        times = self._parse_time_list()
-
-        return OrdinalRepeat(interval, ordinal, day, tuple(times))
 
     def _parse_year_repeat(self, interval: int) -> ScheduleExpr:
         self._consume("'on'", TOn)

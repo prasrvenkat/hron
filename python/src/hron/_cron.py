@@ -19,7 +19,7 @@ from ._ast import (
     MonthRepeat,
     NearestWeekdayTarget,
     OrdinalPosition,
-    OrdinalRepeat,
+    OrdinalWeekdayTarget,
     ScheduleData,
     SingleDateExpr,
     SingleDay,
@@ -115,11 +115,12 @@ def to_cron(schedule: ScheduleData) -> str:
                             "not expressible as cron (directional nearest weekday not supported)"
                         )
                     return f"{time.minute} {time.hour} {day}W * *"
+                case OrdinalWeekdayTarget():
+                    raise HronError.cron(
+                        "not expressible as cron (ordinal weekday of month not supported)"
+                    )
                 case _:
                     raise HronError.cron("not expressible as cron (unknown month target)")
-
-        case OrdinalRepeat():
-            raise HronError.cron("not expressible as cron (ordinal weekday of month not supported)")
 
         case SingleDateExpr():
             raise HronError.cron("not expressible as cron (single dates are not repeating)")
@@ -399,10 +400,9 @@ def _try_parse_nth_weekday(
         }
 
         schedule = new_schedule_data(
-            OrdinalRepeat(
+            MonthRepeat(
                 interval=1,
-                ordinal=ordinal_map[nth],
-                day=weekday,
+                target=OrdinalWeekdayTarget(ordinal=ordinal_map[nth], weekday=weekday),
                 times=(TimeOfDay(hour, minute),),
             )
         )
@@ -422,10 +422,9 @@ def _try_parse_nth_weekday(
         hour = _parse_single_value(hour_field, "hour", 0, 23)
 
         schedule = new_schedule_data(
-            OrdinalRepeat(
+            MonthRepeat(
                 interval=1,
-                ordinal=OrdinalPosition.LAST,
-                day=weekday,
+                target=OrdinalWeekdayTarget(ordinal=OrdinalPosition.LAST, weekday=weekday),
                 times=(TimeOfDay(hour, minute),),
             )
         )
