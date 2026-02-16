@@ -132,7 +132,7 @@ public final class Schedule {
   }
 
   /**
-   * Returns a lazy stream of occurrences where from < occurrence <= to.
+   * Returns a lazy stream of occurrences where from &lt; occurrence &lt;= to.
    *
    * @param from the start time (exclusive)
    * @param to the end time (inclusive)
