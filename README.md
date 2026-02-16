@@ -127,9 +127,9 @@ every month on the 1st at 9:00
 every month on the 1st, 15th at 9:00
 every month on the last day at 17:00
 every month on the last weekday at 15:00
-first monday of every month at 10:00
-last friday of every month at 16:00
-third thursday of every month at 11:00
+every month on the first monday at 10:00
+every month on the last friday at 16:00
+every month on the third thursday at 11:00
 ```
 
 ### Yearly

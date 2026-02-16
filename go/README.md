@@ -118,7 +118,7 @@ hron.ParseSchedule("every 2 weeks on monday at 9:00")
 // Monthly
 hron.ParseSchedule("every month on the 1st at 9:00")
 hron.ParseSchedule("every month on the last day at 17:00")
-hron.ParseSchedule("first monday of every month at 10:00")
+hron.ParseSchedule("every month on the first monday at 10:00")
 
 // Yearly
 hron.ParseSchedule("every year on dec 25 at 00:00")

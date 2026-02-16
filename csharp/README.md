@@ -52,7 +52,7 @@ every monday, wednesday, friday at 10:00
 every 2 weeks on monday at 09:00
 every month on the 1st at 09:00
 every month on the last weekday at 17:00
-first monday of every month at 09:00
+every month on the first monday at 09:00
 every year on dec 25 at 00:00
 every 30 min from 09:00 to 17:00
 on feb 14 at 09:00
