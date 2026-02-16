@@ -15,6 +15,8 @@ module Hron
             "#{exc.month} #{exc.day}"
           when IsoException
             exc.date
+          else
+            raise "unknown exception type: #{exc.class}"
           end
         end
         out += " except #{parts.join(", ")}"
@@ -26,6 +28,8 @@ module Hron
           out += " until #{schedule.until.date}"
         when NamedUntil
           out += " until #{schedule.until.month} #{schedule.until.day}"
+        else
+          raise "unknown until type: #{schedule.until.class}"
         end
       end
 
@@ -93,6 +97,8 @@ module Hron
           "#{expr.date.month} #{expr.date.day}"
         when IsoDate
           expr.date.date
+        else
+          raise "unknown date type: #{expr.date.class}"
         end
         "on #{date_str} at #{format_time_list(expr.times)}"
 
@@ -106,6 +112,8 @@ module Hron
           "the #{expr.target.day}#{ordinal_suffix(expr.target.day)} of #{expr.target.month}"
         when YearLastWeekdayTarget
           "the last weekday of #{expr.target.month}"
+        else
+          raise "unknown year target: #{expr.target.class}"
         end
         if expr.interval > 1
           "every #{expr.interval} years on #{target_str} at #{format_time_list(expr.times)}"
@@ -128,6 +136,8 @@ module Hron
         "weekend"
       when DayFilterDays
         filter.days.join(", ")
+      else
+        raise "unknown day filter: #{filter.class}"
       end
     end
 

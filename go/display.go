@@ -54,7 +54,7 @@ func displayExpr(expr ScheduleExpr) string {
 	case ScheduleExprKindYear:
 		return displayYearRepeat(expr)
 	default:
-		return ""
+		panic(fmt.Sprintf("unknown expression kind: %d", expr.Kind))
 	}
 }
 
@@ -113,7 +113,7 @@ func displayDayFilter(f DayFilter) string {
 	case DayFilterKindDays:
 		return formatDayList(f.Days)
 	default:
-		return ""
+		panic(fmt.Sprintf("unknown day filter kind: %d", f.Kind))
 	}
 }
 
@@ -138,7 +138,7 @@ func displayMonthTarget(target MonthTarget) string {
 	case MonthTargetKindOrdinalWeekday:
 		return fmt.Sprintf("%s %s", target.Ordinal.String(), target.Weekday.String())
 	default:
-		return ""
+		panic(fmt.Sprintf("unknown month target kind: %d", target.Kind))
 	}
 }
 
@@ -153,7 +153,7 @@ func displayYearTarget(target YearTarget) string {
 	case YearTargetKindLastWeekday:
 		return fmt.Sprintf("the last weekday of %s", target.Month.String())
 	default:
-		return ""
+		panic(fmt.Sprintf("unknown year target kind: %d", target.Kind))
 	}
 }
 
@@ -164,7 +164,7 @@ func displayDateSpec(spec DateSpec) string {
 	case DateSpecKindISO:
 		return spec.Date
 	default:
-		return ""
+		panic(fmt.Sprintf("unknown date spec kind: %d", spec.Kind))
 	}
 }
 
@@ -176,6 +176,8 @@ func displayExceptions(exceptions []ExceptionSpec) string {
 			parts[i] = fmt.Sprintf("%s %d", exc.Month.String(), exc.Day)
 		case ExceptionSpecKindISO:
 			parts[i] = exc.Date
+		default:
+			panic(fmt.Sprintf("unknown exception spec kind: %d", exc.Kind))
 		}
 	}
 	return strings.Join(parts, ", ")
@@ -188,7 +190,7 @@ func displayUntil(until UntilSpec) string {
 	case UntilSpecKindNamed:
 		return fmt.Sprintf("%s %d", until.Month.String(), until.Day)
 	default:
-		return ""
+		panic(fmt.Sprintf("unknown until spec kind: %d", until.Kind))
 	}
 }
 

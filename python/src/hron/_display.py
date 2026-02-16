@@ -48,6 +48,8 @@ def display(schedule: ScheduleData) -> str:
                     parts.append(f"{m} {d}")
                 case IsoException(date=d):
                     parts.append(d)
+                case _:
+                    raise ValueError(f"unknown exception type: {type(exc)}")
         out += " except " + ", ".join(parts)
 
     if schedule.until:
@@ -56,6 +58,8 @@ def display(schedule: ScheduleData) -> str:
                 out += f" until {d}"
             case NamedUntil(month=m, day=d):
                 out += f" until {m} {d}"
+            case _:
+                raise ValueError(f"unknown until type: {type(schedule.until)}")
 
     if schedule.anchor:
         out += f" starting {schedule.anchor}"
@@ -104,6 +108,8 @@ def _display_expr(expr: ScheduleExpr) -> str:
                     target_str = f"{prefix}nearest weekday to {day}{_ordinal_suffix(day)}"
                 case OrdinalWeekdayTarget(ordinal=ordinal, weekday=weekday):
                     target_str = f"{ordinal} {weekday}"
+                case _:
+                    raise ValueError(f"unknown month target: {type(target)}")
             if interval > 1:
                 return f"every {interval} months on the {target_str} at {_format_time_list(times)}"
             return f"every month on the {target_str} at {_format_time_list(times)}"
@@ -114,6 +120,8 @@ def _display_expr(expr: ScheduleExpr) -> str:
                     date_str = f"{m} {d}"
                 case IsoDate(date=d):
                     date_str = d
+                case _:
+                    raise ValueError(f"unknown date spec: {type(date_spec)}")
             return f"on {date_str} at {_format_time_list(times)}"
 
         case YearRepeat(interval=interval, target=target, times=times):
@@ -126,6 +134,8 @@ def _display_expr(expr: ScheduleExpr) -> str:
                     target_str = f"the {d}{_ordinal_suffix(d)} of {m}"
                 case YearLastWeekdayTarget(month=m):
                     target_str = f"the last weekday of {m}"
+                case _:
+                    raise ValueError(f"unknown year target: {type(target)}")
             if interval > 1:
                 return f"every {interval} years on {target_str} at {_format_time_list(times)}"
             return f"every year on {target_str} at {_format_time_list(times)}"
@@ -144,6 +154,8 @@ def _display_day_filter(f: DayFilter) -> str:
             return "weekend"
         case DayFilterDays(days=days):
             return ", ".join(str(d) for d in days)
+        case _:
+            raise ValueError(f"unknown day filter: {type(f)}")
 
 
 def _format_time_list(times: tuple[TimeOfDay, ...]) -> str:

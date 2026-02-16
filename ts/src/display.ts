@@ -75,11 +75,14 @@ function displayExpr(expr: ScheduleExpr): string {
         targetStr = "last weekday";
       } else if (expr.target.type === "ordinalWeekday") {
         targetStr = `${expr.target.ordinal} ${expr.target.weekday}`;
-      } else {
-        // nearestWeekday
+      } else if (expr.target.type === "nearestWeekday") {
         const { day, direction } = expr.target;
         const dirPrefix = direction ? `${direction} ` : "";
         targetStr = `${dirPrefix}nearest weekday to ${day}${ordinalSuffix(day)}`;
+      } else {
+        throw new Error(
+          `unknown month target type: ${(expr.target as { type: string }).type}`,
+        );
       }
       if (expr.interval > 1) {
         return `every ${expr.interval} months on the ${targetStr} at ${formatTimeList(expr.times)}`;
@@ -103,13 +106,23 @@ function displayExpr(expr: ScheduleExpr): string {
         targetStr = `the ${expr.target.ordinal} ${expr.target.weekday} of ${expr.target.month}`;
       } else if (expr.target.type === "dayOfMonth") {
         targetStr = `the ${expr.target.day}${ordinalSuffix(expr.target.day)} of ${expr.target.month}`;
-      } else {
+      } else if (expr.target.type === "lastWeekday") {
         targetStr = `the last weekday of ${expr.target.month}`;
+      } else {
+        throw new Error(
+          `unknown year target type: ${(expr.target as { type: string }).type}`,
+        );
       }
       if (expr.interval > 1) {
         return `every ${expr.interval} years on ${targetStr} at ${formatTimeList(expr.times)}`;
       }
       return `every year on ${targetStr} at ${formatTimeList(expr.times)}`;
+    }
+    default: {
+      const _exhaustive: never = expr;
+      throw new Error(
+        `unknown expression type: ${(_exhaustive as { type: string }).type}`,
+      );
     }
   }
 }
@@ -124,6 +137,12 @@ function displayDayFilter(filter: DayFilter): string {
       return "weekend";
     case "days":
       return formatDayList(filter.days);
+    default: {
+      const _exhaustive: never = filter;
+      throw new Error(
+        `unknown day filter type: ${(_exhaustive as { type: string }).type}`,
+      );
+    }
   }
 }
 
