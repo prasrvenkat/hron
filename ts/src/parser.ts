@@ -95,13 +95,8 @@ class Parser {
     } else if (kind?.type === "on") {
       this.advance();
       expr = this.parseOn();
-    } else if (kind?.type === "ordinal" || kind?.type === "last") {
-      expr = this.parseOrdinalRepeat();
     } else {
-      throw this.error(
-        "expected 'every', 'on', or an ordinal (first, second, ...)",
-        span,
-      );
+      throw this.error("expected 'every' or 'on'", span);
     }
 
     return this.parseTrailingClauses(expr);
@@ -365,9 +360,32 @@ class Parser {
       } else if (next?.type === "weekday") {
         this.advance();
         target = { type: "lastWeekday" };
+      } else if (next?.type === "dayName") {
+        const weekday = parseWeekday(
+          (next as { type: "dayName"; name: string }).name,
+        );
+        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
+        this.advance();
+        target = { type: "ordinalWeekday", ordinal: "last", weekday };
       } else {
         throw this.error(
-          "expected 'day' or 'weekday' after 'last'",
+          "expected 'day', 'weekday', or day name after 'last'",
+          this.currentSpan(),
+        );
+      }
+    } else if (k?.type === "ordinal") {
+      const ordinal = this.parseOrdinalPosition();
+      const next = this.peekKind();
+      if (next?.type === "dayName") {
+        const weekday = parseWeekday(
+          (next as { type: "dayName"; name: string }).name,
+        );
+        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
+        this.advance();
+        target = { type: "ordinalWeekday", ordinal, weekday };
+      } else {
+        throw this.error(
+          "expected day name after ordinal in month expression",
           this.currentSpan(),
         );
       }
@@ -382,7 +400,7 @@ class Parser {
       target = this.parseNearestWeekdayTarget();
     } else {
       throw this.error(
-        "expected ordinal day (1st, 15th), 'last', or '[next|previous] nearest' after 'the'",
+        "expected ordinal day (1st, 15th), 'last', ordinal weekday, or '[next|previous] nearest' after 'the'",
         this.currentSpan(),
       );
     }
@@ -423,38 +441,6 @@ class Parser {
       return d;
     }
     throw this.error("expected ordinal day number", this.currentSpan());
-  }
-
-  private parseOrdinalRepeat(): ScheduleExpr {
-    const ordinal = this.parseOrdinalPosition();
-
-    const k = this.peekKind();
-    if (k?.type !== "dayName") {
-      throw this.error("expected day name after ordinal", this.currentSpan());
-    }
-    const day = parseWeekday((k as { type: "dayName"; name: string }).name);
-    if (!day) throw this.error("invalid weekday", this.currentSpan());
-    this.advance();
-
-    this.consumeKind("'of'", (k) => k.type === "of");
-    this.consumeKind("'every'", (k) => k.type === "every");
-
-    // "of every [N] month(s) at ..."
-    let interval = 1;
-    const next = this.peekKind();
-    if (next?.type === "number") {
-      interval = (next as { type: "number"; value: number }).value;
-      if (interval === 0) {
-        throw this.error("interval must be at least 1", this.currentSpan());
-      }
-      this.advance();
-    }
-
-    this.consumeKind("'month'", (k) => k.type === "month");
-    this.consumeKind("'at'", (k) => k.type === "at");
-    const times = this.parseTimeList();
-
-    return { type: "ordinalRepeat", interval, ordinal, day, times };
   }
 
   private parseYearRepeat(interval: number): ScheduleExpr {
