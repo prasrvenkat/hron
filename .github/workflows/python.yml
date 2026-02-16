@@ -24,14 +24,15 @@ jobs:
         with:
           enable-cache: true
 
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: just
+
       - name: Install dependencies
         run: cd python && uv sync --locked --python ${{ matrix.python-version }}
 
-      - name: Lint
-        run: cd python && uv run ruff check src/ tests/
-
-      - name: Format
-        run: cd python && uv run ruff format --check src/ tests/
+      - name: Format & Lint
+        run: just lint-python
 
       - name: Test
-        run: cd python && uv run pytest -v
+        run: just test-python

@@ -19,19 +19,19 @@ jobs:
 
       - uses: jdx/mise-action@v2
         with:
-          install_args: nodejs pnpm
+          install_args: nodejs pnpm just
 
       - name: Install dependencies
         run: cd ts && pnpm install --frozen-lockfile
 
-      - name: Lint & Format
-        run: cd ts && pnpm lint
+      - name: Format & Lint
+        run: just lint-ts
 
       - name: Typecheck
         run: cd ts && pnpm typecheck
 
       - name: Test
-        run: cd ts && pnpm test
+        run: just test-ts
 
       - name: Build
         run: cd ts && pnpm build

@@ -17,8 +17,11 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '25'
-      - name: Check formatting
-        run: cd java && mvn fmt:check
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: just
+      - name: Format check
+        run: just lint-java
 
   test:
     name: Test
@@ -29,7 +32,10 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '25'
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: just
       - name: Build
-        run: cd java && mvn compile -q
+        run: just build-java
       - name: Test
-        run: cd java && mvn test
+        run: just test-java

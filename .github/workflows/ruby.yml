@@ -15,13 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          install_args: ruby
-      - name: Install dependencies
-        run: bundle install
-        working-directory: ruby
-      - name: Run tests
-        run: bundle exec rake test
-        working-directory: ruby
+          install_args: ruby just
+      - name: Test
+        run: just test-ruby
 
   lint:
     name: Lint
@@ -30,10 +26,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          install_args: ruby
+          install_args: ruby just
       - name: Install dependencies
         run: bundle install
         working-directory: ruby
-      - name: Run Standard
-        run: bundle exec standardrb
-        working-directory: ruby
+      - name: Lint
+        run: just lint-ruby

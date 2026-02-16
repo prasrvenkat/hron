@@ -19,12 +19,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust
+          install_args: rust just
       - run: rustup component add rustfmt clippy
-      - run: cargo fmt --all --check
-        working-directory: rust
-      - run: cargo clippy --workspace --all-features -- -D warnings
-        working-directory: rust
+      - run: just lint-rust
 
   test:
     name: Test
@@ -33,9 +30,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust
-      - run: cargo test --workspace --all-features
-        working-directory: rust
+          install_args: rust just
+      - run: just test-rust
 
   wasm:
     name: WASM Build & Test

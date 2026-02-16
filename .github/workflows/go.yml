@@ -15,17 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          install_args: go
-      - name: Format check
-        run: |
-          cd go
-          if [ -n "$(gofmt -l .)" ]; then
-            echo "Code is not formatted. Run 'gofmt -w .' to fix."
-            gofmt -d .
-            exit 1
-          fi
-      - name: Vet
-        run: cd go && go vet ./...
+          install_args: go just
+      - name: Format & Lint
+        run: just lint-go
 
   test:
     name: Test
@@ -34,8 +26,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          install_args: go
+          install_args: go just
       - name: Build
-        run: cd go && go build ./...
+        run: just build-go
       - name: Test
-        run: cd go && go test -v ./...
+        run: just test-go
