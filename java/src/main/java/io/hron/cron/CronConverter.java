@@ -34,9 +34,6 @@ public final class CronConverter {
       case WeekRepeat _ ->
           throw HronException.cron("not expressible as cron (multi-week intervals not supported)");
       case MonthRepeat mr -> monthRepeatToCron(mr);
-      case OrdinalRepeat _ ->
-          throw HronException.cron(
-              "not expressible as cron (ordinal weekday of month not supported)");
       case SingleDate _ ->
           throw HronException.cron("not expressible as cron (single dates are not repeating)");
       case YearRepeat _ ->
@@ -113,6 +110,9 @@ public final class CronConverter {
         }
         yield String.format("%d %d %dW * *", t.minute(), t.hour(), mr.target().nearestWeekdayDay());
       }
+      case ORDINAL_WEEKDAY ->
+          throw HronException.cron(
+              "not expressible as cron (ordinal weekday of month not supported)");
     };
   }
 
@@ -386,8 +386,8 @@ public final class CronConverter {
       int minute = parseSingleValue(minuteField, "minute", 0, 59);
       int hour = parseSingleValue(hourField, "hour", 0, 23);
 
-      ScheduleExpr expr =
-          new OrdinalRepeat(1, ordinal, weekday, List.of(new TimeOfDay(hour, minute)));
+      MonthTarget target = MonthTarget.ordinalWeekday(ordinal, weekday);
+      ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
       return new ScheduleData(expr, null, List.of(), null, null, during);
     }
 
@@ -404,8 +404,8 @@ public final class CronConverter {
       int minute = parseSingleValue(minuteField, "minute", 0, 59);
       int hour = parseSingleValue(hourField, "hour", 0, 23);
 
-      ScheduleExpr expr =
-          new OrdinalRepeat(1, OrdinalPosition.LAST, weekday, List.of(new TimeOfDay(hour, minute)));
+      MonthTarget target = MonthTarget.ordinalWeekday(OrdinalPosition.LAST, weekday);
+      ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
       return new ScheduleData(expr, null, List.of(), null, null, during);
     }
 

@@ -134,9 +134,7 @@ public final class Parser {
     return switch (tok.kind()) {
       case EVERY -> parseEveryExpr();
       case ON -> parseSingleDate();
-      case ORDINAL -> parseOrdinalRepeat();
-      case LAST -> parseOrdinalRepeat();
-      default -> throw parseError("expected 'every', 'on', or ordinal position", tok.span());
+      default -> throw parseError("expected 'every' or 'on'", tok.span());
     };
   }
 
@@ -320,9 +318,23 @@ public final class Parser {
       } else if (next != null && next.kind() == TokenKind.WEEKDAY) {
         pos++;
         return MonthTarget.lastWeekday();
+      } else if (next != null && next.kind() == TokenKind.DAY_NAME) {
+        Weekday weekday = next.dayNameVal();
+        pos++;
+        return MonthTarget.ordinalWeekday(OrdinalPosition.LAST, weekday);
       }
       throw parseError(
-          "expected 'day' or 'weekday' after 'last'", next != null ? next.span() : endSpan());
+          "expected 'day', 'weekday', or day name after 'last'",
+          next != null ? next.span() : endSpan());
+    }
+
+    // Check for ordinal + day_name (e.g., "first monday")
+    if (tok.kind() == TokenKind.ORDINAL) {
+      OrdinalPosition ordinal = tok.ordinalVal();
+      pos++;
+      Token dayTok = expect(TokenKind.DAY_NAME);
+      Weekday weekday = dayTok.dayNameVal();
+      return MonthTarget.ordinalWeekday(ordinal, weekday);
     }
 
     // Check for [next|previous] nearest weekday to <day>
@@ -388,41 +400,6 @@ public final class Parser {
     }
 
     return DayOfMonthSpec.single(start);
-  }
-
-  private ScheduleExpr parseOrdinalRepeat() throws HronException {
-    OrdinalPosition ordinal;
-    Token tok = peek();
-
-    if (tok.kind() == TokenKind.LAST) {
-      pos++;
-      ordinal = OrdinalPosition.LAST;
-    } else {
-      tok = expect(TokenKind.ORDINAL);
-      ordinal = tok.ordinalVal();
-    }
-
-    Token dayTok = expect(TokenKind.DAY_NAME);
-    Weekday weekday = dayTok.dayNameVal();
-
-    expect(TokenKind.OF);
-    expect(TokenKind.EVERY);
-
-    // Check for "N months"
-    int interval = 1;
-    if (check(TokenKind.NUMBER)) {
-      Token numTok = tokens.get(pos++);
-      interval = numTok.numberVal();
-      if (interval == 0) {
-        throw parseError("zero interval", numTok.span());
-      }
-    }
-
-    expect(TokenKind.MONTH);
-
-    List<TimeOfDay> times = parseAtTimes();
-
-    return new OrdinalRepeat(interval, ordinal, weekday, times);
   }
 
   private ScheduleExpr parseYearRepeat() throws HronException {

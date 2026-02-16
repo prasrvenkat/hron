@@ -322,7 +322,6 @@ public final class Evaluator {
       case IntervalRepeat ir -> nextIntervalRepeat(ir, now, location);
       case WeekRepeat wr -> nextWeekRepeat(wr, now, location, anchor);
       case MonthRepeat mr -> nextMonthRepeat(mr, now, location, anchor, during);
-      case OrdinalRepeat or -> nextOrdinalRepeat(or, now, location, anchor);
       case SingleDate sd -> nextSingleDate(sd, now, location);
       case YearRepeat yr -> nextYearRepeat(yr, now, location, anchor);
     };
@@ -339,7 +338,6 @@ public final class Evaluator {
       case IntervalRepeat ir -> prevIntervalRepeat(ir, now, location);
       case WeekRepeat wr -> prevWeekRepeat(wr, now, location, anchor);
       case MonthRepeat mr -> prevMonthRepeat(mr, now, location, anchor);
-      case OrdinalRepeat or -> prevOrdinalRepeat(or, now, location, anchor);
       case SingleDate sd -> prevSingleDate(sd, now, location);
       case YearRepeat yr -> prevYearRepeat(yr, now, location, anchor);
     };
@@ -512,43 +510,6 @@ public final class Evaluator {
 
       // Move to next month
       day = day.withDayOfMonth(1).plusMonths(mr.interval() > 1 ? mr.interval() : 1);
-    }
-
-    return Optional.empty();
-  }
-
-  private static Optional<ZonedDateTime> nextOrdinalRepeat(
-      OrdinalRepeat or, ZonedDateTime now, ZoneId location, String anchor) {
-    LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
-    LocalDate day = now.toLocalDate();
-
-    for (int i = 0; i < MAX_ITERATIONS; i++) {
-      // Check month alignment
-      if (or.interval() > 1) {
-        long monthsFromAnchor =
-            ChronoUnit.MONTHS.between(anchorDate.withDayOfMonth(1), day.withDayOfMonth(1));
-        long mod = monthsFromAnchor % or.interval();
-        if (mod < 0) mod += or.interval();
-        if (mod != 0) {
-          day = day.withDayOfMonth(1).plusMonths(or.interval() - mod);
-          continue;
-        }
-      }
-
-      // Find the ordinal weekday in this month
-      Optional<LocalDate> targetDay =
-          nthWeekdayOfMonth(day.getYear(), day.getMonth(), or.weekday(), or.ordinal());
-
-      if (targetDay.isPresent() && !targetDay.get().isBefore(day)) {
-        Optional<ZonedDateTime> time =
-            earliestFutureTime(targetDay.get(), or.times(), location, now);
-        if (time.isPresent()) {
-          return time;
-        }
-      }
-
-      // Move to next month
-      day = day.withDayOfMonth(1).plusMonths(or.interval() > 1 ? or.interval() : 1);
     }
 
     return Optional.empty();
@@ -777,44 +738,6 @@ public final class Evaluator {
     return Optional.empty();
   }
 
-  private static Optional<ZonedDateTime> prevOrdinalRepeat(
-      OrdinalRepeat or, ZonedDateTime now, ZoneId location, String anchor) {
-    LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
-    LocalDate day = now.toLocalDate();
-
-    for (int i = 0; i < MAX_ITERATIONS; i++) {
-      // Check month alignment
-      if (or.interval() > 1) {
-        long monthsFromAnchor =
-            ChronoUnit.MONTHS.between(anchorDate.withDayOfMonth(1), day.withDayOfMonth(1));
-        long mod = monthsFromAnchor % or.interval();
-        if (mod < 0) mod += or.interval();
-        if (mod != 0) {
-          day = day.withDayOfMonth(1).minusMonths(mod);
-          day = day.plusMonths(1).minusDays(1);
-          continue;
-        }
-      }
-
-      // Find the ordinal weekday in this month
-      Optional<LocalDate> targetDay =
-          nthWeekdayOfMonth(day.getYear(), day.getMonth(), or.weekday(), or.ordinal());
-
-      if (targetDay.isPresent() && !targetDay.get().isAfter(day)) {
-        Optional<ZonedDateTime> time = latestPastTime(targetDay.get(), or.times(), location, now);
-        if (time.isPresent()) {
-          return time;
-        }
-      }
-
-      // Move to previous month
-      day = day.withDayOfMonth(1).minusMonths(or.interval() > 1 ? or.interval() : 1);
-      day = day.plusMonths(1).minusDays(1);
-    }
-
-    return Optional.empty();
-  }
-
   private static Optional<ZonedDateTime> prevSingleDate(
       SingleDate sd, ZonedDateTime now, ZoneId location) {
     int startYear = now.getYear();
@@ -970,6 +893,11 @@ public final class Evaluator {
       case NEAREST_WEEKDAY -> {
         Optional<LocalDate> result =
             nearestWeekday(year, month, target.nearestWeekdayDay(), target.nearestDirection());
+        yield result.map(List::of).orElse(List.of());
+      }
+      case ORDINAL_WEEKDAY -> {
+        Optional<LocalDate> result =
+            nthWeekdayOfMonth(year, month, target.weekday(), target.ordinal());
         yield result.map(List::of).orElse(List.of());
       }
     };
