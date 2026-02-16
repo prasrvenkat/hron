@@ -3,9 +3,9 @@ name: Ruby
 on:
   push:
     branches: [main]
-    paths: ["ruby/**", "spec/**"]
+    paths: ["ruby/**", "spec/**", "justfile", ".github/workflows/ruby.yml"]
   pull_request:
-    paths: ["ruby/**", "spec/**"]
+    paths: ["ruby/**", "spec/**", "justfile", ".github/workflows/ruby.yml"]
 
 jobs:
   test:

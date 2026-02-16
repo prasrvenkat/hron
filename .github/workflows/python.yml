@@ -6,10 +6,14 @@ on:
     paths:
       - "python/**"
       - "spec/**"
+      - "justfile"
+      - ".github/workflows/python.yml"
   pull_request:
     paths:
       - "python/**"
       - "spec/**"
+      - "justfile"
+      - ".github/workflows/python.yml"
 
 jobs:
   test:

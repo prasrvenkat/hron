@@ -3,9 +3,9 @@ name: Go
 on:
   push:
     branches: [main]
-    paths: ["go/**", "spec/**"]
+    paths: ["go/**", "spec/**", "justfile", ".github/workflows/go.yml"]
   pull_request:
-    paths: ["go/**", "spec/**"]
+    paths: ["go/**", "spec/**", "justfile", ".github/workflows/go.yml"]
 
 jobs:
   check:

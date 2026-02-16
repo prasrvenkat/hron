@@ -6,10 +6,14 @@ on:
     paths:
       - "ts/**"
       - "spec/**"
+      - "justfile"
+      - ".github/workflows/ts.yml"
   pull_request:
     paths:
       - "ts/**"
       - "spec/**"
+      - "justfile"
+      - ".github/workflows/ts.yml"
 
 jobs:
   test:

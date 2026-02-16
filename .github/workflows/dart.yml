@@ -6,10 +6,14 @@ on:
     paths:
       - "dart/**"
       - "spec/**"
+      - "justfile"
+      - ".github/workflows/dart.yml"
   pull_request:
     paths:
       - "dart/**"
       - "spec/**"
+      - "justfile"
+      - ".github/workflows/dart.yml"
 
 jobs:
   format:

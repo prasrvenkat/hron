@@ -3,9 +3,9 @@ name: Java
 on:
   push:
     branches: [main]
-    paths: ["java/**", "spec/**"]
+    paths: ["java/**", "spec/**", "justfile", ".github/workflows/java.yml"]
   pull_request:
-    paths: ["java/**", "spec/**"]
+    paths: ["java/**", "spec/**", "justfile", ".github/workflows/java.yml"]
 
 jobs:
   check:
