@@ -1501,6 +1501,30 @@
           ]
         },
         {
+          "name": "every_2_months_with_except",
+          "expression": "every 2 months on the 15th at 09:00 except 2026-06-15 in UTC",
+          "description": "bimonthly + except: Jun 15 is non-aligned (epoch), so exception has no effect on aligned months",
+          "next_n": [
+            "2026-03-15T09:00:00+00:00[UTC]",
+            "2026-05-15T09:00:00+00:00[UTC]",
+            "2026-07-15T09:00:00+00:00[UTC]",
+            "2026-09-15T09:00:00+00:00[UTC]",
+            "2026-11-15T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_6_months_with_except",
+          "expression": "every 6 months on the 15th at 09:00 except 2026-07-15 starting 2026-01-01 in UTC",
+          "description": "semiannual + except: skip Jul 15, next aligned is Jan 15 2027",
+          "next_n_count": 4,
+          "next_n": [
+            "2027-01-15T09:00:00+00:00[UTC]",
+            "2027-07-15T09:00:00+00:00[UTC]",
+            "2028-01-15T09:00:00+00:00[UTC]",
+            "2028-07-15T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
           "name": "nearest_weekday_on_weekday",
           "expression": "every month on the nearest weekday to 13th at 09:00 in UTC",
           "description": "Feb 13, 2026 is Friday, fires as-is",
@@ -1663,6 +1687,41 @@
             "2026-07-06T10:00:00+00:00[UTC]",
             "2026-09-07T10:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "ordinal_interval_with_except",
+          "expression": "first monday of every 2 months at 10:00 except 2026-05-04 starting 2026-01-01 in UTC",
+          "description": "bimonthly ordinal + except: skip May 4, next aligned is Jul 6",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-03-02T10:00:00+00:00[UTC]",
+            "2026-07-06T10:00:00+00:00[UTC]",
+            "2026-09-07T10:00:00+00:00[UTC]",
+            "2026-11-02T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "ordinal_interval_with_until",
+          "expression": "first monday of every 2 months at 10:00 until 2026-09-01 starting 2026-01-01 in UTC",
+          "description": "bimonthly ordinal + until: fires Mar, May, Jul only (Sep 7 > Sep 1)",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-03-02T10:00:00+00:00[UTC]",
+            "2026-05-04T10:00:00+00:00[UTC]",
+            "2026-07-06T10:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "last_friday_quarterly",
+          "expression": "last friday of every 3 months at 17:00 starting 2026-01-01 in UTC",
+          "description": "quarterly last friday: Apr, Jul, Oct, Jan",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-04-24T17:00:00+00:00[UTC]",
+            "2026-07-31T17:00:00+00:00[UTC]",
+            "2026-10-30T17:00:00+00:00[UTC]",
+            "2027-01-29T17:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -1705,6 +1764,67 @@
             "2026-03-16T09:00:00+00:00[UTC]",
             "2026-03-30T09:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "biweekly_with_except",
+          "expression": "every 2 weeks on monday at 09:00 except 2026-03-02 starting 2026-01-05 in UTC",
+          "description": "biweekly + exception: skip Mar 2, next aligned Monday is Mar 16",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-03-16T09:00:00+00:00[UTC]",
+            "2026-03-30T09:00:00+00:00[UTC]",
+            "2026-04-13T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "biweekly_with_until",
+          "expression": "every 2 weeks on monday at 09:00 until 2026-04-01 starting 2026-01-05 in UTC",
+          "description": "biweekly + until: fires Feb 16, Mar 2, Mar 16, Mar 30",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-16T09:00:00+00:00[UTC]",
+            "2026-03-30T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "biweekly_with_timezone_dst",
+          "expression": "every 2 weeks on monday at 09:00 in America/New_York",
+          "description": "biweekly spanning DST spring-forward: offset changes from EST to EDT",
+          "now": "2026-02-06T12:00:00-05:00[America/New_York]",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-02-16T09:00:00-05:00[America/New_York]",
+            "2026-03-02T09:00:00-05:00[America/New_York]",
+            "2026-03-16T09:00:00-04:00[America/New_York]",
+            "2026-03-30T09:00:00-04:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "triweekly_with_starting",
+          "expression": "every 3 weeks on friday at 17:00 starting 2026-01-02 in UTC",
+          "description": "3-week cycle anchored Jan 2: aligned Fridays every 21 days",
+          "next_n": [
+            "2026-02-13T17:00:00+00:00[UTC]",
+            "2026-03-06T17:00:00+00:00[UTC]",
+            "2026-03-27T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "biweekly_matches_aligned",
+          "expression": "every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC",
+          "datetime": "2026-02-16T09:00:00+00:00[UTC]",
+          "expected": true,
+          "description": "Feb 16 is an aligned biweekly Monday"
+        },
+        {
+          "name": "biweekly_matches_not_aligned",
+          "expression": "every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC",
+          "datetime": "2026-02-09T09:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "Feb 9 is a Monday but not aligned to the biweekly cycle"
         }
       ]
     },
@@ -1731,6 +1851,83 @@
           "expression": "on jan 1 at 9:00 in UTC",
           "description": "Jan 1 passed this year, next = next year",
           "next_date": "2027-01-01"
+        },
+        {
+          "name": "iso_date_year_end",
+          "expression": "on 2026-12-31 at 23:59 in UTC",
+          "description": "ISO date at the very end of the year",
+          "next": "2026-12-31T23:59:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_date_already_passed",
+          "expression": "on 2026-01-01 at 00:00 in UTC",
+          "description": "ISO date in the past (now is Feb 6) returns null",
+          "next": null
+        },
+        {
+          "name": "iso_date_past_returns_null",
+          "expression": "on 2026-12-31 at 23:59 in UTC",
+          "description": "past ISO date returns null",
+          "now": "2027-01-01T00:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "iso_date_multi_time",
+          "expression": "on 2026-03-15 at 09:00, 17:00 in UTC",
+          "description": "single ISO date with two fire times",
+          "next_n_count": 3,
+          "next_n": [
+            "2026-03-15T09:00:00+00:00[UTC]",
+            "2026-03-15T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "named_date_with_except",
+          "expression": "on mar 15 at 09:00 except 2026-03-15 in UTC",
+          "description": "named recurring date + ISO exception: skips 2026, fires 2027",
+          "next": "2027-03-15T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_date_with_until",
+          "expression": "on mar 15 at 09:00 until 2027-06-01 in UTC",
+          "description": "named date limited by until: fires 2026 and 2027 only",
+          "next_n_count": 5,
+          "next_n": [
+            "2026-03-15T09:00:00+00:00[UTC]",
+            "2027-03-15T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "iso_date_matches_true",
+          "expression": "on 2026-03-15 at 09:00 in UTC",
+          "datetime": "2026-03-15T09:00:00+00:00[UTC]",
+          "expected": true,
+          "description": "exact match on ISO date and time"
+        },
+        {
+          "name": "iso_date_matches_wrong_date",
+          "expression": "on 2026-03-15 at 09:00 in UTC",
+          "datetime": "2026-03-14T09:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "wrong date does not match"
+        },
+        {
+          "name": "iso_date_matches_wrong_time",
+          "expression": "on 2026-03-15 at 09:00 in UTC",
+          "datetime": "2026-03-15T17:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "right date but wrong time does not match"
+        },
+        {
+          "name": "named_date_with_timezone",
+          "expression": "on mar 15 at 09:00 in America/New_York",
+          "description": "named date in specific timezone (EDT in March)",
+          "now": "2026-02-06T12:00:00-05:00[America/New_York]",
+          "next_n": [
+            "2026-03-15T09:00:00-04:00[America/New_York]",
+            "2027-03-15T09:00:00-04:00[America/New_York]",
+            "2028-03-15T09:00:00-04:00[America/New_York]"
+          ]
         }
       ]
     },
@@ -1855,6 +2052,16 @@
             "2028-02-29T09:00:00+00:00[UTC]",
             "2032-02-29T09:00:00+00:00[UTC]",
             "2036-02-29T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "yearly_with_iso_except",
+          "expression": "every year on dec 31 at 23:59 except 2026-12-31 in UTC",
+          "description": "yearly + ISO exception: skips 2026, fires 2027, 2028, 2029",
+          "next_n": [
+            "2027-12-31T23:59:00+00:00[UTC]",
+            "2028-12-31T23:59:00+00:00[UTC]",
+            "2029-12-31T23:59:00+00:00[UTC]"
           ]
         }
       ]
@@ -2053,6 +2260,109 @@
             "2026-02-13T09:00:00+00:00[UTC]",
             "2026-02-14T09:00:00+00:00[UTC]",
             "2026-02-15T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "daily_multi_except_until",
+          "expression": "every day at 09:00 except 2026-02-08, 2026-02-09 until 2026-02-12 in UTC",
+          "description": "two ISO exceptions plus until: Feb 7, skip 8-9, Feb 10-12",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]",
+            "2026-02-11T09:00:00+00:00[UTC]",
+            "2026-02-12T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "weekday_except_named_until",
+          "expression": "every weekday at 09:00 except dec 25 until 2026-03-15 in UTC",
+          "description": "weekday + named holiday exception + until limit. Dec 25 exception has no effect before March cutoff",
+          "next_n_count": 30,
+          "next_n": [
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]",
+            "2026-02-11T09:00:00+00:00[UTC]",
+            "2026-02-12T09:00:00+00:00[UTC]",
+            "2026-02-13T09:00:00+00:00[UTC]",
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-02-17T09:00:00+00:00[UTC]",
+            "2026-02-18T09:00:00+00:00[UTC]",
+            "2026-02-19T09:00:00+00:00[UTC]",
+            "2026-02-20T09:00:00+00:00[UTC]",
+            "2026-02-23T09:00:00+00:00[UTC]",
+            "2026-02-24T09:00:00+00:00[UTC]",
+            "2026-02-25T09:00:00+00:00[UTC]",
+            "2026-02-26T09:00:00+00:00[UTC]",
+            "2026-02-27T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-03-04T09:00:00+00:00[UTC]",
+            "2026-03-05T09:00:00+00:00[UTC]",
+            "2026-03-06T09:00:00+00:00[UTC]",
+            "2026-03-09T09:00:00+00:00[UTC]",
+            "2026-03-10T09:00:00+00:00[UTC]",
+            "2026-03-11T09:00:00+00:00[UTC]",
+            "2026-03-12T09:00:00+00:00[UTC]",
+            "2026-03-13T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "monthly_except_named_until",
+          "expression": "every month on the 1st at 09:00 except jan 1 until 2026-08-01 in UTC",
+          "description": "monthly except New Year's Day, with until. Jan 1 exception irrelevant in range.",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-04-01T09:00:00+00:00[UTC]",
+            "2026-05-01T09:00:00+00:00[UTC]",
+            "2026-06-01T09:00:00+00:00[UTC]",
+            "2026-07-01T09:00:00+00:00[UTC]",
+            "2026-08-01T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "weekly_except_until",
+          "expression": "every monday at 09:00 except 2026-02-16 until 2026-03-16 in UTC",
+          "description": "weekly monday + skip one + until mid-March",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-23T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-09T09:00:00+00:00[UTC]",
+            "2026-03-16T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "multi_time_except_until",
+          "expression": "every day at 09:00, 12:00, 17:00 except 2026-02-08 until 2026-02-10 in UTC",
+          "description": "3 fire times/day + except Feb 8 + until Feb 10",
+          "next_n_count": 15,
+          "next_n": [
+            "2026-02-06T17:00:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-07T12:00:00+00:00[UTC]",
+            "2026-02-07T17:00:00+00:00[UTC]",
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-09T12:00:00+00:00[UTC]",
+            "2026-02-09T17:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]",
+            "2026-02-10T12:00:00+00:00[UTC]",
+            "2026-02-10T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "biweekly_except_until",
+          "expression": "every 2 weeks on monday at 09:00 except 2026-03-02 until 2026-04-30 starting 2026-01-05 in UTC",
+          "description": "biweekly + except + until + starting. Skip Mar 2.",
+          "next_n_count": 10,
+          "next_n": [
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-03-16T09:00:00+00:00[UTC]",
+            "2026-03-30T09:00:00+00:00[UTC]",
+            "2026-04-13T09:00:00+00:00[UTC]",
+            "2026-04-27T09:00:00+00:00[UTC]"
           ]
         }
       ]
@@ -2367,6 +2677,50 @@
           "description": "named date in wrong month: never fires",
           "next_n_count": 3,
           "next_n": []
+        },
+        {
+          "name": "day_interval_during_single_month",
+          "expression": "every 3 days at 09:00 starting 2026-03-01 during mar in UTC",
+          "description": "every 3 days only during March: fires 1st, 4th, 7th, 10th, 13th",
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-04T09:00:00+00:00[UTC]",
+            "2026-03-07T09:00:00+00:00[UTC]",
+            "2026-03-10T09:00:00+00:00[UTC]",
+            "2026-03-13T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "daily_starting_distant_past",
+          "expression": "every day at 09:00 starting 2020-01-01 in UTC",
+          "description": "starting date far in the past: schedule still works normally from now",
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-09T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "day_interval_starting_alignment",
+          "expression": "every 3 days at 09:00 starting 2020-01-01 in UTC",
+          "description": "3-day interval with distant past anchor: alignment still computed correctly",
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-10T09:00:00+00:00[UTC]",
+            "2026-02-13T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "quarterly_via_during",
+          "expression": "every month on the 1st at 09:00 during jan, apr, jul, oct in UTC",
+          "description": "quarterly schedule via during clause: fires 1st of Jan, Apr, Jul, Oct",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-04-01T09:00:00+00:00[UTC]",
+            "2026-07-01T09:00:00+00:00[UTC]",
+            "2026-10-01T09:00:00+00:00[UTC]",
+            "2027-01-01T09:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -2448,6 +2802,37 @@
             "2026-03-03T09:00:00+00:00[UTC]",
             "2026-03-04T09:00:00+00:00[UTC]",
             "2026-03-05T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "end_of_month_range_february",
+          "expression": "every month on the 28th to 31st at 09:00 in UTC",
+          "description": "range 28-31 in Feb (non-leap, 28 days): only 28th fires. Mar has all 4.",
+          "now": "2026-01-25T12:00:00+00:00[UTC]",
+          "next_n_count": 8,
+          "next_n": [
+            "2026-01-28T09:00:00+00:00[UTC]",
+            "2026-01-29T09:00:00+00:00[UTC]",
+            "2026-01-30T09:00:00+00:00[UTC]",
+            "2026-01-31T09:00:00+00:00[UTC]",
+            "2026-02-28T09:00:00+00:00[UTC]",
+            "2026-03-28T09:00:00+00:00[UTC]",
+            "2026-03-29T09:00:00+00:00[UTC]",
+            "2026-03-30T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "range_with_named_except",
+          "expression": "every month on the 1st to 3rd at 09:00 except jan 1 in UTC",
+          "description": "day range + named exception: Jan 1 excluded, fires 2-3 in Jan, full range other months",
+          "next_n_count": 6,
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]",
+            "2026-03-02T09:00:00+00:00[UTC]",
+            "2026-03-03T09:00:00+00:00[UTC]",
+            "2026-04-01T09:00:00+00:00[UTC]",
+            "2026-04-02T09:00:00+00:00[UTC]",
+            "2026-04-03T09:00:00+00:00[UTC]"
           ]
         }
       ]
@@ -2863,6 +3248,66 @@
           "expression": "on feb 29 at 09:00 in UTC",
           "description": "next leap year is 2028",
           "next_date": "2028-02-29"
+        },
+        {
+          "name": "feb_29_multiple_occurrences",
+          "expression": "every year on feb 29 at 09:00 in UTC",
+          "description": "3 consecutive leap years: 2028, 2032, 2036",
+          "next_n": [
+            "2028-02-29T09:00:00+00:00[UTC]",
+            "2032-02-29T09:00:00+00:00[UTC]",
+            "2036-02-29T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "feb_29_with_except",
+          "expression": "every year on feb 29 at 09:00 except 2032-02-29 in UTC",
+          "description": "skip 2032 leap year, get 2028, 2036, 2040",
+          "next_n": [
+            "2028-02-29T09:00:00+00:00[UTC]",
+            "2036-02-29T09:00:00+00:00[UTC]",
+            "2040-02-29T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "feb_29_after_leap_year",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "now is just after 2028 Feb 29, next is 2032",
+          "now": "2028-03-01T00:00:00+00:00[UTC]",
+          "next": "2032-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "feb_29_multi_time",
+          "expression": "every year on feb 29 at 09:00, 17:00 in UTC",
+          "description": "two fire times per leap day: morning and evening",
+          "next_n_count": 4,
+          "next_n": [
+            "2028-02-29T09:00:00+00:00[UTC]",
+            "2028-02-29T17:00:00+00:00[UTC]",
+            "2032-02-29T09:00:00+00:00[UTC]",
+            "2032-02-29T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "feb_29_matches_true",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "datetime": "2028-02-29T09:00:00+00:00[UTC]",
+          "expected": true,
+          "description": "matches on an actual Feb 29 at the right time"
+        },
+        {
+          "name": "feb_29_matches_non_leap_year",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "datetime": "2026-02-28T09:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "Feb 28 in a non-leap year does not match a Feb 29 schedule"
+        },
+        {
+          "name": "feb_29_matches_wrong_time",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "datetime": "2028-02-29T17:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "correct date but wrong time does not match"
         }
       ]
     },
@@ -2906,6 +3351,60 @@
           "description": "March 8 is Sunday (not weekday), March 9 Monday normal 2:30 AM EDT",
           "now": "2026-03-06T03:00:00-05:00[America/New_York]",
           "next_date": "2026-03-09"
+        },
+        {
+          "name": "multi_time_spring_forward",
+          "expression": "every day at 02:30, 14:00 in America/New_York",
+          "description": "two fire times: 02:30 pushed to 03:30 on spring-forward day, 14:00 normal",
+          "now": "2026-03-07T00:00:00-05:00[America/New_York]",
+          "next_n": [
+            "2026-03-07T02:30:00-05:00[America/New_York]",
+            "2026-03-07T14:00:00-05:00[America/New_York]",
+            "2026-03-08T03:30:00-04:00[America/New_York]",
+            "2026-03-08T14:00:00-04:00[America/New_York]",
+            "2026-03-09T02:30:00-04:00[America/New_York]",
+            "2026-03-09T14:00:00-04:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "except_on_spring_forward_day",
+          "expression": "every day at 02:30 except 2026-03-09 in America/New_York",
+          "description": "exception skips Mar 9, spring-forward day (Mar 8) still fires at pushed time",
+          "now": "2026-03-07T00:00:00-05:00[America/New_York]",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-03-07T02:30:00-05:00[America/New_York]",
+            "2026-03-08T03:30:00-04:00[America/New_York]",
+            "2026-03-10T02:30:00-04:00[America/New_York]",
+            "2026-03-11T02:30:00-04:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "matches_spring_forward_pushed_time",
+          "expression": "every day at 02:30 in America/New_York",
+          "datetime": "2026-03-08T03:30:00-04:00[America/New_York]",
+          "expected": true,
+          "description": "pushed time 03:30 on spring-forward day matches schedule for 02:30"
+        },
+        {
+          "name": "matches_spring_forward_normal_day_after",
+          "expression": "every day at 02:30 in America/New_York",
+          "datetime": "2026-03-09T02:30:00-04:00[America/New_York]",
+          "expected": true,
+          "description": "normal 02:30 EDT on the day after spring-forward matches"
+        },
+        {
+          "name": "weekday_spring_forward_sequence",
+          "expression": "every weekday at 02:30 in America/New_York",
+          "description": "weekday schedule: Mar 6 (Fri) EST, Mar 8 (Sun) skipped, Mar 9 (Mon) EDT",
+          "now": "2026-03-05T03:00:00-05:00[America/New_York]",
+          "next_n": [
+            "2026-03-06T02:30:00-05:00[America/New_York]",
+            "2026-03-09T02:30:00-04:00[America/New_York]",
+            "2026-03-10T02:30:00-04:00[America/New_York]",
+            "2026-03-11T02:30:00-04:00[America/New_York]",
+            "2026-03-12T02:30:00-04:00[America/New_York]"
+          ]
         }
       ]
     },
@@ -2928,6 +3427,82 @@
             "2026-11-01T01:30:00-04:00[America/New_York]",
             "2026-11-02T01:30:00-05:00[America/New_York]",
             "2026-11-03T01:30:00-05:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "interval_across_fall_back",
+          "expression": "every 30 min from 01:00 to 03:00 in America/New_York",
+          "description": "30-min interval spans fall-back: times 01:00-01:30 in EDT, then 02:00+ in EST",
+          "now": "2026-10-31T23:00:00-04:00[America/New_York]",
+          "next_n": [
+            "2026-11-01T01:00:00-04:00[America/New_York]",
+            "2026-11-01T01:30:00-04:00[America/New_York]",
+            "2026-11-01T02:00:00-05:00[America/New_York]",
+            "2026-11-01T02:30:00-05:00[America/New_York]",
+            "2026-11-01T03:00:00-05:00[America/New_York]",
+            "2026-11-02T01:00:00-05:00[America/New_York]",
+            "2026-11-02T01:30:00-05:00[America/New_York]",
+            "2026-11-02T02:00:00-05:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "multi_time_across_fall_back",
+          "expression": "every day at 01:00, 01:30, 02:00 in America/New_York",
+          "description": "three fire times spanning the fall-back boundary on Nov 1",
+          "now": "2026-10-31T23:00:00-04:00[America/New_York]",
+          "next_n": [
+            "2026-11-01T01:00:00-04:00[America/New_York]",
+            "2026-11-01T01:30:00-04:00[America/New_York]",
+            "2026-11-01T02:00:00-05:00[America/New_York]",
+            "2026-11-02T01:00:00-05:00[America/New_York]",
+            "2026-11-02T01:30:00-05:00[America/New_York]",
+            "2026-11-02T02:00:00-05:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "exception_on_fall_back_day",
+          "expression": "every day at 01:30 except 2026-11-01 in America/New_York",
+          "description": "except clause skips fall-back day entirely",
+          "now": "2026-10-31T00:00:00-04:00[America/New_York]",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-10-31T01:30:00-04:00[America/New_York]",
+            "2026-11-02T01:30:00-05:00[America/New_York]",
+            "2026-11-03T01:30:00-05:00[America/New_York]",
+            "2026-11-04T01:30:00-05:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "weekend_across_fall_back",
+          "expression": "every weekend at 01:30 in America/New_York",
+          "description": "Nov 1 is Sunday (fall-back day), Oct 31 is Saturday",
+          "now": "2026-10-30T12:00:00-04:00[America/New_York]",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-10-31T01:30:00-04:00[America/New_York]",
+            "2026-11-01T01:30:00-04:00[America/New_York]",
+            "2026-11-07T01:30:00-05:00[America/New_York]",
+            "2026-11-08T01:30:00-05:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "matches_fall_back_est",
+          "expression": "every day at 01:30 in America/New_York",
+          "datetime": "2026-11-02T01:30:00-05:00[America/New_York]",
+          "expected": true,
+          "description": "01:30 EST (after fall-back transition) matches"
+        },
+        {
+          "name": "weekday_across_fall_back",
+          "expression": "every monday at 09:00 in America/New_York",
+          "description": "Monday schedule across fall-back: Nov 2 in EST",
+          "now": "2026-10-30T12:00:00-04:00[America/New_York]",
+          "next_n_count": 4,
+          "next_n": [
+            "2026-11-02T09:00:00-05:00[America/New_York]",
+            "2026-11-09T09:00:00-05:00[America/New_York]",
+            "2026-11-16T09:00:00-05:00[America/New_York]",
+            "2026-11-23T09:00:00-05:00[America/New_York]"
           ]
         }
       ]
