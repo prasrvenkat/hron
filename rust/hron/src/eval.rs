@@ -109,7 +109,8 @@ fn matches_day_filter(date: Date, filter: &DayFilter) -> bool {
 /// Get the last day of a month.
 fn last_day_of_month(year: i16, month: i8) -> Date {
     if month == 12 {
-        Date::new(year + 1, 1, 1).unwrap().yesterday().unwrap()
+        // December always has 31 days; avoids year+1 overflow at i16::MAX
+        Date::new(year, 12, 31).unwrap()
     } else {
         Date::new(year, month + 1, 1).unwrap().yesterday().unwrap()
     }
@@ -290,27 +291,6 @@ impl ParsedExceptions {
         }
         false
     }
-}
-
-/// Check if a date matches any exception.
-fn is_excepted(date: Date, exceptions: &[Exception]) -> bool {
-    for exc in exceptions {
-        match exc {
-            Exception::Named { month, day } => {
-                if date.month() == month.number() as i8 && date.day() == *day as i8 {
-                    return true;
-                }
-            }
-            Exception::Iso(s) => {
-                if let Ok(exc_date) = s.parse::<Date>() {
-                    if date == exc_date {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    false
 }
 
 /// Check if a date's month is in the `during` list.
@@ -636,8 +616,11 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
     }
 
     // Check exceptions
-    if is_excepted(date, &schedule.except) {
-        return Ok(false);
+    if !schedule.except.is_empty() {
+        let parsed_exceptions = ParsedExceptions::from_exceptions(&schedule.except);
+        if parsed_exceptions.is_excepted(date) {
+            return Ok(false);
+        }
     }
 
     // Check until
@@ -681,18 +664,21 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
             }
             let from_t = to_time(from);
             let to_t = to_time(to);
-            let current_t = Time::new(zdt.time().hour(), zdt.time().minute(), 0, 0).unwrap();
-            if current_t < from_t || current_t > to_t {
+            // Use instant-based arithmetic for DST correctness
+            let from_resolved = at_time_on_date(date, from_t, &tz)?;
+            let to_resolved = at_time_on_date(date, to_t, &tz)?;
+            let current_secs = zdt.timestamp().as_second();
+            let from_secs = from_resolved.timestamp().as_second();
+            let to_secs = to_resolved.timestamp().as_second();
+            if current_secs < from_secs || current_secs > to_secs {
                 return Ok(false);
             }
-            let from_minutes = from_t.hour() as i32 * 60 + from_t.minute() as i32;
-            let current_minutes = current_t.hour() as i32 * 60 + current_t.minute() as i32;
-            let diff = current_minutes - from_minutes;
-            let step = match unit {
-                IntervalUnit::Minutes => *interval as i32,
-                IntervalUnit::Hours => *interval as i32 * 60,
+            let elapsed_secs = current_secs - from_secs;
+            let step_secs: i64 = match unit {
+                IntervalUnit::Minutes => *interval as i64 * 60,
+                IntervalUnit::Hours => *interval as i64 * 3600,
             };
-            Ok(diff >= 0 && diff % step == 0)
+            Ok(elapsed_secs >= 0 && elapsed_secs % step_secs == 0)
         }
         ScheduleExpr::WeekRepeat {
             interval,
@@ -750,12 +736,9 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                             last_weekday_in_month(date.year(), date.month(), *weekday)
                         }
                         _ => {
-                            match nth_weekday_of_month(
-                                date.year(),
-                                date.month(),
-                                *weekday,
-                                ordinal_to_n(*ordinal),
-                            ) {
+                            match ordinal_to_n(*ordinal)
+                                .and_then(|n| nth_weekday_of_month(date.year(), date.month(), *weekday, n))
+                            {
                                 Some(d) => d,
                                 None => return Ok(false),
                             }
@@ -816,12 +799,9 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                             last_weekday_in_month(date.year(), date.month(), *weekday)
                         }
                         _ => {
-                            match nth_weekday_of_month(
-                                date.year(),
-                                date.month(),
-                                *weekday,
-                                ordinal_to_n(*ordinal),
-                            ) {
+                            match ordinal_to_n(*ordinal)
+                                .and_then(|n| nth_weekday_of_month(date.year(), date.month(), *weekday, n))
+                            {
                                 Some(d) => d,
                                 None => return Ok(false),
                             }
@@ -1036,14 +1016,14 @@ fn month_number_to_name(n: u8) -> Option<MonthName> {
     }
 }
 
-fn ordinal_to_n(ord: OrdinalPosition) -> u8 {
+fn ordinal_to_n(ord: OrdinalPosition) -> Option<u8> {
     match ord {
-        OrdinalPosition::First => 1,
-        OrdinalPosition::Second => 2,
-        OrdinalPosition::Third => 3,
-        OrdinalPosition::Fourth => 4,
-        OrdinalPosition::Fifth => 5,
-        OrdinalPosition::Last => unreachable!(),
+        OrdinalPosition::First => Some(1),
+        OrdinalPosition::Second => Some(2),
+        OrdinalPosition::Third => Some(3),
+        OrdinalPosition::Fourth => Some(4),
+        OrdinalPosition::Fifth => Some(5),
+        OrdinalPosition::Last => None,
     }
 }
 
@@ -1330,7 +1310,8 @@ fn next_month_repeat(
             }
             MonthTarget::OrdinalWeekday { ordinal, weekday } => match ordinal {
                 OrdinalPosition::Last => vec![last_weekday_in_month(year, month, *weekday)],
-                _ => nth_weekday_of_month(year, month, *weekday, ordinal_to_n(*ordinal))
+                _ => ordinal_to_n(*ordinal)
+                    .and_then(|n| nth_weekday_of_month(year, month, *weekday, n))
                     .into_iter()
                     .collect(),
             },
@@ -1430,7 +1411,8 @@ fn next_year_repeat(
                 let m = month.number() as i8;
                 match ordinal {
                     OrdinalPosition::Last => Some(last_weekday_in_month(year, m, *weekday)),
-                    _ => nth_weekday_of_month(year, m, *weekday, ordinal_to_n(*ordinal)),
+                    _ => ordinal_to_n(*ordinal)
+                        .and_then(|n| nth_weekday_of_month(year, m, *weekday, n)),
                 }
             }
             YearTarget::DayOfMonth { day, month } => {
@@ -1755,7 +1737,8 @@ fn prev_month_repeat(
             }
             MonthTarget::OrdinalWeekday { ordinal, weekday } => match ordinal {
                 OrdinalPosition::Last => vec![last_weekday_in_month(year, month, *weekday)],
-                _ => nth_weekday_of_month(year, month, *weekday, ordinal_to_n(*ordinal))
+                _ => ordinal_to_n(*ordinal)
+                    .and_then(|n| nth_weekday_of_month(year, month, *weekday, n))
                     .into_iter()
                     .collect(),
             },
@@ -1880,7 +1863,8 @@ fn prev_year_repeat(
                 let m = month.number() as i8;
                 match ordinal {
                     OrdinalPosition::Last => Some(last_weekday_in_month(year, m, *weekday)),
-                    _ => nth_weekday_of_month(year, m, *weekday, ordinal_to_n(*ordinal)),
+                    _ => ordinal_to_n(*ordinal)
+                        .and_then(|n| nth_weekday_of_month(year, m, *weekday, n)),
                 }
             }
             YearTarget::DayOfMonth { day, month } => {
