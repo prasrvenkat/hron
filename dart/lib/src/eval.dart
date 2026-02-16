@@ -478,15 +478,6 @@ TZDateTime? _nextExpr(
       now,
       during: during,
     ),
-    OrdinalRepeat() => _nextOrdinalRepeat(
-      expr.interval,
-      expr.ordinal,
-      expr.day,
-      expr.times,
-      loc,
-      anchor,
-      now,
-    ),
     SingleDate() => _nextSingleDate(expr.date, expr.times, loc, now),
     YearRepeat() => _nextYearRepeat(
       expr.interval,
@@ -618,15 +609,6 @@ TZDateTime? _prevExpr(
     MonthRepeat() => _prevMonthRepeat(
       expr.interval,
       expr.target,
-      expr.times,
-      loc,
-      anchor,
-      now,
-    ),
-    OrdinalRepeat() => _prevOrdinalRepeat(
-      expr.interval,
-      expr.ordinal,
-      expr.day,
       expr.times,
       loc,
       anchor,
@@ -818,6 +800,16 @@ TZDateTime? _prevMonthRepeat(
       if (d != null) {
         dateCandidates.add(d);
       }
+    } else if (target is OrdinalWeekdayMonthTarget) {
+      DateTime? d;
+      if (target.ordinal == OrdinalPosition.last) {
+        d = _lastWeekdayInMonth(year, month, target.weekday);
+      } else {
+        d = _nthWeekdayOfMonth(year, month, target.weekday, target.ordinal.toN);
+      }
+      if (d != null) {
+        dateCandidates.add(d);
+      }
     } else {
       dateCandidates.add(_lastWeekdayOfMonth(year, month));
     }
@@ -827,58 +819,6 @@ TZDateTime? _prevMonthRepeat(
 
     for (final date in dateCandidates) {
       final candidate = _latestPastAtTimes(date, times, loc, now);
-      if (candidate != null) return candidate;
-    }
-
-    month--;
-    if (month < 1) {
-      month = 12;
-      year--;
-    }
-  }
-
-  return null;
-}
-
-TZDateTime? _prevOrdinalRepeat(
-  int interval,
-  OrdinalPosition ordinal,
-  Weekday day,
-  List<TimeOfDay> times,
-  Location loc,
-  String? anchor,
-  TZDateTime now,
-) {
-  final nowInTz = TZDateTime.from(now, loc);
-  var year = nowInTz.year;
-  var month = nowInTz.month;
-
-  final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochDate;
-  final maxIter = interval > 1 ? 24 * interval : 24;
-
-  for (var i = 0; i < maxIter; i++) {
-    if (interval > 1) {
-      final cur = DateTime.utc(year, month, 1);
-      final monthOffset = _monthsBetweenYM(anchorDate, cur);
-      if (monthOffset < 0 || _euclideanMod(monthOffset, interval) != 0) {
-        month--;
-        if (month < 1) {
-          month = 12;
-          year--;
-        }
-        continue;
-      }
-    }
-
-    DateTime? targetDate;
-    if (ordinal == OrdinalPosition.last) {
-      targetDate = _lastWeekdayInMonth(year, month, day);
-    } else {
-      targetDate = _nthWeekdayOfMonth(year, month, day, ordinal.toN);
-    }
-
-    if (targetDate != null) {
-      final candidate = _latestPastAtTimes(targetDate, times, loc, now);
       if (candidate != null) return candidate;
     }
 
@@ -1111,36 +1051,27 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
             date.month == targetDate.month &&
             date.day == targetDate.day;
       }
+      if (target is OrdinalWeekdayMonthTarget) {
+        DateTime? targetDate;
+        if (target.ordinal == OrdinalPosition.last) {
+          targetDate = _lastWeekdayInMonth(
+            date.year,
+            date.month,
+            target.weekday,
+          );
+        } else {
+          targetDate = _nthWeekdayOfMonth(
+            date.year,
+            date.month,
+            target.weekday,
+            target.ordinal.toN,
+          );
+        }
+        if (targetDate == null) return false;
+        return date.day == targetDate.day;
+      }
       final lastWd = _lastWeekdayOfMonth(date.year, date.month);
       return date.day == lastWd.day;
-
-    case OrdinalRepeat(
-      interval: final interval,
-      ordinal: final ordinal,
-      day: final day,
-      times: final times,
-    ):
-      if (!timeMatchesWithDst(times)) return false;
-      if (interval > 1) {
-        final anchorDate = schedule.anchor != null
-            ? _parseIsoDateUtc(schedule.anchor!)
-            : _epochDate;
-        final monthOffset = _monthsBetweenYM(anchorDate, date);
-        if (monthOffset < 0 || monthOffset % interval != 0) return false;
-      }
-      DateTime? targetDate;
-      if (ordinal == OrdinalPosition.last) {
-        targetDate = _lastWeekdayInMonth(date.year, date.month, day);
-      } else {
-        targetDate = _nthWeekdayOfMonth(
-          date.year,
-          date.month,
-          day,
-          ordinal.toN,
-        );
-      }
-      if (targetDate == null) return false;
-      return date.day == targetDate.day;
 
     case SingleDate(date: final dateSpec, times: final times):
       if (!timeMatchesWithDst(times)) return false;
@@ -1425,6 +1356,16 @@ TZDateTime? _nextMonthRepeat(
       if (d != null) {
         dateCandidates.add(d);
       }
+    } else if (target is OrdinalWeekdayMonthTarget) {
+      DateTime? d;
+      if (target.ordinal == OrdinalPosition.last) {
+        d = _lastWeekdayInMonth(year, month, target.weekday);
+      } else {
+        d = _nthWeekdayOfMonth(year, month, target.weekday, target.ordinal.toN);
+      }
+      if (d != null) {
+        dateCandidates.add(d);
+      }
     } else {
       dateCandidates.add(_lastWeekdayOfMonth(year, month));
     }
@@ -1439,59 +1380,6 @@ TZDateTime? _nextMonthRepeat(
       }
     }
     if (best != null) return best;
-
-    month++;
-    if (month > 12) {
-      month = 1;
-      year++;
-    }
-  }
-
-  return null;
-}
-
-TZDateTime? _nextOrdinalRepeat(
-  int interval,
-  OrdinalPosition ordinal,
-  Weekday day,
-  List<TimeOfDay> times,
-  Location loc,
-  String? anchor,
-  TZDateTime now,
-) {
-  final nowInTz = TZDateTime.from(now, loc);
-  var year = nowInTz.year;
-  var month = nowInTz.month;
-
-  final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochDate;
-  final maxIter = interval > 1 ? 24 * interval : 24;
-
-  for (var i = 0; i < maxIter; i++) {
-    // Check interval alignment
-    if (interval > 1) {
-      final cur = DateTime.utc(year, month, 1);
-      final monthOffset = _monthsBetweenYM(anchorDate, cur);
-      if (monthOffset < 0 || _euclideanMod(monthOffset, interval) != 0) {
-        month++;
-        if (month > 12) {
-          month = 1;
-          year++;
-        }
-        continue;
-      }
-    }
-
-    DateTime? targetDate;
-    if (ordinal == OrdinalPosition.last) {
-      targetDate = _lastWeekdayInMonth(year, month, day);
-    } else {
-      targetDate = _nthWeekdayOfMonth(year, month, day, ordinal.toN);
-    }
-
-    if (targetDate != null) {
-      final candidate = _earliestFutureAtTimes(targetDate, times, loc, now);
-      if (candidate != null) return candidate;
-    }
 
     month++;
     if (month > 12) {
