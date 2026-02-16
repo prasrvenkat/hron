@@ -5376,5 +5376,25 @@
         }
       ]
     }
+  },
+  "eval_errors": {
+    "description": "Expressions that parse syntactically but error during evaluation. Languages that validate timezone at construction time may catch these at parse — both are acceptable.",
+    "tests": [
+      {
+        "name": "invalid_timezone",
+        "expression": "every day at 09:00 in Invalid/Timezone",
+        "description": "invalid IANA timezone identifier"
+      },
+      {
+        "name": "invalid_timezone_with_modifiers",
+        "expression": "every weekday at 09:00 except dec 25 in Bogus/City",
+        "description": "invalid timezone with modifier clauses"
+      },
+      {
+        "name": "invalid_timezone_misspelled",
+        "expression": "every day at 12:00 in Amercia/New_York",
+        "description": "misspelled timezone name"
+      }
+    ]
   }
 }

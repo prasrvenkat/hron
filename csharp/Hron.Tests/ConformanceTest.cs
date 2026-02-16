@@ -417,6 +417,34 @@ public partial class ConformanceTest
         }
     }
 
+    // Eval error tests
+
+    public static TheoryData<string, string> GetEvalErrorTests()
+    {
+        var data = new TheoryData<string, string>();
+        if (!Spec.RootElement.TryGetProperty("eval_errors", out var evalErrorsSection)) return data;
+        if (!evalErrorsSection.TryGetProperty("tests", out var tests)) return data;
+
+        foreach (var tc in tests.EnumerateArray())
+        {
+            var name = tc.GetProperty("name").GetString()!;
+            var expression = tc.GetProperty("expression").GetString()!;
+            data.Add(name, expression);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(GetEvalErrorTests))]
+    public void EvalErrorTests(string _name, string expression)
+    {
+        _ = _name; // Used for test display
+        // C# validates timezone at construction time (Schedule.Parse),
+        // so these should fail at parse time.
+        Assert.Throws<HronException>(() => Schedule.Parse(expression));
+    }
+
     // Cron tests
 
     public static TheoryData<string, string, string> GetToCronTests()

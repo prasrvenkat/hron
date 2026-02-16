@@ -278,6 +278,33 @@ fn run_eval_previous_from(index: usize) {
 }
 
 // ---------------------------------------------------------------------------
+// Eval errors
+// ---------------------------------------------------------------------------
+
+fn run_eval_error(index: usize) {
+    let case = &SPEC["eval_errors"]["tests"][index];
+    let expr_str = case["expression"].as_str().unwrap();
+
+    // Rust validates timezone at eval time, so parse should succeed
+    // but next_from should return Err.
+    match Schedule::parse(expr_str) {
+        Err(_) => {
+            // Caught at parse time — acceptable
+            return;
+        }
+        Ok(schedule) => {
+            let now = default_now();
+            let result = schedule.next_from(&now);
+            assert!(
+                result.is_err(),
+                "expected eval error for '{expr_str}', got {:?}",
+                result
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Cron
 // ---------------------------------------------------------------------------
 

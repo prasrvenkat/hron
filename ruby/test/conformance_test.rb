@@ -207,6 +207,27 @@ class ConformanceTest < Minitest::Test
   end
 
   # ===========================================================================
+  # Eval error conformance tests
+  # ===========================================================================
+
+  SPEC["eval_errors"]["tests"].each do |tc|
+    test_name = tc["name"] || tc["expression"]
+    define_method("test_eval_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
+      # Ruby validates timezone at eval time, so parse may succeed
+      # but next_from should raise. If parse raises, that's also acceptable.
+      # The error may be HronError or a native timezone error (e.g. TZInfo::InvalidTimezoneIdentifier).
+      schedule = begin
+        Hron::Schedule.parse(tc["expression"])
+      rescue
+        return # caught at parse — acceptable
+      end
+      assert_raises(StandardError) do
+        schedule.next_from(DEFAULT_NOW)
+      end
+    end
+  end
+
+  # ===========================================================================
   # Cron conformance tests
   # ===========================================================================
 

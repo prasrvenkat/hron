@@ -16,6 +16,17 @@ type TestSpec struct {
 	ParseErrors ParseErrorGroup            `json:"parse_errors"`
 	Eval        map[string]json.RawMessage `json:"eval"`
 	Cron        CronSpec                   `json:"cron"`
+	EvalErrors  EvalErrorGroup             `json:"eval_errors"`
+}
+
+type EvalErrorGroup struct {
+	Tests []EvalErrorTest `json:"tests"`
+}
+
+type EvalErrorTest struct {
+	Name        string `json:"name"`
+	Expression  string `json:"expression"`
+	Description string `json:"description"`
 }
 
 type ParseGroup struct {
@@ -245,6 +256,21 @@ func TestParseErrors(t *testing.T) {
 			_, err := ParseSchedule(tc.Input)
 			if err == nil {
 				t.Errorf("expected parse error for %q (%s)", tc.Input, tc.Description)
+			}
+		})
+	}
+}
+
+func TestEvalErrors(t *testing.T) {
+	spec := loadSpec(t)
+
+	for _, tc := range spec.EvalErrors.Tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			// Go validates timezone at construction time (NewSchedule/ParseSchedule),
+			// so these should fail at parse time.
+			_, err := ParseSchedule(tc.Expression)
+			if err == nil {
+				t.Errorf("expected error for %q (%s), but parse succeeded", tc.Expression, tc.Description)
 			}
 		})
 	}

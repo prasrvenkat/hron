@@ -125,6 +125,14 @@ fn main() {
         );
     }
 
+    // --- Eval errors ---
+    if let Some(eval_errors) = spec.get("eval_errors") {
+        for (i, case) in iter_tests(eval_errors).enumerate() {
+            let name = test_name(case, i);
+            emit_flat(&mut f, &format!("eval_error_{name}"), "run_eval_error", i);
+        }
+    }
+
     // --- Cron ---
     let cron = &spec["cron"];
     for (i, case) in iter_tests(&cron["to_cron"]).enumerate() {
