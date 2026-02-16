@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+
 from ._ast import (
     DateSpec,
     DayFilter,
@@ -174,6 +176,7 @@ class _Parser:
             self.advance()
             k = self.peek_kind()
             if isinstance(k, TIsoDate):
+                self._validate_iso_date(k.date)
                 schedule.anchor = k.date
                 self.advance()
             else:
@@ -205,9 +208,16 @@ class _Parser:
             exceptions.append(self._parse_exception())
         return exceptions
 
+    def _validate_iso_date(self, date_str: str) -> None:
+        try:
+            datetime.date.fromisoformat(date_str)
+        except ValueError:
+            raise self._error(f"invalid date: {date_str}", self.current_span()) from None
+
     def _parse_exception(self) -> ExceptionSpec:
         k = self.peek_kind()
         if isinstance(k, TIsoDate):
+            self._validate_iso_date(k.date)
             self.advance()
             return IsoException(k.date)
         if isinstance(k, TMonthName):
@@ -220,6 +230,7 @@ class _Parser:
     def _parse_until_spec(self) -> UntilSpec:
         k = self.peek_kind()
         if isinstance(k, TIsoDate):
+            self._validate_iso_date(k.date)
             self.advance()
             return IsoUntil(k.date)
         if isinstance(k, TMonthName):
@@ -521,6 +532,7 @@ class _Parser:
     def _parse_date_target(self) -> DateSpec:
         k = self.peek_kind()
         if isinstance(k, TIsoDate):
+            self._validate_iso_date(k.date)
             self.advance()
             return IsoDate(k.date)
         if isinstance(k, TMonthName):

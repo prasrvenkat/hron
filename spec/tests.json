@@ -1269,6 +1269,46 @@
         "name": "starting_named_date",
         "input": "every day at 09:00 starting dec 25",
         "description": "starting only accepts ISO dates"
+      },
+      {
+        "name": "invalid_iso_date_feb_30",
+        "input": "every day at 09:00 except 2026-02-30",
+        "description": "February 30 does not exist"
+      },
+      {
+        "name": "invalid_iso_date_month_13",
+        "input": "every day at 09:00 except 2026-13-01",
+        "description": "month 13 does not exist"
+      },
+      {
+        "name": "invalid_iso_date_day_00",
+        "input": "every day at 09:00 except 2026-01-00",
+        "description": "day 0 does not exist"
+      },
+      {
+        "name": "invalid_iso_date_apr_31",
+        "input": "every day at 09:00 except 2026-04-31",
+        "description": "April has 30 days"
+      },
+      {
+        "name": "invalid_iso_date_feb_29_non_leap",
+        "input": "every day at 09:00 except 2026-02-29",
+        "description": "2026 is not a leap year"
+      },
+      {
+        "name": "invalid_iso_date_single_date",
+        "input": "on 2026-02-30 at 09:00",
+        "description": "invalid date in single date expression"
+      },
+      {
+        "name": "invalid_iso_date_until",
+        "input": "every day at 09:00 until 2026-04-31",
+        "description": "invalid date in until clause"
+      },
+      {
+        "name": "invalid_iso_date_starting",
+        "input": "every day at 09:00 starting 2026-06-31",
+        "description": "invalid date in starting clause"
       }
     ]
   },

@@ -98,6 +98,7 @@ class _Parser {
       advance();
       final k = peekKind();
       if (k is IsoDateToken) {
+        _validateIsoDate(k.date);
         schedule.anchor = k.date;
         advance();
       } else {
@@ -141,6 +142,7 @@ class _Parser {
   ExceptionSpec _parseException() {
     final k = peekKind();
     if (k is IsoDateToken) {
+      _validateIsoDate(k.date);
       advance();
       return IsoException(k.date);
     }
@@ -157,6 +159,7 @@ class _Parser {
   UntilSpec _parseUntilSpec() {
     final k = peekKind();
     if (k is IsoDateToken) {
+      _validateIsoDate(k.date);
       advance();
       return IsoUntil(k.date);
     }
@@ -508,10 +511,26 @@ class _Parser {
     return SingleDate(date, times);
   }
 
+  void _validateIsoDate(String dateStr) {
+    final parsed = DateTime.tryParse(dateStr);
+    if (parsed == null) {
+      throw error('invalid date: $dateStr', currentSpan());
+    }
+    // DateTime.tryParse silently rolls invalid dates (e.g. Feb 30 -> Mar 2)
+    // Verify the day component matches the input
+    final parts = dateStr.split('-');
+    final inputDay = int.parse(parts[2]);
+    final inputMonth = int.parse(parts[1]);
+    if (parsed.day != inputDay || parsed.month != inputMonth) {
+      throw error('invalid date: $dateStr', currentSpan());
+    }
+  }
+
   DateSpec _parseDateTarget() {
     final k = peekKind();
 
     if (k is IsoDateToken) {
+      _validateIsoDate(k.date);
       advance();
       return IsoDate(k.date);
     }

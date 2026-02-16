@@ -1,6 +1,9 @@
 package hron
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // parser is the internal parser state.
 type parser struct {
@@ -150,6 +153,9 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 	if p.peekKind() == TokenStarting {
 		p.advance()
 		if p.peekKind() == TokenISODate {
+			if err := p.validateIsoDate(p.peek().ISODateVal); err != nil {
+				return nil, err
+			}
 			schedule.Anchor = p.peek().ISODateVal
 			p.advance()
 		} else {
@@ -209,6 +215,9 @@ func (p *parser) parseException() (ExceptionSpec, error) {
 	switch tok.Kind {
 	case TokenISODate:
 		p.advance()
+		if err := p.validateIsoDate(tok.ISODateVal); err != nil {
+			return ExceptionSpec{}, err
+		}
 		return NewISOException(tok.ISODateVal), nil
 	case TokenMonthName:
 		month := tok.MonthNameVal
@@ -232,6 +241,9 @@ func (p *parser) parseUntilSpec() (UntilSpec, error) {
 	switch tok.Kind {
 	case TokenISODate:
 		p.advance()
+		if err := p.validateIsoDate(tok.ISODateVal); err != nil {
+			return UntilSpec{}, err
+		}
 		return NewISOUntil(tok.ISODateVal), nil
 	case TokenMonthName:
 		month := tok.MonthNameVal
@@ -686,6 +698,14 @@ func (p *parser) parseOn() (ScheduleExpr, error) {
 	return NewSingleDateExpr(date, times), nil
 }
 
+func (p *parser) validateIsoDate(dateStr string) error {
+	_, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return p.error(fmt.Sprintf("invalid date: %s", dateStr), p.currentSpan())
+	}
+	return nil
+}
+
 func (p *parser) parseDateTarget() (DateSpec, error) {
 	tok := p.peek()
 	if tok == nil {
@@ -695,6 +715,9 @@ func (p *parser) parseDateTarget() (DateSpec, error) {
 	switch tok.Kind {
 	case TokenISODate:
 		p.advance()
+		if err := p.validateIsoDate(tok.ISODateVal); err != nil {
+			return DateSpec{}, err
+		}
 		return NewISODate(tok.ISODateVal), nil
 	case TokenMonthName:
 		month := tok.MonthNameVal

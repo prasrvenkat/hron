@@ -542,6 +542,14 @@ public sealed class Parser
         return new SingleDate(dateSpec, times);
     }
 
+    private void ValidateIsoDate(string dateStr, Span span)
+    {
+        if (!DateOnly.TryParseExact(dateStr, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+        {
+            throw ParseError($"invalid date: {dateStr}", span);
+        }
+    }
+
     private DateSpec ParseDateSpec()
     {
         var tok = Peek();
@@ -552,6 +560,7 @@ public sealed class Parser
 
         if (tok.Kind == TokenKind.IsoDate)
         {
+            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
             _pos++;
             return DateSpec.Iso(tok.IsoDateVal!);
         }
@@ -609,6 +618,7 @@ public sealed class Parser
 
         if (tok.Kind == TokenKind.IsoDate)
         {
+            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
             _pos++;
             return ExceptionSpec.Iso(tok.IsoDateVal!);
         }
@@ -628,6 +638,7 @@ public sealed class Parser
 
         if (tok.Kind == TokenKind.IsoDate)
         {
+            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
             _pos++;
             return UntilSpec.Iso(tok.IsoDateVal!);
         }
@@ -647,6 +658,7 @@ public sealed class Parser
 
         if (tok.Kind == TokenKind.IsoDate)
         {
+            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
             _pos++;
             return tok.IsoDateVal!;
         }
