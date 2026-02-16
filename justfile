@@ -35,9 +35,113 @@ test-csharp:
 test-ruby:
     cd ruby && bundle install && bundle exec rake test
 
+# Install dependencies for all languages
+setup: setup-rust setup-ts setup-python setup-go setup-ruby setup-dart setup-csharp setup-java
+
+setup-rust:
+    rustup component add rustfmt clippy
+
+setup-ts:
+    cd ts && pnpm install --frozen-lockfile
+
+setup-python:
+    cd python && uv sync --locked
+
+setup-go:
+    cd go && go mod download
+
+setup-ruby:
+    cd ruby && bundle install
+
+setup-dart:
+    cd dart && dart pub get
+
+setup-csharp:
+    dotnet restore csharp/Hron.sln
+
+setup-java:
+    cd java && mvn dependency:resolve -q
+
+# Format all
+fmt: fmt-rust fmt-ts fmt-python fmt-go fmt-ruby fmt-dart fmt-csharp fmt-java
+
+# Lint/check all (CI-safe, no auto-fix)
+lint: lint-rust lint-ts lint-python lint-go lint-ruby lint-dart lint-csharp lint-java
+
+fmt-rust:
+    cd rust && cargo fmt --all
+
+fmt-ts:
+    cd ts && pnpm lint --fix
+
+fmt-python:
+    cd python && uv run ruff format src/ tests/ && uv run ruff check --fix src/ tests/
+
+fmt-go:
+    cd go && gofmt -w .
+
+fmt-ruby:
+    cd ruby && bundle exec standardrb --fix
+
+fmt-dart:
+    cd dart && dart format .
+
+fmt-csharp:
+    dotnet format csharp/Hron.sln
+
+fmt-java:
+    cd java && mvn fmt:format
+
+lint-rust:
+    cd rust && cargo fmt --all --check
+    cd rust && cargo clippy --workspace --all-features -- -D warnings
+
+lint-ts:
+    cd ts && pnpm lint
+
+lint-python:
+    cd python && uv run ruff check src/ tests/
+    cd python && uv run ruff format --check src/ tests/
+
+lint-go:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd go
+    if [ -n "$(gofmt -l .)" ]; then
+      echo "Code is not formatted. Run 'just fmt-go' to fix."
+      gofmt -d .
+      exit 1
+    fi
+    go vet ./...
+
+lint-ruby:
+    cd ruby && bundle exec standardrb
+
+lint-dart:
+    cd dart && dart format --output=none --set-exit-if-changed .
+    cd dart && dart analyze
+
+lint-csharp:
+    dotnet format csharp/Hron.sln --verify-no-changes
+
+lint-java:
+    cd java && mvn fmt:check
+
 # Rust build
 build-rust:
     cd rust && cargo build --workspace --all-features
+
+# Go build
+build-go:
+    cd go && go build ./...
+
+# Java build
+build-java:
+    cd java && mvn compile -q
+
+# C# build
+build-csharp:
+    dotnet build csharp/Hron.sln
 
 # WASM build
 build-wasm:
