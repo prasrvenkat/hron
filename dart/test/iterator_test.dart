@@ -1,10 +1,10 @@
-/// Iterator-specific tests for `occurrences()` and `between()` methods.
-///
-/// These tests verify Dart-specific iterable behavior beyond conformance tests:
-/// - Laziness (iterables don't evaluate eagerly)
-/// - Early termination
-/// - Integration with Iterable methods (take, where, map, etc.)
-/// - For-in loop patterns
+// Iterator-specific tests for `occurrences()` and `between()` methods.
+//
+// These tests verify Dart-specific iterable behavior beyond conformance tests:
+// - Laziness (iterables don't evaluate eagerly)
+// - Early termination
+// - Integration with Iterable methods (take, where, map, etc.)
+// - For-in loop patterns
 import 'package:hron/hron.dart';
 import 'package:test/test.dart';
 import 'package:timezone/data/latest.dart' as tz;
