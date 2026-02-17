@@ -16,7 +16,8 @@
     "day_skip": "If a month doesn't have the requested day (e.g., Feb 30), that month is skipped entirely.",
     "named_date_recurrence": "Named exceptions (e.g., 'except dec 25') recur every year. ISO exceptions (e.g., 'except 2026-12-25') apply to that one date only.",
     "cron_limitations": "from_cron supports standard 5-field cron including ranges, steps, L (last day), W (nearest weekday), # (nth weekday), @ shortcuts, and named months/days. Directional nearest weekday (next/previous) is hron-only and cannot be converted to cron.",
-    "interval_anchor": "For day/month/year/ordinal intervals > 1, alignment is computed from the anchor date. Default anchor is epoch (1970-01-01). The 'starting' clause overrides it. Formula: (date_offset - anchor_offset) mod interval == 0."
+    "interval_anchor": "For day/month/year/ordinal intervals > 1, alignment is computed from the anchor date. Default anchor is epoch (1970-01-01). The 'starting' clause overrides it. Formula: (date_offset - anchor_offset) mod interval == 0.",
+    "contradictory_schedules": "Schedules with mutually exclusive constraints (e.g., 'until' before 'starting', impossible day-of-month + 'during' filter) are syntactically valid and must parse successfully. Evaluation returns empty results (no occurrences). Implementations must not error or loop infinitely."
   },
   "parse": {
     "description": "Parse roundtrip tests. Input parses successfully; canonical is the expected Display output. parse(input).to_string() == canonical, and parse(canonical).to_string() == canonical.",
@@ -4717,6 +4718,60 @@
           "now": "2026-02-10T12:00:00+00:00[UTC]",
           "expected": "2026-02-02T09:00:00+00:00[UTC]",
           "description": "Directional nearest weekday (next) on 1st: Feb 1 is Sunday, next weekday is Monday 2nd"
+        }
+      ]
+    },
+    "contradictory": {
+      "description": "Schedules with mutually exclusive constraints that can never produce occurrences. All must parse successfully but return empty results — the contradiction is a semantic property, not a syntax error.",
+      "tests": [
+        {
+          "name": "until_before_starting",
+          "expression": "every day at 09:00 until 2025-01-01 starting 2026-01-01 in UTC",
+          "description": "until date precedes starting date: time window is empty, no occurrences possible",
+          "next_n_count": 3,
+          "next_n": []
+        },
+        {
+          "name": "until_in_past",
+          "expression": "every day at 09:00 until 2020-01-01 in UTC",
+          "description": "until date is in the past relative to now: schedule has expired",
+          "next_n_count": 3,
+          "next_n": []
+        },
+        {
+          "name": "monthly_31st_during_feb",
+          "expression": "every month on the 31st at 09:00 during feb in UTC",
+          "description": "31st of month restricted to February: Feb never has 31 days",
+          "next_n_count": 3,
+          "next_n": []
+        },
+        {
+          "name": "monthly_30th_during_feb",
+          "expression": "every month on the 30th at 09:00 during feb in UTC",
+          "description": "30th of month restricted to February: Feb never has 30 days",
+          "next_n_count": 3,
+          "next_n": []
+        },
+        {
+          "name": "until_before_starting_weekly",
+          "expression": "every 2 weeks on monday at 09:00 until 2025-06-01 starting 2026-01-05 in UTC",
+          "description": "biweekly with until before starting: different expression type, same empty result",
+          "next_n_count": 3,
+          "next_n": []
+        },
+        {
+          "name": "until_before_starting_monthly",
+          "expression": "every month on the 1st at 09:00 until 2025-06-01 starting 2026-01-01 in UTC",
+          "description": "monthly with until before starting: empty time window",
+          "next_n_count": 3,
+          "next_n": []
+        },
+        {
+          "name": "until_before_starting_yearly",
+          "expression": "every year on jan 1 at 00:00 until 2025-01-01 starting 2026-01-01 in UTC",
+          "description": "yearly with until before starting: empty time window",
+          "next_n_count": 3,
+          "next_n": []
         }
       ]
     }
