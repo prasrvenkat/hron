@@ -50,7 +50,7 @@ fn main() {
     let cli = Cli::parse();
 
     if let Some(ref cron_expr) = cli.explain {
-        match hron::cron::explain_cron(cron_expr) {
+        match Schedule::explain_cron(cron_expr) {
             Ok(explanation) => {
                 println!("{explanation}");
                 process::exit(0);

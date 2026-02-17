@@ -12,15 +12,16 @@
 //! ```
 
 pub mod ast;
-pub mod cron;
-pub mod display;
+pub(crate) mod cron;
+pub(crate) mod display;
 pub mod error;
-pub mod eval;
+pub(crate) mod eval;
 pub(crate) mod lexer;
-pub mod parser;
+pub(crate) mod parser;
 
 pub use ast::{Schedule, ScheduleExpr};
 pub use error::ScheduleError;
+pub use eval::{BoundedOccurrences, Occurrences};
 
 use jiff::Zoned;
 #[cfg(feature = "serde")]
@@ -175,6 +176,11 @@ impl Schedule {
     /// ```
     pub fn from_cron(cron_expr: &str) -> Result<Self, ScheduleError> {
         cron::from_cron(cron_expr)
+    }
+
+    /// Explain a cron expression in human-readable form.
+    pub fn explain_cron(cron_expr: &str) -> Result<String, ScheduleError> {
+        cron::explain_cron(cron_expr)
     }
 
     /// Convert this schedule to a 5-field cron expression.
