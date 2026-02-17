@@ -3,6 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A parsed hron schedule: expression + optional modifiers.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Schedule {
     pub expr: ScheduleExpr,
     pub timezone: Option<String>,
@@ -28,6 +29,7 @@ impl Schedule {
 
 /// The core schedule expression (what repeats).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ScheduleExpr {
     /// `every 30 min from 09:00 to 17:00 [on weekdays]`
     IntervalRepeat {
