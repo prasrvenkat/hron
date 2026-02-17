@@ -212,6 +212,55 @@ impl Schedule {
         self.timezone.as_deref()
     }
 
+    /// Get the schedule expression.
+    pub fn expr(&self) -> &ScheduleExpr {
+        &self.expr
+    }
+
+    /// Get the exception dates.
+    pub fn except(&self) -> &[ast::Exception] {
+        &self.except
+    }
+
+    /// Get the until spec, if specified.
+    pub fn until(&self) -> Option<&ast::UntilSpec> {
+        self.until.as_ref()
+    }
+
+    /// Get the anchor date, if specified.
+    pub fn anchor(&self) -> Option<jiff::civil::Date> {
+        self.anchor
+    }
+
+    /// Get the during months filter.
+    pub fn during(&self) -> &[ast::MonthName] {
+        &self.during
+    }
+
+    /// Set the timezone.
+    pub fn with_timezone(mut self, tz: impl Into<String>) -> Self {
+        self.timezone = Some(tz.into());
+        self
+    }
+
+    /// Set the exception dates.
+    pub fn with_except(mut self, exceptions: Vec<ast::Exception>) -> Self {
+        self.except = exceptions;
+        self
+    }
+
+    /// Set the until spec.
+    pub fn with_until(mut self, until: ast::UntilSpec) -> Self {
+        self.until = Some(until);
+        self
+    }
+
+    /// Set the during months filter.
+    pub fn with_during(mut self, months: Vec<ast::MonthName>) -> Self {
+        self.during = months;
+        self
+    }
+
     /// Returns a lazy iterator of occurrences starting after `from`.
     ///
     /// The iterator yields `Result<Zoned, ScheduleError>` values. It is unbounded

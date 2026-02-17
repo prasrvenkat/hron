@@ -5,12 +5,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Schedule {
-    pub expr: ScheduleExpr,
-    pub timezone: Option<String>,
-    pub except: Vec<Exception>,
-    pub until: Option<UntilSpec>,
-    pub anchor: Option<jiff::civil::Date>,
-    pub during: Vec<MonthName>,
+    pub(crate) expr: ScheduleExpr,
+    pub(crate) timezone: Option<String>,
+    pub(crate) except: Vec<Exception>,
+    pub(crate) until: Option<UntilSpec>,
+    pub(crate) anchor: Option<jiff::civil::Date>,
+    pub(crate) during: Vec<MonthName>,
 }
 
 impl Schedule {
