@@ -4647,6 +4647,76 @@
           "now": "2026-03-01T12:00:00+00:00[UTC]",
           "expected": "2026-02-27T17:00:00+00:00[UTC]",
           "description": "Last weekday of Feb is 27th (Friday)"
+        },
+        {
+          "name": "yearly_day_of_month",
+          "expression": "every year on the 15th of march at 09:00 in UTC",
+          "now": "2026-06-01T12:00:00+00:00[UTC]",
+          "expected": "2026-03-15T09:00:00+00:00[UTC]",
+          "description": "YearRepeat with DayOfMonth target, after target month"
+        },
+        {
+          "name": "yearly_day_of_month_before_time",
+          "expression": "every year on the 15th of march at 09:00 in UTC",
+          "now": "2026-03-15T08:00:00+00:00[UTC]",
+          "expected": "2025-03-15T09:00:00+00:00[UTC]",
+          "description": "YearRepeat with DayOfMonth target, on day but before time goes to previous year"
+        },
+        {
+          "name": "yearly_day_of_month_after_time",
+          "expression": "every year on the 15th of march at 09:00 in UTC",
+          "now": "2026-03-15T12:00:00+00:00[UTC]",
+          "expected": "2026-03-15T09:00:00+00:00[UTC]",
+          "description": "YearRepeat with DayOfMonth target, on day after time returns same day"
+        },
+        {
+          "name": "yearly_last_weekday",
+          "expression": "every year on the last weekday of december at 17:00 in UTC",
+          "now": "2027-01-15T12:00:00+00:00[UTC]",
+          "expected": "2026-12-31T17:00:00+00:00[UTC]",
+          "description": "YearRepeat with LastWeekday target, Dec 31 2026 is Thursday"
+        },
+        {
+          "name": "yearly_last_weekday_before_time",
+          "expression": "every year on the last weekday of december at 17:00 in UTC",
+          "now": "2026-12-31T12:00:00+00:00[UTC]",
+          "expected": "2025-12-31T17:00:00+00:00[UTC]",
+          "description": "YearRepeat with LastWeekday target, on day before time goes to previous year"
+        },
+        {
+          "name": "every_n_years",
+          "expression": "every 2 years on dec 25 at 00:00 starting 2024-01-01 in UTC",
+          "now": "2027-01-01T12:00:00+00:00[UTC]",
+          "expected": "2026-12-25T00:00:00+00:00[UTC]",
+          "description": "YearRepeat with interval 2, aligned years are 2024, 2026, 2028..."
+        },
+        {
+          "name": "every_n_years_skip",
+          "expression": "every 2 years on dec 25 at 00:00 starting 2024-01-01 in UTC",
+          "now": "2025-01-01T12:00:00+00:00[UTC]",
+          "expected": "2024-12-25T00:00:00+00:00[UTC]",
+          "description": "YearRepeat with interval 2, 2025 is non-aligned so skips to 2024"
+        },
+        {
+          "name": "nearest_weekday_next_direction",
+          "expression": "every month on the next nearest weekday to 15th at 09:00 in UTC",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "expected": "2026-02-16T09:00:00+00:00[UTC]",
+          "description": "Directional nearest weekday (next): Feb 15 is Sunday, next weekday is Monday 16th"
+        },
+        {
+          "name": "nearest_weekday_previous_direction",
+          "expression": "every month on the previous nearest weekday to 15th at 09:00 in UTC",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "expected": "2026-02-13T09:00:00+00:00[UTC]",
+          "description": "Directional nearest weekday (previous): Feb 15 is Sunday, previous weekday is Friday 13th"
+        },
+        {
+          "name": "nearest_weekday_next_cross_month",
+          "expression": "every month on the next nearest weekday to 1st at 09:00 in UTC",
+          "now": "2026-02-10T12:00:00+00:00[UTC]",
+          "expected": "2026-02-02T09:00:00+00:00[UTC]",
+          "description": "Directional nearest weekday (next) on 1st: Feb 1 is Sunday, next weekday is Monday 2nd"
         }
       ]
     }
