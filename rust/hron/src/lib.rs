@@ -12,15 +12,16 @@
 //! ```
 
 pub mod ast;
-pub mod cron;
-pub mod display;
+pub(crate) mod cron;
+pub(crate) mod display;
 pub mod error;
-pub mod eval;
+pub(crate) mod eval;
 pub(crate) mod lexer;
-pub mod parser;
+pub(crate) mod parser;
 
 pub use ast::{Schedule, ScheduleExpr};
 pub use error::ScheduleError;
+pub use eval::{BoundedOccurrences, Occurrences};
 
 use jiff::Zoned;
 #[cfg(feature = "serde")]
@@ -177,6 +178,11 @@ impl Schedule {
         cron::from_cron(cron_expr)
     }
 
+    /// Explain a cron expression in human-readable form.
+    pub fn explain_cron(cron_expr: &str) -> Result<String, ScheduleError> {
+        cron::explain_cron(cron_expr)
+    }
+
     /// Convert this schedule to a 5-field cron expression.
     ///
     /// # Examples
@@ -210,6 +216,55 @@ impl Schedule {
     /// ```
     pub fn timezone(&self) -> Option<&str> {
         self.timezone.as_deref()
+    }
+
+    /// Get the schedule expression.
+    pub fn expr(&self) -> &ScheduleExpr {
+        &self.expr
+    }
+
+    /// Get the exception dates.
+    pub fn except(&self) -> &[ast::Exception] {
+        &self.except
+    }
+
+    /// Get the until spec, if specified.
+    pub fn until(&self) -> Option<&ast::UntilSpec> {
+        self.until.as_ref()
+    }
+
+    /// Get the anchor date, if specified.
+    pub fn anchor(&self) -> Option<jiff::civil::Date> {
+        self.anchor
+    }
+
+    /// Get the during months filter.
+    pub fn during(&self) -> &[ast::MonthName] {
+        &self.during
+    }
+
+    /// Set the timezone.
+    pub fn with_timezone(mut self, tz: impl Into<String>) -> Self {
+        self.timezone = Some(tz.into());
+        self
+    }
+
+    /// Set the exception dates.
+    pub fn with_except(mut self, exceptions: Vec<ast::Exception>) -> Self {
+        self.except = exceptions;
+        self
+    }
+
+    /// Set the until spec.
+    pub fn with_until(mut self, until: ast::UntilSpec) -> Self {
+        self.until = Some(until);
+        self
+    }
+
+    /// Set the during months filter.
+    pub fn with_during(mut self, months: Vec<ast::MonthName>) -> Self {
+        self.during = months;
+        self
     }
 
     /// Returns a lazy iterator of occurrences starting after `from`.

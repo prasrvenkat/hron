@@ -6,18 +6,19 @@ Native Java implementation of the hron scheduling expression language.
 
 ### Maven
 
+Add the dependency (see [Maven Central](https://central.sonatype.com/artifact/io.hron/hron) for the latest version):
+
 ```xml
 <dependency>
     <groupId>io.hron</groupId>
     <artifactId>hron</artifactId>
-    <version>0.4.2</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```groovy
-implementation 'io.hron:hron:0.4.2'
+implementation 'io.hron:hron'
 ```
 
 ## Requirements
@@ -149,7 +150,7 @@ Exception thrown for parsing, evaluation, and conversion errors.
 ## Features
 
 - **Zero dependencies** - Only uses `java.time` from the standard library
-- **Full conformance** - Passes all 500+ conformance tests
+- **Full conformance** - Passes the entire conformance test suite
 - **DST-aware** - Handles timezone transitions correctly
 - **Modern Java** - Uses sealed interfaces, records, and pattern matching
 

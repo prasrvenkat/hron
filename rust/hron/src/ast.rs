@@ -3,13 +3,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A parsed hron schedule: expression + optional modifiers.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Schedule {
-    pub expr: ScheduleExpr,
-    pub timezone: Option<String>,
-    pub except: Vec<Exception>,
-    pub until: Option<UntilSpec>,
-    pub anchor: Option<jiff::civil::Date>,
-    pub during: Vec<MonthName>,
+    pub(crate) expr: ScheduleExpr,
+    pub(crate) timezone: Option<String>,
+    pub(crate) except: Vec<Exception>,
+    pub(crate) until: Option<UntilSpec>,
+    pub(crate) anchor: Option<jiff::civil::Date>,
+    pub(crate) during: Vec<MonthName>,
 }
 
 impl Schedule {
@@ -28,6 +29,7 @@ impl Schedule {
 
 /// The core schedule expression (what repeats).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ScheduleExpr {
     /// `every 30 min from 09:00 to 17:00 [on weekdays]`
     IntervalRepeat {
