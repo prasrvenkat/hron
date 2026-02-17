@@ -12,7 +12,7 @@ All language implementations use hand-written [recursive descent parsers](https:
 
 ### `tests.json`
 
-The conformance test suite containing 495 test cases across three categories:
+The conformance test suite covering three categories:
 
 - **parse** - Tests for valid expression parsing and roundtrip (parse → toString → parse)
 - **eval** - Tests for schedule evaluation (nextFrom, matches, DST handling)

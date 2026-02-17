@@ -76,13 +76,7 @@ pip install hron
 # Go
 go get github.com/prasrvenkat/hron/go
 
-# Java (Maven)
-# Add to pom.xml:
-# <dependency>
-#     <groupId>io.hron</groupId>
-#     <artifactId>hron</artifactId>
-#     <version>0.5.1</version>
-# </dependency>
+# Java (Maven) — add io.hron:hron to pom.xml (see badge above for latest version)
 
 # C# / .NET
 dotnet add package Hron
@@ -130,6 +124,9 @@ every month on the last weekday at 15:00
 every month on the first monday at 10:00
 every month on the last friday at 16:00
 every month on the third thursday at 11:00
+every month on the nearest weekday to 15th at 9:00
+every month on the next nearest weekday to 1st at 9:00
+every month on the previous nearest weekday to 31st at 17:00
 ```
 
 ### Yearly
