@@ -19,20 +19,24 @@ Thanks for your interest in contributing to hron! This document covers everythin
 
 ### Running Tests
 
+All commands should run through [mise](https://mise.jdx.dev/) to ensure the correct tool versions (as defined in `.tool-versions`). Either activate mise in your shell or prefix commands with `mise exec --`:
+
 ```sh
 # Run all tests across all languages
-just test-all
+mise exec -- just test-all
 
 # Or per-language
-just test-rust
-just test-ts
-just test-dart
-just test-python
-just test-go
-just test-java
-just test-csharp
-just test-ruby
+mise exec -- just test-rust
+mise exec -- just test-ts
+mise exec -- just test-dart
+mise exec -- just test-python
+mise exec -- just test-go
+mise exec -- just test-java
+mise exec -- just test-csharp
+mise exec -- just test-ruby
 ```
+
+If you have mise activated in your shell (via `mise activate bash/zsh`), you can omit the `mise exec --` prefix.
 
 ## Project Structure
 

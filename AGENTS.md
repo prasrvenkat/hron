@@ -15,6 +15,10 @@ rust/             # Rust lib + CLI + WASM bindings
 ts/               # Native TypeScript implementation
 dart/             # Native Dart implementation
 python/           # Native Python implementation
+go/               # Native Go implementation
+java/             # Native Java implementation
+csharp/           # Native C# implementation
+ruby/             # Native Ruby implementation
 ```
 
 ## Code Style
@@ -53,6 +57,17 @@ python/           # Native Python implementation
 
 Lock-step across all packages. `VERSION` file at root is stamped into each language's manifest at release time. One tag, CI publishes everything.
 
+## Tool Management
+
+[mise](https://mise.jdx.dev/) manages all language runtimes. Always run commands through `mise exec` to ensure correct tool versions:
+
+```sh
+mise exec -- just test-all
+mise exec -- just test-rust
+```
+
+Or activate mise in your shell (`mise activate`) so `just` commands use the right versions automatically.
+
 ## Commands
 
 ```sh
@@ -61,7 +76,13 @@ just test-rust        # Rust only
 just test-ts          # TypeScript only
 just test-dart        # Dart only
 just test-python      # Python only
+just test-go          # Go only
+just test-java        # Java only
+just test-csharp      # C# only
+just test-ruby        # Ruby only
 just build-wasm       # WASM target
+just lint             # Lint all languages
+just fmt              # Format all languages
 just stamp-versions   # Stamp VERSION into all package manifests
 just release          # Tag + prep release
 ```
