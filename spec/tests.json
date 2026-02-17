@@ -4774,6 +4774,130 @@
           "next_n": []
         }
       ]
+    },
+    "edge_cases": {
+      "description": "Edge cases for midnight boundaries, large intervals, and end-of-month cascading. These stress interactions between skip logic, interval alignment, and day boundaries.",
+      "tests": [
+        {
+          "name": "midnight_exact_boundary",
+          "expression": "every day at 00:00 in UTC",
+          "now": "2026-02-06T00:00:00+00:00[UTC]",
+          "description": "now is exactly midnight: strict > means this midnight is skipped, next is tomorrow",
+          "next_n": [
+            "2026-02-07T00:00:00+00:00[UTC]",
+            "2026-02-08T00:00:00+00:00[UTC]",
+            "2026-02-09T00:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "midnight_one_second_before",
+          "expression": "every day at 00:00 in UTC",
+          "now": "2026-02-06T23:59:59+00:00[UTC]",
+          "description": "now is 23:59:59: next midnight is 1 second away",
+          "next": "2026-02-07T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "midnight_weekday_friday",
+          "expression": "every weekday at 00:00 in UTC",
+          "now": "2026-02-06T00:00:00+00:00[UTC]",
+          "description": "Friday midnight exactly: strict > skips Friday, Sat/Sun skipped, next is Monday",
+          "next_n": [
+            "2026-02-09T00:00:00+00:00[UTC]",
+            "2026-02-10T00:00:00+00:00[UTC]",
+            "2026-02-11T00:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "midnight_multi_time",
+          "expression": "every day at 00:00, 12:00 in UTC",
+          "now": "2026-02-06T00:00:00+00:00[UTC]",
+          "description": "multi-time with midnight: midnight skipped by strict >, next is noon same day",
+          "next_n": [
+            "2026-02-06T12:00:00+00:00[UTC]",
+            "2026-02-07T00:00:00+00:00[UTC]",
+            "2026-02-07T12:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "large_day_interval_365",
+          "expression": "every 365 days at 09:00 starting 2020-01-01 in UTC",
+          "description": "365-day interval from anchor: drifts relative to calendar years due to leap years",
+          "next_n": [
+            "2026-12-30T09:00:00+00:00[UTC]",
+            "2027-12-30T09:00:00+00:00[UTC]",
+            "2028-12-29T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "large_week_interval_52",
+          "expression": "every 52 weeks on monday at 09:00 starting 2020-01-06 in UTC",
+          "description": "52-week interval (364 days): drifts ~1 day/year relative to calendar",
+          "next_n": [
+            "2026-12-28T09:00:00+00:00[UTC]",
+            "2027-12-27T09:00:00+00:00[UTC]",
+            "2028-12-25T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "large_month_interval_24",
+          "expression": "every 24 months on the 1st at 09:00 starting 2020-01-01 in UTC",
+          "description": "24-month (2-year) interval: Jan 2026 is aligned but past, next is Jan 2028",
+          "next_n": [
+            "2028-01-01T09:00:00+00:00[UTC]",
+            "2030-01-01T09:00:00+00:00[UTC]",
+            "2032-01-01T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "bimonthly_31st_skip_short_months",
+          "expression": "every 2 months on the 31st at 09:00 in UTC",
+          "description": "every 2 months on 31st: aligned months are Jan/Mar/May/Jul/Sep/Nov, but Sep and Nov have 30 days so they are skipped",
+          "next_n_count": 6,
+          "next_n": [
+            "2026-03-31T09:00:00+00:00[UTC]",
+            "2026-05-31T09:00:00+00:00[UTC]",
+            "2026-07-31T09:00:00+00:00[UTC]",
+            "2027-01-31T09:00:00+00:00[UTC]",
+            "2027-03-31T09:00:00+00:00[UTC]",
+            "2027-05-31T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "quarterly_29th",
+          "expression": "every 3 months on the 29th at 09:00 starting 2026-01-01 in UTC",
+          "description": "quarterly on 29th from Jan anchor: aligned months are Jan/Apr/Jul/Oct — all have 29+ days",
+          "next_n_count": 5,
+          "next_n": [
+            "2026-04-29T09:00:00+00:00[UTC]",
+            "2026-07-29T09:00:00+00:00[UTC]",
+            "2026-10-29T09:00:00+00:00[UTC]",
+            "2027-01-29T09:00:00+00:00[UTC]",
+            "2027-04-29T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "monthly_29th_skip_non_leap_feb",
+          "expression": "every month on the 29th at 09:00 in UTC",
+          "description": "monthly on 29th: fires every month except non-leap February (2026 and 2027 are not leap years)",
+          "next_n_count": 14,
+          "next_n": [
+            "2026-03-29T09:00:00+00:00[UTC]",
+            "2026-04-29T09:00:00+00:00[UTC]",
+            "2026-05-29T09:00:00+00:00[UTC]",
+            "2026-06-29T09:00:00+00:00[UTC]",
+            "2026-07-29T09:00:00+00:00[UTC]",
+            "2026-08-29T09:00:00+00:00[UTC]",
+            "2026-09-29T09:00:00+00:00[UTC]",
+            "2026-10-29T09:00:00+00:00[UTC]",
+            "2026-11-29T09:00:00+00:00[UTC]",
+            "2026-12-29T09:00:00+00:00[UTC]",
+            "2027-01-29T09:00:00+00:00[UTC]",
+            "2027-03-29T09:00:00+00:00[UTC]",
+            "2027-04-29T09:00:00+00:00[UTC]",
+            "2027-05-29T09:00:00+00:00[UTC]"
+          ]
+        }
+      ]
     }
   },
   "cron": {
