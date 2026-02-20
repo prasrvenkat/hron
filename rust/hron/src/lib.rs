@@ -179,6 +179,15 @@ impl Schedule {
     }
 
     /// Explain a cron expression in human-readable form.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::Schedule;
+    ///
+    /// let explanation = Schedule::explain_cron("0 9 * * 1-5").unwrap();
+    /// assert_eq!(explanation, "every weekday at 09:00");
+    /// ```
     pub fn explain_cron(cron_expr: &str) -> Result<String, ScheduleError> {
         cron::explain_cron(cron_expr)
     }

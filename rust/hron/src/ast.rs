@@ -201,7 +201,7 @@ impl Weekday {
         }
     }
 
-    pub fn to_jiff(self) -> jiff::civil::Weekday {
+    pub(crate) fn to_jiff(self) -> jiff::civil::Weekday {
         match self {
             Self::Monday => jiff::civil::Weekday::Monday,
             Self::Tuesday => jiff::civil::Weekday::Tuesday,
@@ -213,7 +213,7 @@ impl Weekday {
         }
     }
 
-    pub fn from_jiff(wd: jiff::civil::Weekday) -> Self {
+    pub(crate) fn from_jiff(wd: jiff::civil::Weekday) -> Self {
         match wd {
             jiff::civil::Weekday::Monday => Self::Monday,
             jiff::civil::Weekday::Tuesday => Self::Tuesday,
@@ -351,7 +351,7 @@ pub enum MonthTarget {
 
 impl MonthTarget {
     /// Expand all day specs into individual day numbers.
-    pub fn expand_days(&self) -> Vec<u8> {
+    pub(crate) fn expand_days(&self) -> Vec<u8> {
         match self {
             MonthTarget::Days(specs) => specs.iter().flat_map(|s| s.expand()).collect(),
             _ => vec![],
@@ -484,13 +484,6 @@ impl IntervalUnit {
         match self {
             Self::Minutes => "min",
             Self::Hours => "hours",
-        }
-    }
-
-    pub fn singular(self) -> &'static str {
-        match self {
-            Self::Minutes => "minute",
-            Self::Hours => "hour",
         }
     }
 }

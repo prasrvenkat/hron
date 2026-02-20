@@ -10,6 +10,7 @@ repository = "https://github.com/prasrvenkat/hron"
 homepage = "https://github.com/prasrvenkat/hron"
 documentation = "https://docs.rs/hron"
 readme = "README.md"
+rust-version = "1.93"
 # build.rs and conformance tests depend on spec/tests.json and spec/api.json
 # which live outside the crate root. Exclude them from the published package
 # so build.rs never runs on end users' machines.
