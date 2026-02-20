@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "0.6.1",
   "description": "hron conformance test suite. All eval tests use now=2026-02-06T12:00:00+00:00[UTC] (Friday) unless overridden per-test.",
   "now": "2026-02-06T12:00:00+00:00[UTC]",
   "_eval_assertion_types": {

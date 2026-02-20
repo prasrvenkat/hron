@@ -194,6 +194,10 @@ stamp-versions:
     sed -i 's/<Version>[^<]*<\/Version>/<Version>{{version}}<\/Version>/' csharp/Hron/Hron.csproj
     # Ruby
     sed -i 's/VERSION = "[^"]*"/VERSION = "{{version}}"/' ruby/lib/hron/version.rb
+    # Spec files
+    sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' spec/api.json
+    sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' spec/tests.json
+    sed -i 's/(\* hron grammar v[^ ]* —/(* hron grammar v{{version}} —/' spec/grammar.ebnf
 
 # Create a release PR: just release 1.2.3
 release new_version:
