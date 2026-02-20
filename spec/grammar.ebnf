@@ -1,4 +1,4 @@
-(* hron grammar v0.6.1 — ISO 14977 EBNF *)
+(* hron grammar v1.0.0 — ISO 14977 EBNF *)
 (* Human-readable schedule expressions. *)
 (* This grammar is documentation only; the parser is hand-written. *)
 (* Where this grammar and spec/tests.json differ, tests.json is authoritative. *)
