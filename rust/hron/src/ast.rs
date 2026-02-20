@@ -72,6 +72,7 @@ pub enum ScheduleExpr {
 
 /// Exception date for `except` clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Exception {
@@ -83,6 +84,7 @@ pub enum Exception {
 
 /// Until spec for `until` clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum UntilSpec {
@@ -94,6 +96,7 @@ pub enum UntilSpec {
 
 /// Year target for yearly expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum YearTarget {
@@ -277,7 +280,7 @@ impl<'de> Deserialize<'de> for Weekday {
     }
 }
 
-pub fn parse_weekday(s: &str) -> Option<Weekday> {
+pub(crate) fn parse_weekday(s: &str) -> Option<Weekday> {
     match s.to_lowercase().as_str() {
         "monday" | "mon" => Some(Weekday::Monday),
         "tuesday" | "tue" => Some(Weekday::Tuesday),
@@ -322,6 +325,7 @@ pub enum NearestDirection {
 
 /// Month target for month-repeat expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum MonthTarget {
@@ -380,6 +384,7 @@ impl OrdinalPosition {
 
 /// Date specification for single-date expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum DateSpec {
@@ -442,7 +447,7 @@ impl MonthName {
     }
 }
 
-pub fn parse_month_name(s: &str) -> Option<MonthName> {
+pub(crate) fn parse_month_name(s: &str) -> Option<MonthName> {
     match s.to_lowercase().as_str() {
         "january" | "jan" => Some(MonthName::January),
         "february" | "feb" => Some(MonthName::February),

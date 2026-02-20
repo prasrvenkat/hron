@@ -1,5 +1,5 @@
 {
-  "version": "0.2",
+  "version": "0.6.1",
   "description": "Canonical public API contract for hron Schedule class. All implementations MUST expose these methods. Names are in camelCase; Rust implementations use snake_case equivalents.",
   "casing": {
     "canonical": "camelCase",
@@ -116,7 +116,7 @@
   },
   "notes": {
     "wasm": "WASM uses string-based ZonedDateTime params (ISO 8601 format). Also exposes toJSON() as a WASM-specific extra.",
-    "rust": "Rust expresses getters as public struct fields or methods. Also exposes explain_cron() and with_anchor() as Rust-specific extras.",
+    "rust": "Rust expresses getters as accessor methods: expr(), timezone(), except(), until(), anchor(), during(). Also exposes builder methods: with_anchor(), with_timezone(), with_except(), with_until(), with_during(). Additional Rust-specific: explain_cron(), Schedule::new().",
     "dart_exception": "Dart names the Exception AST type 'ExceptionSpec' to avoid conflict with dart:core.Exception."
   }
 }

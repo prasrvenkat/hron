@@ -15,7 +15,7 @@ All language implementations use hand-written [recursive descent parsers](https:
 The conformance test suite covering three categories:
 
 - **parse** - Tests for valid expression parsing and roundtrip (parse → toString → parse)
-- **eval** - Tests for schedule evaluation (nextFrom, matches, DST handling)
+- **eval** - Tests for schedule evaluation (nextFrom, previousFrom, matches, occurrences, between, DST handling)
 - **cron** - Tests for cron conversion (toCron, fromCron)
 
 All language implementations must pass all conformance tests. Test cases are loaded dynamically at runtime/compile-time.
@@ -25,7 +25,7 @@ All language implementations must pass all conformance tests. Test cases are loa
 The API contract specification defining:
 
 - **schedule.staticMethods** - `parse`, `fromCron`, `validate`
-- **schedule.instanceMethods** - `nextFrom`, `nextNFrom`, `matches`, `toCron`, `toString`
+- **schedule.instanceMethods** - `nextFrom`, `nextNFrom`, `previousFrom`, `matches`, `occurrences`, `between`, `toCron`, `toString`
 - **schedule.getters** - `timezone`
 - **error.kinds** - `lex`, `parse`, `eval`, `cron`
 - **error.constructors** - Factory methods for each error kind
@@ -80,4 +80,4 @@ Implementations should provide a `displayRich()` method that formats errors with
 
 ## Versioning
 
-The spec version is stored in `api.json` under the `version` field. All implementations should validate this version is present.
+The spec version is stored in `api.json` and `tests.json` under the `version` field, and in the `grammar.ebnf` header comment. These are stamped automatically by `just stamp-versions`.
