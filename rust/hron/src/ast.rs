@@ -154,6 +154,7 @@ impl<'de> Deserialize<'de> for TimeOfDay {
 
 /// Day filter for day-repeat and interval expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum DayFilter {
@@ -295,6 +296,7 @@ pub(crate) fn parse_weekday(s: &str) -> Option<Weekday> {
 
 /// A single day or range of days in a monthly target.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum DayOfMonthSpec {
@@ -314,6 +316,7 @@ impl DayOfMonthSpec {
 
 /// Direction for nearest weekday (hron extension beyond cron W).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum NearestDirection {
@@ -358,6 +361,7 @@ impl MonthTarget {
 
 /// Ordinal position (first through fifth, or last).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum OrdinalPosition {
@@ -467,6 +471,7 @@ pub(crate) fn parse_month_name(s: &str) -> Option<MonthName> {
 
 /// Interval unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum IntervalUnit {
