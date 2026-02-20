@@ -78,6 +78,42 @@ Implementations should provide a `displayRich()` method that formats errors with
 - The input line with position indicator
 - A caret (^) or underline showing the error location
 
+## Behavioral Semantics
+
+These rules govern evaluation behavior across all implementations. Third-party implementations must follow these semantics to pass the conformance suite.
+
+### Exception recurrence
+
+Named exceptions (e.g., `except dec 25`) recur every year. ISO exceptions (e.g., `except 2026-12-25`) apply only to that specific date. This means `every day at 09:00 except dec 25` will skip December 25th every year, while `every day at 09:00 except 2026-12-25` will only skip it in 2026.
+
+### Contradictory schedules
+
+Schedules with mutually exclusive constraints parse successfully but return no occurrences. For example, `every weekend at 09:00 except sat, sun` is valid but `nextFrom` always returns null. Implementations must never error or loop on contradictory schedules.
+
+### DST fall-back (ambiguous times)
+
+When a schedule fires at a time that occurs twice during a DST fall-back transition (e.g., 01:30 when clocks go from 02:00 back to 01:00), implementations must use the **first** (pre-transition) occurrence.
+
+### End-of-month day handling
+
+When a monthly schedule specifies a day that doesn't exist in a given month (e.g., `every month on the 31st` in a 30-day month), that month is skipped. The schedule does **not** cascade to the last available day — it waits for a month that actually has the specified day.
+
+### IntervalRepeat and the `starting` clause
+
+The `starting` clause overrides the anchor date for alignment of multi-interval schedules (e.g., `every 3 days`). However, for `IntervalRepeat` expressions (e.g., `every 30 min from 09:00 to 17:00`), the interval timing within each day is determined by the `from` time, not the anchor. The `starting` clause only affects which days the schedule fires on when combined with a day filter.
+
+### WeekRepeat epoch alignment
+
+`WeekRepeat` schedules with `interval > 1` align to **epoch Monday** (1970-01-05), not epoch (1970-01-01, a Thursday). This ensures week-based intervals align naturally to week boundaries. The `starting` clause overrides this default anchor.
+
+### Evaluation order for trailing clauses
+
+When multiple trailing clauses are present, they are applied in this order:
+
+1. **`during`** — filter to only the specified months
+2. **`except`** — exclude matching dates from the filtered set
+3. **`until`** — stop after the cutoff date
+
 ## Versioning
 
 The spec version is stored in `api.json` and `tests.json` under the `version` field, and in the `grammar.ebnf` header comment. These are stamped automatically by `just stamp-versions`.

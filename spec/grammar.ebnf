@@ -1,6 +1,7 @@
 (* hron grammar v0.6.1 — ISO 14977 EBNF *)
 (* Human-readable schedule expressions. *)
 (* This grammar is documentation only; the parser is hand-written. *)
+(* Where this grammar and spec/tests.json differ, tests.json is authoritative. *)
 
 schedule       = expression , [ except_clause ] , [ until_clause ]
                , [ starting_clause ] , [ during_clause ] , [ timezone_clause ] ;
@@ -30,8 +31,8 @@ interval_repeat = [ number ] , interval_unit , time_range_clause ;
 (* "every day at 09:00", "every weekday at 09:00, 17:00", "every 3 days at 09:00" *)
 day_repeat     = ( day_target | number , ( "day" | "days" ) ) , "at" , time_list ;
 
-(* "every 2 weeks on monday at 09:00" *)
-week_repeat    = number , "weeks" , "on" , day_list , "at" , time_list ;
+(* "every week on monday at 09:00", "every 2 weeks on monday at 09:00" *)
+week_repeat    = [ number ] , ( "week" | "weeks" ) , "on" , day_list , "at" , time_list ;
 
 (* "every month on the 1st at 09:00", "every 3 months on the 15th at 09:00" *)
 month_repeat   = [ number ] , ( "month" | "months" ) , "on" , "the" , month_target , "at" , time_list ;
