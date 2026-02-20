@@ -131,6 +131,12 @@ impl Schedule {
     }
 }
 
+/// Explain a cron expression in human-readable form.
+#[wasm_bindgen(js_name = "explainCron")]
+pub fn explain_cron(cron_expr: &str) -> Result<String, JsError> {
+    hron::Schedule::explain_cron(cron_expr).map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// Parse a cron expression and return an hron Schedule.
 #[wasm_bindgen(js_name = "fromCron")]
 pub fn from_cron(cron_expr: &str) -> Result<Schedule, JsError> {
