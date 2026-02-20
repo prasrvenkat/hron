@@ -79,9 +79,13 @@ public final class Display {
   }
 
   private static String renderWeekRepeat(WeekRepeat wr) {
+    if (wr.interval() > 1) {
+      return String.format(
+          "every %d weeks on %s at %s",
+          wr.interval(), formatDayList(wr.weekDays()), formatTimeList(wr.times()));
+    }
     return String.format(
-        "every %d weeks on %s at %s",
-        wr.interval(), formatDayList(wr.weekDays()), formatTimeList(wr.times()));
+        "every week on %s at %s", formatDayList(wr.weekDays()), formatTimeList(wr.times()));
   }
 
   private static String renderMonthRepeat(MonthRepeat mr) {

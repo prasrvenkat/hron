@@ -271,6 +271,10 @@ class Parser {
       const days = this.parseDayList();
       return this.parseDayRepeat(1, { type: "days", days });
     }
+    if (k.type === "weeks") {
+      this.advance();
+      return this.parseWeekRepeat(1);
+    }
     if (k.type === "month") {
       this.advance();
       return this.parseMonthRepeat(1);
@@ -280,7 +284,7 @@ class Parser {
     }
 
     throw this.error(
-      "expected day, weekday, weekend, year, day name, month, or number after 'every'",
+      "expected day, weekday, weekend, week, year, day name, month, or number after 'every'",
       this.currentSpan(),
     );
   }

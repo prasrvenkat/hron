@@ -149,6 +149,7 @@ public final class Parser {
     return switch (next.kind()) {
       case NUMBER -> parseEveryNumber();
       case DAY, WEEKDAY, WEEKEND, DAY_NAME -> parseDayRepeat();
+      case WEEKS -> parseWeekRepeat();
       case YEAR -> parseYearRepeat();
       case MONTH -> parseMonthRepeat();
       default -> throw parseError("unexpected token after 'every'", next.span());
@@ -290,6 +291,16 @@ public final class Parser {
       case DAY_NAME -> DayFilter.days(parseDayList());
       default -> throw parseError("expected day filter after 'on'", tok.span());
     };
+  }
+
+  private ScheduleExpr parseWeekRepeat() throws HronException {
+    expect(TokenKind.WEEKS);
+    expect(TokenKind.ON);
+
+    var weekDays = parseDayList();
+    var times = parseAtTimes();
+
+    return new WeekRepeat(1, weekDays, times);
   }
 
   private ScheduleExpr parseMonthRepeat() throws HronException {

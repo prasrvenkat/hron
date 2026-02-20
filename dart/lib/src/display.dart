@@ -46,7 +46,9 @@ String _displayExpr(ScheduleExpr expr) => switch (expr) {
   IntervalRepeat() => _displayInterval(expr),
   DayRepeat() => _displayDayRepeat(expr),
   WeekRepeat() =>
-    'every ${expr.interval} weeks on ${_formatDayList(expr.days)} at ${_formatTimeList(expr.times)}',
+    expr.interval > 1
+        ? 'every ${expr.interval} weeks on ${_formatDayList(expr.days)} at ${_formatTimeList(expr.times)}'
+        : 'every week on ${_formatDayList(expr.days)} at ${_formatTimeList(expr.times)}',
   MonthRepeat() => _displayMonthRepeat(expr),
   SingleDate() => _displaySingleDate(expr),
   YearRepeat() => _displayYearRepeat(expr),

@@ -89,7 +89,9 @@ def _display_expr(expr: ScheduleExpr) -> str:
 
         case WeekRepeat(interval=interval, days=days, times=times):
             day_str = ", ".join(str(d) for d in days)
-            return f"every {interval} weeks on {day_str} at {_format_time_list(times)}"
+            if interval > 1:
+                return f"every {interval} weeks on {day_str} at {_format_time_list(times)}"
+            return f"every week on {day_str} at {_format_time_list(times)}"
 
         case MonthRepeat(interval=interval, target=target, times=times):
             match target:

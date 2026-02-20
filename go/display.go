@@ -78,7 +78,10 @@ func displayDayRepeat(expr ScheduleExpr) string {
 
 func displayWeekRepeat(expr ScheduleExpr) string {
 	dayStr := formatDayList(expr.WeekDays)
-	return fmt.Sprintf("every %d weeks on %s at %s", expr.Interval, dayStr, formatTimeList(expr.Times))
+	if expr.Interval > 1 {
+		return fmt.Sprintf("every %d weeks on %s at %s", expr.Interval, dayStr, formatTimeList(expr.Times))
+	}
+	return fmt.Sprintf("every week on %s at %s", dayStr, formatTimeList(expr.Times))
 }
 
 func displayMonthRepeat(expr ScheduleExpr) string {

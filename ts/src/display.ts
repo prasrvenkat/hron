@@ -64,7 +64,10 @@ function displayExpr(expr: ScheduleExpr): string {
       }
       return `every ${displayDayFilter(expr.days)} at ${formatTimeList(expr.times)}`;
     case "weekRepeat":
-      return `every ${expr.interval} weeks on ${formatDayList(expr.days)} at ${formatTimeList(expr.times)}`;
+      if (expr.interval > 1) {
+        return `every ${expr.interval} weeks on ${formatDayList(expr.days)} at ${formatTimeList(expr.times)}`;
+      }
+      return `every week on ${formatDayList(expr.days)} at ${formatTimeList(expr.times)}`;
     case "monthRepeat": {
       let targetStr: string;
       if (expr.target.type === "days") {

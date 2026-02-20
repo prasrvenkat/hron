@@ -216,6 +216,10 @@ class _Parser {
       final days = _parseDayList();
       return _parseDayRepeat(1, SpecificDays(days));
     }
+    if (k is WeeksToken) {
+      advance();
+      return _parseWeekRepeat(1);
+    }
     if (k is MonthToken) {
       advance();
       return _parseMonthRepeat(1);
@@ -225,7 +229,7 @@ class _Parser {
     }
 
     throw error(
-      "expected day, weekday, weekend, year, day name, month, or number after 'every'",
+      "expected day, weekday, weekend, week, year, day name, month, or number after 'every'",
       currentSpan(),
     );
   }

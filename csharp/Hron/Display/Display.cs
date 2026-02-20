@@ -83,7 +83,13 @@ public static class Display
     }
 
     private static string RenderWeekRepeat(WeekRepeat wr)
-        => $"every {wr.Interval} weeks on {FormatDayList(wr.WeekDays)} at {FormatTimeList(wr.Times)}";
+    {
+        if (wr.Interval > 1)
+        {
+            return $"every {wr.Interval} weeks on {FormatDayList(wr.WeekDays)} at {FormatTimeList(wr.Times)}";
+        }
+        return $"every week on {FormatDayList(wr.WeekDays)} at {FormatTimeList(wr.Times)}";
+    }
 
     private static string RenderMonthRepeat(MonthRepeat mr)
     {
