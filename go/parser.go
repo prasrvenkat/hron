@@ -332,6 +332,9 @@ func (p *parser) parseEvery() (ScheduleExpr, error) {
 			return ScheduleExpr{}, err
 		}
 		return p.parseDayRepeat(1, NewDayFilterDays(days))
+	case TokenWeeks:
+		p.advance()
+		return p.parseWeekRepeat(1)
 	case TokenMonth:
 		p.advance()
 		return p.parseMonthRepeat(1)

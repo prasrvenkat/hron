@@ -2,8 +2,6 @@
 
 **Human-readable cron** — scheduling expressions that are a superset of what cron can express.
 
-> **⚠️ Pre-1.0: Expect breaking changes between minor versions.**
-
 ```
 every weekday at 9:00 except dec 25, jan 1 until 2027-12-31 in America/New_York
 ```

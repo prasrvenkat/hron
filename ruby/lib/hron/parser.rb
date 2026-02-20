@@ -297,6 +297,9 @@ module Hron
       when TokenKind::MONTH
         advance
         parse_month_repeat(1)
+      when TokenKind::WEEKS
+        advance
+        parse_week_repeat(1)
       when TNumber
         parse_number_repeat
       else

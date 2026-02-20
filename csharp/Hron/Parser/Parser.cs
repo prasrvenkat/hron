@@ -145,6 +145,7 @@ public sealed class Parser
         {
             TokenKind.Number => ParseEveryNumber(),
             TokenKind.Day or TokenKind.Weekday or TokenKind.Weekend or TokenKind.DayName => ParseDayRepeat(),
+            TokenKind.Weeks => ParseWeeksWithInterval(1),
             TokenKind.Year => ParseYearRepeat(),
             TokenKind.Month => ParseMonthRepeat(),
             _ => throw ParseError("unexpected token after 'every'", next.Span)

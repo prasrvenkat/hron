@@ -304,6 +304,9 @@ class _Parser:
             case TDayName():
                 days = self._parse_day_list()
                 return self._parse_day_repeat(1, DayFilterDays(tuple(days)))
+            case TWeeks():
+                self.advance()
+                return self._parse_week_repeat(1)
             case TMonth():
                 self.advance()
                 return self._parse_month_repeat(1)
@@ -311,7 +314,7 @@ class _Parser:
                 return self._parse_number_repeat()
             case _:
                 raise self._error(
-                    "expected day, weekday, weekend, year, day name, month,"
+                    "expected day, weekday, weekend, year, week, day name, month,"
                     " or number after 'every'",
                     self.current_span(),
                 )

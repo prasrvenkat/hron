@@ -316,6 +316,21 @@
           "name": "multi_time_three",
           "input": "every 3 weeks on friday at 9:00, 12:00, 17:00",
           "canonical": "every 3 weeks on friday at 09:00, 12:00, 17:00"
+        },
+        {
+          "name": "every_week_singular",
+          "input": "every week on monday at 9:00",
+          "canonical": "every week on monday at 09:00"
+        },
+        {
+          "name": "every_week_singular_multi_day",
+          "input": "every week on mon, wed, fri at 10:00",
+          "canonical": "every week on monday, wednesday, friday at 10:00"
+        },
+        {
+          "name": "every_week_singular_multi_time",
+          "input": "every week on tuesday at 9:00, 17:00",
+          "canonical": "every week on tuesday at 09:00, 17:00"
         }
       ]
     },
@@ -1923,6 +1938,39 @@
           "datetime": "2026-02-09T09:00:00+00:00[UTC]",
           "expected": false,
           "description": "Feb 9 is a Monday but not aligned to the biweekly cycle"
+        },
+        {
+          "name": "every_week_singular",
+          "expression": "every week on monday at 09:00 in UTC",
+          "description": "every week on monday is equivalent to every 1 weeks on monday",
+          "next": "2026-02-09T09:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-02-23T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_week_singular_multi_day",
+          "expression": "every week on monday, friday at 09:00 in UTC",
+          "description": "every week on multiple days fires on each listed day every week",
+          "next_n": [
+            "2026-02-09T09:00:00+00:00[UTC]",
+            "2026-02-13T09:00:00+00:00[UTC]",
+            "2026-02-16T09:00:00+00:00[UTC]",
+            "2026-02-20T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_week_with_starting",
+          "expression": "every week on wednesday at 14:00 starting 2026-02-11 in UTC",
+          "description": "every week with explicit starting clause; starting on a Wednesday",
+          "next": "2026-02-11T14:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-11T14:00:00+00:00[UTC]",
+            "2026-02-18T14:00:00+00:00[UTC]",
+            "2026-02-25T14:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -4773,6 +4821,12 @@
           "description": "yearly with until before starting: empty time window",
           "next_n_count": 3,
           "next_n": []
+        },
+        {
+          "name": "expired_schedule_next_null",
+          "expression": "every day at 09:00 until 2020-01-01 in UTC",
+          "description": "expired schedule returns null for next occurrence",
+          "next": null
         }
       ]
     },

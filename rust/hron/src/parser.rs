@@ -313,6 +313,11 @@ impl<'a> Parser<'a> {
                 let days = self.parse_day_list()?;
                 self.parse_day_repeat(1, DayFilter::Days(days))
             }
+            // "every week on ..."
+            Some(TokenKind::Weeks) => {
+                self.advance();
+                self.parse_week_repeat(1)
+            }
             // "every month on ..."
             Some(TokenKind::Month) => {
                 self.advance();
@@ -323,7 +328,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let span = self.current_span();
                 Err(self.error(
-                    "expected day, weekday, weekend, year, day name, month, or number after 'every'"
+                    "expected day, weekday, weekend, week, year, day name, month, or number after 'every'"
                         .into(),
                     span,
                 ))

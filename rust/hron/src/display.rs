@@ -83,7 +83,11 @@ impl fmt::Display for ScheduleExpr {
                 days,
                 times,
             } => {
-                write!(f, "every {interval} weeks on ")?;
+                if *interval > 1 {
+                    write!(f, "every {interval} weeks on ")?;
+                } else {
+                    write!(f, "every week on ")?;
+                }
                 write_day_list(f, days)?;
                 write!(f, " at ")?;
                 write_time_list(f, times)?;

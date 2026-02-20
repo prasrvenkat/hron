@@ -59,7 +59,11 @@ module Hron
 
       when WeekRepeat
         day_str = expr.days.join(", ")
-        "every #{expr.interval} weeks on #{day_str} at #{format_time_list(expr.times)}"
+        if expr.interval > 1
+          "every #{expr.interval} weeks on #{day_str} at #{format_time_list(expr.times)}"
+        else
+          "every week on #{day_str} at #{format_time_list(expr.times)}"
+        end
 
       when MonthRepeat
         target_str = case expr.target
