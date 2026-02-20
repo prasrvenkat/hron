@@ -91,6 +91,27 @@ jobs:
           java-version: '25'
       - run: cd java && mvn test
 
+  csharp:
+    name: C#
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: dotnet just
+      - run: just build-csharp
+      - run: just test-csharp
+
+  ruby:
+    name: Ruby
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: ruby just
+      - run: just test-ruby
+
   validate-spec-coverage:
     name: Validate Spec Coverage
     runs-on: ubuntu-latest
