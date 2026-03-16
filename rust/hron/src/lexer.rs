@@ -230,15 +230,18 @@ impl<'a> Lexer<'a> {
         })?;
 
         // Check for ordinal suffix: st, nd, rd, th
-        if self.pos + 1 < self.bytes.len() {
-            let suffix = &self.input[self.pos..self.pos + 2].to_lowercase();
-            if matches!(suffix.as_str(), "st" | "nd" | "rd" | "th") {
-                self.pos += 2;
-                return Ok(Token {
-                    kind: TokenKind::OrdinalNumber(num),
-                    span: Span::new(start, self.pos),
-                });
-            }
+        // Compare bytes directly to avoid panicking on multi-byte UTF-8 chars
+        if self.pos + 1 < self.bytes.len()
+            && matches!(
+                &self.bytes[self.pos..self.pos + 2],
+                b"st" | b"ST" | b"nd" | b"ND" | b"rd" | b"RD" | b"th" | b"TH"
+            )
+        {
+            self.pos += 2;
+            return Ok(Token {
+                kind: TokenKind::OrdinalNumber(num),
+                span: Span::new(start, self.pos),
+            });
         }
 
         Ok(Token {
