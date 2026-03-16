@@ -11,18 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
         target: [fuzz_parse, fuzz_roundtrip]
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
-        with:
-          install_args: rust
+      - uses: actions/checkout@v5
       - run: rustup default nightly
       - run: cargo install cargo-fuzz
 
       # Restore corpus from previous runs
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: rust/hron/fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
@@ -33,7 +31,7 @@ jobs:
         working-directory: rust/hron
 
       # Upload crash artifacts if any are found
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: fuzz-artifacts-${{ matrix.target }}
