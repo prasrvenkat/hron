@@ -1,67 +1,101 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="pg">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Playground — hron</title>
-    <meta name="description" content="Interactive playground for hron — human-readable cron expressions" />
+    <meta name="description" content="Try hron expressions interactively — see the cron equivalent and the next runs, live." />
     <meta property="og:title" content="hron Playground" />
     <meta property="og:description" content="Try hron expressions interactively in your browser." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://hron.io/playground" />
-    <link rel="icon" href="/favicon.png" type="image/png" />
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="/src/tokens.css" />
+    <link rel="stylesheet" href="/src/app.css" />
+    <link rel="stylesheet" href="/src/playground.css" />
   </head>
   <body>
-    <header>
+    <!-- ─── Header ─── -->
+    <header class="site-header">
       <div class="header-left">
-        <h1>
-          <a href="/">
-            <img src="/logo-light.png" alt="hron" class="logo logo-light" height="32" />
-            <img src="/logo-dark.png" alt="hron" class="logo logo-dark" height="32" />
-          </a>
-          <span class="dim">playground</span>
-          <span id="version" class="version"></span>
-        </h1>
+        <a class="hron-logo" href="/" aria-label="hron home">
+          <svg class="hron-mark" width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.2" />
+            <path d="M14 14 V4.6" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+          </svg>
+          <span class="wordmark">hron</span>
+        </a>
+        <span class="version-pill">playground</span>
       </div>
-      <div class="header-right">
-        <a href="https://github.com/prasrvenkat/hron" class="header-link">GitHub</a>
-        <button id="theme-toggle" type="button" aria-label="Toggle dark mode">
-          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-          <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <nav class="header-nav">
+        <a class="nav-link" href="/">Home</a>
+        <a class="nav-link" href="https://github.com/prasrvenkat/hron">GitHub</a>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle dark mode">
+          <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
-      </div>
+      </nav>
     </header>
 
-    <main class="playground-page">
-      <div class="playground-container">
-        <div class="input-section">
-          <label for="expression">Expression</label>
-          <textarea id="expression" rows="3" spellcheck="false" autocomplete="off" placeholder="every weekday at 9:00 in America/New_York"></textarea>
-          <div id="error" class="error" hidden></div>
-          <div class="examples">
-            <span class="examples-label">Examples:</span>
-            <button type="button" class="chip" data-expr="every weekday at 9:00">every weekday at 9:00</button>
-            <button type="button" class="chip" data-expr="every 30 min from 09:00 to 17:00 on weekdays">every 30 min from 09:00 to 17:00 on weekdays</button>
-            <button type="button" class="chip" data-expr="every month on the first monday at 10:00">every month on the first monday at 10:00</button>
-            <button type="button" class="chip" data-expr="every year on dec 25 at 00:00">every year on dec 25 at 00:00</button>
-            <button type="button" class="chip" data-expr="every weekday at 9:00 except dec 25, jan 1 until 2027-12-31 in America/New_York">weekday 9am ET except holidays</button>
+    <main>
+      <div class="wrap pg-wrap">
+        <div class="pg-intro">
+          <h1>Playground</h1>
+          <p>Type a schedule the way you'd say it. See the cron equivalent and the next runs, live.</p>
+        </div>
+
+        <!-- Input -->
+        <div class="pg-input-card">
+          <div class="pg-input-head">
+            <span class="eyebrow">Expression</span>
+            <span class="pg-tz">times shown in <b id="tz-name">UTC</b></span>
+          </div>
+          <div class="pg-field">
+            <svg class="pg-mark" width="22" height="22" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+              <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.2" />
+              <path d="M14 14 V4.6" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" />
+              <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+            </svg>
+            <textarea id="expression" rows="1" spellcheck="false" autocomplete="off" placeholder="every weekday at 9:00 in America/New_York"></textarea>
+          </div>
+          <div id="error" class="pg-error" hidden></div>
+          <div class="pg-examples">
+            <span class="lbl">Try:</span>
+            <button class="chip" data-expr="every weekday at 9:00">every weekday at 9:00</button>
+            <button class="chip" data-expr="every 30 min from 09:00 to 17:00 on weekdays">every 30 min from 09:00 to 17:00 on weekdays</button>
+            <button class="chip" data-expr="every month on the first monday at 10:00">first monday of the month</button>
+            <button class="chip" data-expr="every year on dec 25 at 00:00">every year on dec 25</button>
+            <button class="chip" data-expr="every weekday at 9:00 except dec 25, jan 1 until 2027-12-31 in America/New_York">weekday 9am ET, except holidays</button>
           </div>
         </div>
 
-        <div class="results-section">
-          <div id="results-empty" class="results-empty">
-            Type an expression or click an example to see results.
+        <!-- Empty state -->
+        <div id="empty" class="pg-empty">Type an expression or pick an example to see the cron equivalent and upcoming runs.</div>
+
+        <!-- Results -->
+        <div id="results" class="pg-results" hidden>
+          <div class="pg-card pg-cron-card">
+            <div class="pg-card-head">
+              <span class="ttl">Cron equivalent</span>
+              <button class="copy-mini" id="copy-cron" type="button" hidden>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="pg-cron-body" id="cron"></div>
           </div>
 
-          <div id="results" hidden>
-            <div class="result-group">
-              <h4>Cron equivalent</h4>
-              <div id="cron"></div>
+          <div class="pg-card pg-occ-card">
+            <div class="pg-card-head">
+              <span class="ttl">Next occurrences</span>
             </div>
-
-            <div class="result-group">
-              <h4>Next occurrences</h4>
+            <div class="pg-occ-body">
               <ol id="occurrences"></ol>
             </div>
           </div>
@@ -69,23 +103,26 @@
       </div>
     </main>
 
-    <footer>
-      <div class="footer-links">
-        <a href="https://github.com/prasrvenkat/hron">GitHub</a>
-        <span class="sep">&middot;</span>
-        <a href="https://crates.io/crates/hron">crates.io</a>
-        <span class="sep">&middot;</span>
-        <a href="https://www.npmjs.com/package/hron-ts">npm</a>
-        <span class="sep">&middot;</span>
-        <a href="https://pypi.org/project/hron/">PyPI</a>
-        <span class="sep">&middot;</span>
-        <a href="https://pkg.go.dev/github.com/prasrvenkat/hron/go">pkg.go.dev</a>
-        <span class="sep">&middot;</span>
-        <a href="https://pub.dev/packages/hron">pub.dev</a>
-        <span class="sep">&middot;</span>
-        <a href="https://central.sonatype.com/artifact/io.hron/hron">Maven Central</a>
+    <!-- ─── Footer ─── -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <a class="hron-logo" href="/">
+          <svg class="hron-mark" width="20" height="20" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.2" />
+            <path d="M14 14 V4.6" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+          </svg>
+          <span class="wordmark" style="font-size:1rem">hron</span>
+        </a>
+        <div class="footer-links">
+          <a href="https://github.com/prasrvenkat/hron">GitHub</a>
+          <a href="https://crates.io/crates/hron">crates.io</a>
+          <a href="https://www.npmjs.com/package/hron-ts">npm</a>
+          <a href="https://pypi.org/project/hron/">PyPI</a>
+        </div>
+        <div class="footer-meta">MIT License</div>
       </div>
-      <div class="footer-license">MIT License</div>
     </footer>
 
     <script type="module" src="/src/main.ts"></script>

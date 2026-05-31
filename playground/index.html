@@ -1,196 +1,227 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="landing">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>hron — Human-readable cron</title>
-    <meta name="description" content="Human-readable scheduling expressions that are more powerful than cron. Multi-week intervals, ordinal weekdays, timezones, and more." />
-    <meta property="og:title" content="hron — Human-readable cron" />
-    <meta property="og:description" content="Scheduling expressions that are readable and more powerful than cron." />
+    <title>hron — schedules in plain English</title>
+    <meta name="description" content="hron is a scheduling language that does everything cron can — and the things it can't. Human-readable, with multi-week intervals, ordinals, exception dates, and timezones with DST." />
+    <meta property="og:title" content="hron — schedules in plain English" />
+    <meta property="og:description" content="A scheduling language that's readable and more powerful than cron." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://hron.io" />
-    <link rel="icon" href="/favicon.png" type="image/png" />
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="/src/tokens.css" />
+    <link rel="stylesheet" href="/src/app.css" />
+    <link rel="stylesheet" href="/src/landing.css" />
   </head>
   <body>
-    <header>
+    <!-- ─── Header ─── -->
+    <header class="site-header">
       <div class="header-left">
-        <h1>
-          <a href="/">
-            <img src="/logo-light.png" alt="hron" class="logo logo-light" height="32" />
-            <img src="/logo-dark.png" alt="hron" class="logo logo-dark" height="32" />
-          </a>
-          <span id="version" class="version"></span>
-        </h1>
+        <a class="hron-logo" href="/" aria-label="hron home">
+          <svg class="hron-mark" width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.2" />
+            <path d="M14 14 V4.6" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+          </svg>
+          <span class="wordmark">hron</span>
+        </a>
+        <span id="version" class="version-pill"></span>
       </div>
-      <div class="header-right">
-        <a href="/playground" class="header-link">Playground</a>
-        <a href="https://github.com/prasrvenkat/hron" class="header-link">GitHub</a>
-        <button id="theme-toggle" type="button" aria-label="Toggle dark mode">
-          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-          <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <nav class="header-nav">
+        <a class="nav-link" href="/playground/">Playground</a>
+        <a class="nav-link" href="https://github.com/prasrvenkat/hron">GitHub</a>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle dark mode">
+          <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
-      </div>
+      </nav>
     </header>
 
-    <!-- Hero -->
-    <section class="hero">
-      <h2>Human-readable cron</h2>
-      <p class="hero-subtitle">Scheduling expressions that are readable and more powerful than cron.</p>
-      <div class="hero-example">
-        <code>every weekday at 9:00 except dec 25, jan 1 in America/New_York</code>
-      </div>
-      <div class="hero-actions">
-        <a href="/playground" class="btn btn-primary">Try it</a>
-      </div>
-      <p class="hero-cta">Native implementations for <strong>Rust</strong>, <strong>TypeScript</strong>, <strong>Python</strong>, <strong>Go</strong>, <strong>Dart</strong>, <strong>Java</strong>, <strong>C#</strong>, <strong>Ruby</strong>, and <strong>WASM</strong>.</p>
-    </section>
+    <main>
+      <!-- ─── Hero ─── -->
+      <section class="hero">
+        <span class="eyebrow">A scheduling language</span>
+        <h1>Schedules in <span class="accent">plain English.</span></h1>
+        <p class="hero-sub">hron does everything cron can — and the things it can't. Write the schedule the way you'd say it out loud.</p>
 
-    <!-- Comparison -->
-    <section class="comparison">
-      <h3>cron vs hron</h3>
-      <div class="comparison-table">
-        <div class="comparison-header">
-          <span>cron</span>
-          <span>hron</span>
-        </div>
-        <div class="comparison-row">
-          <code>0 9 * * 1-5</code>
-          <code>every weekday at 9:00</code>
-        </div>
-        <div class="comparison-row">
-          <code>0 10 * * 0,6</code>
-          <code>every weekend at 10:00</code>
-        </div>
-        <div class="comparison-row">
-          <code>*/30 * * * *</code>
-          <code>every 30 min from 00:00 to 23:59</code>
-        </div>
-        <div class="comparison-row">
-          <code>0 9 1 * *</code>
-          <code>every month on the 1st at 9:00</code>
-        </div>
-        <div class="comparison-row impossible">
-          <code class="dim">not possible</code>
-          <code>every 2 weeks on monday at 9:00</code>
-        </div>
-        <div class="comparison-row impossible">
-          <code class="dim">not possible</code>
-          <code>every month on the first monday at 10:00</code>
-        </div>
-        <div class="comparison-row impossible">
-          <code class="dim">not possible</code>
-          <code>every year on dec 25 at 00:00</code>
-        </div>
-      </div>
-    </section>
-
-    <!-- Features -->
-    <section class="features">
-      <h3>Beyond cron</h3>
-      <div class="features-grid">
-        <div class="feature">
-          <div class="feature-title">Multi-week intervals</div>
-          <code>every 2 weeks on monday at 9:00</code>
-        </div>
-        <div class="feature">
-          <div class="feature-title">Ordinal weekdays</div>
-          <code>every month on the first monday at 10:00</code>
-        </div>
-        <div class="feature">
-          <div class="feature-title">Yearly schedules</div>
-          <code>every year on dec 25 at 00:00</code>
-        </div>
-        <div class="feature">
-          <div class="feature-title">Exception dates</div>
-          <code>every weekday at 9:00 except dec 25, jan 1</code>
-        </div>
-        <div class="feature">
-          <div class="feature-title">End dates</div>
-          <code>every day at 09:00 until 2026-12-31</code>
-        </div>
-        <div class="feature">
-          <div class="feature-title">Timezone + DST aware</div>
-          <code>every day at 9:00 in America/New_York</code>
-        </div>
-      </div>
-    </section>
-
-    <!-- Install -->
-    <section class="install">
-      <h3>Install</h3>
-      <div class="install-grid">
-        <div class="install-item">
-          <div class="install-lang">Rust</div>
-          <code>cargo add hron</code>
-        </div>
-        <div class="install-item">
-          <div class="install-lang">TypeScript / JavaScript</div>
-          <code>npm install hron-ts</code>
-        </div>
-        <div class="install-item">
-          <div class="install-lang">Python</div>
-          <code>pip install hron</code>
-        </div>
-        <div class="install-item">
-          <div class="install-lang">Go</div>
-          <code>go get github.com/prasrvenkat/hron/go</code>
-        </div>
-        <div class="install-item">
-          <div class="install-lang">Dart / Flutter</div>
-          <code>dart pub add hron</code>
-        </div>
-        <div class="install-item install-java">
-          <div class="install-lang">
-            Java
-            <span class="install-toggle">
-              <button type="button" class="toggle-btn active" data-target="maven">Maven</button>
-              <button type="button" class="toggle-btn" data-target="gradle">Gradle</button>
-            </span>
+        <div class="translator" id="translator">
+          <div class="translator-row is-cron">
+            <span class="translator-tag tag-cron">cron</span>
+            <span class="translator-code" id="t-cron">0 9 * * 1-5</span>
           </div>
-          <code id="maven" class="toggle-content active">io.hron:hron</code>
-          <code id="gradle" class="toggle-content">implementation 'io.hron:hron'</code>
+          <div class="translator-row is-hron">
+            <span class="translator-tag tag-hron">hron</span>
+            <span class="translator-code" id="t-hron">every weekday at 9:00<span class="translator-cursor"></span></span>
+          </div>
         </div>
-        <div class="install-item">
-          <div class="install-lang">C# / .NET</div>
-          <code>dotnet add package Hron</code>
-        </div>
-        <div class="install-item">
-          <div class="install-lang">Ruby</div>
-          <code>gem install hron</code>
-        </div>
-        <div class="install-item">
-          <div class="install-lang">WASM</div>
-          <code>npm install hron-wasm</code>
-        </div>
-        <div class="install-item">
-          <div class="install-lang">CLI</div>
-          <code>cargo install hron-cli</code>
-        </div>
-      </div>
-    </section>
 
-    <footer>
-      <div class="footer-links">
-        <a href="https://github.com/prasrvenkat/hron">GitHub</a>
-        <span class="sep">&middot;</span>
-        <a href="https://crates.io/crates/hron">crates.io</a>
-        <span class="sep">&middot;</span>
-        <a href="https://www.npmjs.com/package/hron-ts">npm</a>
-        <span class="sep">&middot;</span>
-        <a href="https://pypi.org/project/hron/">PyPI</a>
-        <span class="sep">&middot;</span>
-        <a href="https://pkg.go.dev/github.com/prasrvenkat/hron/go">pkg.go.dev</a>
-        <span class="sep">&middot;</span>
-        <a href="https://pub.dev/packages/hron">pub.dev</a>
-        <span class="sep">&middot;</span>
-        <a href="https://central.sonatype.com/artifact/io.hron/hron">Maven Central</a>
-        <span class="sep">&middot;</span>
-        <a href="https://www.nuget.org/packages/Hron">NuGet</a>
-        <span class="sep">&middot;</span>
-        <a href="https://rubygems.org/gems/hron">RubyGems</a>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/playground/">Open the playground →</a>
+          <a class="btn btn-ghost" href="https://github.com/prasrvenkat/hron">Star on GitHub</a>
+        </div>
+
+        <div class="lang-rail">
+          <span class="label">One spec, native implementations everywhere</span>
+          <span class="lang">Rust</span>
+          <span class="lang">TypeScript</span>
+          <span class="lang">Python</span>
+          <span class="lang">Go</span>
+          <span class="lang">Dart</span>
+          <span class="lang">Java</span>
+          <span class="lang">C#</span>
+          <span class="lang">Ruby</span>
+          <span class="lang">WASM</span>
+        </div>
+      </section>
+
+      <!-- ─── cron vs hron ─── -->
+      <section class="section">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">The difference</span>
+            <h2>Same schedule. One you can read.</h2>
+            <p>Every expression on the right is valid hron. The ones at the bottom can't be written in cron at all.</p>
+          </div>
+          <div class="versus">
+            <div class="versus-col col-cron">
+              <div class="versus-colhead">cron <span class="badge">cryptic</span></div>
+              <div class="versus-cell">0 9 * * 1-5</div>
+              <div class="versus-cell">0 10 * * 0,6</div>
+              <div class="versus-cell">*/30 9-17 * * 1-5</div>
+              <div class="versus-cell">0 9 1,15 * *</div>
+              <div class="versus-cell na">— not possible —</div>
+              <div class="versus-cell na">— not possible —</div>
+              <div class="versus-cell na">— not possible —</div>
+            </div>
+            <div class="versus-col col-hron">
+              <div class="versus-colhead">hron <span class="badge">readable</span></div>
+              <div class="versus-cell">every weekday at 9:00</div>
+              <div class="versus-cell">every weekend at 10:00</div>
+              <div class="versus-cell">every 30 min from 09:00 to 17:00 on weekdays</div>
+              <div class="versus-cell">every month on the 1st, 15th at 9:00</div>
+              <div class="versus-cell beyond">every 2 weeks on monday at 9:00</div>
+              <div class="versus-cell beyond">every month on the first monday at 10:00</div>
+              <div class="versus-cell beyond">every year on dec 25 at 00:00</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── Features ─── -->
+      <section class="section">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Beyond cron</span>
+            <h2>Things the five-field syntax can't say.</h2>
+            <p>hron is a superset. Compose any of these with <code>except</code>, <code>until</code>, <code>starting</code>, <code>during</code>, and a timezone.</p>
+          </div>
+          <div class="features-grid">
+            <div class="feature">
+              <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+              <h3>Multi-week intervals</h3>
+              <code>every 2 weeks on monday at 9:00</code>
+            </div>
+            <div class="feature">
+              <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <h3>Ordinal weekdays</h3>
+              <code>every month on the first monday at 10:00</code>
+            </div>
+            <div class="feature">
+              <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              <h3>Yearly schedules</h3>
+              <code>every year on dec 25 at 00:00</code>
+            </div>
+            <div class="feature">
+              <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              <h3>Exception dates</h3>
+              <code>every weekday at 9:00 except dec 25, jan 1</code>
+            </div>
+            <div class="feature">
+              <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M16 6l-4-3-4 3"/><rect x="4" y="16" width="16" height="4" rx="1"/></svg>
+              <h3>End dates</h3>
+              <code>every day at 09:00 until 2026-12-31</code>
+            </div>
+            <div class="feature">
+              <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>
+              <h3>Timezone &amp; DST aware</h3>
+              <code>every day at 9:00 in America/New_York</code>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── Install ─── -->
+      <section class="section">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Install</span>
+            <h2>Drop it into your stack.</h2>
+            <p>One conformance spec, hand-written parsers, identical DST semantics across every language.</p>
+          </div>
+          <div class="install-card">
+            <div class="install-tabs" id="install-tabs">
+              <button class="install-tab active" data-cmd="cargo add hron">Rust</button>
+              <button class="install-tab" data-cmd="npm install hron-ts">TypeScript</button>
+              <button class="install-tab" data-cmd="pip install hron">Python</button>
+              <button class="install-tab" data-cmd="go get github.com/prasrvenkat/hron/go">Go</button>
+              <button class="install-tab" data-cmd="dart pub add hron">Dart</button>
+              <button class="install-tab" data-cmd="io.hron:hron">Java</button>
+              <button class="install-tab" data-cmd="dotnet add package Hron">C#</button>
+              <button class="install-tab" data-cmd="gem install hron">Ruby</button>
+              <button class="install-tab" data-cmd="npm install hron-wasm">WASM</button>
+              <button class="install-tab" data-cmd="cargo install hron-cli">CLI</button>
+            </div>
+            <div class="install-body">
+              <div class="install-cmd"><span class="prompt">$</span><span id="install-cmd-text">cargo add hron</span></div>
+              <button class="copy-btn" id="copy-btn" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── CTA ─── -->
+      <section class="section cta-band">
+        <div class="wrap">
+          <h2>Stop decoding asterisks.</h2>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="/playground/">Try the playground →</a>
+            <a class="btn btn-ghost" href="https://github.com/prasrvenkat/hron">Read the docs</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ─── Footer ─── -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <a class="hron-logo" href="/" style="font-size:0.9rem">
+          <svg class="hron-mark" width="20" height="20" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.2" />
+            <path d="M14 14 V4.6" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+          </svg>
+          <span class="wordmark" style="font-size:1rem">hron</span>
+        </a>
+        <div class="footer-links">
+          <a href="https://github.com/prasrvenkat/hron">GitHub</a>
+          <a href="https://crates.io/crates/hron">crates.io</a>
+          <a href="https://www.npmjs.com/package/hron-ts">npm</a>
+          <a href="https://pypi.org/project/hron/">PyPI</a>
+          <a href="https://pkg.go.dev/github.com/prasrvenkat/hron/go">pkg.go.dev</a>
+          <a href="https://pub.dev/packages/hron">pub.dev</a>
+          <a href="https://central.sonatype.com/artifact/io.hron/hron">Maven Central</a>
+        </div>
+        <div class="footer-meta">MIT License</div>
       </div>
-      <div class="footer-license">MIT License</div>
     </footer>
 
     <script type="module" src="/src/landing.ts"></script>

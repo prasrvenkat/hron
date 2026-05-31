@@ -1,0 +1,206 @@
+/* ============================================================
+   hron — playground styles
+   ============================================================ */
+
+.pg main { flex: 1; display: flex; }
+.pg-wrap { width: 100%; padding-top: 2.6rem; padding-bottom: 4rem; max-width: 920px; }
+
+.pg-intro { margin-bottom: 1.6rem; }
+.pg-intro h1 {
+  font-family: var(--font-display);
+  font-size: 2rem; font-weight: 700; letter-spacing: -0.04em;
+  margin-bottom: 0.35rem;
+}
+.pg-intro p { color: var(--ink-soft); font-size: 1.02rem; max-width: 52ch; }
+
+/* ── Input card ── */
+.pg-input-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.pg-input-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.pg-tz { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); }
+.pg-tz b { color: var(--ink-soft); font-weight: 600; }
+
+.pg-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1.25rem 1.25rem;
+  background: var(--paper);
+}
+.pg-field .pg-mark { flex: none; margin-top: 0.45rem; color: var(--ink-soft); }
+#expression {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 1.32rem;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  resize: none;
+  outline: none;
+  min-height: 2.9rem;
+  overflow: hidden;
+}
+#expression::placeholder { color: var(--faint); }
+
+.pg-error {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid var(--line);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.pg-examples {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem;
+  padding: 0.85rem 1.1rem;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.pg-examples .lbl { font-size: 0.78rem; color: var(--muted); margin-right: 0.2rem; }
+.chip {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Results ── */
+.pg-results {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr;
+  gap: 1.1rem;
+  margin-top: 1.6rem;
+  align-items: start;
+}
+.pg-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  overflow: hidden;
+}
+.pg-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.85rem 1.15rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.pg-card-head .ttl {
+  font-family: var(--font-mono);
+  font-size: 0.72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.13em;
+  color: var(--muted);
+}
+.copy-mini {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-family: var(--font-sans); font-size: 0.74rem; font-weight: 500;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--line); border-radius: var(--r-xs);
+  background: var(--paper); color: var(--muted);
+  cursor: pointer; transition: all var(--transition);
+}
+.copy-mini:hover { color: var(--ink); border-color: var(--accent); }
+
+/* cron card */
+.pg-cron-body { padding: 1.4rem 1.15rem; }
+.cron-value {
+  font-family: var(--font-mono);
+  font-size: 1.18rem; font-weight: 600;
+  color: var(--cron);
+  word-break: break-all;
+  display: block;
+  margin-bottom: 0.6rem;
+}
+.cron-fields {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.3rem;
+  margin-top: 0.9rem;
+}
+.cron-field {
+  text-align: center;
+  padding: 0.4rem 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+}
+.cron-field .v { font-family: var(--font-mono); font-size: 0.9rem; color: var(--ink); font-weight: 600; word-break: break-all; }
+.cron-field .k { font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-top: 0.2rem; }
+.cron-unavailable {
+  font-family: var(--font-sans);
+  font-size: 0.92rem; color: var(--ink-soft); line-height: 1.5;
+}
+.cron-unavailable .why { display:block; color: var(--muted); font-size: 0.82rem; margin-top: 0.4rem; }
+.cron-unavailable code {
+  font-family: var(--font-mono); font-size: 0.86em;
+  color: var(--accent-ink);
+}
+
+/* occurrences */
+.pg-occ-body { padding: 0.4rem 0; }
+#occurrences { list-style: none; }
+.occ {
+  display: flex; align-items: center; gap: 0.85rem;
+  padding: 0.7rem 1.15rem;
+  border-bottom: 1px solid var(--line);
+}
+.occ:last-of-type { border-bottom: none; }
+.occ-wd {
+  flex: none;
+  width: 2.4rem; height: 2.4rem;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.occ-wd .d { font-family: var(--font-mono); font-size: 0.95rem; font-weight: 700; color: var(--ink); line-height: 1; }
+.occ-wd .w { font-size: 0.56rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-top: 0.12rem; }
+.occ-main { flex: 1; min-width: 0; }
+.occ-date { font-family: var(--font-mono); font-size: 0.92rem; color: var(--ink); }
+.occ-iso { font-family: var(--font-mono); font-size: 0.7rem; color: var(--faint); margin-top: 0.12rem; word-break: break-all; }
+.occ-rel { flex: none; font-size: 0.76rem; color: var(--muted); font-family: var(--font-sans); }
+.occ.first .occ-wd { background: var(--accent-soft); border-color: transparent; }
+.occ.first .occ-wd .d { color: var(--accent-ink); }
+.occ.first .occ-rel { color: var(--accent-ink); font-weight: 600; }
+
+.show-more-row { padding: 0.7rem 1.15rem; }
+.show-more-row button {
+  font-family: var(--font-sans); font-size: 0.8rem; font-weight: 500;
+  color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;
+}
+.show-more-row button:hover { text-decoration: underline; }
+
+.pg-empty {
+  margin-top: 1.6rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.95rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+}
+
+@media (max-width: 720px) {
+  .pg-results { grid-template-columns: 1fr; }
+  #expression { font-size: 1.12rem; }
+  .cron-fields { grid-template-columns: repeat(5, 1fr); }
+}
