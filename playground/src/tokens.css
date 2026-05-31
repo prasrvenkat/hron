@@ -1,0 +1,103 @@
+/* ============================================================
+   hron — design tokens
+   A crisp, technical, editorial identity for a *language*.
+   Fonts (Space Grotesk + JetBrains Mono) are loaded via a
+   <link> in each page's <head> for non-blocking delivery.
+   ============================================================ */
+
+:root {
+  /* — Type — */
+  --font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* — Light palette (default) — */
+  --paper: #fcfcfd;          /* page bg */
+  --surface: #f4f5f7;        /* cards, wells */
+  --surface-2: #eceef2;      /* nested / hover */
+  --line: #e4e7ec;           /* hairlines */
+  --line-strong: #d3d8e0;
+
+  --ink: #14161b;            /* primary text */
+  --ink-soft: #444a55;       /* secondary text */
+  --muted: #767d8a;          /* tertiary / labels */
+  --faint: #9aa1ac;          /* placeholder / disabled */
+
+  --accent: #ec4327;         /* vermillion — the brand spark */
+  --accent-hover: #d6391f;
+  --accent-soft: #fdeae6;    /* accent tint bg */
+  --accent-ink: #b5331c;     /* accent text on light */
+
+  --cron: #0f9d58;           /* "machine" green for cron/valid */
+  --cron-soft: #e6f5ed;
+
+  /* — Geometry — */
+  --r-xs: 5px;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
+  --r-xl: 26px;
+
+  --shadow-sm: 0 1px 2px rgba(20, 22, 27, 0.04), 0 1px 1px rgba(20, 22, 27, 0.03);
+  --shadow: 0 4px 16px -4px rgba(20, 22, 27, 0.10), 0 2px 6px -2px rgba(20, 22, 27, 0.06);
+  --shadow-lg: 0 24px 60px -18px rgba(20, 22, 27, 0.22), 0 8px 24px -12px rgba(20, 22, 27, 0.12);
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --transition: 0.18s var(--ease);
+
+  --maxw: 1040px;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --paper: #0b0c0f;
+  --surface: #14161b;
+  --surface-2: #1c1f26;
+  --line: #24272f;
+  --line-strong: #313641;
+
+  --ink: #e9eaee;
+  --ink-soft: #aeb3bd;
+  --muted: #767d8a;
+  --faint: #585e69;
+
+  --accent: #ff5c3c;
+  --accent-hover: #ff7458;
+  --accent-soft: #2a1410;
+  --accent-ink: #ff8166;
+
+  --cron: #2bd07a;
+  --cron-soft: #0f231a;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 8px 28px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, 0.75);
+
+  color-scheme: dark;
+}
+
+/* Pre-JS system preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0b0c0f;
+    --surface: #14161b;
+    --surface-2: #1c1f26;
+    --line: #24272f;
+    --line-strong: #313641;
+    --ink: #e9eaee;
+    --ink-soft: #aeb3bd;
+    --muted: #767d8a;
+    --faint: #585e69;
+    --accent: #ff5c3c;
+    --accent-hover: #ff7458;
+    --accent-soft: #2a1410;
+    --accent-ink: #ff8166;
+    --cron: #2bd07a;
+    --cron-soft: #0f231a;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 8px 28px -8px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, 0.75);
+    color-scheme: dark;
+  }
+}

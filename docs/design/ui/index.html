@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en" class="ov">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>hron — design system</title>
+    <meta name="description" content="The hron design system reference: identity, palette, type, and the cron→hron transform. Internal — not deployed." />
+    <link rel="icon" href="assets/hron-favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link rel="stylesheet" href="styles/app.css" />
+    <link rel="stylesheet" href="styles/overview.css" />
+  </head>
+  <body>
+    <!-- ─── Header ─── -->
+    <header class="site-header">
+      <div class="header-left">
+        <a class="hron-logo" href="index.html" aria-label="hron home">
+          <svg class="hron-mark" width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.2" />
+            <path d="M14 14 V4.6" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+          </svg>
+          <span class="wordmark">hron</span>
+        </a>
+        <span class="version-pill">design system</span>
+      </div>
+      <nav class="header-nav">
+        <a class="nav-link" href="https://hron.io/">Landing</a>
+        <a class="nav-link" href="https://hron.io/playground/">Playground</a>
+        <a class="nav-link" href="https://github.com/prasrvenkat/hron">GitHub</a>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle dark mode">
+          <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <div class="wrap ov-wrap">
+        <!-- Intro / rationale -->
+        <section class="ov-hero">
+          <span class="eyebrow">Design system · reference</span>
+          <h1>hron, with a coat of paint.</h1>
+          <p>hron is a small, sharp idea: <b>schedules you can read.</b> It already does everything cron does and more — multi-week intervals, ordinals, yearly dates, timezones with DST. The engineering is done; this is the design it deserves.</p>
+          <p>The direction: <b>crisp, fast, quietly technical.</b> One ink, one spark of vermillion, a display face with edges (Space Grotesk) paired with a real code face (JetBrains Mono). The product <i>is</i> a language, so type and the literal cron→hron transform carry the page. Below: the new identity, the palette, and two live screens you can click into.</p>
+        </section>
+
+        <!-- ── Logo ── -->
+        <section class="ov-block">
+          <div class="blk-head">
+            <h2>The mark</h2>
+            <p>A monoline clock — frozen at <b>9:00</b>, the canonical "every weekday at 9:00". The vertical hand is the vermillion spark; the rest is ink. No tick marks, no toy hands. Reads cleanly from favicon to billboard. Exportable SVGs ship in <code>/assets</code>.</p>
+          </div>
+
+          <div class="logo-stage">
+            <div class="logo-panel on-light">
+              <span class="panel-tag">primary · light</span>
+              <span class="lockup-big">
+                <svg width="64" height="64" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+                  <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.1" />
+                  <path d="M14 14 V4.6" stroke="#ec4327" stroke-width="2.1" stroke-linecap="round" />
+                  <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />
+                  <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+                </svg>
+                <span class="word">hron</span>
+              </span>
+            </div>
+            <div class="logo-panel on-dark">
+              <span class="panel-tag">primary · dark</span>
+              <span class="lockup-big">
+                <svg width="64" height="64" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+                  <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.1" />
+                  <path d="M14 14 V4.6" stroke="#ff5c3c" stroke-width="2.1" stroke-linecap="round" />
+                  <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />
+                  <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+                </svg>
+                <span class="word">hron</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="logo-panel on-light" style="min-height:150px">
+            <span class="panel-tag">app icon · favicon</span>
+            <div class="mark-grid">
+              <div class="app-mark ink" style="width:84px;height:84px">
+                <svg width="48" height="48" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="11.3" stroke="#fff" stroke-width="2.1"/><path d="M14 14 V4.6" stroke="#ff5c3c" stroke-width="2.1" stroke-linecap="round"/><path d="M14 14 H6.4" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/><circle cx="14" cy="14" r="1.7" fill="#fff"/></svg>
+              </div>
+              <div class="app-mark accent" style="width:64px;height:64px">
+                <svg width="38" height="38" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="11.3" stroke="#fff" stroke-width="2.2"/><path d="M14 14 V4.6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><path d="M14 14 H6.4" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><circle cx="14" cy="14" r="1.8" fill="#fff"/></svg>
+              </div>
+              <div class="app-mark paper" style="width:48px;height:48px">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="11.3" stroke="#14161b" stroke-width="2.3"/><path d="M14 14 V4.6" stroke="#ec4327" stroke-width="2.3" stroke-linecap="round"/><path d="M14 14 H6.4" stroke="#14161b" stroke-width="2.3" stroke-linecap="round"/><circle cx="14" cy="14" r="1.9" fill="#14161b"/></svg>
+              </div>
+              <div class="app-mark paper" style="width:32px;height:32px">
+                <svg width="19" height="19" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="11.3" stroke="#14161b" stroke-width="2.6"/><path d="M14 14 V4.6" stroke="#ec4327" stroke-width="2.6" stroke-linecap="round"/><path d="M14 14 H6.4" stroke="#14161b" stroke-width="2.6" stroke-linecap="round"/></svg>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Palette ── -->
+        <section class="ov-block">
+          <div class="blk-head">
+            <h2>Palette</h2>
+            <p>Mostly ink and paper. Vermillion is the only loud color — it marks the "human" half of every transform. A muted green stands in for the "machine" (cron) side.</p>
+          </div>
+          <div class="swatches">
+            <div class="swatch"><div class="chip-color" style="background:#14161b"></div><div class="info"><div class="nm">Ink</div><div class="hex">#14161B</div></div></div>
+            <div class="swatch"><div class="chip-color" style="background:#fcfcfd;border-bottom:1px solid var(--line)"></div><div class="info"><div class="nm">Paper</div><div class="hex">#FCFCFD</div></div></div>
+            <div class="swatch"><div class="chip-color" style="background:#ec4327"></div><div class="info"><div class="nm">Vermillion</div><div class="hex">#EC4327</div></div></div>
+            <div class="swatch"><div class="chip-color" style="background:#0f9d58"></div><div class="info"><div class="nm">Cron green</div><div class="hex">#0F9D58</div></div></div>
+            <div class="swatch"><div class="chip-color" style="background:#767d8a"></div><div class="info"><div class="nm">Muted</div><div class="hex">#767D8A</div></div></div>
+          </div>
+        </section>
+
+        <!-- ── Type ── -->
+        <section class="ov-block">
+          <div class="blk-head">
+            <h2>Type</h2>
+            <p>Two faces, clear jobs. Space Grotesk has just enough character for headlines; JetBrains Mono renders every expression and timestamp.</p>
+          </div>
+          <div class="type-spec">
+            <div class="type-row">
+              <div class="face">Space Grotesk · display &amp; UI</div>
+              <div class="sample-display">Schedules in plain English.</div>
+              <div class="glyphs">The quick brown fox · 0123456789 · weekday weekend yearly</div>
+            </div>
+            <div class="type-row">
+              <div class="face">JetBrains Mono · code &amp; time</div>
+              <div class="sample-mono">every weekday at 9:00 except dec 25</div>
+              <div class="glyphs mono" style="font-family:var(--font-mono);font-size:0.95rem;color:var(--cron)">0 9 * * 1-5 → 2026-06-01T09:00:00+00:00</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Before / after ── -->
+        <section class="ov-block">
+          <div class="blk-head">
+            <h2>What changed</h2>
+            <p>Same content, sharper delivery. Nothing here invents features — it dramatizes what's already true about hron.</p>
+          </div>
+          <div class="before-after">
+            <div class="ba-col before">
+              <div class="ba-tag">Before</div>
+              <ul>
+                <li>Generic dev-tool template, blue accent</li>
+                <li>System fonts, flat comparison table</li>
+                <li>Clip-art clock logo with toy-red hands</li>
+                <li>Playground: bare textarea, plain list</li>
+              </ul>
+            </div>
+            <div class="ba-col after">
+              <div class="ba-tag">After</div>
+              <ul>
+                <li>Hero leads with the live cron→hron transform</li>
+                <li>Space Grotesk + JetBrains Mono, vermillion spark</li>
+                <li>Single monoline 9:00 clock — scales to a favicon</li>
+                <li>Playground: cron field breakdown + dated, relative occurrences</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Live screens ── -->
+        <section class="ov-block">
+          <div class="blk-head">
+            <h2>See it live</h2>
+            <p>Both screens are real and interactive — type in the playground, toggle the theme, click through.</p>
+          </div>
+          <div class="live-grid">
+            <a class="live-card" href="https://hron.io/">
+              <div class="preview"><div class="mini">
+                <div class="mini-line w1"></div>
+                <div class="mini-line w2"></div>
+                <div class="mini-line w3"></div>
+                <div class="mini-card"><div class="mini-mono" style="color:var(--muted)">0 9 * * 1-5</div><div class="mini-mono" style="margin-top:4px">every <b>weekday</b> at 9:00</div></div>
+                <span class="mini-pill"></span>
+              </div></div>
+              <div class="body"><div><div class="t">Landing page</div><div class="d">Hero, cron vs hron, features, install</div></div><span class="arrow">→</span></div>
+            </a>
+            <a class="live-card" href="https://hron.io/playground/">
+              <div class="preview"><div class="mini">
+                <div class="mini-card" style="margin-top:0"><div class="mini-mono" style="font-size:13px;color:var(--ink)">every weekday at 9:00<span style="color:var(--accent)">|</span></div></div>
+                <div class="mini-card"><div class="mini-mono" style="color:var(--cron)">0 9 * * 1-5</div></div>
+                <div class="mini-card"><div class="mini-mono">Mon · Jun 1 · 09:00</div><div class="mini-mono" style="margin-top:3px">Tue · Jun 2 · 09:00</div></div>
+              </div></div>
+              <div class="body"><div><div class="t">Playground</div><div class="d">Live parse · cron breakdown · next runs</div></div><span class="arrow">→</span></div>
+            </a>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ─── Footer ─── -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <a class="hron-logo" href="index.html">
+          <svg class="hron-mark" width="20" height="20" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <circle cx="14" cy="14" r="11.3" stroke="currentColor" stroke-width="2.2" />
+            <path d="M14 14 V4.6" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M14 14 H6.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            <circle cx="14" cy="14" r="1.7" fill="currentColor" />
+          </svg>
+          <span class="wordmark" style="font-size:1rem">hron</span>
+        </a>
+        <div class="footer-links">
+          <a href="https://hron.io/">Landing</a>
+          <a href="https://hron.io/playground/">Playground</a>
+          <a href="https://github.com/prasrvenkat/hron">GitHub</a>
+        </div>
+        <div class="footer-meta">hron design system · internal reference (not deployed)</div>
+      </div>
+    </footer>
+
+    <script src="js/theme.js"></script>
+  </body>
+</html>
