@@ -6,62 +6,54 @@ namespace Hron.Eval;
 /// Evaluates schedule expressions to compute occurrences.
 /// </summary>
 /// <remarks>
-/// A wall-clock time that falls in a DST gap shifts forward by the length of the gap (02:30
-/// becomes 03:30). A time that occurs twice at fall-back resolves to the first occurrence.
+/// Each occurrence has a scheduled date, the date whose times it fires at, and every clause
+/// (day filter, during, except, until) applies to that date. A fixed time that falls in a DST gap
+/// shifts forward by the length of the gap, possibly onto the next date, and keeps its scheduled
+/// date; an interval slot in a gap is skipped. A time that occurs twice at fall-back resolves to
+/// the first occurrence only. Searches cover one full repeat of the calendar and the schedule's
+/// interval, within years 1 to 9999.
 /// </remarks>
 public static class Evaluator
 {
-    private const int MaxIterations = 1000;
+    private const int GregorianCycleYears = 400;
+    private const int GregorianCycleMonths = GregorianCycleYears * 12;
+    private const int GregorianCycleDays = 146097;
+    private const int GregorianCycleWeeks = GregorianCycleDays / 7;
 
     private static readonly DateOnly EpochDate = new(1970, 1, 1);
 
     private static readonly DateOnly EpochMonday = new(1970, 1, 5);
+
+    private readonly record struct Occurrence(DateTimeOffset At, DateOnly ScheduledDate);
 
     /// <summary>
     /// Computes the next occurrence strictly after the given time.
     /// </summary>
     public static DateTimeOffset? NextFrom(ScheduleData data, DateTimeOffset now, TimeZoneInfo location)
     {
-        var handlesDuringInternally = data.Expr is MonthRepeat mr &&
-            mr.Target.Kind == MonthTargetKind.NearestWeekday &&
-            mr.Target.NearestWeekdayDirection.HasValue;
-
-        for (var i = 0; i < MaxIterations; i++)
+        var today = LocalDate(now, location);
+        var limit = SearchLimit(data.Expr, today, 1);
+        if (data.Until is not null)
         {
-            var candidate = NextCandidate(data.Expr, now, location, data.Anchor, data.During);
-            if (candidate is null)
-            {
-                return null;
-            }
-
-            var t = candidate.Value;
-
-            if (IsExcepted(DateOnly.FromDateTime(t.DateTime), data.Except))
-            {
-                now = t;
-                continue;
-            }
-
-            if (data.Until is not null)
-            {
-                var untilDate = ResolveUntil(data.Until, DateOnly.FromDateTime(now.DateTime));
-                if (DateOnly.FromDateTime(t.DateTime) > untilDate)
-                {
-                    return null;
-                }
-            }
-
-            if (!handlesDuringInternally && !MatchesDuring(DateOnly.FromDateTime(t.DateTime), data.During))
-            {
-                var nextMonth = NextDuringMonth(DateOnly.FromDateTime(t.DateTime), data.During);
-                now = AtTimeOnDate(nextMonth, new TimeOfDay(0, 0), location).AddTicks(-1);
-                continue;
-            }
-
-            return t;
+            limit = Min(limit, ResolveUntil(data.Until, today));
         }
 
-        return null;
+        // A fixed time shifted out of a gap at midnight fires on the day after its scheduled date;
+        // interval slots in a gap are skipped instead.
+        var from = data.Expr is IntervalRepeat ? today : AddDaysWithin(today, -1);
+        Occurrence? best = null;
+        foreach (var date in ScheduledDates(data, from, limit, 1))
+        {
+            if (best is { } found && date.DayNumber > found.ScheduledDate.DayNumber + 1)
+            {
+                break;
+            }
+            if (FirstOnDateAfter(data.Expr, date, location, now) is { } t && (best is null || t < best.Value.At))
+            {
+                best = new Occurrence(t, date);
+            }
+        }
+        return best?.At;
     }
 
     /// <summary>
@@ -69,21 +61,7 @@ public static class Evaluator
     /// </summary>
     public static IReadOnlyList<DateTimeOffset> NextNFrom(ScheduleData data, DateTimeOffset now, int n, TimeZoneInfo location)
     {
-        var results = new List<DateTimeOffset>(n);
-        var current = now;
-
-        for (var i = 0; i < n && i < MaxIterations; i++)
-        {
-            var next = NextFrom(data, current, location);
-            if (next is null)
-            {
-                break;
-            }
-            results.Add(next.Value);
-            current = next.Value;
-        }
-
-        return results;
+        return Occurrences(data, now, location).Take(n).ToList();
     }
 
     /// <summary>
@@ -92,15 +70,10 @@ public static class Evaluator
     public static IEnumerable<DateTimeOffset> Occurrences(ScheduleData data, DateTimeOffset from, TimeZoneInfo location)
     {
         var current = from;
-        while (true)
+        while (NextFrom(data, current, location) is { } next)
         {
-            var next = NextFrom(data, current, location);
-            if (next is null)
-            {
-                yield break;
-            }
-            yield return next.Value;
-            current = next.Value.AddMinutes(1);
+            yield return next;
+            current = next;
         }
     }
 
@@ -109,25 +82,52 @@ public static class Evaluator
     /// </summary>
     public static IEnumerable<DateTimeOffset> Between(ScheduleData data, DateTimeOffset from, DateTimeOffset to, TimeZoneInfo location)
     {
-        foreach (var dt in Occurrences(data, from, location))
-        {
-            if (dt > to)
-            {
-                yield break;
-            }
-            yield return dt;
-        }
+        return Occurrences(data, from, location).TakeWhile(dt => dt <= to);
     }
 
     /// <summary>
-    /// Checks if a datetime matches the schedule using structural matching.
+    /// Computes the most recent occurrence strictly before the given time.
+    /// </summary>
+    public static DateTimeOffset? PreviousFrom(ScheduleData data, DateTimeOffset now, TimeZoneInfo location)
+    {
+        var today = LocalDate(now, location);
+        var limit = SearchLimit(data.Expr, today, -1);
+        if (data.Anchor is not null)
+        {
+            limit = Max(limit, DateOnly.Parse(data.Anchor));
+        }
+        var from = data.Until is not null ? Min(today, ResolveUntil(data.Until, today)) : today;
+
+        Occurrence? best = null;
+        foreach (var date in ScheduledDates(data, from, limit, -1))
+        {
+            // A later time on the day before can shift past this date's own times.
+            if (best is { } found && date.DayNumber < found.ScheduledDate.DayNumber - 1)
+            {
+                break;
+            }
+            if (LastOnDateBefore(data.Expr, date, location, now) is { } t && (best is null || t > best.Value.At))
+            {
+                best = new Occurrence(t, date);
+            }
+        }
+        return best?.At;
+    }
+
+    /// <summary>
+    /// Checks if the minute containing a datetime is an occurrence of the schedule.
     /// </summary>
     public static bool Matches(ScheduleData data, DateTimeOffset dt, TimeZoneInfo location)
     {
-        var converted = TimeZoneInfo.ConvertTime(dt, location);
-        var date = DateOnly.FromDateTime(converted.DateTime);
+        var minute = TimeZoneInfo.ConvertTime(dt.AddTicks(-(dt.UtcTicks % TimeSpan.TicksPerMinute)), location);
+        var date = DateOnly.FromDateTime(minute.DateTime);
+        return IsScheduledAt(data, date, minute, location) ||
+            (date > DateOnly.MinValue && IsScheduledAt(data, date.AddDays(-1), minute, location));
+    }
 
-        if (!MatchesDuring(date, data.During))
+    private static bool IsScheduledAt(ScheduleData data, DateOnly date, DateTimeOffset minute, TimeZoneInfo location)
+    {
+        if (data.Expr is not MonthRepeat && !MatchesDuring(date, data.During))
         {
             return false;
         }
@@ -137,39 +137,81 @@ public static class Evaluator
             return false;
         }
 
-        if (data.Until is not null)
+        if (data.Until is not null && date > ResolveUntil(data.Until, date))
         {
-            var untilDate = ResolveUntil(data.Until, date);
-            if (date > untilDate)
-            {
-                return false;
-            }
+            return false;
         }
 
         return data.Expr switch
         {
-            DayRepeat dr => MatchesDayRepeat(dr, date, dt, location, data.Anchor),
-            IntervalRepeat ir => MatchesIntervalRepeat(ir, date, converted),
-            WeekRepeat wr => MatchesWeekRepeat(wr, date, dt, location, data.Anchor),
-            MonthRepeat mr => MatchesMonthRepeat(mr, date, dt, location, data.Anchor),
-            SingleDate sd => MatchesSingleDate(sd, date, dt, location),
-            YearRepeat yr => MatchesYearRepeat(yr, date, dt, location, data.Anchor),
+            DayRepeat dr => MatchesDayRepeat(dr, date, minute, location, data.Anchor),
+            IntervalRepeat ir => MatchesIntervalRepeat(ir, date, minute, location),
+            WeekRepeat wr => MatchesWeekRepeat(wr, date, minute, location, data.Anchor),
+            MonthRepeat mr => MatchesMonthRepeat(mr, date, minute, location, data.Anchor, data.During),
+            SingleDate sd => MatchesSingleDate(sd, date, minute, location),
+            YearRepeat yr => MatchesYearRepeat(yr, date, minute, location, data.Anchor),
             _ => false
         };
     }
 
-    private static bool TimeMatchesWithDst(DateOnly date, IReadOnlyList<TimeOfDay> times, TimeZoneInfo location, DateTimeOffset dt)
+    /// <summary>
+    /// Compares instants, so a time shifted out of a DST gap matches and the second pass of a
+    /// repeated time does not.
+    /// </summary>
+    private static bool AnyTimeResolvesTo(DateOnly date, IReadOnlyList<TimeOfDay> times, TimeZoneInfo location, DateTimeOffset dt)
     {
-        var converted = TimeZoneInfo.ConvertTime(dt, location);
-        foreach (var tod in times)
+        return times.Any(tod => AtTimeOnDate(date, tod, location) == dt);
+    }
+
+    private static bool MatchesDayRepeat(DayRepeat dr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
+    {
+        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
+        return MatchesDayFilter(date, dr.Days) &&
+            AnyTimeResolvesTo(date, dr.Times, location, dt) &&
+            (dr.Interval == 1 || IsAligned(date.DayNumber - anchorDate.DayNumber, dr.Interval, anchor));
+    }
+
+    private static bool MatchesIntervalRepeat(IntervalRepeat ir, DateOnly date, DateTimeOffset dt, TimeZoneInfo location)
+    {
+        if (ir.DayFilter is not null && !MatchesDayFilter(date, ir.DayFilter))
         {
-            if (converted.Hour == tod.Hour && converted.Minute == tod.Minute)
-            {
-                return true;
-            }
-            // A time in a DST gap fires at a shifted wall-clock time, so compare instants.
-            var resolved = AtTimeOnDate(date, tod, location);
-            if (resolved.UtcDateTime == dt.UtcDateTime)
+            return false;
+        }
+        var wallTime = new TimeOfDay(dt.Hour, dt.Minute);
+        var sinceFrom = wallTime.TotalMinutes - ir.FromTime.TotalMinutes;
+        return sinceFrom >= 0 &&
+            wallTime.TotalMinutes <= ir.ToTime.TotalMinutes &&
+            sinceFrom % IntervalStepMinutes(ir) == 0 &&
+            AtTimeOnDate(date, wallTime, location) == dt;
+    }
+
+    private static bool MatchesWeekRepeat(WeekRepeat wr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
+    {
+        var anchorMonday = MondayOf(anchor is not null ? DateOnly.Parse(anchor) : EpochMonday);
+        var weeks = FloorDiv(MondayOf(date).DayNumber - anchorMonday.DayNumber, 7);
+        return wr.WeekDays.Contains(WeekdayExtensions.FromDayOfWeek(date.DayOfWeek)) &&
+            AnyTimeResolvesTo(date, wr.Times, location, dt) &&
+            IsAligned(weeks, wr.Interval, anchor);
+    }
+
+    /// <summary>
+    /// A directional nearest weekday can land in the month before or after its target month, and
+    /// interval alignment and <c>during</c> apply to the target month.
+    /// </summary>
+    private static bool MatchesMonthRepeat(MonthRepeat mr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName> during)
+    {
+        if (!AnyTimeResolvesTo(date, mr.Times, location, dt))
+        {
+            return false;
+        }
+        var anchorMonth = MonthIndex(anchor is not null ? DateOnly.Parse(anchor) : EpochDate);
+        var landingMonth = MonthIndex(date);
+        for (var month = landingMonth - 1; month <= landingMonth + 1; month++)
+        {
+            if (FirstOfMonth(month) is { } first &&
+                (mr.Interval == 1 || IsAligned(month - anchorMonth, mr.Interval, anchor)) &&
+                MatchesDuring(first, during) &&
+                GetTargetDaysInMonth(first.Year, first.Month, mr.Target).Contains(date))
             {
                 return true;
             }
@@ -177,106 +219,17 @@ public static class Evaluator
         return false;
     }
 
-    private static bool MatchesDayRepeat(DayRepeat dr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
+    /// <summary>
+    /// Offsets before the 1970 epoch align backwards (floor); nothing before a starting date aligns.
+    /// </summary>
+    private static bool IsAligned(long offset, int interval, string? anchor)
     {
-        if (!MatchesDayFilter(date, dr.Days))
-        {
-            return false;
-        }
-        if (!TimeMatchesWithDst(date, dr.Times, location, dt))
-        {
-            return false;
-        }
-        if (dr.Interval > 1)
-        {
-            var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-            var dayOffset = date.DayNumber - anchorDate.DayNumber;
-            return dayOffset >= 0 && dayOffset % dr.Interval == 0;
-        }
-        return true;
-    }
-
-    private static bool MatchesIntervalRepeat(IntervalRepeat ir, DateOnly date, DateTimeOffset converted)
-    {
-        if (ir.DayFilter is not null && !MatchesDayFilter(date, ir.DayFilter))
-        {
-            return false;
-        }
-        var fromMinutes = ir.FromTime.TotalMinutes;
-        var toMinutes = ir.ToTime.TotalMinutes;
-        var currentMinutes = converted.Hour * 60 + converted.Minute;
-        if (currentMinutes < fromMinutes || currentMinutes > toMinutes)
-        {
-            return false;
-        }
-        var diff = currentMinutes - fromMinutes;
-        var step = ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
-        return diff >= 0 && diff % step == 0;
-    }
-
-    private static bool MatchesWeekRepeat(WeekRepeat wr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
-    {
-        var wd = WeekdayExtensions.FromDayOfWeek(date.DayOfWeek);
-        if (!wr.WeekDays.Contains(wd))
-        {
-            return false;
-        }
-        if (!TimeMatchesWithDst(date, wr.Times, location, dt))
-        {
-            return false;
-        }
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochMonday;
-        var daysBetween = date.DayNumber - anchorDate.DayNumber;
-        var weeks = daysBetween / 7;
-        return weeks >= 0 && weeks % wr.Interval == 0;
-    }
-
-    private static bool MatchesMonthRepeat(MonthRepeat mr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
-    {
-        if (!TimeMatchesWithDst(date, mr.Times, location, dt))
-        {
-            return false;
-        }
-        if (mr.Interval > 1)
-        {
-            var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-            var monthOffset = (date.Year - anchorDate.Year) * 12 + (date.Month - anchorDate.Month);
-            if (monthOffset < 0 || monthOffset % mr.Interval != 0)
-            {
-                return false;
-            }
-        }
-        return MatchesMonthTarget(date, mr.Target);
-    }
-
-    private static bool MatchesMonthTarget(DateOnly date, MonthTarget target)
-    {
-        return target.Kind switch
-        {
-            MonthTargetKind.Days => target.ExpandDays().Contains(date.Day),
-            MonthTargetKind.LastDay => date == LastDayOfMonth(date.Year, date.Month),
-            MonthTargetKind.LastWeekday => date == LastWeekdayOfMonth(date.Year, date.Month),
-            MonthTargetKind.NearestWeekday =>
-                NearestWeekday(date.Year, date.Month, target.NearestWeekdayDay, target.NearestWeekdayDirection) is { } nwd && date == nwd,
-            MonthTargetKind.OrdinalWeekday =>
-                MatchesOrdinalWeekday(date, target),
-            _ => false
-        };
-    }
-
-    private static bool MatchesOrdinalWeekday(DateOnly date, MonthTarget target)
-    {
-        if (target.OrdinalValue == OrdinalPosition.Last)
-        {
-            return date == LastWeekdayInMonth(date.Year, date.Month, target.WeekdayValue!.Value);
-        }
-        var targetDate = NthWeekdayOfMonth(date.Year, date.Month, target.WeekdayValue!.Value, target.OrdinalValue!.Value);
-        return targetDate.HasValue && date == targetDate.Value;
+        return FloorMod(offset, interval) == 0 && (anchor is null || offset >= 0);
     }
 
     private static bool MatchesSingleDate(SingleDate sd, DateOnly date, DateTimeOffset dt, TimeZoneInfo location)
     {
-        if (!TimeMatchesWithDst(date, sd.Times, location, dt))
+        if (!AnyTimeResolvesTo(date, sd.Times, location, dt))
         {
             return false;
         }
@@ -290,611 +243,235 @@ public static class Evaluator
 
     private static bool MatchesYearRepeat(YearRepeat yr, DateOnly date, DateTimeOffset dt, TimeZoneInfo location, string? anchor)
     {
-        if (!TimeMatchesWithDst(date, yr.Times, location, dt))
-        {
-            return false;
-        }
-        if (yr.Interval > 1)
-        {
-            var anchorYear = anchor is not null ? DateOnly.Parse(anchor).Year : EpochDate.Year;
-            var yearOffset = date.Year - anchorYear;
-            if (yearOffset < 0 || yearOffset % yr.Interval != 0)
-            {
-                return false;
-            }
-        }
-        return MatchesYearTarget(date, yr.Target);
-    }
-
-    private static bool MatchesYearTarget(DateOnly date, YearTarget target)
-    {
-        return target.Kind switch
-        {
-            YearTargetKind.Date => date.Month == target.Month.Number() && date.Day == target.Day,
-            YearTargetKind.OrdinalWeekday => MatchesYearOrdinalWeekday(date, target),
-            YearTargetKind.DayOfMonth => date.Month == target.Month.Number() && date.Day == target.Day,
-            YearTargetKind.LastWeekday => date.Month == target.Month.Number() && date == LastWeekdayOfMonth(date.Year, date.Month),
-            _ => false
-        };
-    }
-
-    private static bool MatchesYearOrdinalWeekday(DateOnly date, YearTarget target)
-    {
-        if (date.Month != target.Month.Number())
-        {
-            return false;
-        }
-        if (target.Ordinal == OrdinalPosition.Last)
-        {
-            return date == LastWeekdayInMonth(date.Year, date.Month, target.WeekdayValue!.Value);
-        }
-        var targetDate = NthWeekdayOfMonth(date.Year, date.Month, target.WeekdayValue!.Value, target.Ordinal!.Value);
-        return targetDate.HasValue && date == targetDate.Value;
+        var anchorYear = anchor is not null ? DateOnly.Parse(anchor).Year : EpochDate.Year;
+        return AnyTimeResolvesTo(date, yr.Times, location, dt) &&
+            (yr.Interval == 1 || IsAligned(date.Year - anchorYear, yr.Interval, anchor)) &&
+            GetYearTargetDay(date.Year, yr.Target) == date;
     }
 
     /// <summary>
-    /// Computes the most recent occurrence strictly before the given time.
+    /// The last date to search, <paramref name="direction"/> 1 forward or -1 back. The Gregorian
+    /// calendar repeats every 400 years, so a schedule with an interval of n days, weeks, months
+    /// or years repeats after lcm(400 years, n of those units), always a whole number of years.
+    /// An ISO date is searched for wherever it is.
     /// </summary>
-    public static DateTimeOffset? PreviousFrom(ScheduleData data, DateTimeOffset now, TimeZoneInfo location)
+    private static DateOnly SearchLimit(IScheduleExpr expr, DateOnly from, int direction)
     {
-        DateOnly? anchorDate = data.Anchor is not null ? DateOnly.Parse(data.Anchor) : null;
-
-        var searchFrom = now;
-        if (data.Until is not null)
+        var years = expr switch
         {
-            var untilDate = ResolveUntil(data.Until, DateOnly.FromDateTime(now.DateTime));
-            if (DateOnly.FromDateTime(now.DateTime) > untilDate)
-            {
-                searchFrom = AtTimeOnDate(untilDate.AddDays(1), new TimeOfDay(0, 0), location);
-            }
-        }
-
-        for (var i = 0; i < MaxIterations; i++)
+            DayRepeat dr => Lcm(GregorianCycleDays, dr.Interval) / GregorianCycleDays * GregorianCycleYears,
+            WeekRepeat wr => Lcm(GregorianCycleWeeks, wr.Interval) / GregorianCycleWeeks * GregorianCycleYears,
+            MonthRepeat mr => Lcm(GregorianCycleMonths, mr.Interval) / GregorianCycleMonths * GregorianCycleYears,
+            YearRepeat yr => Lcm(GregorianCycleYears, yr.Interval),
+            SingleDate { DateSpec.Kind: DateSpecKind.Iso } => DateOnly.MaxValue.Year,
+            _ => GregorianCycleYears
+        };
+        var year = from.Year + direction * years;
+        if (year > DateOnly.MaxValue.Year)
         {
-            var candidate = PrevCandidate(data.Expr, searchFrom, location, data.Anchor, data.During);
-            if (candidate is null)
-            {
-                return null;
-            }
-
-            var t = candidate.Value;
-
-            if (anchorDate.HasValue && DateOnly.FromDateTime(t.DateTime) < anchorDate.Value)
-            {
-                return null;
-            }
-
-            if (data.Until is not null)
-            {
-                var untilDate = ResolveUntil(data.Until, DateOnly.FromDateTime(now.DateTime));
-                if (DateOnly.FromDateTime(t.DateTime) > untilDate)
-                {
-                    searchFrom = t;
-                    continue;
-                }
-            }
-
-            if (IsExcepted(DateOnly.FromDateTime(t.DateTime), data.Except))
-            {
-                searchFrom = t;
-                continue;
-            }
-
-            if (!MatchesDuring(DateOnly.FromDateTime(t.DateTime), data.During))
-            {
-                var prevMonth = PrevDuringMonth(DateOnly.FromDateTime(t.DateTime), data.During);
-                if (prevMonth is null)
-                {
-                    return null;
-                }
-                searchFrom = AtTimeOnDate(new DateOnly(prevMonth.Value.Year, prevMonth.Value.Month, 1).AddMonths(1), new TimeOfDay(0, 0), location);
-                continue;
-            }
-
-            return t;
+            return DateOnly.MaxValue;
         }
-
-        return null;
+        if (year < DateOnly.MinValue.Year)
+        {
+            return DateOnly.MinValue;
+        }
+        return from.AddYears((int)(year - from.Year));
     }
 
-    private static DateTimeOffset? NextCandidate(IScheduleExpr expr, DateTimeOffset now, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName>? during = null)
+    /// <summary>
+    /// The dates the schedule fires on, from <paramref name="from"/> to <paramref name="limit"/>
+    /// inclusive in the given direction, with during and except applied.
+    /// </summary>
+    private static IEnumerable<DateOnly> ScheduledDates(ScheduleData data, DateOnly from, DateOnly limit, int direction)
+    {
+        var candidates = data.Expr switch
+        {
+            DayRepeat dr => DayRepeatDates(dr, data.Anchor, from, limit, direction),
+            IntervalRepeat ir => DayRepeatDates(new DayRepeat(1, ir.DayFilter ?? DayFilter.Every(), []), null, from, limit, direction),
+            WeekRepeat wr => WeekRepeatDates(wr, data.Anchor, from, limit, direction),
+            MonthRepeat mr => MonthRepeatDates(mr, data.Anchor, data.During, from, limit, direction),
+            SingleDate sd => SingleDateDates(sd, from, limit, direction),
+            YearRepeat yr => YearRepeatDates(yr, data.Anchor, from, limit, direction),
+            _ => []
+        };
+        return candidates
+            .SkipWhile(d => direction * d.CompareTo(from) < 0)
+            .TakeWhile(d => direction * d.CompareTo(limit) <= 0)
+            .Where(d => (data.Expr is MonthRepeat || MatchesDuring(d, data.During)) && !IsExcepted(d, data.Except));
+    }
+
+    private static DateTimeOffset? FirstOnDateAfter(IScheduleExpr expr, DateOnly date, TimeZoneInfo location, DateTimeOffset now)
+    {
+        if (expr is IntervalRepeat ir)
+        {
+            var earliest = WallMinuteOn(date, now, location);
+            return IntervalSlots(ir)
+                .Where(slot => slot.TotalMinutes >= earliest)
+                .Select(slot => ExistingTimeOnDate(date, slot, location))
+                .FirstOrDefault(t => t > now);
+        }
+        return TimesOf(expr).Select(tod => AtTimeOnDate(date, tod, location)).Where(t => t > now).Min();
+    }
+
+    private static DateTimeOffset? LastOnDateBefore(IScheduleExpr expr, DateOnly date, TimeZoneInfo location, DateTimeOffset now)
+    {
+        if (expr is IntervalRepeat ir)
+        {
+            var latest = WallMinuteOn(date, now, location) + (HasTransition(date, location) ? OverlapMarginMinutes : 0);
+            return IntervalSlots(ir)
+                .Reverse()
+                .Where(slot => slot.TotalMinutes <= latest)
+                .Select(slot => ExistingTimeOnDate(date, slot, location))
+                .FirstOrDefault(t => t < now);
+        }
+        return TimesOf(expr).Select(tod => AtTimeOnDate(date, tod, location)).Where(t => t < now).Max();
+    }
+
+    private static IReadOnlyList<TimeOfDay> TimesOf(IScheduleExpr expr)
     {
         return expr switch
         {
-            DayRepeat dr => NextDayRepeat(dr, now, location, anchor),
-            IntervalRepeat ir => NextIntervalRepeat(ir, now, location),
-            WeekRepeat wr => NextWeekRepeat(wr, now, location, anchor),
-            MonthRepeat mr => NextMonthRepeat(mr, now, location, anchor, during),
-            SingleDate sd => NextSingleDate(sd, now, location),
-            YearRepeat yr => NextYearRepeat(yr, now, location, anchor),
-            _ => null
+            DayRepeat dr => dr.Times,
+            WeekRepeat wr => wr.Times,
+            MonthRepeat mr => mr.Times,
+            SingleDate sd => sd.Times,
+            YearRepeat yr => yr.Times,
+            _ => []
         };
     }
 
-    private static DateTimeOffset? PrevCandidate(IScheduleExpr expr, DateTimeOffset now, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName>? during = null)
+    private static IEnumerable<DateOnly> DayRepeatDates(DayRepeat dr, string? anchor, DateOnly from, DateOnly limit, int direction)
     {
-        return expr switch
+        var anchorDay = (anchor is not null ? DateOnly.Parse(anchor) : EpochDate).DayNumber;
+        var first = from.DayNumber + direction * FloorMod(direction * (anchorDay - from.DayNumber), dr.Interval);
+
+        for (var day = first; direction * (day - limit.DayNumber) <= 0; day += direction * dr.Interval)
         {
-            DayRepeat dr => PrevDayRepeat(dr, now, location, anchor),
-            IntervalRepeat ir => PrevIntervalRepeat(ir, now, location),
-            WeekRepeat wr => PrevWeekRepeat(wr, now, location, anchor),
-            MonthRepeat mr => PrevMonthRepeat(mr, now, location, anchor),
-            SingleDate sd => PrevSingleDate(sd, now, location),
-            YearRepeat yr => PrevYearRepeat(yr, now, location, anchor),
-            _ => null
-        };
+            var date = DateOnly.FromDayNumber((int)day);
+            if (MatchesDayFilter(date, dr.Days))
+            {
+                yield return date;
+            }
+        }
     }
 
-    private static DateTimeOffset? NextDayRepeat(DayRepeat dr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    private static IEnumerable<DateOnly> WeekRepeatDates(WeekRepeat wr, string? anchor, DateOnly from, DateOnly limit, int direction)
     {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var day = DateOnly.FromDateTime(now.DateTime);
-
-        for (var i = 0; i < MaxIterations; i++)
+        var anchorMonday = MondayOf(anchor is not null ? DateOnly.Parse(anchor) : EpochMonday).DayNumber;
+        var start = MondayOf(from).DayNumber;
+        if (direction > 0 && anchor is not null && start < anchorMonday)
         {
-            if (dr.Interval > 1)
-            {
-                var daysFromAnchor = day.DayNumber - anchorDate.DayNumber;
-                var mod = daysFromAnchor % dr.Interval;
-                if (mod < 0) mod += dr.Interval;
-                if (mod != 0)
-                {
-                    day = day.AddDays(dr.Interval - mod);
-                    continue;
-                }
-            }
-
-            if (MatchesDayFilter(day, dr.Days))
-            {
-                var time = EarliestFutureTime(day, dr.Times, location, now);
-                if (time.HasValue)
-                {
-                    return time;
-                }
-            }
-
-            day = day.AddDays(dr.Interval > 1 ? dr.Interval : 1);
+            start = anchorMonday;
         }
 
-        return null;
+        var offsets = wr.WeekDays.Select(w => w.Number() - 1).Order().ToList();
+        if (direction < 0)
+        {
+            offsets.Reverse();
+        }
+        var step = 7L * wr.Interval;
+        var first = start + direction * FloorMod(direction * (anchorMonday - start), step);
+
+        for (var monday = first; direction * (monday - limit.DayNumber) <= 7; monday += direction * step)
+        {
+            foreach (var offset in offsets)
+            {
+                var day = monday + offset;
+                if (day >= DateOnly.MinValue.DayNumber && day <= DateOnly.MaxValue.DayNumber)
+                {
+                    yield return DateOnly.FromDayNumber((int)day);
+                }
+            }
+        }
     }
 
-    private static DateTimeOffset? NextIntervalRepeat(IntervalRepeat ir, DateTimeOffset now, TimeZoneInfo location)
+    /// <summary>
+    /// Steps through target months, starting one month early (late when searching back) because
+    /// a directional nearest weekday can land in the adjacent month.
+    /// </summary>
+    private static IEnumerable<DateOnly> MonthRepeatDates(MonthRepeat mr, string? anchor, IReadOnlyList<MonthName> during, DateOnly from, DateOnly limit, int direction)
     {
-        var day = DateOnly.FromDateTime(now.DateTime);
+        var anchorMonth = MonthIndex(anchor is not null ? DateOnly.Parse(anchor) : EpochDate);
+        var start = MonthIndex(from) - direction;
+        var first = start + direction * FloorMod(direction * (anchorMonth - start), mr.Interval);
 
-        for (var i = 0; i < MaxIterations; i++)
+        for (var month = first; direction * (month - MonthIndex(limit)) <= 1; month += direction * mr.Interval)
         {
-            if (ir.DayFilter is not null && !MatchesDayFilter(day, ir.DayFilter))
+            if (FirstOfMonth(month) is not { } firstDay || !MatchesDuring(firstDay, during))
             {
-                day = day.AddDays(1);
                 continue;
             }
-
-            var fromMinutes = ir.FromTime.TotalMinutes;
-            var toMinutes = ir.ToTime.TotalMinutes;
-
-            var step = ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
-            for (var m = fromMinutes; m <= toMinutes; m += step)
+            var days = GetTargetDaysInMonth(firstDay.Year, firstDay.Month, mr.Target);
+            foreach (var day in direction > 0 ? days : days.Reverse())
             {
-                var hour = m / 60;
-                var minute = m % 60;
-                var t = AtTimeOnDate(day, new TimeOfDay(hour, minute), location);
-
-                if (t > now)
-                {
-                    return t;
-                }
+                yield return day;
             }
-
-            day = day.AddDays(1);
         }
-
-        return null;
     }
 
-    private static DateTimeOffset? NextWeekRepeat(WeekRepeat wr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    private static IEnumerable<DateOnly> YearRepeatDates(YearRepeat yr, string? anchor, DateOnly from, DateOnly limit, int direction)
     {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochMonday;
-        var anchorMonday = anchorDate.AddDays(-((int)anchorDate.DayOfWeek == 0 ? 6 : (int)anchorDate.DayOfWeek - 1));
+        var anchorYear = (anchor is not null ? DateOnly.Parse(anchor) : EpochDate).Year;
+        var first = from.Year + direction * FloorMod(direction * (anchorYear - from.Year), yr.Interval);
 
-        var day = DateOnly.FromDateTime(now.DateTime);
-        var currentMonday = day.AddDays(-((int)day.DayOfWeek == 0 ? 6 : (int)day.DayOfWeek - 1));
-
-        var sortedDays = wr.WeekDays.OrderBy(w => w.Number()).ToList();
-
-        for (var i = 0; i < 54; i++)
+        for (var year = first; direction * (year - limit.Year) <= 0; year += direction * yr.Interval)
         {
-            var daysBetween = currentMonday.DayNumber - anchorMonday.DayNumber;
-            var weeks = daysBetween / 7;
-
-            if (weeks < 0)
+            if (GetYearTargetDay((int)year, yr.Target) is { } day)
             {
-                currentMonday = anchorMonday;
-                continue;
+                yield return day;
             }
-
-            if (weeks % wr.Interval == 0)
-            {
-                foreach (var wd in sortedDays)
-                {
-                    var dayOffset = wd.Number() - 1; // Monday=1, so offset = 0 for Monday
-                    var targetDate = currentMonday.AddDays(dayOffset);
-                    var time = EarliestFutureTime(targetDate, wr.Times, location, now);
-                    if (time.HasValue)
-                    {
-                        return time;
-                    }
-                }
-            }
-
-            var remainder = weeks % wr.Interval;
-            var skipWeeks = wr.Interval;
-            if (remainder != 0)
-            {
-                skipWeeks = (int)(wr.Interval - remainder);
-            }
-            currentMonday = currentMonday.AddDays(skipWeeks * 7);
         }
-
-        return null;
     }
 
-    private static DateTimeOffset? NextMonthRepeat(MonthRepeat mr, DateTimeOffset now, TimeZoneInfo location, string? anchor, IReadOnlyList<MonthName>? during = null)
+    private static IEnumerable<DateOnly> SingleDateDates(SingleDate sd, DateOnly from, DateOnly limit, int direction)
     {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var day = DateOnly.FromDateTime(now.DateTime);
-
-        // For NearestWeekday with direction, we need to apply the during filter here
-        // because the result can cross month boundaries
-        var applyDuringFilter = during is not null && during.Count > 0 &&
-            mr.Target.Kind == MonthTargetKind.NearestWeekday &&
-            mr.Target.NearestWeekdayDirection.HasValue;
-
-        for (var i = 0; i < MaxIterations; i++)
+        if (sd.DateSpec.Kind == DateSpecKind.Iso)
         {
-            if (applyDuringFilter)
-            {
-                var currentMonth = day.Month;
-                if (!during!.Any(m => m.Number() == currentMonth))
-                {
-                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(1);
-                    continue;
-                }
-            }
-
-            if (mr.Interval > 1)
-            {
-                var monthsFromAnchor = (day.Year - anchorDate.Year) * 12 + (day.Month - anchorDate.Month);
-                var mod = monthsFromAnchor % mr.Interval;
-                if (mod < 0) mod += mr.Interval;
-                if (mod != 0)
-                {
-                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(mr.Interval - mod);
-                    continue;
-                }
-            }
-
-            var targetDays = GetTargetDaysInMonth(day.Year, day.Month, mr.Target);
-
-            var skipBasedOnDay = !applyDuringFilter;
-
-            foreach (var targetDay in targetDays)
-            {
-                if (skipBasedOnDay && targetDay < day) continue;
-
-                var time = EarliestFutureTime(targetDay, mr.Times, location, now);
-                if (time.HasValue)
-                {
-                    return time;
-                }
-            }
-
-            day = new DateOnly(day.Year, day.Month, 1).AddMonths(mr.Interval > 1 ? mr.Interval : 1);
+            yield return DateOnly.Parse(sd.DateSpec.Date!);
+            yield break;
         }
-
-        return null;
+        for (var year = from.Year; direction * (year - limit.Year) <= 0; year += direction)
+        {
+            if (TryCreateDate(year, sd.DateSpec.Month!.Value.Number(), sd.DateSpec.Day) is { } day)
+            {
+                yield return day;
+            }
+        }
     }
 
-    private static DateTimeOffset? NextSingleDate(SingleDate sd, DateTimeOffset now, TimeZoneInfo location)
+    private static IEnumerable<TimeOfDay> IntervalSlots(IntervalRepeat ir)
     {
-        var startYear = now.Year;
-
-        switch (sd.DateSpec.Kind)
+        for (var m = ir.FromTime.TotalMinutes; m <= ir.ToTime.TotalMinutes; m += IntervalStepMinutes(ir))
         {
-            case DateSpecKind.Iso:
-                var d = DateOnly.Parse(sd.DateSpec.Date!);
-                return EarliestFutureTime(d, sd.Times, location, now);
-
-            case DateSpecKind.Named:
-                for (var y = 0; y < 8; y++)
-                {
-                    var year = startYear + y;
-                    var date = TryCreateDate(year, sd.DateSpec.Month!.Value.Number(), sd.DateSpec.Day);
-                    if (date is null)
-                    {
-                        continue;
-                    }
-                    var time = EarliestFutureTime(date.Value, sd.Times, location, now);
-                    if (time.HasValue)
-                    {
-                        return time;
-                    }
-                }
-                return null;
-
-            default:
-                return null;
+            yield return new TimeOfDay(m / 60, m % 60);
         }
     }
 
-    private static DateTimeOffset? NextYearRepeat(YearRepeat yr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    // Slots are skipped by wall-clock minute before resolving them, which is the costly part.
+    // A slot with an earlier wall time is always an earlier instant (gap slots are skipped and
+    // overlap slots take their first pass), but on a transition day a later wall time can be an
+    // earlier instant, so looking back keeps a margin wider than any overlap (at most two hours,
+    // Antarctica/Troll).
+    private const int OverlapMarginMinutes = 180;
+
+    private static bool HasTransition(DateOnly date, TimeZoneInfo location)
     {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var year = now.Year;
-
-        for (var i = 0; i < MaxIterations; i++)
-        {
-            if (yr.Interval > 1)
-            {
-                var yearsFromAnchor = year - anchorDate.Year;
-                var mod = yearsFromAnchor % yr.Interval;
-                if (mod < 0) mod += yr.Interval;
-                if (mod != 0)
-                {
-                    year += yr.Interval - mod;
-                    continue;
-                }
-            }
-
-            var targetDay = GetYearTargetDay(year, yr.Target);
-
-            if (targetDay.HasValue)
-            {
-                var day = targetDay.Value;
-                if (day >= DateOnly.FromDateTime(now.DateTime))
-                {
-                    var time = EarliestFutureTime(day, yr.Times, location, now);
-                    if (time.HasValue)
-                    {
-                        return time;
-                    }
-                }
-            }
-
-            year += yr.Interval > 1 ? yr.Interval : 1;
-        }
-
-        return null;
+        var start = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        return location.GetUtcOffset(start.AddDays(-1)) != location.GetUtcOffset(start.AddDays(2));
     }
 
-    private static DateTimeOffset? PrevDayRepeat(DayRepeat dr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
+    private static int WallMinuteOn(DateOnly date, DateTimeOffset now, TimeZoneInfo location)
     {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var day = DateOnly.FromDateTime(now.DateTime);
-
-        for (var i = 0; i < MaxIterations; i++)
+        var local = TimeZoneInfo.ConvertTime(now, location).DateTime;
+        var nowDate = DateOnly.FromDateTime(local);
+        if (date == nowDate)
         {
-            if (dr.Interval > 1)
-            {
-                var daysFromAnchor = day.DayNumber - anchorDate.DayNumber;
-                var mod = daysFromAnchor % dr.Interval;
-                if (mod < 0) mod += dr.Interval;
-                if (mod != 0)
-                {
-                    day = day.AddDays(-mod);
-                    continue;
-                }
-            }
-
-            if (MatchesDayFilter(day, dr.Days))
-            {
-                var time = LatestPastTime(day, dr.Times, location, now);
-                if (time.HasValue)
-                {
-                    return time;
-                }
-            }
-
-            day = day.AddDays(-(dr.Interval > 1 ? dr.Interval : 1));
+            return local.Hour * 60 + local.Minute;
         }
-
-        return null;
+        return date < nowDate ? int.MaxValue / 2 : int.MinValue / 2;
     }
 
-    private static DateTimeOffset? PrevIntervalRepeat(IntervalRepeat ir, DateTimeOffset now, TimeZoneInfo location)
-    {
-        var day = DateOnly.FromDateTime(now.DateTime);
-
-        for (var i = 0; i < MaxIterations; i++)
-        {
-            if (ir.DayFilter is not null && !MatchesDayFilter(day, ir.DayFilter))
-            {
-                day = day.AddDays(-1);
-                continue;
-            }
-
-            var fromMinutes = ir.FromTime.TotalMinutes;
-            var toMinutes = ir.ToTime.TotalMinutes;
-            var step = ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
-
-            var windowTimes = new List<int>();
-            for (var m = fromMinutes; m <= toMinutes; m += step)
-            {
-                windowTimes.Add(m);
-            }
-
-            for (var j = windowTimes.Count - 1; j >= 0; j--)
-            {
-                var m = windowTimes[j];
-                var hour = m / 60;
-                var minute = m % 60;
-                var t = AtTimeOnDate(day, new TimeOfDay(hour, minute), location);
-
-                if (t < now)
-                {
-                    return t;
-                }
-            }
-
-            day = day.AddDays(-1);
-        }
-
-        return null;
-    }
-
-    private static DateTimeOffset? PrevWeekRepeat(WeekRepeat wr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
-    {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochMonday;
-        var anchorMonday = anchorDate.AddDays(-((int)anchorDate.DayOfWeek == 0 ? 6 : (int)anchorDate.DayOfWeek - 1));
-
-        var day = DateOnly.FromDateTime(now.DateTime);
-        var currentMonday = day.AddDays(-((int)day.DayOfWeek == 0 ? 6 : (int)day.DayOfWeek - 1));
-
-        var sortedDays = wr.WeekDays.OrderByDescending(w => w.Number()).ToList();
-
-        for (var i = 0; i < 54; i++)
-        {
-            var daysBetween = currentMonday.DayNumber - anchorMonday.DayNumber;
-            var weeks = daysBetween / 7;
-
-            if (weeks < 0)
-            {
-                return null;
-            }
-
-            if (weeks % wr.Interval == 0)
-            {
-                foreach (var wd in sortedDays)
-                {
-                    var dayOffset = wd.Number() - 1;
-                    var targetDate = currentMonday.AddDays(dayOffset);
-                    var time = LatestPastTime(targetDate, wr.Times, location, now);
-                    if (time.HasValue)
-                    {
-                        return time;
-                    }
-                }
-            }
-
-            var remainder = weeks % wr.Interval;
-            var skipWeeks = remainder == 0 ? wr.Interval : remainder;
-            currentMonday = currentMonday.AddDays(-(int)skipWeeks * 7);
-        }
-
-        return null;
-    }
-
-    private static DateTimeOffset? PrevMonthRepeat(MonthRepeat mr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
-    {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var day = DateOnly.FromDateTime(now.DateTime);
-
-        for (var i = 0; i < MaxIterations; i++)
-        {
-            if (mr.Interval > 1)
-            {
-                var monthsFromAnchor = (day.Year - anchorDate.Year) * 12 + (day.Month - anchorDate.Month);
-                var mod = monthsFromAnchor % mr.Interval;
-                if (mod < 0) mod += mr.Interval;
-                if (mod != 0)
-                {
-                    day = new DateOnly(day.Year, day.Month, 1).AddMonths(-mod);
-                    day = LastDayOfMonth(day.Year, day.Month);
-                    continue;
-                }
-            }
-
-            var targetDays = GetTargetDaysInMonth(day.Year, day.Month, mr.Target).OrderByDescending(d => d).ToList();
-
-            foreach (var targetDay in targetDays)
-            {
-                if (targetDay > day) continue;
-                var time = LatestPastTime(targetDay, mr.Times, location, now);
-                if (time.HasValue)
-                {
-                    return time;
-                }
-            }
-
-            day = new DateOnly(day.Year, day.Month, 1).AddMonths(-(mr.Interval > 1 ? mr.Interval : 1));
-            day = LastDayOfMonth(day.Year, day.Month);
-        }
-
-        return null;
-    }
-
-    private static DateTimeOffset? PrevSingleDate(SingleDate sd, DateTimeOffset now, TimeZoneInfo location)
-    {
-        var startYear = now.Year;
-
-        switch (sd.DateSpec.Kind)
-        {
-            case DateSpecKind.Iso:
-                var d = DateOnly.Parse(sd.DateSpec.Date!);
-                return LatestPastTime(d, sd.Times, location, now);
-
-            case DateSpecKind.Named:
-                for (var y = 0; y < 8; y++)
-                {
-                    var year = startYear - y;
-                    var date = TryCreateDate(year, sd.DateSpec.Month!.Value.Number(), sd.DateSpec.Day);
-                    if (date is null)
-                    {
-                        continue;
-                    }
-                    var time = LatestPastTime(date.Value, sd.Times, location, now);
-                    if (time.HasValue)
-                    {
-                        return time;
-                    }
-                }
-                return null;
-
-            default:
-                return null;
-        }
-    }
-
-    private static DateTimeOffset? PrevYearRepeat(YearRepeat yr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
-    {
-        var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochDate;
-        var year = now.Year;
-
-        for (var i = 0; i < MaxIterations; i++)
-        {
-            if (yr.Interval > 1)
-            {
-                var yearsFromAnchor = year - anchorDate.Year;
-                var mod = yearsFromAnchor % yr.Interval;
-                if (mod < 0) mod += yr.Interval;
-                if (mod != 0)
-                {
-                    year -= mod;
-                    continue;
-                }
-            }
-
-            var targetDay = GetYearTargetDay(year, yr.Target);
-
-            if (targetDay.HasValue)
-            {
-                var day = targetDay.Value;
-                if (day <= DateOnly.FromDateTime(now.DateTime))
-                {
-                    var time = LatestPastTime(day, yr.Times, location, now);
-                    if (time.HasValue)
-                    {
-                        return time;
-                    }
-                }
-            }
-
-            year -= yr.Interval > 1 ? yr.Interval : 1;
-        }
-
-        return null;
-    }
+    private static int IntervalStepMinutes(IntervalRepeat ir) => ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
 
     private static bool MatchesDayFilter(DateOnly d, DayFilter f)
     {
@@ -909,45 +486,56 @@ public static class Evaluator
         };
     }
 
-    private static DateTimeOffset? EarliestFutureTime(DateOnly day, IReadOnlyList<TimeOfDay> times, TimeZoneInfo location, DateTimeOffset now)
+    private static DateTimeOffset? ExistingTimeOnDate(DateOnly date, TimeOfDay tod, TimeZoneInfo location)
     {
-        DateTimeOffset? best = null;
-        foreach (var tod in times)
-        {
-            var candidate = AtTimeOnDate(day, tod, location);
-            if (candidate > now)
-            {
-                if (best is null || candidate < best)
-                {
-                    best = candidate;
-                }
-            }
-        }
-        return best;
+        var wallTime = date.ToDateTime(new TimeOnly(tod.Hour, tod.Minute));
+        return location.IsInvalidTime(wallTime) ? null : AtTimeOnDate(date, tod, location);
     }
 
-    private static DateTimeOffset? LatestPastTime(DateOnly day, IReadOnlyList<TimeOfDay> times, TimeZoneInfo location, DateTimeOffset now)
+    private static DateOnly LocalDate(DateTimeOffset t, TimeZoneInfo location)
     {
-        DateTimeOffset? best = null;
-        foreach (var tod in times)
-        {
-            var candidate = AtTimeOnDate(day, tod, location);
-            if (candidate < now)
-            {
-                if (best is null || candidate > best)
-                {
-                    best = candidate;
-                }
-            }
-        }
-        return best;
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(t, location).DateTime);
     }
+
+    private static DateOnly AddDaysWithin(DateOnly date, int days)
+    {
+        var dayNumber = Math.Clamp((long)date.DayNumber + days, DateOnly.MinValue.DayNumber, DateOnly.MaxValue.DayNumber);
+        return DateOnly.FromDayNumber((int)dayNumber);
+    }
+
+    private static DateOnly Min(DateOnly a, DateOnly b) => a < b ? a : b;
+
+    private static DateOnly Max(DateOnly a, DateOnly b) => a > b ? a : b;
+
+    private static DateOnly MondayOf(DateOnly date)
+    {
+        return DateOnly.FromDayNumber(date.DayNumber - (((int)date.DayOfWeek + 6) % 7));
+    }
+
+    private static int MonthIndex(DateOnly date) => date.Year * 12 + date.Month - 1;
+
+    private static DateOnly? FirstOfMonth(long monthIndex)
+    {
+        var year = FloorDiv(monthIndex, 12);
+        return year >= DateOnly.MinValue.Year && year <= DateOnly.MaxValue.Year
+            ? new DateOnly((int)year, (int)FloorMod(monthIndex, 12) + 1, 1)
+            : null;
+    }
+
+    private static long FloorMod(long a, long n) => ((a % n) + n) % n;
+
+    private static long FloorDiv(long a, long n) => (a - FloorMod(a, n)) / n;
+
+    private static long Lcm(long a, long b) => a / Gcd(a, b) * b;
+
+    private static long Gcd(long a, long b) => b == 0 ? a : Gcd(b, a % b);
 
     /// <summary>
-    /// Creates a DateTimeOffset at the given date and time in the given timezone.
+    /// Creates a DateTimeOffset at the given date and time in the given timezone, or null if that
+    /// instant is outside the range DateTimeOffset supports.
     /// Handles DST: spring forward pushes non-existent times forward by the gap duration.
     /// </summary>
-    private static DateTimeOffset AtTimeOnDate(DateOnly date, TimeOfDay tod, TimeZoneInfo location)
+    private static DateTimeOffset? AtTimeOnDate(DateOnly date, TimeOfDay tod, TimeZoneInfo location)
     {
         var dt = new DateTime(date.Year, date.Month, date.Day, tod.Hour, tod.Minute, 0, DateTimeKind.Unspecified);
 
@@ -981,6 +569,11 @@ public static class Evaluator
             offset = offsets.Max(); // Earlier time uses larger offset
         }
 
+        var utcTicks = dt.Ticks - offset.Ticks;
+        if (utcTicks < DateTimeOffset.MinValue.UtcTicks || utcTicks > DateTimeOffset.MaxValue.UtcTicks)
+        {
+            return null;
+        }
         return new DateTimeOffset(dt, offset);
     }
 
@@ -994,6 +587,7 @@ public static class Evaluator
                 .Select(day => TryCreateDate(year, month, day))
                 .Where(d => d.HasValue)
                 .Select(d => d!.Value)
+                .Order()
                 .ToList(),
             MonthTargetKind.NearestWeekday =>
                 NearestWeekday(year, month, target.NearestWeekdayDay, target.NearestWeekdayDirection) is { } nw
@@ -1035,7 +629,7 @@ public static class Evaluator
 
     private static DateOnly LastDayOfMonth(int year, int month)
     {
-        return new DateOnly(year, month, 1).AddMonths(1).AddDays(-1);
+        return new DateOnly(year, month, DateTime.DaysInMonth(year, month));
     }
 
     private static DateOnly LastWeekdayOfMonth(int year, int month)
@@ -1124,14 +718,7 @@ public static class Evaluator
 
     private static DateOnly? TryCreateDate(int year, int month, int day)
     {
-        try
-        {
-            return new DateOnly(year, month, day);
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            return null;
-        }
+        return day <= DateTime.DaysInMonth(year, month) ? new DateOnly(year, month, day) : null;
     }
 
     private static bool IsExcepted(DateOnly d, IReadOnlyList<ExceptionSpec> exceptions)
@@ -1174,45 +761,6 @@ public static class Evaluator
         return false;
     }
 
-    private static DateOnly NextDuringMonth(DateOnly d, IReadOnlyList<MonthName> during)
-    {
-        var currentMonth = d.Month;
-
-        var months = during.Select(m => m.Number()).OrderBy(m => m).ToList();
-
-        foreach (var m in months)
-        {
-            if (m > currentMonth)
-            {
-                return new DateOnly(d.Year, m, 1);
-            }
-        }
-
-        return new DateOnly(d.Year + 1, months[0], 1);
-    }
-
-    private static DateOnly? PrevDuringMonth(DateOnly d, IReadOnlyList<MonthName> during)
-    {
-        var currentMonth = d.Month;
-
-        var months = during.Select(m => m.Number()).OrderByDescending(m => m).ToList();
-
-        foreach (var m in months)
-        {
-            if (m < currentMonth)
-            {
-                return LastDayOfMonth(d.Year, m);
-            }
-        }
-
-        if (months.Count > 0)
-        {
-            return LastDayOfMonth(d.Year - 1, months[0]);
-        }
-
-        return null;
-    }
-
     private static DateOnly ResolveUntil(UntilSpec until, DateOnly now)
     {
         return until.Kind switch
@@ -1228,7 +776,7 @@ public static class Evaluator
         var d = new DateOnly(now.Year, month, day);
         if (d < now)
         {
-            d = new DateOnly(now.Year + 1, month, day);
+            d = now.Year < DateOnly.MaxValue.Year ? new DateOnly(now.Year + 1, month, day) : DateOnly.MaxValue;
         }
         return d;
     }

@@ -50,9 +50,19 @@ A conformance runner must fail any case it cannot check: a section it does not k
 - **`previous_from`** - `now`; asserts `expected` (timestamp or null) for `previousFrom(now)`.
 - **`occurrences`** - `from`, `take`; asserts `expected` (list) for the first `take` elements of `occurrences(from)`.
 - **`between`** - `from`, `to`; asserts `expected` (list) or `expected_count` (number) for `between(from, to)`.
-- **every other section** (`day_repeat`, `interval_repeat`, `week_repeat`, `month_repeat`, `year_repeat`, `single_date`, `leap_year`, `dst_spring_forward`, `dst_fall_back`, ...) - optional `now` (defaults to the top-level `now`); asserts one or more of `next` (timestamp or null for `nextFrom`), `next_date` (date of `nextFrom`), `next_n` (list from `nextNFrom(now, next_n_count)`, where `next_n_count` defaults to the list length) and `next_n_length` (length of `nextNFrom(now, next_n_count)`).
+- **every other section** (`day_repeat`, `interval_repeat`, `week_repeat`, `month_repeat`, `year_repeat`, `single_date`, `leap_year`, `dst_spring_forward`, `dst_fall_back`, ...) - optional `now` (defaults to the top-level `now`); asserts one or more of `next` (timestamp or null for `nextFrom`), `next_date` (the date of `nextFrom` in the schedule's timezone), `next_n` (list from `nextNFrom(now, next_n_count)`, where `next_n_count` defaults to the list length, so an empty `next_n` always comes with an explicit `next_n_count`) and `next_n_length` (length of `nextNFrom(now, next_n_count)`).
 
-`invariants` entries carry `name`, `expression` and `now`; every rule in `invariants.rules` applies to every entry.
+The other sections:
+
+- **`parse.*`** - `input`; asserts that `toString(parse(input))` equals `canonical`, and that parsing `canonical` again gives `canonical`.
+- **`parse_errors`** - `input`; asserts that `parse(input)` fails, and when `error_contains` is present, that the error message contains it.
+- **`eval_errors`** - `expression`; asserts that evaluating the schedule fails (at parse time or at the first `nextFrom`).
+- **`cron.to_cron`** - `hron`; asserts `toCron(parse(hron))` equals `cron`. **`cron.to_cron_errors`** - `hron`; asserts `toCron` fails.
+- **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`; asserts `fromCron` fails.
+- **`cron.roundtrip`** - `hron`; with `c = toCron(parse(hron))`, asserts `toCron(fromCron(c))` equals `c`.
+- **`invariants`** - entries carry `name`, `expression` and `now`; every rule in `invariants.rules` applies to every entry.
+
+`name` and `description` are labels, not assertions.
 
 ## Error Message Format
 

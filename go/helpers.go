@@ -17,24 +17,37 @@ func resolveTimezone(tzName string) (*time.Location, error) {
 	return time.UTC, nil
 }
 
+// atTimeOnDate resolves a fixed time on date d. A time skipped by a
+// spring-forward gap shifts forward by the gap length, and a time repeated by
+// a fall-back overlap takes its first occurrence (spec/README.md, "DST
+// spring-forward (gaps)" and "DST fall-back (ambiguous times)").
 func atTimeOnDate(d time.Time, tod TimeOfDay, loc *time.Location) time.Time {
-	t := time.Date(d.Year(), d.Month(), d.Day(), tod.Hour, tod.Minute, 0, 0, loc)
-
-	// The spec requires a gap time to shift forward by the gap length and an
-	// ambiguous time to take its first occurrence (spec/README.md, "DST
-	// spring-forward (gaps)" and "DST fall-back (ambiguous times)"). time.Date
-	// guarantees neither, so a gap time it moved backward is corrected here.
-	if t.Hour() != tod.Hour || t.Minute() != tod.Minute {
-		requestedMinutes := tod.Hour*60 + tod.Minute
-		gotMinutes := t.Hour()*60 + t.Minute()
-		gapMinutes := requestedMinutes - gotMinutes
-
-		if gapMinutes > 0 {
-			return t.Add(time.Duration(gapMinutes) * time.Minute)
-		}
-	}
-
+	t, _ := resolveWallClock(d, tod, loc)
 	return t
+}
+
+// resolveWallClock returns the first instant whose wall-clock time in loc is
+// tod on date d, and true. If that wall time falls in a gap, it returns the
+// instant the pre-gap offset gives (the time shifted forward by the gap
+// length) and false. time.Date guarantees neither choice, so this walks the
+// zone periods around the wall time instead.
+func resolveWallClock(d time.Time, tod TimeOfDay, loc *time.Location) (time.Time, bool) {
+	wall := time.Date(d.Year(), d.Month(), d.Day(), tod.Hour, tod.Minute, 0, 0, time.UTC)
+	probe := wall.Add(-24 * time.Hour).In(loc)
+	var beforeGap time.Time
+	for {
+		start, end := probe.ZoneBounds()
+		_, offset := probe.Zone()
+		candidate := wall.Add(-time.Duration(offset) * time.Second).In(loc)
+		if !start.IsZero() && candidate.Before(start) {
+			return beforeGap, false
+		}
+		if end.IsZero() || candidate.Before(end) {
+			return candidate, true
+		}
+		beforeGap = candidate
+		probe = end.In(loc)
+	}
 }
 
 func matchesDayFilter(d time.Time, f DayFilter) bool {
@@ -106,18 +119,97 @@ func lastWeekdayInMonth(year int, month time.Month, weekday Weekday) time.Time {
 	return d
 }
 
+// weeksBetween expects two Mondays at midnight UTC.
 func weeksBetween(a, b time.Time) int {
-	days := int(b.Sub(a).Hours() / 24)
-	return days / 7
+	return daysBetween(a, b) / 7
 }
 
+// daysBetween expects two dates at midnight UTC. It avoids time.Duration,
+// which saturates at about 292 years.
 func daysBetween(a, b time.Time) int {
-	return int(b.Sub(a).Hours() / 24)
+	return int((b.Unix() - a.Unix()) / 86400)
 }
 
-// monthsBetweenYM returns the number of months between two dates (based on year/month only).
-func monthsBetweenYM(a, b time.Time) int {
-	return (b.Year()*12 + int(b.Month())) - (a.Year()*12 + int(a.Month()))
+// monthIndex counts months from year 0, so month arithmetic is integer arithmetic.
+func monthIndex(t time.Time) int {
+	return t.Year()*12 + int(t.Month()) - 1
+}
+
+// floorMod returns a mod n in [0, n), so offsets before an anchor align by
+// floor division rather than truncation.
+func floorMod(a, n int) int {
+	return (a%n + n) % n
+}
+
+// searchSteps returns how many interval steps cover the search horizon. The
+// Gregorian calendar repeats every 400 years (unitsIn400Years units), so a
+// schedule repeats after lcm(unitsIn400Years, interval) units (spec/README.md,
+// "Search horizon").
+func searchSteps(interval, unitsIn400Years int) int {
+	return unitsIn400Years / gcd(unitsIn400Years, max(interval, 1))
+}
+
+func gcd(a, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
+// monthTargetDates returns the dates target names in a month, skipping days the month lacks.
+func monthTargetDates(year int, month time.Month, target MonthTarget) []time.Time {
+	switch target.Kind {
+	case MonthTargetKindDays:
+		var dates []time.Time
+		last := lastDayOfMonth(year, month).Day()
+		for _, day := range target.ExpandDays() {
+			if day <= last {
+				dates = append(dates, time.Date(year, month, day, 0, 0, 0, 0, time.UTC))
+			}
+		}
+		return dates
+	case MonthTargetKindLastDay:
+		return []time.Time{lastDayOfMonth(year, month)}
+	case MonthTargetKindLastWeekday:
+		return []time.Time{lastWeekdayOfMonth(year, month)}
+	case MonthTargetKindNearestWeekday:
+		if d, ok := nearestWeekday(year, month, target.Day, target.Direction); ok {
+			return []time.Time{d}
+		}
+	case MonthTargetKindOrdinalWeekday:
+		if target.Ordinal == Last {
+			return []time.Time{lastWeekdayInMonth(year, month, target.Weekday)}
+		}
+		if d, ok := nthWeekdayOfMonth(year, month, target.Weekday, target.Ordinal.ToN()); ok {
+			return []time.Time{d}
+		}
+	}
+	return nil
+}
+
+// yearTargetDate returns false if the year has no such date (Feb 29, a fifth weekday).
+func yearTargetDate(year int, target YearTarget) (time.Time, bool) {
+	month := time.Month(target.Month.Number())
+	switch target.Kind {
+	case YearTargetKindDate, YearTargetKindDayOfMonth:
+		d := time.Date(year, month, target.Day, 0, 0, 0, 0, time.UTC)
+		return d, d.Month() == month
+	case YearTargetKindOrdinalWeekday:
+		if target.Ordinal == Last {
+			return lastWeekdayInMonth(year, month, target.Weekday), true
+		}
+		return nthWeekdayOfMonth(year, month, target.Weekday, target.Ordinal.ToN())
+	case YearTargetKindLastWeekday:
+		return lastWeekdayOfMonth(year, month), true
+	}
+	return time.Time{}, false
+}
+
+// namedDate returns false if the year has no such date (Feb 29).
+func namedDate(year int, dateSpec DateSpec) (time.Time, bool) {
+	month := time.Month(dateSpec.Month.Number())
+	d := time.Date(year, month, dateSpec.Day, 0, 0, 0, 0, time.UTC)
+	return d, d.Month() == month
 }
 
 func isExcepted(d time.Time, exceptions []ExceptionSpec) bool {
@@ -192,16 +284,17 @@ func resolveUntil(until UntilSpec, now time.Time) time.Time {
 	}
 }
 
-// earliestFutureAtTimes finds the earliest time in the list that is strictly after now.
-func earliestFutureAtTimes(d time.Time, times []TimeOfDay, loc *time.Location, now time.Time) *time.Time {
-	var best *time.Time
+// earliestFutureAtTimes finds the earliest of times on date d that is strictly
+// after now, if d is not before startDate.
+func earliestFutureAtTimes(d time.Time, times []TimeOfDay, loc *time.Location, now, startDate time.Time) *occurrence {
+	if d.Before(startDate) {
+		return nil
+	}
+	var best *occurrence
 	for _, tod := range times {
-		candidate := atTimeOnDate(d, tod, loc)
-		if candidate.After(now) {
-			if best == nil || candidate.Before(*best) {
-				c := candidate
-				best = &c
-			}
+		at := atTimeOnDate(d, tod, loc)
+		if at.After(now) && (best == nil || at.Before(best.at)) {
+			best = &occurrence{at, d}
 		}
 	}
 	return best

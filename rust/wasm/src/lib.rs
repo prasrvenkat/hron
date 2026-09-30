@@ -55,7 +55,7 @@ impl Schedule {
         Ok(result.map(|z| z.to_string()))
     }
 
-    /// Check if a datetime matches this schedule.
+    /// Check whether the minute containing `datetime` is an occurrence (seconds are ignored).
     pub fn matches(&self, datetime: &str) -> Result<bool, JsError> {
         let dt: jiff::Zoned = datetime
             .parse()

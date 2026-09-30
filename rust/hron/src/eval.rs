@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 
 use jiff::civil::{Date, Time};
-use jiff::tz::TimeZone;
-use jiff::Zoned;
+use jiff::tz::{AmbiguousOffset, TimeZone};
+use jiff::{Span, Zoned};
 
 use crate::ast::*;
 use crate::error::ScheduleError;
@@ -25,13 +25,36 @@ fn to_time(tod: &TimeOfDay) -> Time {
     Time::new(tod.hour as i8, tod.minute as i8, 0, 0).unwrap()
 }
 
+fn eval_error(e: jiff::Error) -> ScheduleError {
+    ScheduleError::eval(format!("cannot create zoned datetime: {e}"))
+}
+
 /// jiff's "compatible" disambiguation matches spec/README.md "DST spring-forward
 /// (gaps)" and "DST fall-back (ambiguous times)": a gap time shifts forward by the
 /// gap length, and a time repeated by a fall-back transition takes its first occurrence.
 fn at_time_on_date(date: Date, time: Time, tz: &TimeZone) -> Result<Zoned, ScheduleError> {
-    let dt = date.to_datetime(time);
-    dt.to_zoned(tz.clone())
-        .map_err(|e| ScheduleError::eval(format!("cannot create zoned datetime: {e}")))
+    date.to_datetime(time)
+        .to_zoned(tz.clone())
+        .map_err(eval_error)
+}
+
+/// An interval slot whose wall time falls in a spring-forward gap does not exist
+/// (spec/README.md, "Interval slots in a spring-forward gap").
+fn interval_slot_on_date(
+    date: Date,
+    minute_of_day: i64,
+    tz: &TimeZone,
+) -> Result<Option<Zoned>, ScheduleError> {
+    let time = Time::new((minute_of_day / 60) as i8, (minute_of_day % 60) as i8, 0, 0).unwrap();
+    let ambiguous = tz.to_ambiguous_zoned(date.to_datetime(time));
+    if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
+        return Ok(None);
+    }
+    ambiguous.earlier().map(Some).map_err(eval_error)
+}
+
+fn add_days(date: Date, days: i64) -> Option<Date> {
+    date.checked_add(Span::new().try_days(days).ok()?).ok()
 }
 
 fn matches_day_filter(date: Date, filter: &DayFilter) -> bool {
@@ -81,7 +104,7 @@ fn nth_weekday_of_month(year: i16, month: i8, weekday: Weekday, n: u8) -> Option
         d = d.tomorrow().ok()?;
     }
     for _ in 1..n {
-        d = d.checked_add(jiff::Span::new().days(7)).ok()?;
+        d = add_days(d, 7)?;
     }
     if d.month() != month {
         None
@@ -98,6 +121,22 @@ fn last_weekday_in_month(year: i16, month: i8, weekday: Weekday) -> Date {
         d = d.yesterday().unwrap();
     }
     d
+}
+
+fn ordinal_weekday_of_month(
+    year: i16,
+    month: i8,
+    ordinal: OrdinalPosition,
+    weekday: Weekday,
+) -> Option<Date> {
+    match ordinal {
+        OrdinalPosition::Last => Some(last_weekday_in_month(year, month, weekday)),
+        OrdinalPosition::First => nth_weekday_of_month(year, month, weekday, 1),
+        OrdinalPosition::Second => nth_weekday_of_month(year, month, weekday, 2),
+        OrdinalPosition::Third => nth_weekday_of_month(year, month, weekday, 3),
+        OrdinalPosition::Fourth => nth_weekday_of_month(year, month, weekday, 4),
+        OrdinalPosition::Fifth => nth_weekday_of_month(year, month, weekday, 5),
+    }
 }
 
 /// Get the nearest weekday to a given day in a month.
@@ -135,40 +174,31 @@ fn nearest_weekday(
         (JiffWd::Saturday, None) => {
             // Standard: prefer Friday, but if at month start, use Monday
             if target_day == 1 {
-                Some(date.checked_add(jiff::Span::new().days(2)).ok()?)
+                add_days(date, 2)
             } else {
-                Some(date.yesterday().ok()?)
+                date.yesterday().ok()
             }
         }
-        (JiffWd::Saturday, Some(NearestDirection::Next)) => {
-            Some(date.checked_add(jiff::Span::new().days(2)).ok()?)
-        }
+        (JiffWd::Saturday, Some(NearestDirection::Next)) => add_days(date, 2),
         (JiffWd::Saturday, Some(NearestDirection::Previous)) => {
             // Crosses into the previous month when the target is the 1st.
-            Some(date.yesterday().ok()?)
+            date.yesterday().ok()
         }
 
         (JiffWd::Sunday, None) => {
             // Standard: prefer Monday, but if at month end, use Friday
             if target_day >= last_day {
-                Some(date.checked_add(jiff::Span::new().days(-2)).ok()?)
+                add_days(date, -2)
             } else {
-                Some(date.tomorrow().ok()?)
+                date.tomorrow().ok()
             }
         }
         (JiffWd::Sunday, Some(NearestDirection::Next)) => {
             // Crosses into the next month when the target is the last day.
-            Some(date.tomorrow().ok()?)
+            date.tomorrow().ok()
         }
-        (JiffWd::Sunday, Some(NearestDirection::Previous)) => {
-            Some(date.checked_add(jiff::Span::new().days(-2)).ok()?)
-        }
+        (JiffWd::Sunday, Some(NearestDirection::Previous)) => add_days(date, -2),
     }
-}
-
-fn weeks_between(a: Date, b: Date) -> i64 {
-    let span = a.until(b).unwrap();
-    span.get_days() as i64 / 7
 }
 
 fn days_between(a: Date, b: Date) -> i64 {
@@ -177,6 +207,14 @@ fn days_between(a: Date, b: Date) -> i64 {
 
 fn months_between_ym(a: Date, b: Date) -> i64 {
     (b.year() as i64 * 12 + b.month() as i64) - (a.year() as i64 * 12 + a.month() as i64)
+}
+
+fn gcd(a: i64, b: i64) -> i64 {
+    if b == 0 {
+        a
+    } else {
+        gcd(b, a % b)
+    }
 }
 
 /// Pre-parsed exception data to avoid re-parsing ISO strings on every check.
@@ -219,27 +257,6 @@ impl ParsedExceptions {
     }
 }
 
-fn matches_during(date: Date, during: &[MonthName]) -> bool {
-    if during.is_empty() {
-        return true;
-    }
-    let m = date.month() as u8;
-    during.iter().any(|mn| mn.number() == m)
-}
-
-fn next_during_month(date: Date, during: &[MonthName]) -> Date {
-    let current_month = date.month() as u8;
-    let mut months: Vec<u8> = during.iter().map(|mn| mn.number()).collect();
-    months.sort();
-
-    for &m in &months {
-        if m > current_month {
-            return Date::new(date.year(), m as i8, 1).unwrap();
-        }
-    }
-    Date::new(date.year() + 1, months[0] as i8, 1).unwrap()
-}
-
 fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> {
     match until {
         UntilSpec::Iso(s) => s
@@ -260,168 +277,496 @@ fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> 
     }
 }
 
-/// True when `zdt` is at one of `times` on the wall clock, or is the instant a
-/// time in a DST gap shifted to.
-fn time_matches_with_dst(
-    date: Date,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    zdt: &Zoned,
-) -> Result<bool, ScheduleError> {
-    for tod in times {
-        let t = to_time(tod);
-        if zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute() {
-            return Ok(true);
-        }
-        let resolved = at_time_on_date(date, t, tz)?;
-        if resolved.timestamp() == zdt.timestamp() {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+#[derive(Clone, Copy)]
+enum Unit {
+    Day,
+    Week,
+    Month,
+    Year,
 }
 
-fn earliest_future_at_times(
+impl Unit {
+    /// Units in 400 years, after which the proleptic Gregorian calendar repeats.
+    fn per_400_years(self) -> i64 {
+        match self {
+            Unit::Day => 146_097,
+            Unit::Week => 20_871,
+            Unit::Month => 4_800,
+            Unit::Year => 400,
+        }
+    }
+}
+
+/// The periods (days, weeks, months or years) an expression fires in, numbered
+/// from `origin`: period `k` is aligned when `k` is a multiple of `interval`.
+struct Cadence {
+    unit: Unit,
+    origin: Date,
+    interval: i64,
+    /// A single ISO date has one period, the one holding that date.
+    single: bool,
+    /// A `starting` date admits no interval period before its own.
+    from_origin_only: bool,
+}
+
+impl Cadence {
+    fn of(schedule: &Schedule) -> Result<Cadence, ScheduleError> {
+        let (unit, interval, default_origin) = match &schedule.expr {
+            ScheduleExpr::SingleDate {
+                date: DateSpec::Iso(s),
+                ..
+            } => {
+                let date: Date = s
+                    .parse()
+                    .map_err(|e| ScheduleError::eval(format!("invalid date '{s}': {e}")))?;
+                return Ok(Cadence {
+                    unit: Unit::Day,
+                    origin: date,
+                    interval: 1,
+                    single: true,
+                    from_origin_only: false,
+                });
+            }
+            ScheduleExpr::SingleDate { .. } => (Unit::Year, 1, *EPOCH_DATE),
+            ScheduleExpr::IntervalRepeat { .. } => (Unit::Day, 1, *EPOCH_DATE),
+            ScheduleExpr::DayRepeat { interval, .. } => (Unit::Day, *interval, *EPOCH_DATE),
+            ScheduleExpr::WeekRepeat { interval, .. } => (Unit::Week, *interval, *EPOCH_MONDAY),
+            ScheduleExpr::MonthRepeat { interval, .. } => (Unit::Month, *interval, *EPOCH_DATE),
+            ScheduleExpr::YearRepeat { interval, .. } => (Unit::Year, *interval, *EPOCH_DATE),
+        };
+        let anchor = schedule.anchor.unwrap_or(default_origin);
+        let origin = match unit {
+            Unit::Day => anchor,
+            Unit::Week => {
+                let since_monday = anchor.weekday().to_monday_zero_offset() as i64;
+                add_days(anchor, -since_monday).unwrap_or(anchor)
+            }
+            Unit::Month => anchor.first_of_month(),
+            Unit::Year => anchor.first_of_year(),
+        };
+        let interval = (interval as i64).max(1);
+        Ok(Cadence {
+            unit,
+            origin,
+            interval,
+            single: false,
+            from_origin_only: schedule.anchor.is_some() && interval > 1,
+        })
+    }
+
+    fn period_of(&self, date: Date) -> i64 {
+        match self.unit {
+            Unit::Day => days_between(self.origin, date),
+            Unit::Week => days_between(self.origin, date).div_euclid(7),
+            Unit::Month => months_between_ym(self.origin, date),
+            Unit::Year => date.year() as i64 - self.origin.year() as i64,
+        }
+    }
+
+    /// First day of period `k`, or None when it is outside the supported calendar.
+    fn start_of(&self, k: i64) -> Option<Date> {
+        match self.unit {
+            Unit::Day => add_days(self.origin, k),
+            Unit::Week => add_days(self.origin, k.checked_mul(7)?),
+            Unit::Month => {
+                let months = self.origin.year() as i64 * 12 + self.origin.month() as i64 - 1 + k;
+                let year = i16::try_from(months.div_euclid(12)).ok()?;
+                Date::new(year, months.rem_euclid(12) as i8 + 1, 1).ok()
+            }
+            Unit::Year => {
+                let year = i16::try_from(self.origin.year() as i64 + k).ok()?;
+                Date::new(year, 1, 1).ok()
+            }
+        }
+    }
+
+    /// Aligned periods from period `from` in search order, covering the whole
+    /// search horizon (spec/README.md, "Search horizon").
+    fn aligned_periods(&self, from: i64, forward: bool) -> impl Iterator<Item = i64> {
+        let n = self.interval;
+        let cycle = self.unit.per_400_years();
+        // lcm(cycle, n) / n aligned periods span the horizon from now's period; two
+        // more cover the extra period searches start from and the span's far end.
+        let horizon = cycle / gcd(cycle, n) + 2;
+        let (first, step, count) = if self.single {
+            (0, 1, 1)
+        } else if forward {
+            let first = from + (-from).rem_euclid(n);
+            let first = if self.from_origin_only {
+                first.max(0)
+            } else {
+                first
+            };
+            (first, n, horizon)
+        } else {
+            (from - from.rem_euclid(n), -n, horizon)
+        };
+        let from_origin_only = self.from_origin_only;
+        (0..count)
+            .map(move |i| first + i * step)
+            .take_while(move |k| !from_origin_only || *k >= 0)
+    }
+}
+
+/// A date the expression fires on, with the month whose day it names. They
+/// differ only when a directional nearest weekday crosses into the adjacent month.
+struct Candidate {
     date: Date,
-    times: &[TimeOfDay],
+    target_month: i8,
+}
+
+/// The candidates in the period starting at `start`, earliest first.
+fn candidates_in_period(expr: &ScheduleExpr, start: Date) -> Vec<Candidate> {
+    let target_month = |date: Date| match expr {
+        ScheduleExpr::MonthRepeat { .. } => start.month(),
+        _ => date.month(),
+    };
+    dates_in_period(expr, start)
+        .into_iter()
+        .map(|date| Candidate {
+            date,
+            target_month: target_month(date),
+        })
+        .collect()
+}
+
+fn dates_in_period(expr: &ScheduleExpr, start: Date) -> Vec<Date> {
+    match expr {
+        ScheduleExpr::IntervalRepeat { day_filter, .. } => {
+            if day_filter
+                .as_ref()
+                .is_none_or(|filter| matches_day_filter(start, filter))
+            {
+                vec![start]
+            } else {
+                vec![]
+            }
+        }
+        ScheduleExpr::DayRepeat { days, .. } => {
+            if matches_day_filter(start, days) {
+                vec![start]
+            } else {
+                vec![]
+            }
+        }
+        ScheduleExpr::WeekRepeat { days, .. } => {
+            let mut offsets: Vec<i64> = days
+                .iter()
+                .map(|d| d.to_jiff().to_monday_zero_offset() as i64)
+                .collect();
+            offsets.sort();
+            offsets.dedup();
+            offsets
+                .into_iter()
+                .filter_map(|offset| add_days(start, offset))
+                .collect()
+        }
+        ScheduleExpr::MonthRepeat { target, .. } => {
+            let (year, month) = (start.year(), start.month());
+            let mut dates: Vec<Date> = match target {
+                MonthTarget::Days(_) => target
+                    .expand_days()
+                    .into_iter()
+                    .filter_map(|day| Date::new(year, month, day as i8).ok())
+                    .collect(),
+                MonthTarget::LastDay => vec![last_day_of_month(year, month)],
+                MonthTarget::LastWeekday => vec![last_weekday_of_month(year, month)],
+                MonthTarget::NearestWeekday { day, direction } => {
+                    nearest_weekday(year, month, *day, *direction)
+                        .into_iter()
+                        .collect()
+                }
+                MonthTarget::OrdinalWeekday { ordinal, weekday } => {
+                    ordinal_weekday_of_month(year, month, *ordinal, *weekday)
+                        .into_iter()
+                        .collect()
+                }
+            };
+            dates.sort();
+            dates.dedup();
+            dates
+        }
+        ScheduleExpr::YearRepeat { target, .. } => {
+            let year = start.year();
+            let date = match target {
+                YearTarget::Date { month, day } | YearTarget::DayOfMonth { day, month } => {
+                    Date::new(year, month.number() as i8, *day as i8).ok()
+                }
+                YearTarget::OrdinalWeekday {
+                    ordinal,
+                    weekday,
+                    month,
+                } => ordinal_weekday_of_month(year, month.number() as i8, *ordinal, *weekday),
+                YearTarget::LastWeekday { month } => {
+                    Some(last_weekday_of_month(year, month.number() as i8))
+                }
+            };
+            date.into_iter().collect()
+        }
+        ScheduleExpr::SingleDate {
+            date: DateSpec::Named { month, day },
+            ..
+        } => Date::new(start.year(), month.number() as i8, *day as i8)
+            .into_iter()
+            .collect(),
+        ScheduleExpr::SingleDate {
+            date: DateSpec::Iso(_),
+            ..
+        } => vec![start],
+    }
+}
+
+fn fixed_times(expr: &ScheduleExpr) -> &[TimeOfDay] {
+    match expr {
+        ScheduleExpr::DayRepeat { times, .. }
+        | ScheduleExpr::WeekRepeat { times, .. }
+        | ScheduleExpr::MonthRepeat { times, .. }
+        | ScheduleExpr::SingleDate { times, .. }
+        | ScheduleExpr::YearRepeat { times, .. } => times,
+        ScheduleExpr::IntervalRepeat { .. } => &[],
+    }
+}
+
+/// The fixed-time occurrences on `date`, in instant order: a time shifted out of a
+/// DST gap can land after a later wall time.
+fn fixed_occurrences(
+    expr: &ScheduleExpr,
+    date: Date,
+    tz: &TimeZone,
+) -> Result<Vec<Zoned>, ScheduleError> {
+    let mut all = fixed_times(expr)
+        .iter()
+        .map(|tod| at_time_on_date(date, to_time(tod), tz))
+        .collect::<Result<Vec<_>, _>>()?;
+    all.sort();
+    Ok(all)
+}
+
+/// Wall-clock minutes of the slots `from + k × interval` up to and including `to`.
+fn interval_slots(interval: u32, unit: IntervalUnit, from: &TimeOfDay, to: &TimeOfDay) -> Vec<i64> {
+    let step = match unit {
+        IntervalUnit::Minutes => interval as i64,
+        IntervalUnit::Hours => interval as i64 * 60,
+    }
+    .max(1);
+    let from = from.hour as i64 * 60 + from.minute as i64;
+    let to = to.hour as i64 * 60 + to.minute as i64;
+    (from..=to).step_by(step as usize).collect()
+}
+
+fn minute_of_day(time: Time) -> i64 {
+    time.hour() as i64 * 60 + time.minute() as i64
+}
+
+/// The earliest occurrence on `date` strictly after `now`.
+fn first_on_date_after(
+    expr: &ScheduleExpr,
+    date: Date,
     tz: &TimeZone,
     now: &Zoned,
 ) -> Result<Option<Zoned>, ScheduleError> {
+    let ScheduleExpr::IntervalRepeat {
+        interval,
+        unit,
+        from,
+        to,
+        ..
+    } = expr
+    else {
+        return Ok(fixed_occurrences(expr, date, tz)?
+            .into_iter()
+            .find(|t| t > now));
+    };
+    // Slots resolve in wall-clock order, and a slot whose wall time is before
+    // now's has already passed, so the scan can start at now's wall time.
+    let now_local = now.with_time_zone(tz.clone());
+    let earliest_minute = match date.cmp(&now_local.date()) {
+        std::cmp::Ordering::Less => return Ok(None),
+        std::cmp::Ordering::Equal => minute_of_day(now_local.time()),
+        std::cmp::Ordering::Greater => 0,
+    };
+    for minute in interval_slots(*interval, *unit, from, to) {
+        if minute < earliest_minute {
+            continue;
+        }
+        if let Some(t) = interval_slot_on_date(date, minute, tz)? {
+            if t > *now {
+                return Ok(Some(t));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// The latest occurrence on `date` strictly before `now`.
+fn last_on_date_before(
+    expr: &ScheduleExpr,
+    date: Date,
+    tz: &TimeZone,
+    now: &Zoned,
+) -> Result<Option<Zoned>, ScheduleError> {
+    let ScheduleExpr::IntervalRepeat {
+        interval,
+        unit,
+        from,
+        to,
+        ..
+    } = expr
+    else {
+        return Ok(fixed_occurrences(expr, date, tz)?
+            .into_iter()
+            .rev()
+            .find(|t| t < now));
+    };
+    if date > now.with_time_zone(tz.clone()).date() {
+        return Ok(None);
+    }
+    // Scans every slot: inside a fall-back overlap, a slot with a later wall time
+    // than now's can still be earlier than now.
+    for minute in interval_slots(*interval, *unit, from, to).into_iter().rev() {
+        if let Some(t) = interval_slot_on_date(date, minute, tz)? {
+            if t < *now {
+                return Ok(Some(t));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// What a search needs besides the expression: time zone, cadence and the
+/// trailing clauses resolved once.
+struct Search<'a> {
+    expr: &'a ScheduleExpr,
+    tz: TimeZone,
+    cadence: Cadence,
+    exceptions: ParsedExceptions,
+    during: &'a [MonthName],
+    until: Option<Date>,
+    starting: Option<Date>,
+}
+
+impl<'a> Search<'a> {
+    fn new(schedule: &'a Schedule, now: &Zoned) -> Result<Search<'a>, ScheduleError> {
+        Ok(Search {
+            expr: &schedule.expr,
+            tz: resolve_tz(&schedule.timezone)?,
+            cadence: Cadence::of(schedule)?,
+            exceptions: ParsedExceptions::from_exceptions(&schedule.except),
+            during: &schedule.during,
+            until: match &schedule.until {
+                Some(until) => Some(resolve_until(until, now)?),
+                None => None,
+            },
+            starting: schedule.anchor,
+        })
+    }
+
+    /// `during` applies to the target month; `except` to the date the occurrence
+    /// lands on (spec/README.md, "Nearest weekday and `during`").
+    fn allows(&self, candidate: &Candidate) -> bool {
+        let in_during = self.during.is_empty()
+            || self
+                .during
+                .iter()
+                .any(|m| m.number() as i8 == candidate.target_month);
+        in_during && !self.exceptions.is_excepted(candidate.date)
+    }
+
+    fn local_date(&self, t: &Zoned) -> Date {
+        t.with_time_zone(self.tz.clone()).date()
+    }
+}
+
+// A fixed time shifted out of a gap before midnight lands on the next date, so
+// the candidate after a result can still hold an earlier (or later, searching
+// back) instant. The searches keep the best result until candidates move past
+// the date it lands on.
+
+pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+    let search = Search::new(schedule, now)?;
+    let cadence = &search.cadence;
+    // One period back: a directional nearest weekday can land in the next month.
+    let from = cadence.period_of(search.local_date(now)) - 1;
     let mut best: Option<Zoned> = None;
-    for tod in times {
-        let t = to_time(tod);
-        let candidate = at_time_on_date(date, t, tz)?;
-        if candidate > *now {
-            best = Some(match best {
-                Some(prev) if candidate < prev => candidate,
-                Some(prev) => prev,
-                None => candidate,
-            });
+    for k in cadence.aligned_periods(from, true) {
+        let Some(start) = cadence.start_of(k) else {
+            continue;
+        };
+        for candidate in candidates_in_period(search.expr, start) {
+            if best
+                .as_ref()
+                .is_some_and(|b| candidate.date > search.local_date(b))
+                || search.until.is_some_and(|until| candidate.date > until)
+            {
+                return Ok(best);
+            }
+            if !search.allows(&candidate) {
+                continue;
+            }
+            if let Some(t) = first_on_date_after(search.expr, candidate.date, &search.tz, now)? {
+                if best.as_ref().is_none_or(|b| t < *b) {
+                    best = Some(t);
+                }
+            }
         }
     }
     Ok(best)
 }
 
-pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
-    let tz = resolve_tz(&schedule.timezone)?;
-    let anchor = schedule.anchor;
-
-    let until_date = match &schedule.until {
-        Some(until) => Some(resolve_until(until, now)?),
-        None => None,
-    };
-
-    let parsed_exceptions = ParsedExceptions::from_exceptions(&schedule.except);
-    let has_exceptions = !schedule.except.is_empty();
-    let has_during = !schedule.during.is_empty();
-    let needs_tz_conversion = until_date.is_some() || has_during || has_exceptions;
-
-    // Directional nearest-weekday can cross into a neighbouring month, so
-    // next_month_repeat applies `during` itself.
-    let handles_during_internally = matches!(
-        &schedule.expr,
-        ScheduleExpr::MonthRepeat {
-            target: MonthTarget::NearestWeekday {
-                direction: Some(_),
-                ..
-            },
-            ..
-        }
-    );
-
-    let mut current = now.clone();
-    for _ in 0..1000 {
-        let candidate = next_expr(&schedule.expr, &tz, &anchor, &current, &schedule.during)?;
-
-        let candidate = match candidate {
-            Some(c) => c,
-            None => return Ok(None),
+pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+    let search = Search::new(schedule, now)?;
+    let cadence = &search.cadence;
+    let now_date = search.local_date(now);
+    // Nothing fires after `until`, so a search from far past it starts there.
+    let latest_date = search.until.map_or(now_date, |until| until.min(now_date));
+    // One period ahead: a directional nearest weekday can land in the previous month.
+    let from = cadence.period_of(latest_date) + 1;
+    let mut best: Option<Zoned> = None;
+    for k in cadence.aligned_periods(from, false) {
+        let Some(start) = cadence.start_of(k) else {
+            continue;
         };
-
-        let c_date = if needs_tz_conversion {
-            Some(candidate.with_time_zone(tz.clone()).date())
-        } else {
-            None
-        };
-
-        if let Some(ref until) = until_date {
-            if c_date.unwrap() > *until {
-                return Ok(None);
+        for candidate in candidates_in_period(search.expr, start).into_iter().rev() {
+            let cannot_reach_best = best.as_ref().is_some_and(|b| {
+                add_days(candidate.date, 1).is_some_and(|d| d < search.local_date(b))
+            });
+            let before_starting = search
+                .starting
+                .is_some_and(|starting| candidate.date < starting);
+            if cannot_reach_best || before_starting {
+                return Ok(best);
+            }
+            if search.until.is_some_and(|until| candidate.date > until)
+                || !search.allows(&candidate)
+            {
+                continue;
+            }
+            if let Some(t) = last_on_date_before(search.expr, candidate.date, &search.tz, now)? {
+                if best.as_ref().is_none_or(|b| t > *b) {
+                    best = Some(t);
+                }
             }
         }
-
-        if has_during
-            && !handles_during_internally
-            && !matches_during(c_date.unwrap(), &schedule.during)
-        {
-            let skip_to = next_during_month(c_date.unwrap(), &schedule.during);
-            current = at_time_on_date(skip_to, Time::new(0, 0, 0, 0).unwrap(), &tz)?
-                .checked_add(jiff::Span::new().seconds(-1))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            continue;
-        }
-
-        if has_exceptions && parsed_exceptions.is_excepted(c_date.unwrap()) {
-            let next_day = c_date
-                .unwrap()
-                .tomorrow()
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            current = at_time_on_date(next_day, Time::new(0, 0, 0, 0).unwrap(), &tz)?
-                .checked_add(jiff::Span::new().seconds(-1))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            continue;
-        }
-
-        return Ok(Some(candidate));
     }
-
-    // Every candidate was filtered out, as with a contradictory schedule
-    // (spec/README.md, "Contradictory schedules").
-    Ok(None)
+    Ok(best)
 }
 
-fn next_expr(
-    expr: &ScheduleExpr,
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-    during: &[MonthName],
-) -> Result<Option<Zoned>, ScheduleError> {
-    match expr {
-        ScheduleExpr::DayRepeat {
-            interval,
-            days,
-            times,
-        } => next_day_repeat(*interval, days, times, tz, anchor, now),
-
-        ScheduleExpr::IntervalRepeat {
-            interval,
-            unit,
-            from,
-            to,
-            day_filter,
-        } => next_interval_repeat(*interval, *unit, from, to, day_filter, tz, now),
-
-        ScheduleExpr::WeekRepeat {
-            interval,
-            days,
-            times,
-        } => next_week_repeat(*interval, days, times, tz, anchor, now),
-
-        ScheduleExpr::MonthRepeat {
-            interval,
-            target,
-            times,
-        } => next_month_repeat(*interval, target, times, tz, anchor, now, during),
-
-        ScheduleExpr::SingleDate { date, times } => next_single_date(date, times, tz, now),
-
-        ScheduleExpr::YearRepeat {
-            interval,
-            target,
-            times,
-        } => next_year_repeat(*interval, target, times, tz, anchor, now),
-    }
+/// Defined through `next_from`, so the two can never disagree about what an
+/// occurrence is (spec/README.md, "matches is true exactly when the minute
+/// containing t is an occurrence").
+pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleError> {
+    let time = datetime.time();
+    let minute_start = datetime
+        .checked_sub(
+            Span::new()
+                .seconds(time.second())
+                .nanoseconds(time.subsec_nanosecond()),
+        )
+        .map_err(eval_error)?;
+    let just_before = minute_start
+        .checked_sub(Span::new().nanoseconds(1))
+        .map_err(eval_error)?;
+    Ok(next_from(schedule, &just_before)? == Some(minute_start))
 }
 
 pub fn next_n_from(
@@ -454,14 +799,10 @@ impl Iterator for Occurrences<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         match next_from(self.schedule, &self.current) {
             Ok(Some(dt)) => {
-                // Advance cursor by 1 minute to avoid returning same occurrence
-                match dt.checked_add(jiff::Span::new().minutes(1)) {
-                    Ok(c) => self.current = c,
-                    Err(e) => return Some(Err(ScheduleError::eval(format!("overflow: {e}")))),
-                }
+                self.current = dt.clone();
                 Some(Ok(dt))
             }
-            Ok(None) => None, // No more occurrences
+            Ok(None) => None,
             Err(e) => Some(Err(e)),
         }
     }
@@ -498,1252 +839,6 @@ impl Iterator for BoundedOccurrences<'_> {
 
 pub fn between<'a>(schedule: &'a Schedule, from: &Zoned, to: &Zoned) -> BoundedOccurrences<'a> {
     BoundedOccurrences::new(schedule, from.clone(), to.clone())
-}
-
-pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleError> {
-    let tz = resolve_tz(&schedule.timezone)?;
-    let zdt = datetime.with_time_zone(tz.clone());
-    let date = zdt.date();
-
-    if !matches_during(date, &schedule.during) {
-        return Ok(false);
-    }
-
-    if !schedule.except.is_empty() {
-        let parsed_exceptions = ParsedExceptions::from_exceptions(&schedule.except);
-        if parsed_exceptions.is_excepted(date) {
-            return Ok(false);
-        }
-    }
-
-    if let Some(ref until) = schedule.until {
-        let until_date = resolve_until(until, datetime)?;
-        if date > until_date {
-            return Ok(false);
-        }
-    }
-
-    match &schedule.expr {
-        ScheduleExpr::DayRepeat {
-            interval,
-            days,
-            times,
-        } => {
-            if !matches_day_filter(date, days) {
-                return Ok(false);
-            }
-            if !time_matches_with_dst(date, times, &tz, &zdt)? {
-                return Ok(false);
-            }
-            if *interval > 1 {
-                let anchor_date = schedule.anchor.unwrap_or(*EPOCH_DATE);
-                let day_offset = days_between(anchor_date, date);
-                return Ok(day_offset >= 0 && day_offset % (*interval as i64) == 0);
-            }
-            Ok(true)
-        }
-        ScheduleExpr::IntervalRepeat {
-            interval,
-            unit,
-            from,
-            to,
-            day_filter,
-        } => {
-            if let Some(df) = day_filter {
-                if !matches_day_filter(date, df) {
-                    return Ok(false);
-                }
-            }
-            let from_t = to_time(from);
-            let to_t = to_time(to);
-            // Use instant-based arithmetic for DST correctness
-            let from_resolved = at_time_on_date(date, from_t, &tz)?;
-            let to_resolved = at_time_on_date(date, to_t, &tz)?;
-            let current_secs = zdt.timestamp().as_second();
-            let from_secs = from_resolved.timestamp().as_second();
-            let to_secs = to_resolved.timestamp().as_second();
-            if current_secs < from_secs || current_secs > to_secs {
-                return Ok(false);
-            }
-            let elapsed_secs = current_secs - from_secs;
-            let step_secs: i64 = match unit {
-                IntervalUnit::Minutes => *interval as i64 * 60,
-                IntervalUnit::Hours => *interval as i64 * 3600,
-            };
-            Ok(elapsed_secs >= 0 && elapsed_secs % step_secs == 0)
-        }
-        ScheduleExpr::WeekRepeat {
-            interval,
-            days,
-            times,
-        } => {
-            let wd = Weekday::from_jiff(date.weekday());
-            if !days.contains(&wd) {
-                return Ok(false);
-            }
-            if !time_matches_with_dst(date, times, &tz, &zdt)? {
-                return Ok(false);
-            }
-            let anchor_date = schedule.anchor.unwrap_or(*EPOCH_MONDAY);
-            let weeks = weeks_between(anchor_date, date);
-            Ok(weeks >= 0 && weeks % (*interval as i64) == 0)
-        }
-        ScheduleExpr::MonthRepeat {
-            interval,
-            target,
-            times,
-        } => {
-            if !time_matches_with_dst(date, times, &tz, &zdt)? {
-                return Ok(false);
-            }
-            if *interval > 1 {
-                let anchor_date = schedule.anchor.unwrap_or(*EPOCH_DATE);
-                let month_offset = months_between_ym(anchor_date, date);
-                if month_offset < 0 || month_offset % (*interval as i64) != 0 {
-                    return Ok(false);
-                }
-            }
-            match target {
-                MonthTarget::Days(_) => {
-                    let expanded = target.expand_days();
-                    Ok(expanded.contains(&(date.day() as u8)))
-                }
-                MonthTarget::LastDay => {
-                    let last = last_day_of_month(date.year(), date.month());
-                    Ok(date == last)
-                }
-                MonthTarget::LastWeekday => {
-                    let last_wd = last_weekday_of_month(date.year(), date.month());
-                    Ok(date == last_wd)
-                }
-                MonthTarget::NearestWeekday { day, direction } => {
-                    match nearest_weekday(date.year(), date.month(), *day, *direction) {
-                        Some(target_date) => Ok(date == target_date),
-                        None => Ok(false),
-                    }
-                }
-                MonthTarget::OrdinalWeekday { ordinal, weekday } => {
-                    let target_date = match ordinal {
-                        OrdinalPosition::Last => {
-                            last_weekday_in_month(date.year(), date.month(), *weekday)
-                        }
-                        _ => {
-                            match ordinal_to_n(*ordinal).and_then(|n| {
-                                nth_weekday_of_month(date.year(), date.month(), *weekday, n)
-                            }) {
-                                Some(d) => d,
-                                None => return Ok(false),
-                            }
-                        }
-                    };
-                    Ok(date == target_date)
-                }
-            }
-        }
-        ScheduleExpr::SingleDate {
-            date: date_spec,
-            times,
-        } => {
-            if !time_matches_with_dst(date, times, &tz, &zdt)? {
-                return Ok(false);
-            }
-            match date_spec {
-                DateSpec::Iso(s) => {
-                    let target: Date = s
-                        .parse()
-                        .map_err(|e| ScheduleError::eval(format!("invalid date '{s}': {e}")))?;
-                    Ok(date == target)
-                }
-                DateSpec::Named { month, day } => {
-                    Ok(date.month() == month.number() as i8 && date.day() == *day as i8)
-                }
-            }
-        }
-        ScheduleExpr::YearRepeat {
-            interval,
-            target,
-            times,
-        } => {
-            if !time_matches_with_dst(date, times, &tz, &zdt)? {
-                return Ok(false);
-            }
-            if *interval > 1 {
-                let anchor_year = schedule.anchor.unwrap_or(*EPOCH_DATE).year();
-                let year_offset = date.year() as i64 - anchor_year as i64;
-                if year_offset < 0 || year_offset % (*interval as i64) != 0 {
-                    return Ok(false);
-                }
-            }
-            match target {
-                YearTarget::Date { month, day } => {
-                    Ok(date.month() == month.number() as i8 && date.day() == *day as i8)
-                }
-                YearTarget::OrdinalWeekday {
-                    ordinal,
-                    weekday,
-                    month,
-                } => {
-                    if date.month() != month.number() as i8 {
-                        return Ok(false);
-                    }
-                    let target_date = match ordinal {
-                        OrdinalPosition::Last => {
-                            last_weekday_in_month(date.year(), date.month(), *weekday)
-                        }
-                        _ => {
-                            match ordinal_to_n(*ordinal).and_then(|n| {
-                                nth_weekday_of_month(date.year(), date.month(), *weekday, n)
-                            }) {
-                                Some(d) => d,
-                                None => return Ok(false),
-                            }
-                        }
-                    };
-                    Ok(date == target_date)
-                }
-                YearTarget::DayOfMonth { day, month } => {
-                    Ok(date.month() == month.number() as i8 && date.day() == *day as i8)
-                }
-                YearTarget::LastWeekday { month } => {
-                    if date.month() != month.number() as i8 {
-                        return Ok(false);
-                    }
-                    let target_date = last_weekday_of_month(date.year(), date.month());
-                    Ok(date == target_date)
-                }
-            }
-        }
-    }
-}
-
-pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
-    let tz = resolve_tz(&schedule.timezone)?;
-    let anchor = schedule.anchor;
-
-    let starting_date = anchor;
-
-    let until_date = match &schedule.until {
-        Some(until) => Some(resolve_until(until, now)?),
-        None => None,
-    };
-
-    let parsed_exceptions = ParsedExceptions::from_exceptions(&schedule.except);
-    let has_exceptions = !schedule.except.is_empty();
-    let has_during = !schedule.during.is_empty();
-
-    let handles_during_internally = matches!(
-        &schedule.expr,
-        ScheduleExpr::MonthRepeat {
-            target: MonthTarget::NearestWeekday {
-                direction: Some(_),
-                ..
-            },
-            ..
-        }
-    );
-
-    let mut current = now.clone();
-    for _ in 0..1000 {
-        let candidate = prev_expr(&schedule.expr, &tz, &anchor, &current, &schedule.during)?;
-
-        let candidate = match candidate {
-            Some(c) => c,
-            None => return Ok(None),
-        };
-
-        let c_date = candidate.with_time_zone(tz.clone()).date();
-
-        if let Some(start) = starting_date {
-            if c_date < start {
-                return Ok(None);
-            }
-            // Also check if on starting date but time is before the occurrence
-            if c_date == start {
-                // The candidate is valid if it's >= start date
-                // (we already checked c_date >= start above)
-            }
-        }
-
-        if let Some(ref until) = until_date {
-            if c_date > *until {
-                current = at_time_on_date(*until, Time::new(23, 59, 59, 0).unwrap(), &tz)?;
-                continue;
-            }
-        }
-
-        if has_during && !handles_during_internally && !matches_during(c_date, &schedule.during) {
-            let skip_to = prev_during_month(c_date, &schedule.during);
-            current = at_time_on_date(skip_to, Time::new(23, 59, 59, 0).unwrap(), &tz)?
-                .checked_add(jiff::Span::new().seconds(1))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            continue;
-        }
-
-        if has_exceptions && parsed_exceptions.is_excepted(c_date) {
-            let prev_day = c_date
-                .yesterday()
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            current = at_time_on_date(prev_day, Time::new(23, 59, 59, 0).unwrap(), &tz)?
-                .checked_add(jiff::Span::new().seconds(1))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            continue;
-        }
-
-        return Ok(Some(candidate));
-    }
-
-    Ok(None)
-}
-
-fn prev_expr(
-    expr: &ScheduleExpr,
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-    during: &[MonthName],
-) -> Result<Option<Zoned>, ScheduleError> {
-    match expr {
-        ScheduleExpr::DayRepeat {
-            interval,
-            days,
-            times,
-        } => prev_day_repeat(*interval, days, times, tz, anchor, now),
-
-        ScheduleExpr::IntervalRepeat {
-            interval,
-            unit,
-            from,
-            to,
-            day_filter,
-        } => prev_interval_repeat(*interval, *unit, from, to, day_filter, tz, now),
-
-        ScheduleExpr::WeekRepeat {
-            interval,
-            days,
-            times,
-        } => prev_week_repeat(*interval, days, times, tz, anchor, now),
-
-        ScheduleExpr::MonthRepeat {
-            interval,
-            target,
-            times,
-        } => prev_month_repeat(*interval, target, times, tz, anchor, now, during),
-
-        ScheduleExpr::SingleDate { date, times } => prev_single_date(date, times, tz, now),
-
-        ScheduleExpr::YearRepeat {
-            interval,
-            target,
-            times,
-        } => prev_year_repeat(*interval, target, times, tz, anchor, now),
-    }
-}
-
-fn prev_during_month(date: Date, during: &[MonthName]) -> Date {
-    let mut m = date.month();
-    let mut y = date.year();
-
-    if m == 1 {
-        m = 12;
-        y -= 1;
-    } else {
-        m -= 1;
-    }
-
-    for _ in 0..12 {
-        if let Some(month_name) = month_number_to_name(m as u8) {
-            if during.contains(&month_name) {
-                return last_day_of_month(y, m);
-            }
-        }
-        if m == 1 {
-            m = 12;
-            y -= 1;
-        } else {
-            m -= 1;
-        }
-    }
-
-    // Fallback (shouldn't happen with valid during clause)
-    date.yesterday().unwrap_or(date)
-}
-
-fn month_number_to_name(n: u8) -> Option<MonthName> {
-    match n {
-        1 => Some(MonthName::January),
-        2 => Some(MonthName::February),
-        3 => Some(MonthName::March),
-        4 => Some(MonthName::April),
-        5 => Some(MonthName::May),
-        6 => Some(MonthName::June),
-        7 => Some(MonthName::July),
-        8 => Some(MonthName::August),
-        9 => Some(MonthName::September),
-        10 => Some(MonthName::October),
-        11 => Some(MonthName::November),
-        12 => Some(MonthName::December),
-        _ => None,
-    }
-}
-
-fn ordinal_to_n(ord: OrdinalPosition) -> Option<u8> {
-    match ord {
-        OrdinalPosition::First => Some(1),
-        OrdinalPosition::Second => Some(2),
-        OrdinalPosition::Third => Some(3),
-        OrdinalPosition::Fourth => Some(4),
-        OrdinalPosition::Fifth => Some(5),
-        OrdinalPosition::Last => None,
-    }
-}
-
-fn next_day_repeat(
-    interval: u32,
-    days: &DayFilter,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let mut date = now_in_tz.date();
-
-    if interval <= 1 {
-        if matches_day_filter(date, days) {
-            if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
-                return Ok(Some(candidate));
-            }
-        }
-        for _ in 0..8 {
-            date = date
-                .tomorrow()
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            if matches_day_filter(date, days) {
-                if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
-                    return Ok(Some(candidate));
-                }
-            }
-        }
-        return Ok(None);
-    }
-
-    // Day intervals only parse with DayFilter::Every, so `days` needs no check here.
-    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
-    let interval_i64 = interval as i64;
-
-    let offset = days_between(anchor_date, date);
-    let remainder = offset.rem_euclid(interval_i64);
-    let aligned_date = if remainder == 0 {
-        date
-    } else {
-        date.checked_add(jiff::Span::new().days(interval_i64 - remainder))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?
-    };
-
-    // At most two iterations: aligned_date if one of its times is still ahead,
-    // otherwise the next aligned date.
-    let mut cur = aligned_date;
-    for _ in 0..2 {
-        if let Some(candidate) = earliest_future_at_times(cur, times, tz, now)? {
-            return Ok(Some(candidate));
-        }
-        cur = cur
-            .checked_add(jiff::Span::new().days(interval_i64))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-    }
-
-    Ok(None)
-}
-
-fn next_interval_repeat(
-    interval: u32,
-    unit: IntervalUnit,
-    from: &TimeOfDay,
-    to: &TimeOfDay,
-    day_filter: &Option<DayFilter>,
-    tz: &TimeZone,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let from_t = to_time(from);
-    let to_t = to_time(to);
-    let step_minutes: i64 = match unit {
-        IntervalUnit::Minutes => interval as i64,
-        IntervalUnit::Hours => interval as i64 * 60,
-    };
-
-    let from_minutes = from_t.hour() as i64 * 60 + from_t.minute() as i64;
-    let to_minutes = to_t.hour() as i64 * 60 + to_t.minute() as i64;
-    let mut date = now_in_tz.date();
-
-    for _ in 0..400 {
-        if let Some(df) = day_filter {
-            if !matches_day_filter(date, df) {
-                date = date
-                    .tomorrow()
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-                continue;
-            }
-        }
-
-        let now_minutes = if date == now_in_tz.date() {
-            now_in_tz.time().hour() as i64 * 60 + now_in_tz.time().minute() as i64
-        } else {
-            -1 // Future day: any slot from `from` is valid
-        };
-
-        let next_slot = if now_minutes < from_minutes {
-            from_minutes
-        } else {
-            let elapsed = now_minutes - from_minutes;
-            from_minutes + (elapsed / step_minutes + 1) * step_minutes
-        };
-
-        if next_slot <= to_minutes {
-            let h = (next_slot / 60) as i8;
-            let m = (next_slot % 60) as i8;
-            let t = Time::new(h, m, 0, 0).unwrap();
-            let candidate = at_time_on_date(date, t, tz)?;
-            if candidate > *now {
-                return Ok(Some(candidate));
-            }
-        }
-
-        date = date
-            .tomorrow()
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-    }
-
-    Ok(None)
-}
-
-fn next_week_repeat(
-    interval: u32,
-    days: &[Weekday],
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let anchor_date = anchor.unwrap_or(*EPOCH_MONDAY);
-
-    let date = now_in_tz.date();
-
-    let mut sorted_days: Vec<Weekday> = days.to_vec();
-    sorted_days.sort_by_key(|d| d.to_jiff().to_monday_one_offset());
-
-    let dow_offset = date.weekday().to_monday_one_offset() as i64 - 1;
-    let current_monday = date
-        .checked_add(jiff::Span::new().days(-dow_offset))
-        .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-
-    let anchor_dow_offset = anchor_date.weekday().to_monday_one_offset() as i64 - 1;
-    let anchor_monday = anchor_date
-        .checked_add(jiff::Span::new().days(-anchor_dow_offset))
-        .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-
-    let weeks_since_anchor = weeks_between(anchor_monday, current_monday);
-    let first_aligned_monday = if weeks_since_anchor < 0 {
-        anchor_monday
-    } else {
-        let remainder = weeks_since_anchor % (interval as i64);
-        if remainder == 0 {
-            current_monday
-        } else {
-            current_monday
-                .checked_add(jiff::Span::new().days((interval as i64 - remainder) * 7))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?
-        }
-    };
-
-    let mut cur_monday = first_aligned_monday;
-
-    // At most two iterations: the first aligned week if one of its times is still
-    // ahead, otherwise the next aligned week.
-    for _ in 0..2 {
-        for wd in &sorted_days {
-            let day_offset = wd.to_jiff().to_monday_one_offset() as i64 - 1;
-            let target_date = cur_monday
-                .checked_add(jiff::Span::new().days(day_offset))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            if let Some(candidate) = earliest_future_at_times(target_date, times, tz, now)? {
-                return Ok(Some(candidate));
-            }
-        }
-
-        let skip_weeks = interval as i64;
-        cur_monday = cur_monday
-            .checked_add(jiff::Span::new().days(skip_weeks * 7))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-    }
-
-    Ok(None)
-}
-
-fn next_month_repeat(
-    interval: u32,
-    target: &MonthTarget,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-    during: &[MonthName],
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-
-    let mut year = now_in_tz.date().year();
-    let mut month = now_in_tz.date().month();
-
-    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
-    let max_iter = if interval > 1 {
-        24 * interval as usize
-    } else {
-        24
-    };
-
-    // For NearestWeekday with direction, we need to apply the during filter here
-    // because the result can cross month boundaries
-    let apply_during_filter = !during.is_empty()
-        && matches!(
-            target,
-            MonthTarget::NearestWeekday {
-                direction: Some(_),
-                ..
-            }
-        );
-
-    for _ in 0..max_iter {
-        if apply_during_filter && !during.iter().any(|mn| mn.number() == month as u8) {
-            month += 1;
-            if month > 12 {
-                month = 1;
-                year += 1;
-            }
-            continue;
-        }
-
-        if interval > 1 {
-            let cur = Date::new(year, month, 1).unwrap();
-            let month_offset = months_between_ym(anchor_date, cur);
-            if month_offset < 0 || month_offset.rem_euclid(interval as i64) != 0 {
-                month += 1;
-                if month > 12 {
-                    month = 1;
-                    year += 1;
-                }
-                continue;
-            }
-        }
-        let date_candidates = match target {
-            MonthTarget::Days(_) => {
-                let expanded = target.expand_days();
-                let mut c = Vec::new();
-                for day_num in expanded {
-                    let last = last_day_of_month(year, month);
-                    if (day_num as i8) <= last.day() {
-                        if let Ok(date) = Date::new(year, month, day_num as i8) {
-                            c.push(date);
-                        }
-                    }
-                }
-                c
-            }
-            MonthTarget::LastDay => {
-                vec![last_day_of_month(year, month)]
-            }
-            MonthTarget::LastWeekday => {
-                vec![last_weekday_of_month(year, month)]
-            }
-            MonthTarget::NearestWeekday { day, direction } => {
-                match nearest_weekday(year, month, *day, *direction) {
-                    Some(d) => vec![d],
-                    None => vec![],
-                }
-            }
-            MonthTarget::OrdinalWeekday { ordinal, weekday } => match ordinal {
-                OrdinalPosition::Last => vec![last_weekday_in_month(year, month, *weekday)],
-                _ => ordinal_to_n(*ordinal)
-                    .and_then(|n| nth_weekday_of_month(year, month, *weekday, n))
-                    .into_iter()
-                    .collect(),
-            },
-        };
-
-        let mut best: Option<Zoned> = None;
-        for date in date_candidates {
-            if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
-                best = Some(match best {
-                    Some(prev) if candidate < prev => candidate,
-                    Some(prev) => prev,
-                    None => candidate,
-                });
-            }
-        }
-        if best.is_some() {
-            return Ok(best);
-        }
-
-        month += 1;
-        if month > 12 {
-            month = 1;
-            year += 1;
-        }
-    }
-
-    Ok(None)
-}
-
-fn next_single_date(
-    date_spec: &DateSpec,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-
-    match date_spec {
-        DateSpec::Iso(s) => {
-            let date: Date = s
-                .parse()
-                .map_err(|e| ScheduleError::eval(format!("invalid date '{s}': {e}")))?;
-            earliest_future_at_times(date, times, tz, now)
-        }
-        DateSpec::Named { month, day } => {
-            let start_year = now_in_tz.date().year();
-            // Try up to 8 years forward (covers leap year cycles)
-            for y in 0..8 {
-                let year = start_year + y;
-                if let Ok(date) = Date::new(year, month.number() as i8, *day as i8) {
-                    if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
-                        return Ok(Some(candidate));
-                    }
-                }
-            }
-            Ok(None)
-        }
-    }
-}
-
-fn next_year_repeat(
-    interval: u32,
-    target: &YearTarget,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let start_year = now_in_tz.date().year();
-    let anchor_year = anchor.unwrap_or(*EPOCH_DATE).year();
-
-    let max_iter = if interval > 1 { 8 * interval as i16 } else { 8 };
-
-    for y in 0..max_iter {
-        let year = start_year + y;
-
-        if interval > 1 {
-            let year_offset = (year as i64) - (anchor_year as i64);
-            if year_offset < 0 || year_offset.rem_euclid(interval as i64) != 0 {
-                continue;
-            }
-        }
-
-        let target_date = match target {
-            YearTarget::Date { month, day } => {
-                Date::new(year, month.number() as i8, *day as i8).ok()
-            }
-            YearTarget::OrdinalWeekday {
-                ordinal,
-                weekday,
-                month,
-            } => {
-                let m = month.number() as i8;
-                match ordinal {
-                    OrdinalPosition::Last => Some(last_weekday_in_month(year, m, *weekday)),
-                    _ => ordinal_to_n(*ordinal)
-                        .and_then(|n| nth_weekday_of_month(year, m, *weekday, n)),
-                }
-            }
-            YearTarget::DayOfMonth { day, month } => {
-                Date::new(year, month.number() as i8, *day as i8).ok()
-            }
-            YearTarget::LastWeekday { month } => {
-                Some(last_weekday_of_month(year, month.number() as i8))
-            }
-        };
-
-        if let Some(date) = target_date {
-            if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
-                return Ok(Some(candidate));
-            }
-        }
-    }
-
-    Ok(None)
-}
-
-fn prev_day_repeat(
-    interval: u32,
-    days: &DayFilter,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let mut date = now_in_tz.date();
-
-    if interval <= 1 {
-        if matches_day_filter(date, days) {
-            if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
-                return Ok(Some(candidate));
-            }
-        }
-        for _ in 0..8 {
-            date = date
-                .yesterday()
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-            if matches_day_filter(date, days) {
-                if let Some(candidate) = latest_at_times(date, times, tz)? {
-                    return Ok(Some(candidate));
-                }
-            }
-        }
-        return Ok(None);
-    }
-
-    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
-    let interval_i64 = interval as i64;
-
-    let offset = days_between(anchor_date, date);
-    let remainder = offset.rem_euclid(interval_i64);
-    let aligned_date = if remainder == 0 {
-        date
-    } else {
-        date.checked_add(jiff::Span::new().days(-remainder))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?
-    };
-
-    let mut cur = aligned_date;
-    for _ in 0..2 {
-        if let Some(candidate) = latest_past_at_times(cur, times, tz, now)? {
-            return Ok(Some(candidate));
-        }
-        if let Some(candidate) = latest_at_times(cur, times, tz)? {
-            if candidate < *now {
-                return Ok(Some(candidate));
-            }
-        }
-        cur = cur
-            .checked_add(jiff::Span::new().days(-interval_i64))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-        if let Some(candidate) = latest_at_times(cur, times, tz)? {
-            return Ok(Some(candidate));
-        }
-    }
-
-    Ok(None)
-}
-
-fn prev_interval_repeat(
-    interval: u32,
-    unit: IntervalUnit,
-    from: &TimeOfDay,
-    to: &TimeOfDay,
-    day_filter: &Option<DayFilter>,
-    tz: &TimeZone,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let from_t = to_time(from);
-    let to_t = to_time(to);
-    let step_minutes: i64 = match unit {
-        IntervalUnit::Minutes => interval as i64,
-        IntervalUnit::Hours => interval as i64 * 60,
-    };
-
-    let mut date = now_in_tz.date();
-    let now_time = now_in_tz.time();
-    let now_minutes = now_time.hour() as i64 * 60 + now_time.minute() as i64;
-    let from_minutes = from_t.hour() as i64 * 60 + from_t.minute() as i64;
-    let to_minutes = to_t.hour() as i64 * 60 + to_t.minute() as i64;
-
-    for _ in 0..8 {
-        if let Some(ref df) = day_filter {
-            if !matches_day_filter(date, df) {
-                date = date
-                    .yesterday()
-                    .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-                continue;
-            }
-        }
-
-        let search_until = if date == now_in_tz.date() {
-            now_minutes.min(to_minutes)
-        } else {
-            to_minutes
-        };
-
-        if search_until >= from_minutes {
-            let slots_in_range = (search_until - from_minutes) / step_minutes;
-            let last_slot_minutes = from_minutes + slots_in_range * step_minutes;
-
-            // On the same day, we need strictly before now
-            if date == now_in_tz.date() && last_slot_minutes >= now_minutes {
-                let prev_slot = last_slot_minutes - step_minutes;
-                if prev_slot >= from_minutes {
-                    let h = (prev_slot / 60) as i8;
-                    let m = (prev_slot % 60) as i8;
-                    let t = Time::new(h, m, 0, 0).unwrap();
-                    return at_time_on_date(date, t, tz).map(Some);
-                }
-            } else if last_slot_minutes >= from_minutes {
-                let h = (last_slot_minutes / 60) as i8;
-                let m = (last_slot_minutes % 60) as i8;
-                let t = Time::new(h, m, 0, 0).unwrap();
-                return at_time_on_date(date, t, tz).map(Some);
-            }
-        }
-
-        date = date
-            .yesterday()
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-    }
-
-    Ok(None)
-}
-
-fn prev_week_repeat(
-    interval: u32,
-    days: &[Weekday],
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let date = now_in_tz.date();
-
-    let days_since_monday = (date.weekday().to_monday_zero_offset()) as i64;
-    let current_monday = date
-        .checked_add(jiff::Span::new().days(-days_since_monday))
-        .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-
-    let anchor_date = anchor.unwrap_or(*EPOCH_MONDAY);
-    let anchor_days_since_monday = anchor_date.weekday().to_monday_zero_offset() as i64;
-    let anchor_monday = anchor_date
-        .checked_add(jiff::Span::new().days(-anchor_days_since_monday))
-        .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-
-    let interval_i64 = interval as i64;
-
-    let weeks = weeks_between(anchor_monday, current_monday);
-    let aligned = weeks >= 0 && weeks % interval_i64 == 0;
-
-    if aligned {
-        let mut sorted_days = days.to_vec();
-        sorted_days.sort_by_key(|d| d.to_jiff().to_monday_zero_offset());
-        sorted_days.reverse();
-
-        for wd in &sorted_days {
-            let day_offset = wd.to_jiff().to_monday_zero_offset() as i64;
-            let target_date = current_monday
-                .checked_add(jiff::Span::new().days(day_offset))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-
-            if target_date < date {
-                if let Some(candidate) = latest_at_times(target_date, times, tz)? {
-                    return Ok(Some(candidate));
-                }
-            } else if target_date == date {
-                if let Some(candidate) = latest_past_at_times(target_date, times, tz, now)? {
-                    return Ok(Some(candidate));
-                }
-            }
-        }
-    }
-
-    let mut check_monday = if aligned {
-        current_monday
-            .checked_add(jiff::Span::new().days(-interval_i64 * 7))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?
-    } else {
-        let remainder = weeks.rem_euclid(interval_i64);
-        current_monday
-            .checked_add(jiff::Span::new().days(-remainder * 7))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?
-    };
-
-    for _ in 0..54 {
-        let wks = weeks_between(anchor_monday, check_monday);
-        if wks < 0 {
-            return Ok(None); // Before anchor
-        }
-
-        let mut sorted_days = days.to_vec();
-        sorted_days.sort_by_key(|d| d.to_jiff().to_monday_zero_offset());
-        sorted_days.reverse();
-
-        for wd in &sorted_days {
-            let day_offset = wd.to_jiff().to_monday_zero_offset() as i64;
-            let target_date = check_monday
-                .checked_add(jiff::Span::new().days(day_offset))
-                .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-
-            if let Some(candidate) = latest_at_times(target_date, times, tz)? {
-                if candidate < *now {
-                    return Ok(Some(candidate));
-                }
-            }
-        }
-
-        check_monday = check_monday
-            .checked_add(jiff::Span::new().days(-interval_i64 * 7))
-            .map_err(|e| ScheduleError::eval(format!("{e}")))?;
-    }
-
-    Ok(None)
-}
-
-fn prev_month_repeat(
-    interval: u32,
-    target: &MonthTarget,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-    _during: &[MonthName],
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let start_date = now_in_tz.date();
-    let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
-
-    let max_iter = if interval > 1 { 24 * interval } else { 24 };
-
-    let mut year = start_date.year();
-    let mut month = start_date.month();
-
-    for _ in 0..max_iter {
-        if interval > 1 {
-            let month_offset = months_between_ym(anchor_date, Date::new(year, month, 1).unwrap());
-            if month_offset < 0 || month_offset.rem_euclid(interval as i64) != 0 {
-                if month == 1 {
-                    month = 12;
-                    year -= 1;
-                } else {
-                    month -= 1;
-                }
-                continue;
-            }
-        }
-
-        let target_dates = match target {
-            MonthTarget::Days(_) => {
-                let expanded = target.expand_days();
-                let mut dates: Vec<Date> = expanded
-                    .iter()
-                    .filter_map(|&d| Date::new(year, month, d as i8).ok())
-                    .collect();
-                dates.sort();
-                dates.reverse(); // Latest first
-                dates
-            }
-            MonthTarget::LastDay => {
-                vec![last_day_of_month(year, month)]
-            }
-            MonthTarget::LastWeekday => {
-                vec![last_weekday_of_month(year, month)]
-            }
-            MonthTarget::NearestWeekday { day, direction } => {
-                match nearest_weekday(year, month, *day, *direction) {
-                    Some(d) => vec![d],
-                    None => vec![],
-                }
-            }
-            MonthTarget::OrdinalWeekday { ordinal, weekday } => match ordinal {
-                OrdinalPosition::Last => vec![last_weekday_in_month(year, month, *weekday)],
-                _ => ordinal_to_n(*ordinal)
-                    .and_then(|n| nth_weekday_of_month(year, month, *weekday, n))
-                    .into_iter()
-                    .collect(),
-            },
-        };
-
-        for date in target_dates {
-            if date > start_date {
-                continue; // Skip future dates
-            }
-            if date == start_date {
-                if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
-                    return Ok(Some(candidate));
-                }
-            } else {
-                // Past date, return latest time
-                if let Some(candidate) = latest_at_times(date, times, tz)? {
-                    return Ok(Some(candidate));
-                }
-            }
-        }
-
-        if month == 1 {
-            month = 12;
-            year -= 1;
-        } else {
-            month -= 1;
-        }
-    }
-
-    Ok(None)
-}
-
-fn prev_single_date(
-    date_spec: &DateSpec,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let now_date = now_in_tz.date();
-
-    let target_date = match date_spec {
-        DateSpec::Iso(s) => s
-            .parse::<Date>()
-            .map_err(|e| ScheduleError::eval(format!("invalid date '{s}': {e}")))?,
-        DateSpec::Named { month, day } => {
-            // Named dates repeat yearly, find the most recent one
-            let this_year = Date::new(now_date.year(), month.number() as i8, *day as i8).ok();
-            let last_year = Date::new(now_date.year() - 1, month.number() as i8, *day as i8).ok();
-
-            if let Some(d) = this_year {
-                if d < now_date {
-                    d
-                } else if d == now_date {
-                    if let Some(candidate) = latest_past_at_times(d, times, tz, now)? {
-                        return Ok(Some(candidate));
-                    }
-                    last_year.unwrap_or(d)
-                } else {
-                    last_year.unwrap_or(d)
-                }
-            } else {
-                return Ok(None);
-            }
-        }
-    };
-
-    if let DateSpec::Iso(_) = date_spec {
-        if target_date > now_date {
-            return Ok(None); // Single date in the future
-        }
-        if target_date == now_date {
-            return latest_past_at_times(target_date, times, tz, now);
-        }
-        return latest_at_times(target_date, times, tz);
-    }
-
-    latest_at_times(target_date, times, tz)
-}
-
-fn prev_year_repeat(
-    interval: u32,
-    target: &YearTarget,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    anchor: &Option<jiff::civil::Date>,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let now_in_tz = now.with_time_zone(tz.clone());
-    let start_year = now_in_tz.date().year();
-    let start_date = now_in_tz.date();
-    let anchor_year = anchor.unwrap_or(*EPOCH_DATE).year();
-
-    let max_iter = if interval > 1 { 8 * interval as i16 } else { 8 };
-
-    for y in 0..max_iter {
-        let year = start_year - y;
-
-        if interval > 1 {
-            let year_offset = (year as i64) - (anchor_year as i64);
-            if year_offset < 0 || year_offset.rem_euclid(interval as i64) != 0 {
-                continue;
-            }
-        }
-
-        let target_date = match target {
-            YearTarget::Date { month, day } => {
-                Date::new(year, month.number() as i8, *day as i8).ok()
-            }
-            YearTarget::OrdinalWeekday {
-                ordinal,
-                weekday,
-                month,
-            } => {
-                let m = month.number() as i8;
-                match ordinal {
-                    OrdinalPosition::Last => Some(last_weekday_in_month(year, m, *weekday)),
-                    _ => ordinal_to_n(*ordinal)
-                        .and_then(|n| nth_weekday_of_month(year, m, *weekday, n)),
-                }
-            }
-            YearTarget::DayOfMonth { day, month } => {
-                Date::new(year, month.number() as i8, *day as i8).ok()
-            }
-            YearTarget::LastWeekday { month } => {
-                Some(last_weekday_of_month(year, month.number() as i8))
-            }
-        };
-
-        if let Some(date) = target_date {
-            if date > start_date {
-                continue; // Future date
-            }
-            if date == start_date {
-                if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
-                    return Ok(Some(candidate));
-                }
-            } else if let Some(candidate) = latest_at_times(date, times, tz)? {
-                return Ok(Some(candidate));
-            }
-        }
-    }
-
-    Ok(None)
-}
-
-/// Get the latest time from a list that is strictly before `now`, on the given date.
-fn latest_past_at_times(
-    date: Date,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-    now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let mut sorted_times = times.to_vec();
-    sorted_times.sort_by_key(|t| (t.hour, t.minute));
-    sorted_times.reverse(); // Latest first
-
-    for tod in sorted_times {
-        let candidate = at_time_on_date(date, to_time(&tod), tz)?;
-        if candidate < *now {
-            return Ok(Some(candidate));
-        }
-    }
-    Ok(None)
-}
-
-/// Get the latest time from a list on the given date (doesn't check against now).
-fn latest_at_times(
-    date: Date,
-    times: &[TimeOfDay],
-    tz: &TimeZone,
-) -> Result<Option<Zoned>, ScheduleError> {
-    let mut sorted_times = times.to_vec();
-    sorted_times.sort_by_key(|t| (t.hour, t.minute));
-
-    if let Some(tod) = sorted_times.last() {
-        return at_time_on_date(date, to_time(tod), tz).map(Some);
-    }
-    Ok(None)
 }
 
 #[cfg(test)]

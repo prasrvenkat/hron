@@ -12,36 +12,180 @@ function parseZoned(s: string): Temporal.ZonedDateTime {
   return Temporal.ZonedDateTime.from(s);
 }
 
+// A case this runner cannot check must fail rather than pass silently
+// (spec/README.md, "Writing a runner").
+const topLevelKeys = [
+  "$schema",
+  "version",
+  "description",
+  "now",
+  "_eval_assertion_types",
+  "_behavioral_notes",
+  "parse",
+  "parse_errors",
+  "eval",
+  "cron",
+  "eval_errors",
+  "invariants",
+];
+const nextSections = [
+  "day_repeat",
+  "interval_repeat",
+  "month_repeat",
+  "week_repeat",
+  "single_date",
+  "year_repeat",
+  "except",
+  "until",
+  "except_and_until",
+  "n_occurrences",
+  "multi_time",
+  "during",
+  "day_ranges",
+  "leap_year",
+  "dst_spring_forward",
+  "dst_fall_back",
+  "timezone_default",
+  "contradictory",
+  "edge_cases",
+];
+const cronSections = [
+  "to_cron",
+  "to_cron_errors",
+  "from_cron",
+  "from_cron_errors",
+  "roundtrip",
+];
+
+// biome-ignore lint/suspicious/noExplicitAny: cases are untyped JSON
+type SpecCase = Record<string, any>;
+
+function sectionsOf(group: Record<string, unknown>): string[] {
+  return Object.keys(group).filter((key) => key !== "description");
+}
+
+const labels = ["name", "description"];
+
+function checkFields(tc: SpecCase, fields: string[]): void {
+  const unchecked = Object.keys(tc).filter(
+    (key) => !fields.includes(key) && !labels.includes(key),
+  );
+  expect(unchecked, "fields this runner does not check").toEqual([]);
+}
+
+function show(t: Temporal.ZonedDateTime | null): string | null {
+  return t === null ? null : t.toString();
+}
+
+function checkNext(tc: SpecCase): void {
+  checkFields(tc, [
+    "expression",
+    "now",
+    "next",
+    "next_date",
+    "next_n",
+    "next_n_count",
+    "next_n_length",
+  ]);
+  const assertions = ["next", "next_date", "next_n", "next_n_length"];
+  expect(
+    assertions.filter((field) => field in tc),
+    "an assertion field",
+  ).not.toEqual([]);
+  const schedule = Schedule.parse(tc.expression);
+  const now = "now" in tc ? parseZoned(tc.now) : defaultNow;
+  if ("next" in tc) {
+    expect(show(schedule.nextFrom(now)), "next").toBe(tc.next);
+  }
+  if ("next_date" in tc) {
+    const date = schedule.nextFrom(now)?.toPlainDate().toString() ?? null;
+    expect(date, "next_date").toBe(tc.next_date);
+  }
+  if ("next_n" in tc) {
+    const n = tc.next_n_count ?? tc.next_n.length;
+    expect(schedule.nextNFrom(now, n).map(show), "next_n").toEqual(tc.next_n);
+  }
+  if ("next_n_length" in tc) {
+    const results = schedule.nextNFrom(now, tc.next_n_count);
+    expect(results.length, "next_n_length").toBe(tc.next_n_length);
+  }
+}
+
+function checkMatches(tc: SpecCase): void {
+  checkFields(tc, ["expression", "datetime", "expected"]);
+  expect(typeof tc.expected, "expected is a boolean").toBe("boolean");
+  const schedule = Schedule.parse(tc.expression);
+  expect(schedule.matches(parseZoned(tc.datetime))).toBe(tc.expected);
+}
+
+function checkPreviousFrom(tc: SpecCase): void {
+  checkFields(tc, ["expression", "now", "expected"]);
+  expect("expected" in tc, "an expected field").toBe(true);
+  const schedule = Schedule.parse(tc.expression);
+  expect(show(schedule.previousFrom(parseZoned(tc.now)))).toBe(tc.expected);
+}
+
+function checkOccurrences(tc: SpecCase): void {
+  checkFields(tc, ["expression", "from", "take", "expected"]);
+  expect(Array.isArray(tc.expected), "expected is a list").toBe(true);
+  const schedule = Schedule.parse(tc.expression);
+  const taken: (string | null)[] = [];
+  for (const t of schedule.occurrences(parseZoned(tc.from))) {
+    if (taken.length >= tc.take) break;
+    taken.push(show(t));
+  }
+  expect(taken).toEqual(tc.expected);
+}
+
+function checkBetween(tc: SpecCase): void {
+  checkFields(tc, ["expression", "from", "to", "expected", "expected_count"]);
+  expect(
+    "expected" in tc || "expected_count" in tc,
+    "an expected or expected_count field",
+  ).toBe(true);
+  const schedule = Schedule.parse(tc.expression);
+  const results = [
+    ...schedule.between(parseZoned(tc.from), parseZoned(tc.to)),
+  ].map(show);
+  if ("expected" in tc) expect(results).toEqual(tc.expected);
+  if ("expected_count" in tc) expect(results.length).toBe(tc.expected_count);
+}
+
+const evalChecks: Record<string, (tc: SpecCase) => void> = {
+  matches: checkMatches,
+  previous_from: checkPreviousFrom,
+  occurrences: checkOccurrences,
+  between: checkBetween,
+  ...Object.fromEntries(nextSections.map((section) => [section, checkNext])),
+};
+
+describe("spec layout", () => {
+  it("has only top-level sections this runner knows", () => {
+    const unknown = Object.keys(spec).filter((k) => !topLevelKeys.includes(k));
+    expect(unknown).toEqual([]);
+  });
+
+  it("has only eval sections this runner knows", () => {
+    const unknown = sectionsOf(spec.eval).filter((s) => !(s in evalChecks));
+    expect(unknown).toEqual([]);
+  });
+
+  it("has only cron sections this runner knows", () => {
+    const unknown = sectionsOf(spec.cron).filter(
+      (s) => !cronSections.includes(s),
+    );
+    expect(unknown).toEqual([]);
+  });
+});
+
 describe("parse roundtrip", () => {
-  const parseSections = [
-    "day_repeat",
-    "interval_repeat",
-    "week_repeat",
-    "month_repeat",
-    "single_date",
-    "year_repeat",
-    "except_clause",
-    "until_clause",
-    "starting_clause",
-    "during_clause",
-    "timezone_clause",
-    "combined_clauses",
-    "case_insensitivity",
-  ];
-
-  for (const section of parseSections) {
+  for (const section of sectionsOf(spec.parse)) {
     describe(section, () => {
-      const tests = spec.parse[section].tests;
-      for (const tc of tests) {
-        const name = tc.name ?? tc.input;
-        it(name, () => {
-          const schedule = Schedule.parse(tc.input);
-          const display = schedule.toString();
-          expect(display).toBe(tc.canonical);
-
-          // Idempotency: parse(canonical).toString() === canonical
-          const s2 = Schedule.parse(tc.canonical);
-          expect(s2.toString()).toBe(tc.canonical);
+      for (const tc of spec.parse[section].tests) {
+        it(tc.name ?? tc.input, () => {
+          checkFields(tc, ["input", "canonical"]);
+          expect(Schedule.parse(tc.input).toString()).toBe(tc.canonical);
+          expect(Schedule.parse(tc.canonical).toString()).toBe(tc.canonical);
         });
       }
     });
@@ -53,149 +197,19 @@ describe("parse errors", () => {
   for (const tc of tests) {
     const name = tc.name ?? tc.input;
     it(name, () => {
-      expect(() => Schedule.parse(tc.input)).toThrow();
+      checkFields(tc, ["input", "error_contains"]);
+      expect(() => Schedule.parse(tc.input)).toThrow(tc.error_contains ?? "");
     });
   }
 });
 
 describe("eval", () => {
-  const skipSections = new Set([
-    "description",
-    "matches",
-    "occurrences",
-    "between",
-    "previous_from",
-  ]);
-  const evalSections = Object.keys(spec.eval).filter(
-    (s) => !skipSections.has(s),
-  );
-
-  for (const section of evalSections) {
+  for (const section of sectionsOf(spec.eval)) {
+    const check = evalChecks[section];
+    if (check === undefined) continue;
     describe(section, () => {
-      const tests = spec.eval[section].tests;
-      for (const tc of tests) {
-        const name = tc.name ?? tc.expression;
-        it(name, () => {
-          const schedule = Schedule.parse(tc.expression);
-          const now = tc.now ? parseZoned(tc.now) : defaultNow;
-
-          if ("next" in tc) {
-            const result = schedule.nextFrom(now);
-            if (tc.next === null) {
-              expect(result).toBeNull();
-            } else {
-              expect(result).not.toBeNull();
-              expect(result?.toString()).toBe(tc.next);
-            }
-          }
-
-          if ("next_date" in tc) {
-            const result = schedule.nextFrom(now);
-            expect(result).not.toBeNull();
-            expect(result?.toPlainDate().toString()).toBe(tc.next_date);
-          }
-
-          if ("next_n" in tc) {
-            const expected: string[] = tc.next_n;
-            const nCount = tc.next_n_count ?? expected.length;
-            const results = schedule.nextNFrom(now, nCount);
-            expect(results.length).toBe(expected.length);
-            for (let j = 0; j < expected.length; j++) {
-              expect(results[j].toString()).toBe(expected[j]);
-            }
-          }
-
-          if ("next_n_length" in tc) {
-            const expectedLen: number = tc.next_n_length;
-            const nCount: number = tc.next_n_count;
-            const results = schedule.nextNFrom(now, nCount);
-            expect(results.length).toBe(expectedLen);
-          }
-        });
-      }
-    });
-  }
-});
-
-describe("eval matches", () => {
-  const tests = spec.eval.matches.tests;
-  for (const tc of tests) {
-    const name = tc.name ?? tc.expression;
-    it(name, () => {
-      const schedule = Schedule.parse(tc.expression);
-      const dt = parseZoned(tc.datetime);
-      expect(schedule.matches(dt)).toBe(tc.expected);
-    });
-  }
-});
-
-describe("eval occurrences", () => {
-  const tests = spec.eval.occurrences.tests;
-  for (const tc of tests) {
-    const name = tc.name ?? tc.expression;
-    it(name, () => {
-      const schedule = Schedule.parse(tc.expression);
-      const from = parseZoned(tc.from);
-      const take = tc.take as number;
-      const expected: string[] = tc.expected;
-
-      const results: Temporal.ZonedDateTime[] = [];
-      let count = 0;
-      for (const dt of schedule.occurrences(from)) {
-        if (count >= take) break;
-        results.push(dt);
-        count++;
-      }
-
-      expect(results.length).toBe(expected.length);
-      for (let j = 0; j < expected.length; j++) {
-        expect(results[j].toString()).toBe(expected[j]);
-      }
-    });
-  }
-});
-
-describe("eval between", () => {
-  const tests = spec.eval.between.tests;
-  for (const tc of tests) {
-    const name = tc.name ?? tc.expression;
-    it(name, () => {
-      const schedule = Schedule.parse(tc.expression);
-      const from = parseZoned(tc.from);
-      const to = parseZoned(tc.to);
-
-      const results: Temporal.ZonedDateTime[] = [];
-      for (const dt of schedule.between(from, to)) {
-        results.push(dt);
-      }
-
-      if ("expected" in tc) {
-        const expected: string[] = tc.expected;
-        expect(results.length).toBe(expected.length);
-        for (let j = 0; j < expected.length; j++) {
-          expect(results[j].toString()).toBe(expected[j]);
-        }
-      } else if ("expected_count" in tc) {
-        expect(results.length).toBe(tc.expected_count);
-      }
-    });
-  }
-});
-
-describe("eval previous_from", () => {
-  const tests = spec.eval.previous_from.tests;
-  for (const tc of tests) {
-    const name = tc.name ?? tc.expression;
-    it(name, () => {
-      const schedule = Schedule.parse(tc.expression);
-      const now = parseZoned(tc.now);
-      const result = schedule.previousFrom(now);
-
-      if (tc.expected === null) {
-        expect(result).toBeNull();
-      } else {
-        expect(result).not.toBeNull();
-        expect(result?.toString()).toBe(tc.expected);
+      for (const tc of spec.eval[section].tests) {
+        it(tc.name ?? tc.expression, () => check(tc));
       }
     });
   }
@@ -206,6 +220,7 @@ describe("eval errors", () => {
   for (const tc of tests) {
     const name = tc.name ?? tc.expression;
     it(name, () => {
+      checkFields(tc, ["expression"]);
       // TS validates timezone at eval time, so parse may succeed
       // but nextFrom should throw. If parse throws, that's also acceptable.
       let schedule: Schedule;
@@ -219,12 +234,136 @@ describe("eval errors", () => {
   }
 });
 
+type Zoned = Temporal.ZonedDateTime;
+type InvariantRule = (schedule: Schedule, now: Zoned, count: number) => void;
+
+function instant(t: Zoned | null): string | null {
+  return t === null ? null : t.toInstant().toString();
+}
+
+function isBefore(a: Zoned, b: Zoned): boolean {
+  return Temporal.ZonedDateTime.compare(a, b) < 0;
+}
+
+function nextMatches(schedule: Schedule, now: Zoned): void {
+  const t = schedule.nextFrom(now);
+  if (t !== null) {
+    expect(schedule.matches(t), `matches(${t})`).toBe(true);
+  }
+}
+
+function nextAfterNow(schedule: Schedule, now: Zoned): void {
+  const t = schedule.nextFrom(now);
+  if (t !== null) {
+    expect(isBefore(now, t), `nextFrom = ${t} is after now`).toBe(true);
+  }
+}
+
+function nextNChain(schedule: Schedule, now: Zoned, count: number): void {
+  const list = schedule.nextNFrom(now, count);
+  const first = schedule.nextFrom(now);
+  if (first === null) {
+    expect(list.map(instant), "nextNFrom when nextFrom is null").toEqual([]);
+    return;
+  }
+  expect(instant(list[0] ?? null), "first element").toBe(instant(first));
+  for (let i = 1; i < list.length; i++) {
+    expect(isBefore(list[i - 1], list[i]), `${list[i]} increases`).toBe(true);
+    expect(instant(schedule.nextFrom(list[i - 1])), `element ${i}`).toBe(
+      instant(list[i]),
+    );
+  }
+}
+
+function occurrencesPrefix(
+  schedule: Schedule,
+  now: Zoned,
+  count: number,
+): void {
+  const taken: Zoned[] = [];
+  for (const t of schedule.occurrences(now)) {
+    if (taken.length >= count) break;
+    taken.push(t);
+  }
+  expect(taken.map(instant)).toEqual(
+    schedule.nextNFrom(now, count).map(instant),
+  );
+}
+
+function betweenWindow(schedule: Schedule, now: Zoned, count: number): void {
+  const list = schedule.nextNFrom(now, count);
+  if (list.length === 0) return;
+  const window = [...schedule.between(now, list[list.length - 1])];
+  expect(window.map(instant)).toEqual(list.map(instant));
+}
+
+function prevInverse(schedule: Schedule, now: Zoned, count: number): void {
+  const list = schedule.nextNFrom(now, count);
+  for (let i = 1; i < list.length; i++) {
+    expect(
+      instant(schedule.previousFrom(list[i])),
+      `previousFrom(${list[i]})`,
+    ).toBe(instant(list[i - 1]));
+  }
+}
+
+function prevBeforeNow(schedule: Schedule, now: Zoned): void {
+  const p = schedule.previousFrom(now);
+  if (p === null) return;
+  expect(isBefore(p, now), `previousFrom = ${p} is before now`).toBe(true);
+  expect(schedule.matches(p), `matches(${p})`).toBe(true);
+  const next = schedule.nextFrom(p);
+  expect(
+    next === null || !isBefore(next, now),
+    `nextFrom(${p}) = ${next}`,
+  ).toBe(true);
+}
+
+function displayRoundtrip(schedule: Schedule): void {
+  const display = schedule.toString();
+  expect(Schedule.parse(display).toString()).toBe(display);
+}
+
+const invariantRules: Record<string, InvariantRule> = {
+  next_matches: nextMatches,
+  next_after_now: nextAfterNow,
+  next_n_chain: nextNChain,
+  occurrences_prefix: occurrencesPrefix,
+  between_window: betweenWindow,
+  prev_inverse: prevInverse,
+  prev_before_now: prevBeforeNow,
+  display_roundtrip: displayRoundtrip,
+};
+
+describe("invariants", () => {
+  it("covers every rule in the spec", () => {
+    expect(Object.keys(invariantRules).sort()).toEqual(
+      Object.keys(spec.invariants.rules).sort(),
+    );
+  });
+
+  for (const tc of spec.invariants.tests) {
+    describe(tc.name, () => {
+      it("has only fields this runner checks", () => {
+        checkFields(tc, ["expression", "now"]);
+      });
+      for (const [rule, check] of Object.entries(invariantRules)) {
+        it(rule, () => {
+          const schedule = Schedule.parse(tc.expression);
+          check(schedule, parseZoned(tc.now), spec.invariants.count);
+        });
+      }
+    });
+  }
+});
+
 describe("cron", () => {
   describe("to_cron", () => {
     const tests = spec.cron.to_cron.tests;
     for (const tc of tests) {
       const name = tc.name ?? tc.hron;
       it(name, () => {
+        checkFields(tc, ["hron", "cron"]);
         const schedule = Schedule.parse(tc.hron);
         expect(schedule.toCron()).toBe(tc.cron);
       });
@@ -236,6 +375,7 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.hron;
       it(name, () => {
+        checkFields(tc, ["hron"]);
         const schedule = Schedule.parse(tc.hron);
         expect(() => schedule.toCron()).toThrow();
       });
@@ -247,6 +387,7 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.cron;
       it(name, () => {
+        checkFields(tc, ["cron", "hron"]);
         const schedule = Schedule.fromCron(tc.cron);
         expect(schedule.toString()).toBe(tc.hron);
       });
@@ -258,6 +399,7 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.cron;
       it(name, () => {
+        checkFields(tc, ["cron"]);
         expect(() => Schedule.fromCron(tc.cron)).toThrow();
       });
     }
@@ -268,6 +410,7 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.hron;
       it(name, () => {
+        checkFields(tc, ["hron"]);
         const schedule = Schedule.parse(tc.hron);
         const cron1 = schedule.toCron();
         const back = Schedule.fromCron(cron1);

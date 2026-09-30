@@ -53,9 +53,10 @@ impl Schedule {
     /// `until` date). Returns `Err` on evaluation errors such as invalid
     /// timezone or date arithmetic overflow.
     ///
-    /// A time in a DST spring-forward gap shifts forward by the length of the
-    /// gap (02:30 becomes 03:30). A time repeated by a fall-back transition
-    /// resolves to its first occurrence.
+    /// A fixed time in a DST spring-forward gap shifts forward by the length of
+    /// the gap (02:30 becomes 03:30), while an interval slot in the gap is
+    /// skipped. A time repeated by a fall-back transition occurs only at its
+    /// first pass.
     ///
     /// # Examples
     ///
@@ -109,7 +110,8 @@ impl Schedule {
         eval::previous_from(self, now)
     }
 
-    /// Check if a datetime matches this schedule.
+    /// Check whether the minute containing `datetime` is an occurrence of this
+    /// schedule. Seconds are ignored, so 09:00:30 matches `every day at 09:00`.
     ///
     /// # Examples
     ///

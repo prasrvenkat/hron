@@ -22,51 +22,46 @@ module Hron
   end
 
   module EvalHelpers
+    DAY_SECONDS = 86_400
+
+    # Dates are proleptic Gregorian, so searches that reach back before 1582 stay on the same calendar.
+    def self.date(year, month, day)
+      Date.new(year, month, day, Date::GREGORIAN)
+    end
+
+    def self.parse_date(iso)
+      Date.iso8601(iso, Date::GREGORIAN)
+    end
+
+    # A repeated (fall-back) time resolves to its first pass; a time inside a spring-forward gap
+    # shifts forward by the length of the gap.
     def self.at_time_on_date(d, tod, tz)
-      # Create local time representation (using UTC to avoid system TZ interference)
-      local_time = Time.utc(d.year, d.month, d.day, tod.hour, tod.minute, 0)
+      local = wall_time(d, tod)
+      local - (utc_offset_at(local, tz) || offset_before_gap(local, tz))
+    end
 
-      periods = tz.periods_for_local(local_time)
+    # Like at_time_on_date, but nil for a time inside a spring-forward gap.
+    def self.at_existing_time_on_date(d, tod, tz)
+      local = wall_time(d, tod)
+      offset = utc_offset_at(local, tz)
+      local - offset if offset
+    end
 
-      case periods.length
-      when 0
-        # A time in a DST gap shifts forward by the gap length (02:30 becomes 03:30),
-        # but only when the transition falls on this UTC date.
-        day_start = Time.utc(d.year, d.month, d.day, 0, 0, 0)
-        day_end = Time.utc(d.year, d.month, d.day, 23, 59, 59)
-        transitions = tz.transitions_up_to(day_end, day_start)
+    # The wall-clock time as a UTC Time, so the system timezone never interferes.
+    def self.wall_time(d, tod)
+      Time.utc(d.year, d.month, d.day, tod.hour, tod.minute)
+    end
 
-        if transitions.any?
-          transition = transitions.find { |t| t.offset.dst? }
-          if transition
-            prev_offset = transition.previous_offset.utc_total_offset
-            new_offset = transition.offset.utc_total_offset
-            gap_seconds = new_offset - prev_offset # Positive for spring forward
+    def self.utc_offset_at(local, tz)
+      tz.periods_for_local(local).first&.offset&.utc_total_offset
+    end
 
-            pushed_local = local_time + gap_seconds
-
-            return pushed_local - new_offset
-          end
-        end
-
-        # Reached when the transition falls on the previous UTC date (e.g. Australia/Sydney):
-        # TZInfo raises and the day is skipped.
-        begin
-          tz.local_to_utc(local_time)
-        rescue TZInfo::AmbiguousTime, TZInfo::PeriodNotFound
-          nil
-        end
-      when 1
-        period = periods[0]
-        utc_offset = period.offset.utc_total_offset
-        local_time - utc_offset
-      when 2
-        # Ambiguous time (fall back) - use first occurrence (pre-transition)
-        # Period 0 is the earlier offset (e.g., EDT -04:00 before fall back)
-        period = periods[0]
-        utc_offset = period.offset.utc_total_offset
-        local_time - utc_offset
+    # Interpreting a gap time with the offset in force before the gap is what shifts it forward.
+    def self.offset_before_gap(local, tz)
+      transition = tz.transitions_up_to(local + DAY_SECONDS, local - DAY_SECONDS).rfind do |t|
+        t.at.to_time + t.previous_offset.utc_total_offset <= local
       end
+      transition.previous_offset.utc_total_offset
     end
 
     def self.matches_day_filter(d, filter)
@@ -86,7 +81,7 @@ module Hron
     end
 
     def self.last_day_of_month(year, month)
-      Date.new(year, month, -1)
+      Date.new(year, month, -1, Date::GREGORIAN)
     end
 
     def self.last_weekday_of_month(year, month)
@@ -103,7 +98,7 @@ module Hron
 
       return nil if target_day > last_day_num
 
-      date = Date.new(year, month, target_day)
+      date = date(year, month, target_day)
       dow = date.cwday # Monday=1 ... Sunday=7
 
       return date if dow.between?(1, 5)
@@ -139,7 +134,7 @@ module Hron
 
     def self.nth_weekday_of_month(year, month, weekday, n)
       target_dow = Weekday.number(weekday)
-      d = Date.new(year, month, 1)
+      d = date(year, month, 1)
       d += 1 while d.cwday != target_dow
       (n - 1).times { d += 7 }
       return nil if d.month != month
@@ -154,25 +149,13 @@ module Hron
       d
     end
 
-    def self.weeks_between(a, b)
-      (b - a).to_i / 7
-    end
-
-    def self.days_between(a, b)
-      (b - a).to_i
-    end
-
-    def self.months_between_ym(a, b)
-      (b.year * 12) + b.month - ((a.year * 12) + a.month)
-    end
-
     def self.is_excepted(d, exceptions)
       exceptions.any? do |exc|
         case exc
         when NamedException
           d.month == MonthName.number(exc.month) && d.day == exc.day
         when IsoException
-          d == Date.parse(exc.date)
+          d == parse_date(exc.date)
         else
           false
         end
@@ -185,106 +168,199 @@ module Hron
       during.any? { |mn| MonthName.number(mn) == d.month }
     end
 
-    def self.next_during_month(d, during)
-      months = during.map { |mn| MonthName.number(mn) }.sort
-
-      months.each do |m|
-        return Date.new(d.year, m, 1) if m > d.month
-      end
-
-      Date.new(d.year + 1, months[0], 1)
-    end
-
     def self.resolve_until(until_spec, now)
       case until_spec
       when IsoUntil
-        Date.parse(until_spec.date)
+        parse_date(until_spec.date)
       when NamedUntil
         year = now.year
         [year, year + 1].each do |y|
-          d = Date.new(y, MonthName.number(until_spec.month), until_spec.day)
+          d = date(y, MonthName.number(until_spec.month), until_spec.day)
           return d if d >= now.to_date
         rescue ArgumentError
           next
         end
-        Date.new(year + 1, MonthName.number(until_spec.month), until_spec.day)
+        date(year + 1, MonthName.number(until_spec.month), until_spec.day)
       end
-    end
-
-    def self.earliest_future_at_times(d, times, tz, now)
-      best = nil
-      times.each do |tod|
-        candidate = at_time_on_date(d, tod, tz)
-        next unless candidate
-
-        best = candidate if candidate > now && (best.nil? || candidate < best)
-      end
-      best
-    end
-
-    def self.latest_past_at_times(d, times, tz, now)
-      best = nil
-      times.each do |tod|
-        candidate = at_time_on_date(d, tod, tz)
-        next unless candidate
-
-        best = candidate if candidate < now && (best.nil? || candidate > best)
-      end
-      best
-    end
-
-    def self.prev_during_month(d, during)
-      months = during.map { |mn| MonthName.number(mn) }.sort.reverse
-
-      months.each do |m|
-        return last_day_of_month(d.year, m) if m < d.month
-      end
-
-      return last_day_of_month(d.year - 1, months[0]) unless months.empty?
-
-      nil
     end
   end
 
   class Evaluator
+    # The proleptic Gregorian calendar repeats every 400 years: this many days, weeks, months and years.
+    CYCLE_DAYS = 146_097
+    CYCLE_WEEKS = 20_871
+    CYCLE_MONTHS = 4800
+    CYCLE_YEARS = 400
+    MIN_YEAR = 1
+    MAX_YEAR = 9999
+
     def self.next_from(schedule, now)
+      search(schedule, now, 1)
+    end
+
+    def self.previous_from(schedule, now)
+      search(schedule, now, -1)
+    end
+
+    # Walks candidate days away from now, forward when dir is 1 and backward when it is -1,
+    # and returns the closest occurrence strictly beyond now within years 1 to 9999.
+    def self.search(schedule, now, dir)
       tz = TzResolver.resolve(schedule.timezone)
-      until_date = schedule.until ? EvalHelpers.resolve_until(schedule.until, now) : nil
-      has_exceptions = !schedule.except.empty?
-      has_during = !schedule.during.empty?
+      until_date = schedule.until && EvalHelpers.resolve_until(schedule.until, now)
+      starting = schedule.anchor && EvalHelpers.parse_date(schedule.anchor)
+      from = tz.utc_to_local(now.utc).to_date.gregorian
+      # A spring-forward shift can carry the previous day's occurrence past now.
+      from -= 1 if dir.positive?
+      from = [from, until_date].min if dir.negative? && until_date
+      best = nil
 
-      # NearestWeekday with a direction can land in another month, so it applies the during filter itself.
-      handles_during_internally = schedule.expr.is_a?(MonthRepeat) &&
-        schedule.expr.target.is_a?(NearestWeekdayTarget) &&
-        !schedule.expr.target.direction.nil?
-
-      current = now
-      1000.times do
-        candidate = next_expr(schedule.expr, tz, schedule.anchor, current, schedule.during)
-        return nil unless candidate
-
-        c_date = candidate.to_date
-
-        return nil if until_date && c_date > until_date
-
-        if has_during && !handles_during_internally && !EvalHelpers.matches_during(c_date, schedule.during)
-          skip_to = EvalHelpers.next_during_month(c_date, schedule.during)
-          midnight = EvalHelpers.at_time_on_date(skip_to, TimeOfDay.new(0, 0), tz)
-          current = midnight - 1
-          next
+      each_candidate_day(schedule.expr, starting, from, dir) do |target, day|
+        break if best && !could_beat?(best, day, tz, dir)
+        if dir.positive?
+          break if day.year > MAX_YEAR || (until_date && day > until_date)
+        else
+          break if day.year < MIN_YEAR || (starting && day < starting)
+          next if until_date && day > until_date
         end
+        next unless EvalHelpers.matches_during(target, schedule.during)
+        next if EvalHelpers.is_excepted(day, schedule.except)
 
-        if has_exceptions && EvalHelpers.is_excepted(c_date, schedule.except)
-          next_day = c_date + 1
-          midnight = EvalHelpers.at_time_on_date(next_day, TimeOfDay.new(0, 0), tz)
-          current = midnight - 1
-          next
-        end
-
-        return candidate
+        found = occurrence_on(schedule.expr, day, tz, now, dir)
+        best = found if found && (best.nil? || (dir.positive? ? found < best : found > best))
       end
+      best
+    end
 
-      nil
+    # A shift moves an occurrence at most onto the next date, so a candidate day can still beat
+    # best only if its occurrences may land on best's date.
+    def self.could_beat?(best, day, tz, dir)
+      landed = tz.utc_to_local(best.utc).to_date.gregorian
+      dir.positive? ? day <= landed : day >= landed - 1
+    end
+
+    def self.each_candidate_day(expr, starting, from, dir)
+      case expr
+      when DayRepeat, IntervalRepeat
+        interval, filter = expr.is_a?(DayRepeat) ? [expr.interval, expr.days] : [1, expr.day_filter]
+        each_period(from.jd, (starting || EPOCH_DATE).jd, interval, CYCLE_DAYS, dir) do |jd|
+          day = Date.jd(jd, Date::GREGORIAN)
+          yield day, day if filter.nil? || EvalHelpers.matches_day_filter(day, filter)
+        end
+      when WeekRepeat
+        offsets = expr.days.map { |wd| Weekday.number(wd) - 1 }.uniq.sort
+        offsets.reverse! if dir.negative?
+        # Julian day numbers that are multiples of 7 are Mondays, so jd.div(7) numbers ISO weeks.
+        each_period(from.jd.div(7), (starting || EPOCH_MONDAY).jd.div(7), expr.interval, CYCLE_WEEKS, dir, bounded: starting) do |week|
+          offsets.each do |offset|
+            day = Date.jd((week * 7) + offset, Date::GREGORIAN)
+            yield day, day
+          end
+        end
+      when MonthRepeat
+        # Starts one month back so a nearest weekday that crosses into this month is not missed.
+        each_period(month_number(from) - dir, month_number(starting || EPOCH_DATE), expr.interval, CYCLE_MONTHS, dir, bounded: starting && expr.interval > 1) do |number|
+          year, month = number.divmod(12)
+          target = EvalHelpers.date(year, month + 1, 1)
+          days = month_target_days(expr.target, year, month + 1)
+          days.reverse! if dir.negative?
+          days.each { |day| yield target, day }
+        end
+      when YearRepeat
+        each_period(from.year, (starting || EPOCH_DATE).year, expr.interval, CYCLE_YEARS, dir, bounded: starting && expr.interval > 1) do |year|
+          day = year_target_day(expr.target, year)
+          yield day, day if day
+        end
+      when SingleDateExpr
+        case expr.date
+        when IsoDate
+          day = EvalHelpers.parse_date(expr.date.date)
+          yield day, day
+        when NamedDate
+          each_period(from.year, from.year, 1, CYCLE_YEARS, dir) do |year|
+            day = valid_date(year, MonthName.number(expr.date.month), expr.date.day)
+            yield day, day if day
+          end
+        end
+      end
+    end
+
+    # Yields period numbers (days, weeks, months or years) from `from` in direction dir that are a
+    # whole number of intervals from anchor, covering lcm(400 years, interval): the search horizon.
+    # When bounded, a forward search starts no earlier than the anchor's period, which is how an
+    # explicit `starting` date limits week repeats and month or year intervals over 1.
+    def self.each_period(from, anchor, interval, cycle, dir, bounded: false)
+      first = from + (dir * ((dir * (anchor - from)) % interval))
+      first = anchor if bounded && dir.positive? && first < anchor
+      ((cycle.lcm(interval) / interval) + 1).times { |k| yield first + (dir * interval * k) }
+    end
+
+    def self.month_number(date)
+      (date.year * 12) + date.month - 1
+    end
+
+    def self.valid_date(year, month, day)
+      EvalHelpers.date(year, month, day) if Date.valid_date?(year, month, day, Date::GREGORIAN)
+    end
+
+    def self.month_target_days(target, year, month)
+      case target
+      when DaysTarget
+        Hron.expand_month_target(target).uniq.sort.filter_map { |day| valid_date(year, month, day) }
+      when LastDayTarget
+        [EvalHelpers.last_day_of_month(year, month)]
+      when LastWeekdayTarget
+        [EvalHelpers.last_weekday_of_month(year, month)]
+      when NearestWeekdayTarget
+        [EvalHelpers.nearest_weekday(year, month, target.day, target.direction)].compact
+      when OrdinalWeekdayTarget
+        [ordinal_weekday(target.ordinal, year, month, target.weekday)].compact
+      end
+    end
+
+    def self.year_target_day(target, year)
+      month = MonthName.number(target.month)
+      case target
+      when YearDateTarget, YearDayOfMonthTarget
+        valid_date(year, month, target.day)
+      when YearOrdinalWeekdayTarget
+        ordinal_weekday(target.ordinal, year, month, target.weekday)
+      when YearLastWeekdayTarget
+        EvalHelpers.last_weekday_of_month(year, month)
+      end
+    end
+
+    def self.ordinal_weekday(ordinal, year, month, weekday)
+      if ordinal == OrdinalPosition::LAST
+        EvalHelpers.last_weekday_in_month(year, month, weekday)
+      else
+        EvalHelpers.nth_weekday_of_month(year, month, weekday, OrdinalPosition.to_n(ordinal))
+      end
+    end
+
+    # The occurrence on day closest to now that is strictly beyond it in direction dir.
+    def self.occurrence_on(expr, day, tz, now, dir)
+      beyond = ->(t) { dir.positive? ? t > now : t < now }
+
+      if expr.is_a?(IntervalRepeat)
+        slots = interval_slots(expr)
+        slots.reverse! if dir.negative?
+        slots.each do |tod|
+          t = EvalHelpers.at_existing_time_on_date(day, tod, tz)
+          return t if t && beyond.call(t)
+        end
+        nil
+      else
+        instants = expr.times.map { |tod| EvalHelpers.at_time_on_date(day, tod, tz) }.select(&beyond)
+        dir.positive? ? instants.min : instants.max
+      end
+    end
+
+    # Slots are wall-clock times from the from time up to and including the to time.
+    def self.interval_slots(expr)
+      step = (expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * 60
+      first = (expr.from_time.hour * 60) + expr.from_time.minute
+      last = (expr.to_time.hour * 60) + expr.to_time.minute
+      first.step(last, step).map { |minutes| TimeOfDay.new(*minutes.divmod(60)) }
     end
 
     def self.next_n_from(schedule, now, n)
@@ -295,290 +371,9 @@ module Hron
         break unless nxt
 
         results << nxt
-        current = nxt + 60 # Add 1 minute
+        current = nxt
       end
       results
-    end
-
-    def self.previous_from(schedule, now)
-      tz = TzResolver.resolve(schedule.timezone)
-      anchor_date = schedule.anchor ? Date.parse(schedule.anchor) : nil
-      has_exceptions = !schedule.except.empty?
-      has_during = !schedule.during.empty?
-
-      search_from = now
-      if schedule.until
-        until_date = EvalHelpers.resolve_until(schedule.until, now)
-        now_date = now.to_date
-        if now_date > until_date
-          next_day = until_date + 1
-          search_from = EvalHelpers.at_time_on_date(next_day, TimeOfDay.new(0, 0), tz)
-        end
-      end
-
-      1000.times do
-        candidate = prev_expr(schedule.expr, tz, schedule.anchor, search_from)
-        return nil unless candidate
-
-        c_date = candidate.to_date
-
-        return nil if anchor_date && c_date < anchor_date
-
-        if schedule.until
-          until_date = EvalHelpers.resolve_until(schedule.until, now)
-          if c_date > until_date
-            search_from = candidate
-            next
-          end
-        end
-
-        if has_exceptions && EvalHelpers.is_excepted(c_date, schedule.except)
-          search_from = candidate
-          next
-        end
-
-        if has_during && !EvalHelpers.matches_during(c_date, schedule.during)
-          prev_month = EvalHelpers.prev_during_month(c_date, schedule.during)
-          return nil unless prev_month
-
-          next_day = prev_month + 1
-          search_from = EvalHelpers.at_time_on_date(next_day, TimeOfDay.new(0, 0), tz)
-          next
-        end
-
-        return candidate
-      end
-
-      nil
-    end
-
-    def self.prev_expr(expr, tz, anchor, now)
-      case expr
-      when DayRepeat
-        prev_day_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
-      when IntervalRepeat
-        prev_interval_repeat(expr.interval, expr.unit, expr.from_time, expr.to_time, expr.day_filter, tz, now)
-      when WeekRepeat
-        prev_week_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
-      when MonthRepeat
-        prev_month_repeat(expr.interval, expr.target, expr.times, tz, anchor, now)
-      when SingleDateExpr
-        prev_single_date(expr.date, expr.times, tz, now)
-      when YearRepeat
-        prev_year_repeat(expr.interval, expr.target, expr.times, tz, anchor, now)
-      end
-    end
-
-    def self.prev_day_repeat(interval, days, times, tz, anchor, now)
-      now_local = tz.utc_to_local(now.utc)
-      d = now_local.to_date
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-
-      1000.times do
-        if interval > 1
-          offset = EvalHelpers.days_between(anchor_date, d)
-          mod = offset % interval
-          mod += interval if mod.negative?
-          unless mod.zero?
-            d -= mod
-            next
-          end
-        end
-
-        if EvalHelpers.matches_day_filter(d, days)
-          candidate = EvalHelpers.latest_past_at_times(d, times, tz, now)
-          return candidate if candidate
-        end
-
-        d -= (interval > 1) ? interval : 1
-      end
-
-      nil
-    end
-
-    def self.prev_interval_repeat(interval, unit, from_time, to_time, day_filter, tz, now)
-      now_local = tz.utc_to_local(now.utc)
-      d = now_local.to_date
-      step_minutes = (unit == IntervalUnit::MIN) ? interval : interval * 60
-      from_minutes = (from_time.hour * 60) + from_time.minute
-      to_minutes = (to_time.hour * 60) + to_time.minute
-
-      1000.times do
-        if day_filter && !EvalHelpers.matches_day_filter(d, day_filter)
-          d -= 1
-          next
-        end
-
-        window_times = []
-        m = from_minutes
-        while m <= to_minutes
-          window_times << m
-          m += step_minutes
-        end
-
-        window_times.reverse_each do |slot|
-          h = slot / 60
-          min = slot % 60
-          candidate = EvalHelpers.at_time_on_date(d, TimeOfDay.new(h, min), tz)
-          return candidate if candidate && candidate < now
-        end
-
-        d -= 1
-      end
-
-      nil
-    end
-
-    def self.prev_week_repeat(interval, days, times, tz, anchor, now)
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_MONDAY
-      now_local = tz.utc_to_local(now.utc)
-      d = now_local.to_date
-
-      sorted_days = days.sort_by { |wd| -Weekday.number(wd) }
-
-      dow_offset = d.cwday - 1
-      current_monday = d - dow_offset
-
-      anchor_dow_offset = anchor_date.cwday - 1
-      anchor_monday = anchor_date - anchor_dow_offset
-
-      54.times do
-        weeks = EvalHelpers.weeks_between(anchor_monday, current_monday)
-        return nil if weeks.negative?
-
-        if (weeks % interval).zero?
-          sorted_days.each do |wd|
-            day_offset = Weekday.number(wd) - 1
-            target_date = current_monday + day_offset
-            candidate = EvalHelpers.latest_past_at_times(target_date, times, tz, now)
-            return candidate if candidate
-          end
-        end
-
-        remainder = weeks % interval
-        skip_weeks = remainder.zero? ? interval : remainder
-        current_monday -= skip_weeks * 7
-      end
-
-      nil
-    end
-
-    def self.prev_month_repeat(interval, target, times, tz, anchor, now)
-      now_local = tz.utc_to_local(now.utc)
-      year = now_local.year
-      month = now_local.month
-
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-      max_iter = (interval > 1) ? 24 * interval : 24
-
-      max_iter.times do
-        if interval > 1
-          cur = Date.new(year, month, 1)
-          month_offset = EvalHelpers.months_between_ym(anchor_date, cur)
-          if month_offset.negative? || (month_offset % interval) != 0
-            month -= 1
-            if month < 1
-              month = 12
-              year -= 1
-            end
-            next
-          end
-        end
-
-        date_candidates = []
-
-        case target
-        when DaysTarget
-          expanded = Hron.expand_month_target(target)
-          last = EvalHelpers.last_day_of_month(year, month)
-          expanded.sort.reverse_each do |day_num|
-            next unless day_num <= last.day
-
-            begin
-              date_candidates << Date.new(year, month, day_num)
-            rescue ArgumentError
-              # Invalid date
-            end
-          end
-        when LastDayTarget
-          date_candidates << EvalHelpers.last_day_of_month(year, month)
-        when LastWeekdayTarget
-          date_candidates << EvalHelpers.last_weekday_of_month(year, month)
-        when NearestWeekdayTarget
-          nw = EvalHelpers.nearest_weekday(year, month, target.day, target.direction)
-          date_candidates << nw if nw
-        when OrdinalWeekdayTarget
-          ordinal_date = if target.ordinal == OrdinalPosition::LAST
-            EvalHelpers.last_weekday_in_month(year, month, target.weekday)
-          else
-            EvalHelpers.nth_weekday_of_month(year, month, target.weekday, OrdinalPosition.to_n(target.ordinal))
-          end
-          date_candidates << ordinal_date if ordinal_date
-        end
-
-        # Sort in descending order for backwards search
-        date_candidates.sort! { |a, b| b <=> a }
-
-        date_candidates.each do |dc|
-          candidate = EvalHelpers.latest_past_at_times(dc, times, tz, now)
-          return candidate if candidate
-        end
-
-        month -= 1
-        if month < 1
-          month = 12
-          year -= 1
-        end
-      end
-
-      nil
-    end
-
-    def self.prev_single_date(date_spec, times, tz, now)
-      case date_spec
-      when IsoDate
-        d = Date.parse(date_spec.date)
-        EvalHelpers.latest_past_at_times(d, times, tz, now)
-      when NamedDate
-        now_local = tz.utc_to_local(now.utc)
-        start_year = now_local.year
-        8.times do |y|
-          year = start_year - y
-          begin
-            d = Date.new(year, MonthName.number(date_spec.month), date_spec.day)
-            candidate = EvalHelpers.latest_past_at_times(d, times, tz, now)
-            return candidate if candidate
-          rescue ArgumentError
-            # Invalid date
-          end
-        end
-        nil
-      end
-    end
-
-    def self.prev_year_repeat(interval, target, times, tz, anchor, now)
-      now_local = tz.utc_to_local(now.utc)
-      start_year = now_local.year
-      anchor_year = anchor ? Date.parse(anchor).year : EPOCH_DATE.year
-
-      max_iter = (interval > 1) ? 8 * interval : 8
-
-      max_iter.times do |y|
-        year = start_year - y
-
-        if interval > 1
-          year_offset = year - anchor_year
-          next if year_offset.negative? || (year_offset % interval) != 0
-        end
-
-        target_date = compute_year_target_date(target, year)
-        next unless target_date
-
-        candidate = EvalHelpers.latest_past_at_times(target_date, times, tz, now)
-        return candidate if candidate
-      end
-
-      nil
     end
 
     # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for
@@ -591,7 +386,7 @@ module Hron
           break unless nxt
 
           yielder << nxt
-          current = nxt + 60 # Add 1 minute
+          current = nxt
         end
       end.lazy
     end
@@ -607,444 +402,10 @@ module Hron
       end.lazy
     end
 
+    # True when the minute containing dt (its seconds dropped) is an occurrence.
     def self.matches(schedule, dt)
-      tz = TzResolver.resolve(schedule.timezone)
-      dt_local = tz.utc_to_local(dt.utc)
-      d = dt_local.to_date
-
-      return false if !schedule.during.empty? && !EvalHelpers.matches_during(d, schedule.during)
-      return false if EvalHelpers.is_excepted(d, schedule.except)
-
-      if schedule.until
-        until_date = EvalHelpers.resolve_until(schedule.until, dt)
-        return false if d > until_date
-      end
-
-      matches_expr(schedule.expr, schedule.anchor, d, dt_local, tz)
-    end
-
-    def self.next_expr(expr, tz, anchor, now, during = [])
-      case expr
-      when DayRepeat
-        next_day_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
-      when IntervalRepeat
-        next_interval_repeat(expr.interval, expr.unit, expr.from_time, expr.to_time, expr.day_filter, tz, now)
-      when WeekRepeat
-        next_week_repeat(expr.interval, expr.days, expr.times, tz, anchor, now)
-      when MonthRepeat
-        next_month_repeat(expr.interval, expr.target, expr.times, tz, anchor, now, during)
-      when SingleDateExpr
-        next_single_date(expr.date, expr.times, tz, now)
-      when YearRepeat
-        next_year_repeat(expr.interval, expr.target, expr.times, tz, anchor, now)
-      end
-    end
-
-    def self.matches_expr(expr, anchor, d, dt, tz)
-      time_matches = ->(times) { time_matches_with_dst(times, d, dt, tz) }
-
-      case expr
-      when DayRepeat
-        return false unless EvalHelpers.matches_day_filter(d, expr.days)
-        return false unless time_matches.call(expr.times)
-
-        if expr.interval > 1
-          anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-          day_offset = EvalHelpers.days_between(anchor_date, d)
-          return day_offset >= 0 && (day_offset % expr.interval).zero?
-        end
-        true
-
-      when IntervalRepeat
-        return false if expr.day_filter && !EvalHelpers.matches_day_filter(d, expr.day_filter)
-
-        from_minutes = (expr.from_time.hour * 60) + expr.from_time.minute
-        to_minutes = (expr.to_time.hour * 60) + expr.to_time.minute
-        current_minutes = (dt.hour * 60) + dt.min
-        return false if current_minutes < from_minutes || current_minutes > to_minutes
-
-        diff = current_minutes - from_minutes
-        step = (expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * 60
-        diff >= 0 && (diff % step).zero?
-
-      when WeekRepeat
-        dow = d.cwday
-        return false unless expr.days.any? { |wd| Weekday.number(wd) == dow }
-        return false unless time_matches.call(expr.times)
-
-        anchor_date = anchor ? Date.parse(anchor) : EPOCH_MONDAY
-        weeks = EvalHelpers.weeks_between(anchor_date, d)
-        weeks >= 0 && (weeks % expr.interval).zero?
-
-      when MonthRepeat
-        return false unless time_matches.call(expr.times)
-
-        if expr.interval > 1
-          anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-          month_offset = EvalHelpers.months_between_ym(anchor_date, d)
-          return false if month_offset.negative? || (month_offset % expr.interval) != 0
-        end
-        matches_month_target(expr.target, d)
-
-      when SingleDateExpr
-        return false unless time_matches.call(expr.times)
-
-        matches_date_spec(expr.date, d)
-
-      when YearRepeat
-        return false unless time_matches.call(expr.times)
-
-        if expr.interval > 1
-          anchor_year = anchor ? Date.parse(anchor).year : EPOCH_DATE.year
-          year_offset = d.year - anchor_year
-          return false if year_offset.negative? || (year_offset % expr.interval) != 0
-        end
-        matches_year_target(expr.target, d)
-
-      else
-        false
-      end
-    end
-
-    def self.time_matches_with_dst(times, d, dt, tz)
-      times.any? do |tod|
-        if dt.hour == tod.hour && dt.min == tod.minute
-          true
-        else
-          # A time in a DST gap fires at its shifted instant, not at its wall-clock time.
-          resolved = EvalHelpers.at_time_on_date(d, tod, tz)
-          resolved && resolved.to_i == dt.to_i
-        end
-      end
-    end
-
-    def self.matches_month_target(target, d)
-      case target
-      when DaysTarget
-        expanded = Hron.expand_month_target(target)
-        expanded.include?(d.day)
-      when LastDayTarget
-        d == EvalHelpers.last_day_of_month(d.year, d.month)
-      when LastWeekdayTarget
-        d == EvalHelpers.last_weekday_of_month(d.year, d.month)
-      when NearestWeekdayTarget
-        target_date = EvalHelpers.nearest_weekday(d.year, d.month, target.day, target.direction)
-        target_date && d == target_date
-      when OrdinalWeekdayTarget
-        ordinal_date = if target.ordinal == OrdinalPosition::LAST
-          EvalHelpers.last_weekday_in_month(d.year, d.month, target.weekday)
-        else
-          EvalHelpers.nth_weekday_of_month(d.year, d.month, target.weekday, OrdinalPosition.to_n(target.ordinal))
-        end
-        ordinal_date && d == ordinal_date
-      else
-        false
-      end
-    end
-
-    def self.matches_date_spec(date_spec, d)
-      case date_spec
-      when IsoDate
-        d == Date.parse(date_spec.date)
-      when NamedDate
-        d.month == MonthName.number(date_spec.month) && d.day == date_spec.day
-      else
-        false
-      end
-    end
-
-    def self.matches_year_target(target, d)
-      case target
-      when YearDateTarget
-        d.month == MonthName.number(target.month) && d.day == target.day
-      when YearOrdinalWeekdayTarget
-        return false if d.month != MonthName.number(target.month)
-
-        ordinal_date = if target.ordinal == OrdinalPosition::LAST
-          EvalHelpers.last_weekday_in_month(d.year, d.month, target.weekday)
-        else
-          EvalHelpers.nth_weekday_of_month(d.year, d.month, target.weekday,
-            OrdinalPosition.to_n(target.ordinal))
-        end
-        ordinal_date && d == ordinal_date
-      when YearDayOfMonthTarget
-        d.month == MonthName.number(target.month) && d.day == target.day
-      when YearLastWeekdayTarget
-        return false if d.month != MonthName.number(target.month)
-
-        d == EvalHelpers.last_weekday_of_month(d.year, d.month)
-      else
-        false
-      end
-    end
-
-    def self.next_day_repeat(interval, days, times, tz, anchor, now)
-      now_local = tz.utc_to_local(now.utc)
-      d = now_local.to_date
-
-      if interval <= 1
-        if EvalHelpers.matches_day_filter(d, days)
-          candidate = EvalHelpers.earliest_future_at_times(d, times, tz, now)
-          return candidate if candidate
-        end
-
-        8.times do
-          d += 1
-          if EvalHelpers.matches_day_filter(d, days)
-            candidate = EvalHelpers.earliest_future_at_times(d, times, tz, now)
-            return candidate if candidate
-          end
-        end
-
-        return nil
-      end
-
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-      offset = EvalHelpers.days_between(anchor_date, d)
-      remainder = offset % interval
-      aligned_date = remainder.zero? ? d : d + (interval - remainder)
-
-      400.times do
-        candidate = EvalHelpers.earliest_future_at_times(aligned_date, times, tz, now)
-        return candidate if candidate
-
-        aligned_date += interval
-      end
-
-      nil
-    end
-
-    def self.next_interval_repeat(interval, unit, from_time, to_time, day_filter, tz, now)
-      step_minutes = (unit == IntervalUnit::MIN) ? interval : interval * 60
-      from_minutes = (from_time.hour * 60) + from_time.minute
-      to_minutes = (to_time.hour * 60) + to_time.minute
-
-      now_local = tz.utc_to_local(now.utc)
-      d = now_local.to_date
-
-      400.times do
-        if day_filter && !EvalHelpers.matches_day_filter(d, day_filter)
-          d += 1
-          next
-        end
-
-        same_day = d == now_local.to_date
-        now_minutes = same_day ? (now_local.hour * 60) + now_local.min : -1
-
-        next_slot = if now_minutes < from_minutes
-          from_minutes
-        else
-          elapsed = now_minutes - from_minutes
-          from_minutes + (((elapsed / step_minutes) + 1) * step_minutes)
-        end
-
-        # Try each slot within the day's window until we find one that exists
-        # This handles DST gaps where intermediate times don't exist
-        while next_slot <= to_minutes
-          h = next_slot / 60
-          m = next_slot % 60
-          candidate = EvalHelpers.at_time_on_date(d, TimeOfDay.new(h, m), tz)
-          return candidate if candidate && candidate > now
-
-          next_slot += step_minutes
-        end
-
-        d += 1
-      end
-
-      nil
-    end
-
-    def self.next_week_repeat(interval, days, times, tz, anchor, now)
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_MONDAY
-
-      now_local = tz.utc_to_local(now.utc)
-      d = now_local.to_date
-      sorted_days = days.sort_by { |wd| Weekday.number(wd) }
-
-      dow_offset = d.cwday - 1
-      current_monday = d - dow_offset
-
-      anchor_dow_offset = anchor_date.cwday - 1
-      anchor_monday = anchor_date - anchor_dow_offset
-
-      54.times do
-        weeks = EvalHelpers.weeks_between(anchor_monday, current_monday)
-
-        if weeks.negative?
-          # When weeks_since_anchor < 0, anchor_monday is in the future
-          # Use anchor_monday directly as the first aligned week
-          current_monday = anchor_monday
-          next
-        end
-
-        if (weeks % interval).zero?
-          sorted_days.each do |wd|
-            day_offset = Weekday.number(wd) - 1
-            target_date = current_monday + day_offset
-            candidate = EvalHelpers.earliest_future_at_times(target_date, times, tz, now)
-            return candidate if candidate
-          end
-        end
-
-        remainder = weeks % interval
-        skip_weeks = remainder.zero? ? interval : interval - remainder
-        current_monday += skip_weeks * 7
-      end
-
-      nil
-    end
-
-    def self.next_month_repeat(interval, target, times, tz, anchor, now, during = [])
-      now_local = tz.utc_to_local(now.utc)
-      year = now_local.year
-      month = now_local.month
-
-      anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
-      max_iter = (interval > 1) ? 24 * interval : 24
-
-      # For NearestWeekday with direction, we need to apply the during filter here
-      # because the result can cross month boundaries
-      apply_during_filter = !during.empty? &&
-        target.is_a?(NearestWeekdayTarget) &&
-        !target.direction.nil?
-
-      max_iter.times do
-        if apply_during_filter && !during.any? { |mn| MonthName.number(mn) == month }
-          month += 1
-          if month > 12
-            month = 1
-            year += 1
-          end
-          next
-        end
-
-        if interval > 1
-          cur = Date.new(year, month, 1)
-          month_offset = EvalHelpers.months_between_ym(anchor_date, cur)
-          if month_offset.negative? || (month_offset % interval) != 0
-            month += 1
-            if month > 12
-              month = 1
-              year += 1
-            end
-            next
-          end
-        end
-
-        date_candidates = []
-
-        case target
-        when DaysTarget
-          expanded = Hron.expand_month_target(target)
-          last = EvalHelpers.last_day_of_month(year, month)
-          expanded.each do |day_num|
-            next unless day_num <= last.day
-
-            begin
-              date_candidates << Date.new(year, month, day_num)
-            rescue ArgumentError
-              # Invalid date
-            end
-          end
-        when LastDayTarget
-          date_candidates << EvalHelpers.last_day_of_month(year, month)
-        when LastWeekdayTarget
-          date_candidates << EvalHelpers.last_weekday_of_month(year, month)
-        when NearestWeekdayTarget
-          nw = EvalHelpers.nearest_weekday(year, month, target.day, target.direction)
-          date_candidates << nw if nw
-        when OrdinalWeekdayTarget
-          ordinal_date = if target.ordinal == OrdinalPosition::LAST
-            EvalHelpers.last_weekday_in_month(year, month, target.weekday)
-          else
-            EvalHelpers.nth_weekday_of_month(year, month, target.weekday, OrdinalPosition.to_n(target.ordinal))
-          end
-          date_candidates << ordinal_date if ordinal_date
-        end
-
-        best = nil
-        date_candidates.each do |dc|
-          candidate = EvalHelpers.earliest_future_at_times(dc, times, tz, now)
-          best = candidate if candidate && (best.nil? || candidate < best)
-        end
-        return best if best
-
-        month += 1
-        if month > 12
-          month = 1
-          year += 1
-        end
-      end
-
-      nil
-    end
-
-    def self.next_single_date(date_spec, times, tz, now)
-      case date_spec
-      when IsoDate
-        d = Date.parse(date_spec.date)
-        EvalHelpers.earliest_future_at_times(d, times, tz, now)
-      when NamedDate
-        now_local = tz.utc_to_local(now.utc)
-        start_year = now_local.year
-        8.times do |y|
-          year = start_year + y
-          begin
-            d = Date.new(year, MonthName.number(date_spec.month), date_spec.day)
-            candidate = EvalHelpers.earliest_future_at_times(d, times, tz, now)
-            return candidate if candidate
-          rescue ArgumentError
-            # Invalid date
-          end
-        end
-        nil
-      end
-    end
-
-    def self.next_year_repeat(interval, target, times, tz, anchor, now)
-      now_local = tz.utc_to_local(now.utc)
-      start_year = now_local.year
-      anchor_year = anchor ? Date.parse(anchor).year : EPOCH_DATE.year
-
-      max_iter = (interval > 1) ? 8 * interval : 8
-
-      max_iter.times do |y|
-        year = start_year + y
-
-        if interval > 1
-          year_offset = year - anchor_year
-          next if year_offset.negative? || (year_offset % interval) != 0
-        end
-
-        target_date = compute_year_target_date(target, year)
-        next unless target_date
-
-        candidate = EvalHelpers.earliest_future_at_times(target_date, times, tz, now)
-        return candidate if candidate
-      end
-
-      nil
-    end
-
-    def self.compute_year_target_date(target, year)
-      case target
-      when YearDateTarget
-        Date.new(year, MonthName.number(target.month), target.day)
-      when YearOrdinalWeekdayTarget
-        if target.ordinal == OrdinalPosition::LAST
-          EvalHelpers.last_weekday_in_month(year, MonthName.number(target.month), target.weekday)
-        else
-          EvalHelpers.nth_weekday_of_month(year, MonthName.number(target.month), target.weekday,
-            OrdinalPosition.to_n(target.ordinal))
-        end
-      when YearDayOfMonthTarget
-        Date.new(year, MonthName.number(target.month), target.day)
-      when YearLastWeekdayTarget
-        EvalHelpers.last_weekday_of_month(year, MonthName.number(target.month))
-      end
-    rescue ArgumentError
-      nil
+      minute = dt - dt.sec - dt.subsec
+      next_from(schedule, minute - 1) == minute
     end
   end
 end

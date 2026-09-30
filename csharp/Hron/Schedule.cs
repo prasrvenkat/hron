@@ -99,10 +99,10 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Checks if a datetime matches this schedule.
+    /// Checks if the minute containing a datetime is an occurrence of this schedule.
     /// </summary>
-    /// <param name="dateTime">The datetime to check</param>
-    /// <returns>True if the datetime matches</returns>
+    /// <param name="dateTime">The datetime to check; its seconds are ignored</param>
+    /// <returns>True if the start of that minute is an occurrence</returns>
     public bool Matches(DateTimeOffset dateTime)
     {
         var dtInTz = TimeZoneInfo.ConvertTime(dateTime, _zoneInfo);

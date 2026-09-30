@@ -1488,6 +1488,12 @@
           "description": "365-day steps drift 0.2425 days a year against the calendar; the next aligned day in February is 3232-02-29",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "3232-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "next_date_is_in_schedule_timezone",
+          "expression": "every day at 23:00 in America/New_York",
+          "description": "next is 2026-02-06T23:00-05:00, which is already Feb 7 in UTC; next_date is the date in the schedule's timezone",
+          "next_date": "2026-02-06"
         }
       ]
     },
