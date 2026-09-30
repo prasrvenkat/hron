@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import wasm from "vite-plugin-wasm";
-import topLevelAwait from "vite-plugin-top-level-await";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
@@ -9,16 +8,16 @@ const hronVersion = JSON.parse(
 ).version;
 
 export default defineConfig({
-  plugins: [wasm(), topLevelAwait()],
+  plugins: [wasm()],
   define: {
     __HRON_VERSION__: JSON.stringify(hronVersion),
   },
   build: {
     target: "es2022",
-    rollupOptions: {
+    rolldownOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
-        playground: resolve(__dirname, "playground/index.html"),
+        main: resolve(import.meta.dirname, "index.html"),
+        playground: resolve(import.meta.dirname, "playground/index.html"),
       },
     },
   },
