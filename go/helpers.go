@@ -32,7 +32,9 @@ func atTimeOnDate(d time.Time, tod TimeOfDay, loc *time.Location) time.Time {
 // length) and false. time.Date guarantees neither choice. The offsets a day
 // before and after the wall time bracket the transition that can affect it;
 // ZoneBounds is not used because Go reports wrong bounds at the end of leap
-// years beyond the zone file's explicit transitions.
+// years beyond the zone file's explicit transitions. This assumes at most one
+// offset change within a day of the wall time; tzdata has none closer than
+// about four days.
 func resolveWallClock(d time.Time, tod TimeOfDay, loc *time.Location) (time.Time, bool) {
 	wall := time.Date(d.Year(), d.Month(), d.Day(), tod.Hour, tod.Minute, 0, 0, time.UTC)
 	offsetBefore := offsetAt(wall.Add(-24*time.Hour), loc)
@@ -165,6 +167,14 @@ func horizonUnits(interval, units int) int {
 // searchSteps returns how many interval steps cover the search horizon.
 func searchSteps(interval, units int) int {
 	return ceilDiv(horizonUnits(interval, units), max(interval, 1))
+}
+
+func floorDiv(a, b int) int {
+	q := a / b
+	if a%b != 0 && (a < 0) != (b < 0) {
+		q--
+	}
+	return q
 }
 
 func ceilDiv(a, b int) int {

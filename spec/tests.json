@@ -6963,6 +6963,41 @@
           "description": "until 2026-03-02 (a Monday): the last Friday is Feb 27",
           "now": "2026-04-01T00:00:00+00:00[UTC]",
           "expected": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "interval_window_swallowed_by_gap",
+          "expression": "every 30 min from 02:00 to 02:30 on sunday in America/New_York",
+          "description": "the 2026-03-08 window lies wholly in the spring-forward gap, so the previous occurrence is a week earlier",
+          "now": "2026-03-15T00:00:00-04:00[America/New_York]",
+          "expected": "2026-03-01T02:30:00-05:00[America/New_York]"
+        },
+        {
+          "name": "apia_skipped_friday_interval_crossing_back",
+          "expression": "every 1 hour from 09:00 to 10:00 on friday in Pacific/Apia",
+          "description": "Friday 2011-12-30 was skipped, so the previous occurrence is two weeks back",
+          "now": "2012-01-06T00:00:00+14:00[Pacific/Apia]",
+          "expected": "2011-12-23T10:00:00-10:00[Pacific/Apia]"
+        },
+        {
+          "name": "during_at_range_start",
+          "expression": "every day at 09:00 during dec in UTC",
+          "description": "the previous december is in year 0, outside the supported range",
+          "now": "0001-01-03T12:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "fifth_monday_near_range_end",
+          "expression": "every month on the fifth monday at 09:00 in UTC",
+          "description": "November 9999 has five Mondays; December 9999 does not",
+          "now": "9999-12-29T00:00:00+00:00[UTC]",
+          "expected": "9999-11-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "fifth_sunday_of_december_near_range_end",
+          "expression": "every year on the fifth sunday of december at 09:00 in UTC",
+          "description": "the most recent December with five Sundays is 9996",
+          "now": "9999-12-29T00:00:00+00:00[UTC]",
+          "expected": "9996-12-29T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -7201,6 +7236,20 @@
           "expression": "every day at 00:00 in UTC",
           "description": "now 0001-01-01T23:00Z is outside the supported range, so null even though 0001-01-02T00:00Z is in range",
           "now": "0001-01-01T23:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "huge_day_interval_anchor_before_range",
+          "expression": "every 4000000 days at 09:00 starting 0001-01-01 in UTC",
+          "description": "the only aligned day in range would be the anchor itself, 0001-01-01, which is before the range start",
+          "now": "9999-06-01T00:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "during_at_range_end",
+          "expression": "every day at 09:00 during jan in UTC",
+          "description": "the next january is in year 10000, outside the supported range",
+          "now": "9999-11-30T00:00:00+00:00[UTC]",
           "next": null
         }
       ]

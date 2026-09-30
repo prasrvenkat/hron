@@ -72,7 +72,7 @@ func main() {
 
 - `NextFrom(now time.Time) *time.Time` - Compute the next occurrence after now
 - `NextNFrom(now time.Time, n int) []time.Time` - Compute the next n occurrences after now
-- `Matches(dt time.Time) bool` - Check if a datetime matches this schedule
+- `Matches(dt time.Time) bool` - Report whether the minute containing `dt` (seconds dropped, on the schedule's wall clock) is an occurrence
 - `ToCron() (string, error)` - Convert this schedule to a 5-field cron expression
 - `String() string` - Render as canonical string (roundtrip-safe)
 - `Timezone() string` - Get the IANA timezone name, or empty string if not specified

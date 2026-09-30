@@ -38,7 +38,7 @@ console.log(schedule.toString());
 
 ## Temporal Polyfill
 
-This package uses the [Temporal API](https://tc39.es/proposal-temporal/) via `@js-temporal/polyfill`. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical use cases, consider the WASM package (`hron-wasm`).
+This package uses the [Temporal API](https://tc39.es/proposal-temporal/) via `@js-temporal/polyfill`. For performance-critical use cases, consider the WASM package (`hron-wasm`).
 
 ## Tests
 

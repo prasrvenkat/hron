@@ -20,21 +20,9 @@ fn default_now() -> jiff::Zoned {
         .expect("invalid 'now' timestamp")
 }
 
-/// A well-formed timestamp beyond what jiff can represent (the spec pins some
-/// just past the supported range) becomes jiff's nearest extreme, which is also
-/// outside the supported range, so the case checks the same behaviour.
 fn parse_zoned(s: &str) -> jiff::Zoned {
-    s.parse().unwrap_or_else(|e| {
-        let civil: jiff::civil::DateTime = s
-            .parse()
-            .unwrap_or_else(|_| panic!("bad timestamp '{s}': {e}"));
-        let extreme = match civil.year() {
-            ..=1 => jiff::Timestamp::MIN,
-            9999.. => jiff::Timestamp::MAX,
-            _ => panic!("bad timestamp '{s}': {e}"),
-        };
-        extreme.to_zoned(jiff::tz::TimeZone::UTC)
-    })
+    s.parse()
+        .unwrap_or_else(|e| panic!("bad timestamp '{s}': {e}"))
 }
 
 /// Fails on a field this runner does not check, and on a case with none of the

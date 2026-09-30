@@ -370,13 +370,26 @@ const MINUTE_MS = 60_000;
 const RANGE_START_MS = epochDay(1, 1, 2) * DAY_MS;
 const RANGE_END_MS = epochDay(9999, 12, 30) * DAY_MS;
 
-function epochMs(t: ZDT): number {
-  return Number(t.epochNanoseconds / 1_000_000n);
+const NS_PER_MS = 1_000_000n;
+
+function floorMs(t: ZDT): number {
+  const ns = t.epochNanoseconds;
+  const ms = ns / NS_PER_MS;
+  return Number(ns % NS_PER_MS < 0n ? ms - 1n : ms);
+}
+
+function ceilMs(t: ZDT): number {
+  const ns = t.epochNanoseconds;
+  const ms = ns / NS_PER_MS;
+  return Number(ns % NS_PER_MS > 0n ? ms + 1n : ms);
 }
 
 function inRange(t: ZDT): boolean {
-  const ms = epochMs(t);
-  return ms >= RANGE_START_MS && ms < RANGE_END_MS;
+  const ns = t.epochNanoseconds;
+  return (
+    ns >= BigInt(RANGE_START_MS) * NS_PER_MS &&
+    ns < BigInt(RANGE_END_MS) * NS_PER_MS
+  );
 }
 
 /**
@@ -413,13 +426,12 @@ class Zone {
     const local = day * DAY_MS + minute * MINUTE_MS;
     // Every wall time on `day`, and a time shifted from it onto the next day,
     // lies between UTC midnight of the day before and of the day after next.
-    // tz data never has two offset changes within those three days (the
-    // closest pair is ten days apart), so equal offsets at both ends mean no
-    // change, and otherwise there is exactly one.
+    // This assumes at most one offset change in those three days, so equal
+    // offsets at both ends mean no change.
     const before = this.offsetAtMidnight(day - 1);
     const after = this.offsetAtMidnight(day + 2);
     if (before === after) return local - before;
-    const at = this.transitionAfter(day - 1);
+    const at = this.transitionAfter(day - 1, before);
     if (local - before < at) return local - before;
     if (local - after >= at) return local - after;
     return skipGap ? null : local - before;
@@ -435,12 +447,21 @@ class Zone {
     return offset;
   }
 
-  private transitionAfter(day: number): number {
+  /** The first instant of the three days from UTC midnight of `day` whose offset is not `before`. */
+  private transitionAfter(day: number, before: number): number {
     let at = this.transitions.get(day);
     if (at === undefined) {
       if (this.transitions.size > 64) this.transitions.clear();
-      const next = this.zoned(day * DAY_MS).getTimeZoneTransition("next");
-      at = next === null ? Number.POSITIVE_INFINITY : epochMs(next);
+      // Bisect rather than use getTimeZoneTransition, which in the polyfill
+      // never returns when three offsets fall inside one of its search steps.
+      let lo = day * DAY_MS;
+      let hi = lo + 3 * DAY_MS;
+      while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (this.offsetAt(mid) === before) lo = mid;
+        else hi = mid;
+      }
+      at = hi;
       this.transitions.set(day, at);
     }
     return at;
@@ -550,7 +571,7 @@ class Evaluation {
     return this.named.some((n) => n.month === date.month && n.day === date.day);
   }
 
-  /** The instants of `day`'s occurrences, ascending and without repeats. */
+  /** The instants of `day`'s occurrences, ascending. */
   private occurrencesOn(day: number): number[] {
     let times = this.days.get(day);
     if (times === undefined) {
@@ -576,8 +597,7 @@ class Evaluation {
       const ms = this.zone.resolve(day, minutesOf(time), false);
       if (ms !== null) times.push(ms);
     }
-    times.sort((a, b) => a - b);
-    return times.filter((t, i) => i === 0 || times[i - 1] < t);
+    return times.sort((a, b) => a - b);
   }
 }
 
@@ -602,7 +622,7 @@ function resolveUntil(until: UntilSpec, now: ZDT): number {
 export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   if (!inRange(now)) return null;
   const evaluation = new Evaluation(schedule, now);
-  const next = evaluation.next(epochMs(now));
+  const next = evaluation.next(floorMs(now));
   return next === null ? null : evaluation.zone.zoned(next.ms);
 }
 
@@ -610,9 +630,7 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
 export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   if (!inRange(now)) return null;
   const evaluation = new Evaluation(schedule, now);
-  const nowMs = epochMs(now);
-  const beforeMs = now.epochNanoseconds % 1_000_000n === 0n ? nowMs : nowMs + 1;
-  const previous = evaluation.previous(beforeMs);
+  const previous = evaluation.previous(ceilMs(now));
   return previous === null ? null : evaluation.zone.zoned(previous.ms);
 }
 
@@ -620,9 +638,10 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
 export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
   if (!inRange(datetime)) return false;
   const evaluation = new Evaluation(schedule, datetime);
-  const ms = epochMs(datetime);
+  const ms = floorMs(datetime);
   const offset = evaluation.zone.offsetAt(ms);
   const minuteMs = Math.floor((ms + offset) / MINUTE_MS) * MINUTE_MS - offset;
+  if (minuteMs < RANGE_START_MS) return false;
   return evaluation.next(minuteMs - 1)?.ms === minuteMs;
 }
 
@@ -636,7 +655,7 @@ export function* occurrences(
 ): Generator<ZDT, void, unknown> {
   if (!inRange(from)) return;
   const evaluation = new Evaluation(schedule, from);
-  let next = evaluation.next(epochMs(from));
+  let next = evaluation.next(floorMs(from));
   while (next !== null) {
     yield evaluation.zone.zoned(next.ms);
     next = evaluation.next(next.ms, next.day - 1);
@@ -659,6 +678,7 @@ export function* between(
   from: ZDT,
   to: ZDT,
 ): Generator<ZDT, void, unknown> {
+  if (!inRange(to)) return;
   const toNs = to.epochNanoseconds;
   for (const t of occurrences(schedule, from)) {
     if (t.epochNanoseconds > toNs) return;

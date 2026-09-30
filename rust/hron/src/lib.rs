@@ -51,8 +51,10 @@ impl Schedule {
     ///
     /// Returns `Ok(None)` when there are no future occurrences (e.g., past the
     /// `until` date), and when `now` or the occurrence is outside the supported
-    /// range, 0001-01-02T00:00Z up to 9999-12-30T00:00Z. Returns `Err` for an
-    /// invalid timezone.
+    /// range, 0001-01-02T00:00Z up to 9999-12-30T00:00Z. Returns `Err` when the
+    /// schedule cannot be evaluated, such as for an unknown timezone or an `until`
+    /// date that cannot be resolved; a `now` outside the supported range returns
+    /// `Ok(None)` before either is checked.
     ///
     /// A fixed time in a DST spring-forward gap shifts forward by the length of
     /// the gap (02:30 becomes 03:30), while an interval slot in the gap is

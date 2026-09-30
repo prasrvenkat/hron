@@ -18,8 +18,8 @@ import { Schedule, fromCron, explainCron } from "hron-wasm";
 // Parse an expression
 const schedule = Schedule.parse("every weekday at 9:00 in America/New_York");
 
-// Next occurrence from a given datetime (ISO 8601 string)
-const now = new Date().toISOString();
+// Next occurrence from a given datetime (RFC 9557 string with a [zone])
+const now = `${new Date().toISOString()}[UTC]`;
 const next = schedule.nextFrom(now);
 
 // Next N occurrences
@@ -35,7 +35,7 @@ const isMatch = schedule.matches(now);
 const occ = schedule.occurrences(now, 10);
 
 // Bounded range: occurrences where from < t <= to
-const range = schedule.between("2026-01-01T00:00:00Z", "2026-12-31T23:59:59Z");
+const range = schedule.between("2026-01-01T00:00:00Z[UTC]", "2026-12-31T23:59:59Z[UTC]");
 
 // Convert to cron (if expressible)
 const cron = schedule.toCron();

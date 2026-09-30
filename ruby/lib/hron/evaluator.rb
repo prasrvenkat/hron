@@ -214,8 +214,8 @@ module Hron
       results
     end
 
-    # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for
-    # repeating schedules unless an until clause ends them.
+    # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for repeating
+    # schedules unless an until clause or the end of the supported range ends them.
     def self.occurrences(schedule, from)
       Enumerator.new do |yielder|
         current = from
@@ -415,9 +415,8 @@ module Hron
     # search finds the slot closest beyond now.
     def self.interval_slot_on(expr, day, tz, now, dir)
       step = ((expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * 60) * 60
-      midnight = Time.utc(day.year, day.month, day.day)
-      first_slot = midnight + (((expr.from_time.hour * 60) + expr.from_time.minute) * 60)
-      last_slot = midnight + (((expr.to_time.hour * 60) + expr.to_time.minute) * 60)
+      first_slot = EvalHelpers.wall_time(day, expr.from_time)
+      last_slot = EvalHelpers.wall_time(day, expr.to_time)
       count = ((last_slot - first_slot) / step).floor + 1
       return nil if count <= 0
 

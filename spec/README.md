@@ -147,7 +147,7 @@ When a schedule fires at a time that occurs twice during a DST fall-back transit
 
 ### Search horizon
 
-Implementations must find any occurrence that exists. The (proleptic) Gregorian calendar repeats every 400 years, so a schedule with an interval of `n` years, months, weeks or days repeats after lcm(400 years, `n` of those units); searching that span in the given direction finds the occurrence if one exists, and the result is null otherwise. Going forward the span starts at the later of `now` and the `starting` date; going backward it starts at `now`. For example, `every 11 years on the fifth sunday of february` next fires 406 years ahead (2432-02-29). Each call restarts the search from its own `now`.
+Implementations must find any occurrence that exists. The (proleptic) Gregorian calendar repeats every 400 years, so a schedule with an interval of `n` years, months, weeks or days repeats after lcm(400 years, `n` of those units); searching that span in the given direction finds the occurrence if one exists, and the result is null otherwise. Going forward the span starts at the later of `now` and the `starting` date; going backward it starts at the earlier of `now` and the `until` date. For example, `every 11 years on the fifth sunday of february` next fires 406 years ahead (2432-02-29). Each call restarts the search from its own `now`.
 
 ### Supported range
 

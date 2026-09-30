@@ -1,18 +1,38 @@
 use wasm_bindgen::prelude::*;
 
-/// A well-formed timestamp beyond what jiff can represent becomes jiff's nearest
-/// extreme, which is also outside the supported range, so every method returns
-/// nothing for it instead of throwing (spec/README.md, "Supported range").
+/// jiff rejects an instant beyond its own range, which extends past the
+/// supported range on both sides. A timestamp with a numeric offset and a known
+/// zone whose instant is beyond jiff's range becomes jiff's nearest extreme, so
+/// every method returns nothing for it instead of throwing (spec/README.md,
+/// "Supported range"). Any other input that jiff rejects keeps jiff's error.
 fn parse_zoned(s: &str) -> Result<jiff::Zoned, JsError> {
-    s.parse::<jiff::Zoned>().or_else(|e| {
-        let civil: jiff::civil::DateTime = s.parse().map_err(|_| JsError::new(&e.to_string()))?;
-        let extreme = match civil.year() {
-            ..=1 => jiff::Timestamp::MIN,
-            9999.. => jiff::Timestamp::MAX,
-            _ => return Err(JsError::new(&e.to_string())),
-        };
-        Ok(extreme.to_zoned(jiff::tz::TimeZone::UTC))
-    })
+    let error = match s.parse::<jiff::Zoned>() {
+        Ok(zoned) => return Ok(zoned),
+        Err(e) => JsError::new(&e.to_string()),
+    };
+    let Ok(pieces) = jiff::fmt::temporal::Pieces::parse(s) else {
+        return Err(error);
+    };
+    let (Some(offset), Ok(Some(_))) = (pieces.to_numeric_offset(), pieces.to_time_zone()) else {
+        return Err(error);
+    };
+    let time = pieces.time().unwrap_or(jiff::civil::Time::midnight());
+    let Ok(days) = jiff::civil::date(1970, 1, 1).until(pieces.date()) else {
+        return Err(error);
+    };
+    let seconds = i128::from(days.get_days()) * 86_400
+        + i128::from(time.hour()) * 3_600
+        + i128::from(time.minute()) * 60
+        + i128::from(time.second())
+        - i128::from(offset.seconds());
+    let extreme = if seconds < i128::from(jiff::Timestamp::MIN.as_second()) {
+        jiff::Timestamp::MIN
+    } else if seconds > i128::from(jiff::Timestamp::MAX.as_second()) {
+        jiff::Timestamp::MAX
+    } else {
+        return Err(error);
+    };
+    Ok(extreme.to_zoned(jiff::tz::TimeZone::UTC))
 }
 
 /// A parsed hron schedule, usable from JavaScript.

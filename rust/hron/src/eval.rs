@@ -605,7 +605,10 @@ fn last_on_date_before(
             .rev()
             .find(|t| t < now);
     };
-    if date > now.with_time_zone(tz.clone()).date() {
+    // A fall-back overlap crossing midnight puts the next date's first slots
+    // before a `now` that reads as the previous date.
+    let now_date = now.with_time_zone(tz.clone()).date();
+    if add_days(now_date, 1).is_some_and(|next_date| date > next_date) {
         return None;
     }
     // Scans every slot: inside a fall-back overlap, a slot with a later wall time
@@ -774,9 +777,6 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                 .nanoseconds(time.subsec_nanosecond()),
         )
         .map_err(eval_error)?;
-    if !in_supported_range(&minute_start) {
-        return Ok(false);
-    }
     let just_before = minute_start
         .checked_sub(Span::new().nanoseconds(1))
         .map_err(eval_error)?;
@@ -841,6 +841,9 @@ impl Iterator for BoundedOccurrences<'_> {
     type Item = Result<Zoned, ScheduleError>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if !in_supported_range(&self.to) {
+            return None;
+        }
         match self.inner.next() {
             Some(Ok(dt)) if dt <= self.to => Some(Ok(dt)),
             Some(Ok(_)) => None, // Past end bound
@@ -882,10 +885,10 @@ mod tests {
 
     #[test]
     fn matches_drops_seconds_on_the_schedule_wall_clock() {
-        // Amsterdam kept local mean time (+00:19:32) until 1937, so 09:00 there
-        // is 08:40:28 UTC; dropping UTC seconds would test 08:59:32 local instead.
-        let s = parse("every day at 09:00 in Europe/Amsterdam").unwrap();
-        let at_nine: Zoned = "1900-06-01T08:40:28+00:00[UTC]".parse().unwrap();
+        // Monrovia kept -00:44:30 until 1972, so 09:00 there is 09:44:30 UTC;
+        // dropping UTC seconds would test 08:59:30 local instead.
+        let s = parse("every day at 09:00 in Africa/Monrovia").unwrap();
+        let at_nine: Zoned = "1960-06-01T09:44:30+00:00[UTC]".parse().unwrap();
         assert!(matches(&s, &at_nine).unwrap());
     }
 

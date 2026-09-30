@@ -29,12 +29,16 @@ func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.T
 	if !inRange(now) {
 		return nil
 	}
-	// Start a day early: the previous date's time can be shifted past midnight.
-	startDate := dateOnly(now.In(loc)).AddDate(0, 0, -1)
-	if occ := nextOccurrence(schedule, loc, now, startDate); occ != nil {
+	if occ := firstAfter(schedule, loc, now); occ != nil {
 		return &occ.at
 	}
 	return nil
+}
+
+// firstAfter returns the earliest occurrence strictly after now. It starts a
+// day early because the previous date's time can be shifted past midnight.
+func firstAfter(schedule *ScheduleData, loc *time.Location, now time.Time) *occurrence {
+	return nextOccurrence(schedule, loc, now, dateOnly(now.In(loc)).AddDate(0, 0, -1))
 }
 
 // nextOccurrence returns the earliest occurrence strictly after now among those
@@ -100,7 +104,8 @@ func appliesDuringToTarget(expr ScheduleExpr) bool {
 		expr.MonthTarget.Direction != NearestNone
 }
 
-// horizonYears is how far a search looks for an occurrence, in years.
+// horizonYears is 400 for expressions whose interval is not a calendar unit,
+// since the calendar itself repeats every 400 years.
 func horizonYears(expr ScheduleExpr) int {
 	units := unitsIn400Years(expr.Kind)
 	if units == 0 {
@@ -155,21 +160,21 @@ func nextExpr(expr ScheduleExpr, loc *time.Location, anchor string, now, startDa
 // matches drops the seconds of dt and reports whether that minute is an
 // occurrence, by the same rules nextFrom uses.
 func matches(schedule *ScheduleData, loc *time.Location, dt time.Time) bool {
-	if !inRange(dt) {
-		return false
-	}
 	local := dt.In(loc)
 	minute := local.Add(-time.Duration(local.Second())*time.Second - time.Duration(local.Nanosecond()))
-	next := nextFrom(schedule, loc, minute.Add(-time.Nanosecond))
-	return next != nil && next.Equal(minute)
+	if !inRange(minute) {
+		return false
+	}
+	occ := firstAfter(schedule, loc, minute.Add(-time.Nanosecond))
+	return occ != nil && occ.at.Equal(minute)
 }
 
 func nextDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time) *occurrence {
 	d := startDate
 
 	if interval <= 1 {
-		// A week plus a day either side, since a DST shift can move an occurrence off its date.
-		for i := 0; i < 10; i++ {
+		// From the day before now's date (its time can be shifted past midnight) to a week after it.
+		for i := 0; i < 9; i++ {
 			if matchesDayFilter(d, days) {
 				if occ := earliestFutureAtTimes(d, times, loc, now, startDate); occ != nil {
 					return occ
@@ -214,7 +219,9 @@ func nextIntervalRepeat(interval int, unit IntervalUnit, fromTime, toTime TimeOf
 		d = today
 	}
 
-	for i := 0; i < 8; i++ {
+	// Two weeks, since a window wholly inside a DST gap, or a skipped day (Pacific/Apia,
+	// 2011-12-30), leaves a filtered day with no slot.
+	for i := 0; i < 15; i++ {
 		if dayFilter == nil || matchesDayFilter(d, *dayFilter) {
 			firstSlot := fromMinutes
 			if d.Equal(today) && nowMinutes >= fromMinutes {
@@ -413,6 +420,11 @@ func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *ti
 // previousOccurrence returns the latest occurrence strictly before now among
 // those scheduled on or before startDate.
 func previousOccurrence(schedule *ScheduleData, loc *time.Location, now, startDate time.Time) *occurrence {
+	var anchorDate *time.Time
+	if schedule.Anchor != "" {
+		ad, _ := parseISODate(schedule.Anchor)
+		anchorDate = &ad
+	}
 	if schedule.Until != nil {
 		untilDate := dateOnly(resolveUntil(*schedule.Until, now))
 		if startDate.After(untilDate) {
@@ -431,11 +443,8 @@ func previousOccurrence(schedule *ScheduleData, loc *time.Location, now, startDa
 			return nil
 		}
 
-		if schedule.Anchor != "" {
-			anchorDate, _ := parseISODate(schedule.Anchor)
-			if occ.date.Before(anchorDate) {
-				return nil
-			}
+		if anchorDate != nil && occ.date.Before(*anchorDate) {
+			return nil
 		}
 
 		if targetDuring == nil && !matchesDuring(occ.date, schedule.During) {
@@ -530,7 +539,8 @@ func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 	d := startDate
 
 	if interval <= 1 {
-		// A week plus a day either side, since a DST shift can move an occurrence off its date.
+		// From the day after now's date back to eight days before it: a time
+		// shifted onto now's date can equal now, leaving the previous one eight days back.
 		for i := 0; i < 10; i++ {
 			if matchesDayFilter(d, days) {
 				if occ := latestPastAtTimes(d, times, loc, now, startDate); occ != nil {
@@ -562,16 +572,36 @@ func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 }
 
 func prevIntervalRepeat(interval int, unit IntervalUnit, fromTime, toTime TimeOfDay, dayFilter *DayFilter, loc *time.Location, now, startDate time.Time) *occurrence {
+	nowInTz := now.In(loc)
 	stepMinutes := intervalStepMinutes(interval, unit)
 	fromMinutes := fromTime.TotalMinutes()
 	lastSlot := fromMinutes + (toTime.TotalMinutes()-fromMinutes)/stepMinutes*stepMinutes
 
+	// Today, slots after now's wall time are still ahead, unless now is in the
+	// second pass of a fall-back overlap, where they already passed.
+	today := dateOnly(nowInTz)
+	todayLastSlot := lastSlot
+	nowMinutes := nowInTz.Hour()*60 + nowInTz.Minute()
+	if firstPass, _ := resolveWallClock(today, TimeOfDay{nowInTz.Hour(), nowInTz.Minute()}, loc); now.Before(firstPass.Add(time.Minute)) {
+		todayLastSlot = min(lastSlot, fromMinutes+floorDiv(nowMinutes-fromMinutes, stepMinutes)*stepMinutes)
+	}
+
 	d := startDate
-	for i := 0; i < 10; i++ {
+	// From the day after now's date back two weeks, since a window wholly inside a DST gap,
+	// or a skipped day (Pacific/Apia, 2011-12-30), leaves a filtered day with no slot.
+	for i := 0; i < 16; i++ {
 		if dayFilter == nil || matchesDayFilter(d, *dayFilter) {
-			// Scan from the day's last slot: in the second pass of a fall-back
-			// overlap, slots after now's wall time are already past.
-			for slot := lastSlot; slot >= fromMinutes; slot -= stepMinutes {
+			top := lastSlot
+			switch {
+			case d.Equal(today):
+				top = todayLastSlot
+			case d.After(today):
+				// A later date's slots are past only in an overlap crossing midnight.
+				if first, _ := resolveWallClock(d, fromTime, loc); !first.Before(now) {
+					top = fromMinutes - 1
+				}
+			}
+			for slot := top; slot >= fromMinutes; slot -= stepMinutes {
 				at, exists := resolveWallClock(d, TimeOfDay{slot / 60, slot % 60}, loc)
 				if exists && at.Before(now) {
 					return &occurrence{at, d}

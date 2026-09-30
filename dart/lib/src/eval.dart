@@ -309,9 +309,11 @@ TZDateTime? _slotOn(
   int dir,
   Location loc,
 ) {
+  // A step of a day or more leaves only the `from` slot; the cap stops the
+  // multiplication from overflowing.
   final step = expr.unit == IntervalUnit.min
       ? expr.interval
-      : expr.interval * 60;
+      : min(expr.interval, 24) * 60;
   final from = _minuteOfDay(expr.from);
   final to = _minuteOfDay(expr.to);
   if (to < from) return null;
@@ -424,7 +426,11 @@ TZDateTime? previousFrom(ScheduleData schedule, TZDateTime now) =>
 TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
   final loc = _getLocation(_resolveTz(schedule.timezone));
   final expr = schedule.expr;
-  final (unit, interval) = _repetition(expr);
+  final (unit, repeat) = _repetition(expr);
+  // Any interval of 2^32 units or more leaves only the anchor's unit inside the
+  // supported range, so capping there changes nothing and keeps unit arithmetic
+  // far from integer overflow (and below 2^53 on the web).
+  final interval = min(repeat, 1 << 32);
   final starting = schedule.anchor == null
       ? null
       : _parseIsoDateUtc(schedule.anchor!);

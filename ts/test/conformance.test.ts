@@ -79,6 +79,17 @@ function integer(value: unknown, label: string): number {
   return value as number;
 }
 
+function hronError(run: () => unknown): HronError {
+  let error: unknown = null;
+  try {
+    run();
+  } catch (e) {
+    error = e;
+  }
+  expect(error, "a HronError").toBeInstanceOf(HronError);
+  return error as HronError;
+}
+
 function show(t: Temporal.ZonedDateTime | null): string | null {
   return t === null ? null : t.toString();
 }
@@ -206,15 +217,9 @@ describe("parse errors", () => {
     const name = tc.name ?? tc.input;
     it(name, () => {
       checkFields(tc, ["input", "error_contains"]);
-      let error: unknown = null;
-      try {
-        Schedule.parse(tc.input);
-      } catch (e) {
-        error = e;
-      }
-      expect(error, "a HronError").toBeInstanceOf(HronError);
+      const error = hronError(() => Schedule.parse(tc.input));
       if ("error_contains" in tc) {
-        expect((error as HronError).message).toContain(tc.error_contains);
+        expect(error.message).toContain(tc.error_contains);
       }
     });
   }
@@ -395,7 +400,7 @@ describe("cron", () => {
       it(name, () => {
         checkFields(tc, ["hron"]);
         const schedule = Schedule.parse(tc.hron);
-        expect(() => schedule.toCron()).toThrow();
+        hronError(() => schedule.toCron());
       });
     }
   });
@@ -418,7 +423,7 @@ describe("cron", () => {
       const name = tc.name ?? tc.cron;
       it(name, () => {
         checkFields(tc, ["cron"]);
-        expect(() => Schedule.fromCron(tc.cron)).toThrow();
+        hronError(() => Schedule.fromCron(tc.cron));
       });
     }
   });

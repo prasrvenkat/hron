@@ -5,10 +5,13 @@ import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.time.zone.ZoneRules;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
@@ -105,6 +108,9 @@ public final class Evaluator {
    * @return true if the datetime matches
    */
   public static boolean matches(ScheduleData data, ZonedDateTime dt, ZoneId location) {
+    if (!isSupported(dt)) {
+      return false;
+    }
     ZonedDateTime minute = dt.withZoneSameInstant(location).truncatedTo(ChronoUnit.MINUTES);
     return isSupported(minute)
         && next(data, minute.minusNanos(1), location).filter(minute::isEqual).isPresent();
@@ -123,21 +129,21 @@ public final class Evaluator {
     if (!isSupported(now)) {
       return Optional.empty();
     }
-    LocalDate untilDate = untilDate(data, now.toLocalDate());
+    Clauses clauses = Clauses.of(data, now.toLocalDate());
     LocalDate searchFrom = now.toLocalDate();
-    if (untilDate != null) {
-      searchFrom = min(searchFrom, untilDate);
+    if (clauses.until() != null) {
+      searchFrom = min(searchFrom, clauses.until());
     }
     LocalDate limit = searchLimit(data.expr(), searchFrom, false);
-    if (data.anchor() != null) {
-      limit = max(limit, LocalDate.parse(data.anchor()));
+    if (clauses.starting() != null) {
+      limit = max(limit, clauses.starting());
     }
 
     ZonedDateTime best = null;
     // A fall-back overlap that crosses midnight repeats the start of the next date before now.
-    LocalDate start = min(now.toLocalDate().plusDays(1), LAST_DATE);
-    if (untilDate != null) {
-      start = min(start, untilDate);
+    LocalDate start = now.toLocalDate().plusDays(1);
+    if (clauses.until() != null) {
+      start = min(start, clauses.until());
     }
     Iterator<LocalDate> days = scheduledDates(data, start, limit, false).iterator();
     while (days.hasNext()) {
@@ -146,7 +152,7 @@ public final class Evaluator {
       if (best != null && !day.plusDays(2).atStartOfDay(location).isAfter(best)) {
         break;
       }
-      if (clausesAllow(data, day, untilDate)) {
+      if (clauses.allow(day)) {
         Optional<ZonedDateTime> t = nearestOn(data.expr(), day, location, now, false);
         if (t.isPresent() && (best == null || t.get().isAfter(best))) {
           best = t.get();
@@ -158,21 +164,21 @@ public final class Evaluator {
 
   private static Optional<ZonedDateTime> next(
       ScheduleData data, ZonedDateTime now, ZoneId location) {
-    LocalDate untilDate = untilDate(data, now.toLocalDate());
+    Clauses clauses = Clauses.of(data, now.toLocalDate());
     LocalDate searchFrom = now.toLocalDate();
-    if (data.anchor() != null) {
-      searchFrom = max(searchFrom, LocalDate.parse(data.anchor()));
+    if (clauses.starting() != null) {
+      searchFrom = max(searchFrom, clauses.starting());
     }
     LocalDate limit = searchLimit(data.expr(), searchFrom, true);
-    if (untilDate != null) {
-      limit = min(limit, untilDate);
+    if (clauses.until() != null) {
+      limit = min(limit, clauses.until());
     }
 
     ZonedDateTime best = null;
     // A time shifted past midnight by a DST gap lands the day after its scheduled date.
     LocalDate start = now.toLocalDate().minusDays(1);
-    if (data.anchor() != null) {
-      start = max(start, LocalDate.parse(data.anchor()));
+    if (clauses.starting() != null) {
+      start = max(start, clauses.starting());
     }
     Iterator<LocalDate> days = scheduledDates(data, start, limit, true).iterator();
     while (days.hasNext()) {
@@ -180,7 +186,7 @@ public final class Evaluator {
       if (best != null && !day.atStartOfDay(location).isBefore(best)) {
         break;
       }
-      if (clausesAllow(data, day, untilDate)) {
+      if (clauses.allow(day)) {
         Optional<ZonedDateTime> t = nearestOn(data.expr(), day, location, now, true);
         if (t.isPresent() && (best == null || t.get().isBefore(best))) {
           best = t.get();
@@ -196,19 +202,42 @@ public final class Evaluator {
   }
 
   /**
-   * Whether the except, until, starting and during clauses allow an occurrence scheduled on day. A
-   * time shifted past midnight by a DST gap keeps its scheduled date; a month repeat applies during
-   * to its target month when listing dates instead.
+   * The trailing clauses, resolved once per search. They see the scheduled date of a time shifted
+   * past midnight by a DST gap and the landing date of a nearest weekday. A month repeat applies
+   * during to its target month when listing dates instead, so its duringMonths is empty.
    */
-  private static boolean clausesAllow(ScheduleData data, LocalDate day, LocalDate untilDate) {
-    return !isExcepted(day, data.except())
-        && (untilDate == null || !day.isAfter(untilDate))
-        && (data.anchor() == null || !day.isBefore(LocalDate.parse(data.anchor())))
-        && (data.expr() instanceof MonthRepeat || matchesDuring(day, data.during()));
-  }
+  private record Clauses(
+      LocalDate starting,
+      LocalDate until,
+      Set<Integer> duringMonths,
+      Set<LocalDate> exceptDates,
+      Set<MonthDay> exceptDays) {
+    static Clauses of(ScheduleData data, LocalDate now) {
+      Set<LocalDate> exceptDates = new HashSet<>();
+      Set<MonthDay> exceptDays = new HashSet<>();
+      for (ExceptionSpec exc : data.except()) {
+        switch (exc.kind()) {
+          case ISO -> exceptDates.add(LocalDate.parse(exc.date()));
+          case NAMED -> exceptDays.add(MonthDay.of(exc.month().number(), exc.day()));
+        }
+      }
+      return new Clauses(
+          data.anchor() != null ? LocalDate.parse(data.anchor()) : null,
+          data.until() != null ? resolveUntil(data.until(), now) : null,
+          data.expr() instanceof MonthRepeat
+              ? Set.of()
+              : data.during().stream().map(MonthName::number).collect(Collectors.toSet()),
+          exceptDates,
+          exceptDays);
+    }
 
-  private static LocalDate untilDate(ScheduleData data, LocalDate now) {
-    return data.until() != null ? resolveUntil(data.until(), now) : null;
+    boolean allow(LocalDate day) {
+      return (starting == null || !day.isBefore(starting))
+          && (until == null || !day.isAfter(until))
+          && (duringMonths.isEmpty() || duringMonths.contains(day.getMonthValue()))
+          && !exceptDates.contains(day)
+          && !exceptDays.contains(MonthDay.from(day));
+    }
   }
 
   /**
@@ -560,22 +589,10 @@ public final class Evaluator {
 
   private static Optional<LocalDate> getYearTargetDay(int year, YearTarget target) {
     return switch (target.kind()) {
-      case DATE -> {
-        try {
-          yield Optional.of(LocalDate.of(year, target.month().number(), target.day()));
-        } catch (DateTimeException e) {
-          yield Optional.empty();
-        }
-      }
+      case DATE, DAY_OF_MONTH ->
+          Optional.ofNullable(tryCreateDate(year, target.month().number(), target.day()));
       case ORDINAL_WEEKDAY ->
           nthWeekdayOfMonth(year, target.month().toMonth(), target.weekday(), target.ordinal());
-      case DAY_OF_MONTH -> {
-        try {
-          yield Optional.of(LocalDate.of(year, target.month().number(), target.day()));
-        } catch (DateTimeException e) {
-          yield Optional.empty();
-        }
-      }
       case LAST_WEEKDAY -> Optional.of(lastWeekdayOfMonth(year, target.month().toMonth()));
     };
   }
@@ -587,29 +604,6 @@ public final class Evaluator {
     } catch (DateTimeException e) {
       return null;
     }
-  }
-
-  private static boolean isExcepted(LocalDate d, List<ExceptionSpec> exceptions) {
-    for (ExceptionSpec exc : exceptions) {
-      switch (exc.kind()) {
-        case NAMED -> {
-          if (d.getMonthValue() == exc.month().number() && d.getDayOfMonth() == exc.day()) {
-            return true;
-          }
-        }
-        case ISO -> {
-          LocalDate excDate = LocalDate.parse(exc.date());
-          if (d.equals(excDate)) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  private static boolean matchesDuring(LocalDate d, List<MonthName> during) {
-    return matchesDuring(YearMonth.from(d), during);
   }
 
   private static boolean matchesDuring(YearMonth month, List<MonthName> during) {
