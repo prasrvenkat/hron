@@ -43,3 +43,6 @@ jobs:
 
       - name: Build
         run: cd ts && pnpm build
+
+      - name: Typecheck built package as a consumer
+        run: cd ts && pnpm typecheck:dist

@@ -33,3 +33,6 @@ jobs:
 
       - name: Build
         run: cd playground && pnpm build
+
+      - name: Check both pages were built
+        run: test -f playground/dist/index.html && test -f playground/dist/playground/index.html
