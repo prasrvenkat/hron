@@ -8,7 +8,6 @@ require "time"
 require "tzinfo"
 
 module TestHelper
-  # Parse '2026-02-06T12:00:00+00:00[UTC]' into a timezone-aware Time
   def self.parse_zoned(s)
     match = s.match(/^(.+)\[(.+)\]$/)
     raise "expected format 'ISO[TZ]', got: #{s}" unless match
@@ -16,17 +15,14 @@ module TestHelper
     iso_part = match[1]
     tz_name = match[2]
 
-    # Parse the ISO timestamp
     time = Time.parse(iso_part)
 
-    # Convert to the named timezone
     tz = TZInfo::Timezone.get(tz_name)
     tz.utc_to_local(time.utc)
   rescue TZInfo::InvalidTimezoneIdentifier => e
     raise "invalid timezone: #{tz_name} - #{e.message}"
   end
 
-  # Format a Time as '2026-02-06T12:00:00+00:00[TZ]'
   def self.format_zoned(time, tz_name = "UTC")
     tz = TZInfo::Timezone.get(tz_name)
     local_time = tz.utc_to_local(time.utc)

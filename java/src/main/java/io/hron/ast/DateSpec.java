@@ -10,7 +10,6 @@ package io.hron.ast;
  */
 public record DateSpec(Kind kind, MonthName month, int day, String date) {
 
-  /** The type of date specification. */
   public enum Kind {
     /** A named date (e.g., feb 14). */
     NAMED,
@@ -18,13 +17,6 @@ public record DateSpec(Kind kind, MonthName month, int day, String date) {
     ISO
   }
 
-  /**
-   * Creates a named date specification.
-   *
-   * @param month the month
-   * @param day the day
-   * @return a new named date specification
-   */
   public static DateSpec named(MonthName month, int day) {
     return new DateSpec(Kind.NAMED, month, day, null);
   }

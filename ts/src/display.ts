@@ -1,5 +1,3 @@
-// Display (toString) for hron schedules — produces canonical form for roundtrip.
-
 import type {
   DayFilter,
   DayOfMonthSpec,
@@ -14,7 +12,7 @@ import type {
 export function display(schedule: ScheduleData): string {
   let out = displayExpr(schedule.expr);
 
-  // Trailing clauses in order: except, until, starting, during, timezone
+  // Trailing clause order is fixed by the grammar.
   if (schedule.except.length > 0) {
     out += " except ";
     out += schedule.except

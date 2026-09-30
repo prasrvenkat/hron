@@ -148,15 +148,9 @@ String _dayFilterToCronDow(DayFilter filter) {
   };
 }
 
-// ============================================================================
-// from_cron: Parse 5-field cron expressions (and @ shortcuts)
-// ============================================================================
-
-/// Parse a 5-field cron expression into a Schedule.
 ScheduleData fromCron(String cron) {
   final trimmed = cron.trim();
 
-  // Handle @ shortcuts first
   if (trimmed.startsWith('@')) {
     return _parseCronShortcut(trimmed);
   }
@@ -172,14 +166,11 @@ ScheduleData fromCron(String cron) {
   final monthField = fields[3];
   var dowField = fields[4];
 
-  // Normalize ? to * (they're semantically equivalent for our purposes)
   if (domField == '?') domField = '*';
   if (dowField == '?') dowField = '*';
 
-  // Parse month field into during clause
   final during = _parseMonthField(monthField);
 
-  // Check for special DOW patterns: nth weekday (#), last weekday (5L)
   final nthResult = _tryParseNthWeekday(
     minuteField,
     hourField,
@@ -189,7 +180,6 @@ ScheduleData fromCron(String cron) {
   );
   if (nthResult != null) return nthResult;
 
-  // Check for L (last day) or LW (last weekday) in DOM
   final lastDayResult = _tryParseLastDay(
     minuteField,
     hourField,
@@ -199,7 +189,6 @@ ScheduleData fromCron(String cron) {
   );
   if (lastDayResult != null) return lastDayResult;
 
-  // Check for W (nearest weekday): e.g., 15W
   if (domField.endsWith('W') && domField != 'LW') {
     final nearestWeekdayResult = _tryParseNearestWeekday(
       minuteField,
@@ -211,7 +200,6 @@ ScheduleData fromCron(String cron) {
     if (nearestWeekdayResult != null) return nearestWeekdayResult;
   }
 
-  // Check for interval patterns: */N or range/N
   final intervalResult = _tryParseInterval(
     minuteField,
     hourField,
@@ -221,12 +209,10 @@ ScheduleData fromCron(String cron) {
   );
   if (intervalResult != null) return intervalResult;
 
-  // Standard time-based cron
   final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
   final hour = _parseSingleValue(hourField, 'hour', 0, 23);
   final time = TimeOfDay(hour, minute);
 
-  // DOM-based (monthly) - when DOM is specified and DOW is *
   if (domField != '*' && dowField == '*') {
     final target = _parseDomField(domField);
     final schedule = ScheduleData(MonthRepeat(1, target, [time]));
@@ -234,14 +220,12 @@ ScheduleData fromCron(String cron) {
     return schedule;
   }
 
-  // DOW-based (day repeat)
   final days = _parseCronDow(dowField);
   final schedule = ScheduleData(DayRepeat(1, days, [time]));
   schedule.during = during;
   return schedule;
 }
 
-/// Parse @ shortcuts like @daily, @hourly, etc.
 ScheduleData _parseCronShortcut(String cron) {
   switch (cron.toLowerCase()) {
     case '@yearly':
@@ -275,13 +259,12 @@ ScheduleData _parseCronShortcut(String cron) {
   }
 }
 
-/// Parse month field into a `List<MonthName>` for the `during` clause.
 List<MonthName> _parseMonthField(String field) {
   if (field == '*') return [];
 
   final months = <MonthName>[];
   for (final part in field.split(',')) {
-    // Check for step values FIRST (e.g., 1-12/3 or */3)
+    // Before the range check: a step part like 1-12/3 also contains '-'.
     if (part.contains('/')) {
       final splitIdx = part.indexOf('/');
       final rangePart = part.substring(0, splitIdx);
@@ -313,7 +296,6 @@ List<MonthName> _parseMonthField(String field) {
         months.add(MonthName.fromNumber(n));
       }
     } else if (part.contains('-')) {
-      // Range like 1-3 or JAN-MAR
       final dashIdx = part.indexOf('-');
       final startMonth = _parseMonthValue(part.substring(0, dashIdx));
       final endMonth = _parseMonthValue(part.substring(dashIdx + 1));
@@ -326,7 +308,6 @@ List<MonthName> _parseMonthField(String field) {
         months.add(MonthName.fromNumber(n));
       }
     } else {
-      // Single month
       months.add(_parseMonthValue(part));
     }
   }
@@ -334,9 +315,7 @@ List<MonthName> _parseMonthField(String field) {
   return months;
 }
 
-/// Parse a single month value (number 1-12 or name JAN-DEC).
 MonthName _parseMonthValue(String s) {
-  // Try as number first
   final n = int.tryParse(s);
   if (n != null) {
     if (n < 1 || n > 12) {
@@ -344,7 +323,6 @@ MonthName _parseMonthValue(String s) {
     }
     return MonthName.fromNumber(n);
   }
-  // Try as name
   final month = _parseMonthName(s);
   if (month == null) {
     throw HronError.cron('invalid month: $s');
@@ -378,7 +356,6 @@ ScheduleData? _tryParseNthWeekday(
   String dowField,
   List<MonthName> during,
 ) {
-  // Check for # pattern (nth weekday of month)
   if (dowField.contains('#')) {
     final parts = dowField.split('#');
     if (parts.length != 2) {
@@ -418,7 +395,6 @@ ScheduleData? _tryParseNthWeekday(
     return schedule;
   }
 
-  // Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
   if (dowField.endsWith('L') && dowField.length > 1) {
     final dowStr = dowField.substring(0, dowField.length - 1);
     final dowNum = _parseDowValue(dowStr);
@@ -443,7 +419,6 @@ ScheduleData? _tryParseNthWeekday(
   return null;
 }
 
-/// Try to parse L (last day) or LW (last weekday) patterns.
 ScheduleData? _tryParseLastDay(
   String minuteField,
   String hourField,
@@ -471,7 +446,6 @@ ScheduleData? _tryParseLastDay(
   return schedule;
 }
 
-/// Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
 ScheduleData? _tryParseNearestWeekday(
   String minuteField,
   String hourField,
@@ -508,7 +482,6 @@ ScheduleData? _tryParseNearestWeekday(
   return schedule;
 }
 
-/// Try to parse interval patterns: */N, range/N in minute or hour fields.
 ScheduleData? _tryParseInterval(
   String minuteField,
   String hourField,
@@ -516,7 +489,6 @@ ScheduleData? _tryParseInterval(
   String dowField,
   List<MonthName> during,
 ) {
-  // Minute interval: */N or range/N
   if (minuteField.contains('/')) {
     final splitIdx = minuteField.indexOf('/');
     final rangePart = minuteField.substring(0, splitIdx);
@@ -556,7 +528,6 @@ ScheduleData? _tryParseInterval(
       toMinute = 59;
     }
 
-    // Determine the hour window
     int fromHour, toHour;
     if (hourField == '*') {
       fromHour = 0;
@@ -571,7 +542,6 @@ ScheduleData? _tryParseInterval(
       fromHour = s;
       toHour = e;
     } else if (hourField.contains('/')) {
-      // Hour also has step - this is complex, handle as hour interval
       return null;
     } else {
       final h = int.tryParse(hourField);
@@ -582,20 +552,17 @@ ScheduleData? _tryParseInterval(
       toHour = h;
     }
 
-    // Check if this should be a day filter
     DayFilter? dayFilter;
     if (dowField != '*') {
       dayFilter = _parseCronDow(dowField);
     }
 
     if (domField == '*' || domField == '?') {
-      // Determine the end minute based on context
       int endMinute;
       if (fromMinute == 0 && toMinute == 59 && toHour == 23) {
-        // Full day: 00:00 to 23:59
         endMinute = 59;
       } else if (fromMinute == 0 && toMinute == 59) {
-        // Partial day with full minutes range: use :00 for cleaner output
+        // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
         endMinute = 0;
       } else {
         endMinute = toMinute;
@@ -615,7 +582,6 @@ ScheduleData? _tryParseInterval(
     }
   }
 
-  // Hour interval: 0 */N or 0 range/N
   if (hourField.contains('/') && (minuteField == '0' || minuteField == '00')) {
     final splitIdx = hourField.indexOf('/');
     final rangePart = hourField.substring(0, splitIdx);
@@ -656,7 +622,6 @@ ScheduleData? _tryParseInterval(
 
     if ((domField == '*' || domField == '?') &&
         (dowField == '*' || dowField == '?')) {
-      // Use :59 only for full day (00:00 to 23:59), otherwise use :00
       final endMinute = (fromHour == 0 && toHour == 23) ? 59 : 0;
 
       final schedule = ScheduleData(
@@ -676,13 +641,11 @@ ScheduleData? _tryParseInterval(
   return null;
 }
 
-/// Parse a DOM field into a MonthTarget.
 MonthTarget _parseDomField(String field) {
   final specs = <DayOfMonthSpec>[];
 
   for (final part in field.split(',')) {
     if (part.contains('/')) {
-      // Step value: 1-31/2 or */5
       final splitIdx = part.indexOf('/');
       final rangePart = part.substring(0, splitIdx);
       final stepStr = part.substring(splitIdx + 1);
@@ -734,7 +697,6 @@ MonthTarget _parseDomField(String field) {
         specs.add(SingleDay(d));
       }
     } else if (part.contains('-')) {
-      // Range: 1-5
       final dashIdx = part.indexOf('-');
       final startStr = part.substring(0, dashIdx);
       final endStr = part.substring(dashIdx + 1);
@@ -753,7 +715,6 @@ MonthTarget _parseDomField(String field) {
       _validateDom(end);
       specs.add(DayRange(start, end));
     } else {
-      // Single: 15
       final day = int.tryParse(part);
       if (day == null) {
         throw HronError.cron('invalid DOM value: $part');
@@ -772,7 +733,6 @@ void _validateDom(int day) {
   }
 }
 
-/// Parse a DOW field into a DayFilter.
 DayFilter _parseCronDow(String field) {
   if (field == '*') return EveryDay();
 
@@ -780,7 +740,6 @@ DayFilter _parseCronDow(String field) {
 
   for (final part in field.split(',')) {
     if (part.contains('/')) {
-      // Step value: 0-6/2 or */2
       final splitIdx = part.indexOf('/');
       final rangePart = part.substring(0, splitIdx);
       final stepStr = part.substring(splitIdx + 1);
@@ -815,8 +774,6 @@ DayFilter _parseCronDow(String field) {
         days.add(Weekday.fromCronDow(d));
       }
     } else if (part.contains('-')) {
-      // Range: 1-5 or MON-FRI
-      // Parse without normalizing 7 to 0 for range purposes
       final dashIdx = part.indexOf('-');
       final startStr = part.substring(0, dashIdx);
       final endStr = part.substring(dashIdx + 1);
@@ -826,18 +783,15 @@ DayFilter _parseCronDow(String field) {
         throw HronError.cron('range start must be <= end: $startStr-$endStr');
       }
       for (var d = start; d <= end; d++) {
-        // Normalize 7 to 0 (Sunday) when converting to weekday
         final normalized = d == 7 ? 0 : d;
         days.add(Weekday.fromCronDow(normalized));
       }
     } else {
-      // Single: 1 or MON
       final dow = _parseDowValue(part);
       days.add(Weekday.fromCronDow(dow));
     }
   }
 
-  // Check for special patterns
   if (days.length == 5) {
     final sorted = List<Weekday>.from(days)
       ..sort((a, b) => a.number.compareTo(b.number));
@@ -870,7 +824,6 @@ bool _listEquals<T>(List<T> a, List<T> b) {
   return true;
 }
 
-/// Parse a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0.
 int _parseDowValue(String s) {
   final raw = _parseDowValueRaw(s);
   // Normalize 7 to 0 (both mean Sunday)
@@ -879,7 +832,6 @@ int _parseDowValue(String s) {
 
 /// Parse a DOW value without normalizing 7 to 0 (for range checking).
 int _parseDowValueRaw(String s) {
-  // Try as number first
   final n = int.tryParse(s);
   if (n != null) {
     if (n < 0 || n > 7) {
@@ -887,7 +839,6 @@ int _parseDowValueRaw(String s) {
     }
     return n;
   }
-  // Try as name
   return switch (s.toUpperCase()) {
     'SUN' => 0,
     'MON' => 1,
@@ -900,7 +851,6 @@ int _parseDowValueRaw(String s) {
   };
 }
 
-/// Parse a single numeric value with validation.
 int _parseSingleValue(String field, String name, int min, int max) {
   final value = int.tryParse(field);
   if (value == null) {

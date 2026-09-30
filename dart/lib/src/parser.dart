@@ -53,8 +53,6 @@ class _Parser {
     throw errorAtEnd('expected $expected');
   }
 
-  // --- Grammar productions ---
-
   ScheduleData parseExpression() {
     final span = currentSpan();
     final kind = peekKind();
@@ -76,19 +74,18 @@ class _Parser {
   ScheduleData _parseTrailingClauses(ScheduleExpr expr) {
     final schedule = ScheduleData(expr);
 
-    // except
+    // Checked in grammar order, so a clause out of order makes parse() fail with
+    // "unexpected tokens after expression".
     if (peekKind() is ExceptToken) {
       advance();
       schedule.except = _parseExceptionList();
     }
 
-    // until
     if (peekKind() is UntilToken) {
       advance();
       schedule.until = _parseUntilSpec();
     }
 
-    // starting
     if (peekKind() is StartingToken) {
       advance();
       final k = peekKind();
@@ -104,13 +101,11 @@ class _Parser {
       }
     }
 
-    // during
     if (peekKind() is DuringToken) {
       advance();
       schedule.during = _parseMonthList();
     }
 
-    // in <timezone>
     if (peekKind() is InToken) {
       advance();
       final k = peekKind();
@@ -191,7 +186,6 @@ class _Parser {
     throw error(errorMsg, currentSpan());
   }
 
-  // After "every": dispatch
   ScheduleExpr _parseEvery() {
     if (peek() == null) throw errorAtEnd('expected repeater');
 
@@ -363,9 +357,7 @@ class _Parser {
     return MonthRepeat(interval, target, times);
   }
 
-  /// Parse [next|previous] nearest weekday to `<day>`
   MonthTarget _parseNearestWeekdayTarget() {
-    // Optional direction: "next" or "previous"
     NearestDirection? direction;
     final k = peekKind();
     if (k is NextToken) {
@@ -542,7 +534,6 @@ class _Parser {
       throw error('invalid date: $dateStr', currentSpan());
     }
     // DateTime.tryParse silently rolls invalid dates (e.g. Feb 30 -> Mar 2)
-    // Verify the day component matches the input
     final parts = dateStr.split('-');
     final inputDay = int.parse(parts[2]);
     final inputMonth = int.parse(parts[1]);

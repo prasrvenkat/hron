@@ -22,21 +22,12 @@ public sealed record MonthTarget(
     OrdinalPosition? OrdinalValue = null,
     Weekday? WeekdayValue = null)
 {
-    /// <summary>
-    /// Creates a month target for specific days.
-    /// </summary>
     public static MonthTarget Days(IReadOnlyList<DayOfMonthSpec> specs) =>
         new(MonthTargetKind.Days, specs);
 
-    /// <summary>
-    /// Creates a month target for the last day of the month.
-    /// </summary>
     public static MonthTarget LastDay() =>
         new(MonthTargetKind.LastDay, []);
 
-    /// <summary>
-    /// Creates a month target for the last weekday of the month.
-    /// </summary>
     public static MonthTarget LastWeekday() =>
         new(MonthTargetKind.LastWeekday, []);
 
@@ -48,16 +39,11 @@ public sealed record MonthTarget(
     public static MonthTarget NearestWeekday(int day, NearestDirection? direction = null) =>
         new(MonthTargetKind.NearestWeekday, [], day, direction);
 
-    /// <summary>
-    /// Creates a month target for an ordinal weekday (e.g., first monday, last friday).
-    /// </summary>
-    /// <param name="ordinal">The ordinal position (first, second, ..., last).</param>
-    /// <param name="weekday">The day of the week.</param>
     public static MonthTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday) =>
         new(MonthTargetKind.OrdinalWeekday, [], OrdinalValue: ordinal, WeekdayValue: weekday);
 
     /// <summary>
-    /// Returns all days specified by this target (for DAYS kind only).
+    /// Returns all days specified by this target, or an empty list unless Kind is Days.
     /// </summary>
     public IReadOnlyList<int> ExpandDays()
     {
@@ -80,9 +66,7 @@ public sealed record MonthTarget(
 /// </summary>
 public enum MonthTargetKind
 {
-    /// <summary>Specific days of the month.</summary>
     Days,
-    /// <summary>The last day of the month.</summary>
     LastDay,
     /// <summary>The last weekday (Mon-Fri) of the month.</summary>
     LastWeekday,

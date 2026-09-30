@@ -1,11 +1,6 @@
 //! Iterator-specific tests for `occurrences()` and `between()` methods.
 //!
-//! These tests verify Rust-specific iterator behavior beyond conformance tests:
-//! - Laziness (iterators don't evaluate eagerly)
-//! - Early termination
-//! - Error propagation
-//! - Integration with std::iter combinators
-//! - Memory efficiency patterns
+//! They cover Rust-specific iterator behavior beyond the conformance suite.
 
 use hron::Schedule;
 use jiff::{tz::TimeZone, Zoned};
@@ -14,20 +9,14 @@ fn parse_zoned(s: &str) -> Zoned {
     s.parse().expect("valid zoned datetime")
 }
 
-// =============================================================================
-// Laziness Tests
-// =============================================================================
-
 #[test]
 fn occurrences_is_lazy() {
     // An unbounded schedule should not hang or OOM when creating the iterator
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Creating the iterator should be instant (lazy)
     let iter = schedule.occurrences(&from);
 
-    // Taking just 1 should work without evaluating the rest
     let first: Vec<_> = iter.take(1).collect::<Result<_, _>>().unwrap();
     assert_eq!(first.len(), 1);
 }
@@ -38,17 +27,12 @@ fn between_is_lazy() {
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
     let to = parse_zoned("2026-12-31T23:59:00+00:00[UTC]");
 
-    // Creating the iterator should be instant
     let iter = schedule.between(&from, &to);
 
     // Taking just 3 should not evaluate all ~330 days
     let first_three: Vec<_> = iter.take(3).collect::<Result<_, _>>().unwrap();
     assert_eq!(first_three.len(), 3);
 }
-
-// =============================================================================
-// Early Termination Tests
-// =============================================================================
 
 #[test]
 fn occurrences_early_termination_with_take() {
@@ -88,7 +72,6 @@ fn occurrences_early_termination_with_find() {
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Find the first Saturday occurrence
     let saturday = schedule
         .occurrences(&from)
         .find(|r| match r {
@@ -102,16 +85,11 @@ fn occurrences_early_termination_with_find() {
     assert_eq!(saturday.date().day(), 7);
 }
 
-// =============================================================================
-// Iterator Combinator Tests
-// =============================================================================
-
 #[test]
 fn occurrences_works_with_filter() {
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Filter to only weekends
     let weekends: Vec<_> = schedule
         .occurrences(&from)
         .take(14) // Two weeks
@@ -134,7 +112,6 @@ fn occurrences_works_with_map() {
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Map to just the day number
     let days: Vec<i8> = schedule
         .occurrences(&from)
         .take(5)
@@ -163,7 +140,6 @@ fn occurrences_works_with_skip() {
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Skip first 5, take next 3
     let results: Vec<_> = schedule
         .occurrences(&from)
         .skip(5)
@@ -172,7 +148,6 @@ fn occurrences_works_with_skip() {
         .unwrap();
 
     assert_eq!(results.len(), 3);
-    // Should be Feb 6, 7, 8
     assert_eq!(results[0].date().day(), 6);
     assert_eq!(results[1].date().day(), 7);
     assert_eq!(results[2].date().day(), 8);
@@ -184,7 +159,6 @@ fn between_works_with_count() {
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
     let to = parse_zoned("2026-02-10T23:59:00+00:00[UTC]");
 
-    // Count occurrences in range
     let count = schedule.between(&from, &to).filter(|r| r.is_ok()).count();
 
     // Feb 1-10 inclusive = 10 days
@@ -201,10 +175,6 @@ fn between_works_with_last() {
 
     assert_eq!(last.date().day(), 10);
 }
-
-// =============================================================================
-// Collect Patterns
-// =============================================================================
 
 #[test]
 fn occurrences_collect_to_vec() {
@@ -232,10 +202,6 @@ fn between_collect_to_vec() {
 
     assert_eq!(results.len(), 7);
 }
-
-// =============================================================================
-// For Loop Patterns
-// =============================================================================
 
 #[test]
 fn occurrences_for_loop_with_break() {
@@ -268,10 +234,6 @@ fn between_for_loop() {
 
     assert_eq!(days, vec![1, 2, 3]);
 }
-
-// =============================================================================
-// Edge Cases
-// =============================================================================
 
 #[test]
 fn occurrences_empty_when_past_until() {
@@ -315,10 +277,6 @@ fn occurrences_single_date_terminates() {
     assert_eq!(results.len(), 1);
 }
 
-// =============================================================================
-// Timezone Handling
-// =============================================================================
-
 #[test]
 fn occurrences_preserves_timezone() {
     let schedule = Schedule::parse("every day at 09:00 in America/New_York").unwrap();
@@ -355,10 +313,6 @@ fn between_handles_dst_transition() {
     assert_eq!(results[2].time().hour(), 2); // Mar 9 02:30
 }
 
-// =============================================================================
-// Multiple Times Per Day
-// =============================================================================
-
 #[test]
 fn occurrences_multiple_times_per_day() {
     let schedule = Schedule::parse("every day at 09:00, 12:00, 17:00 in UTC").unwrap();
@@ -371,22 +325,16 @@ fn occurrences_multiple_times_per_day() {
         .unwrap();
 
     assert_eq!(results.len(), 9);
-    // First day: 09:00, 12:00, 17:00
     assert_eq!(results[0].time().hour(), 9);
     assert_eq!(results[1].time().hour(), 12);
     assert_eq!(results[2].time().hour(), 17);
 }
-
-// =============================================================================
-// Chained Operations
-// =============================================================================
 
 #[test]
 fn complex_iterator_chain() {
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Complex chain: skip weekends, take first 5 weekdays, get their day numbers
     let weekday_days: Vec<i8> = schedule
         .occurrences(&from)
         .take(14) // Two weeks to ensure we have enough

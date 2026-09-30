@@ -114,7 +114,7 @@ enum IntervalUnit {
   hours,
 }
 
-/// Ordinal positions for expressions like "first Monday of every month".
+/// Position of a weekday within a month: first to fifth, or last.
 enum OrdinalPosition {
   first,
   second,
@@ -292,18 +292,10 @@ class NamedUntil extends UntilSpec {
   NamedUntil(this.month, this.day);
 }
 
-/// A schedule expression representing when events occur.
-///
-/// This is the main AST type representing different schedule patterns:
-/// - [IntervalRepeat]: "every 30 min from 9am to 5pm"
-/// - [DayRepeat]: "every day at 9am"
-/// - [WeekRepeat]: "every week on monday at 9am"
-/// - [MonthRepeat]: "every month on the 1st at 9am"
-/// - [SingleDate]: "on Jan 1 at 12:00"
-/// - [YearRepeat]: "every year on Jan 1 at 12:00"
+/// The main pattern of a parsed schedule, without its trailing clauses.
 sealed class ScheduleExpr {}
 
-/// Schedule repeating at a time interval (e.g., "every 30 min from 9am to 5pm").
+/// Schedule repeating at a minute or hour interval within a daily window.
 class IntervalRepeat extends ScheduleExpr {
   final int interval;
   final IntervalUnit unit;
@@ -313,7 +305,7 @@ class IntervalRepeat extends ScheduleExpr {
   IntervalRepeat(this.interval, this.unit, this.from, this.to, this.dayFilter);
 }
 
-/// Schedule repeating daily (e.g., "every day at 9am").
+/// Schedule repeating on matching days, optionally every N days.
 class DayRepeat extends ScheduleExpr {
   final int interval;
   final DayFilter days;
@@ -321,7 +313,7 @@ class DayRepeat extends ScheduleExpr {
   DayRepeat(this.interval, this.days, this.times);
 }
 
-/// Schedule repeating weekly (e.g., "every week on monday at 9am").
+/// Schedule repeating on given weekdays every N weeks.
 class WeekRepeat extends ScheduleExpr {
   final int interval;
   final List<Weekday> days;
@@ -329,7 +321,7 @@ class WeekRepeat extends ScheduleExpr {
   WeekRepeat(this.interval, this.days, this.times);
 }
 
-/// Schedule repeating monthly (e.g., "on the 1st of every month at 9am").
+/// Schedule repeating on a day-of-month target every N months.
 class MonthRepeat extends ScheduleExpr {
   final int interval;
   final MonthTarget target;
@@ -337,14 +329,14 @@ class MonthRepeat extends ScheduleExpr {
   MonthRepeat(this.interval, this.target, this.times);
 }
 
-/// A one-time schedule on a specific date (e.g., "on Jan 1 at 12:00").
+/// Schedule on a single date, given as an ISO date or a month and day.
 class SingleDate extends ScheduleExpr {
   final DateSpec date;
   final List<TimeOfDay> times;
   SingleDate(this.date, this.times);
 }
 
-/// Schedule repeating yearly (e.g., "every year on Jan 1 at 12:00").
+/// Schedule repeating on a date target every N years.
 class YearRepeat extends ScheduleExpr {
   final int interval;
   final YearTarget target;
@@ -352,10 +344,7 @@ class YearRepeat extends ScheduleExpr {
   YearRepeat(this.interval, this.target, this.times);
 }
 
-/// The complete parsed schedule with expression and modifiers.
-///
-/// Contains the main [expr] plus optional clauses like timezone,
-/// exceptions, end date, anchor, and month restrictions.
+/// A parsed schedule: the main [expr] plus its trailing clauses.
 class ScheduleData {
   final ScheduleExpr expr;
   String? timezone;
@@ -366,8 +355,6 @@ class ScheduleData {
 
   ScheduleData(this.expr) : except = [], during = [];
 }
-
-// --- Helper functions ---
 
 List<int> expandDaySpec(DayOfMonthSpec spec) {
   if (spec is SingleDay) return [spec.day];

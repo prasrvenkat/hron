@@ -10,27 +10,15 @@ public sealed record YearTarget(
     OrdinalPosition? Ordinal,
     Weekday? WeekdayValue)
 {
-    /// <summary>
-    /// Creates a year target for a specific month and day.
-    /// </summary>
     public static YearTarget Date(MonthName month, int day)
         => new(YearTargetKind.Date, month, day, null, null);
 
-    /// <summary>
-    /// Creates a year target for an ordinal weekday in a month.
-    /// </summary>
     public static YearTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday, MonthName month)
         => new(YearTargetKind.OrdinalWeekday, month, 0, ordinal, weekday);
 
-    /// <summary>
-    /// Creates a year target for a specific day of a month.
-    /// </summary>
     public static YearTarget DayOfMonth(int day, MonthName month)
         => new(YearTargetKind.DayOfMonth, month, day, null, null);
 
-    /// <summary>
-    /// Creates a year target for the last weekday of a month.
-    /// </summary>
     public static YearTarget LastWeekday(MonthName month)
         => new(YearTargetKind.LastWeekday, month, 0, null, null);
 }

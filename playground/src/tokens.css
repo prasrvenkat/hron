@@ -6,12 +6,10 @@
    ============================================================ */
 
 :root {
-  /* — Type — */
   --font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 
-  /* — Light palette (default) — */
   --paper: #fcfcfd;          /* page bg */
   --surface: #f4f5f7;        /* cards, wells */
   --surface-2: #eceef2;      /* nested / hover */
@@ -31,7 +29,6 @@
   --cron: #0f9d58;           /* "machine" green for cron/valid */
   --cron-soft: #e6f5ed;
 
-  /* — Geometry — */
   --r-xs: 5px;
   --r-sm: 8px;
   --r: 12px;

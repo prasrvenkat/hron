@@ -142,7 +142,6 @@ def _display_expr(expr: ScheduleExpr) -> str:
                 return f"every {interval} years on {target_str} at {_format_time_list(times)}"
             return f"every year on {target_str} at {_format_time_list(times)}"
 
-    # Should be unreachable
     raise ValueError(f"unknown expression type: {type(expr)}")  # pragma: no cover
 
 

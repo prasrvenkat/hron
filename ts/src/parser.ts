@@ -1,5 +1,3 @@
-// Hand-rolled recursive descent parser for hron expressions.
-
 import type {
   DateSpec,
   DayFilter,
@@ -82,8 +80,6 @@ class Parser {
     throw this.errorAtEnd(`expected ${expected}`);
   }
 
-  // --- Grammar productions ---
-
   parseExpression(): ScheduleData {
     const span = this.currentSpan();
     const kind = this.peekKind();
@@ -105,19 +101,16 @@ class Parser {
   private parseTrailingClauses(expr: ScheduleExpr): ScheduleData {
     const schedule = newScheduleData(expr);
 
-    // except
     if (this.peekKind()?.type === "except") {
       this.advance();
       schedule.except = this.parseExceptionList();
     }
 
-    // until
     if (this.peekKind()?.type === "until") {
       this.advance();
       schedule.until = this.parseUntilSpec();
     }
 
-    // starting
     if (this.peekKind()?.type === "starting") {
       this.advance();
       const k = this.peekKind();
@@ -134,13 +127,11 @@ class Parser {
       }
     }
 
-    // during
     if (this.peekKind()?.type === "during") {
       this.advance();
       schedule.during = this.parseMonthList();
     }
 
-    // in <timezone>
     if (this.peekKind()?.type === "in") {
       this.advance();
       const k = this.peekKind();
@@ -245,7 +236,6 @@ class Parser {
     throw this.error(errorMsg, this.currentSpan());
   }
 
-  // After "every": dispatch
   private parseEvery(): ScheduleExpr {
     if (!this.peek()) throw this.errorAtEnd("expected repeater");
 
@@ -430,9 +420,7 @@ class Parser {
     return { type: "monthRepeat", interval, target, times };
   }
 
-  // [next|previous] nearest weekday to <day>
   private parseNearestWeekdayTarget(): MonthTarget {
-    // Optional direction: "next" or "previous"
     let direction: NearestDirection | null = null;
     const k = this.peekKind();
 

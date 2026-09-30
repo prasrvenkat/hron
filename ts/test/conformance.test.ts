@@ -1,5 +1,3 @@
-// Conformance test runner — drives all tests from spec/tests.json.
-
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Temporal } from "@js-temporal/polyfill";
@@ -13,10 +11,6 @@ const defaultNow = parseZoned(spec.now);
 function parseZoned(s: string): Temporal.ZonedDateTime {
   return Temporal.ZonedDateTime.from(s);
 }
-
-// ===========================================================================
-// Parse conformance
-// ===========================================================================
 
 describe("parse roundtrip", () => {
   const parseSections = [
@@ -64,12 +58,7 @@ describe("parse errors", () => {
   }
 });
 
-// ===========================================================================
-// Eval conformance
-// ===========================================================================
-
 describe("eval", () => {
-  // Dynamically discover eval sections (skip non-test entries)
   const skipSections = new Set([
     "description",
     "matches",
@@ -90,7 +79,6 @@ describe("eval", () => {
           const schedule = Schedule.parse(tc.expression);
           const now = tc.now ? parseZoned(tc.now) : defaultNow;
 
-          // next (full timestamp)
           if ("next" in tc) {
             const result = schedule.nextFrom(now);
             if (tc.next === null) {
@@ -101,14 +89,12 @@ describe("eval", () => {
             }
           }
 
-          // next_date (date-only check)
           if ("next_date" in tc) {
             const result = schedule.nextFrom(now);
             expect(result).not.toBeNull();
             expect(result?.toPlainDate().toString()).toBe(tc.next_date);
           }
 
-          // next_n (list of timestamps)
           if ("next_n" in tc) {
             const expected: string[] = tc.next_n;
             const nCount = tc.next_n_count ?? expected.length;
@@ -119,7 +105,6 @@ describe("eval", () => {
             }
           }
 
-          // next_n_length (just check count)
           if ("next_n_length" in tc) {
             const expectedLen: number = tc.next_n_length;
             const nCount: number = tc.next_n_count;
@@ -216,10 +201,6 @@ describe("eval previous_from", () => {
   }
 });
 
-// ===========================================================================
-// Eval errors conformance
-// ===========================================================================
-
 describe("eval errors", () => {
   const tests = spec.eval_errors.tests;
   for (const tc of tests) {
@@ -237,10 +218,6 @@ describe("eval errors", () => {
     });
   }
 });
-
-// ===========================================================================
-// Cron conformance
-// ===========================================================================
 
 describe("cron", () => {
   describe("to_cron", () => {

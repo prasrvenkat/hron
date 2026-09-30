@@ -1,13 +1,3 @@
-/**
- * Iterator-specific tests for `occurrences()` and `between()` methods.
- *
- * These tests verify TypeScript-specific iterator behavior beyond conformance tests:
- * - Laziness (generators don't evaluate eagerly)
- * - Early termination
- * - Iterator protocol (Symbol.iterator)
- * - Integration with Array.from and spread operator
- */
-
 import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
 import { Schedule } from "../src/index.js";
@@ -16,20 +6,13 @@ function parseZoned(s: string): Temporal.ZonedDateTime {
   return Temporal.ZonedDateTime.from(s);
 }
 
-// =============================================================================
-// Laziness Tests
-// =============================================================================
-
 describe("laziness", () => {
   it("occurrences is lazy - does not evaluate unbounded schedule", () => {
-    // An unbounded schedule should not hang or OOM when creating the iterator
     const schedule = Schedule.parse("every day at 09:00 in UTC");
     const from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Creating the iterator should be instant (lazy)
     const iter = schedule.occurrences(from);
 
-    // Taking just 1 should work without evaluating the rest
     const results: Temporal.ZonedDateTime[] = [];
     for (const dt of iter) {
       results.push(dt);
@@ -43,10 +26,8 @@ describe("laziness", () => {
     const from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
     const to = parseZoned("2026-12-31T23:59:00+00:00[UTC]");
 
-    // Creating the iterator should be instant
     const iter = schedule.between(from, to);
 
-    // Taking just 3 should not evaluate all ~330 days
     const results: Temporal.ZonedDateTime[] = [];
     for (const dt of iter) {
       results.push(dt);
@@ -55,10 +36,6 @@ describe("laziness", () => {
     expect(results.length).toBe(3);
   });
 });
-
-// =============================================================================
-// Early Termination Tests
-// =============================================================================
 
 describe("early termination", () => {
   it("occurrences terminates with break", () => {
@@ -90,10 +67,6 @@ describe("early termination", () => {
   });
 });
 
-// =============================================================================
-// Iterator Protocol Tests
-// =============================================================================
-
 describe("iterator protocol", () => {
   it("occurrences returns iterable", () => {
     const schedule = Schedule.parse("every day at 09:00 in UTC");
@@ -101,7 +74,6 @@ describe("iterator protocol", () => {
 
     const iter = schedule.occurrences(from);
 
-    // Check it's iterable via Symbol.iterator
     expect(typeof iter[Symbol.iterator]).toBe("function");
   });
 
@@ -141,10 +113,6 @@ describe("iterator protocol", () => {
   });
 });
 
-// =============================================================================
-// For...of Patterns
-// =============================================================================
-
 describe("for...of patterns", () => {
   it("occurrences for...of with break", () => {
     const schedule = Schedule.parse("every day at 09:00 in UTC");
@@ -173,10 +141,6 @@ describe("for...of patterns", () => {
   });
 });
 
-// =============================================================================
-// Edge Cases
-// =============================================================================
-
 describe("edge cases", () => {
   it("occurrences empty when past until", () => {
     const schedule = Schedule.parse(
@@ -203,7 +167,6 @@ describe("edge cases", () => {
     const schedule = Schedule.parse("on 2026-02-14 at 14:00 in UTC");
     const from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Request many but should only get 1
     let count = 0;
     for (const _dt of schedule.occurrences(from)) {
       count++;
@@ -213,10 +176,6 @@ describe("edge cases", () => {
     expect(count).toBe(1);
   });
 });
-
-// =============================================================================
-// Timezone Handling
-// =============================================================================
 
 describe("timezone handling", () => {
   it("occurrences preserves timezone", () => {
@@ -243,17 +202,12 @@ describe("timezone handling", () => {
 
     const results = [...schedule.between(from, to)];
 
-    // Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
     expect(results.length).toBe(3);
     expect(results[0].hour).toBe(2); // Mar 7 02:30
     expect(results[1].hour).toBe(3); // Mar 8 03:30 (shifted due to DST)
     expect(results[2].hour).toBe(2); // Mar 9 02:30
   });
 });
-
-// =============================================================================
-// Multiple Times Per Day
-// =============================================================================
 
 describe("multiple times per day", () => {
   it("occurrences multiple times per day", () => {
@@ -267,16 +221,11 @@ describe("multiple times per day", () => {
     }
 
     expect(results.length).toBe(9);
-    // First day: 09:00, 12:00, 17:00
     expect(results[0].hour).toBe(9);
     expect(results[1].hour).toBe(12);
     expect(results[2].hour).toBe(17);
   });
 });
-
-// =============================================================================
-// Manual Iterator Usage
-// =============================================================================
 
 describe("manual iterator usage", () => {
   it("manual next() calls", () => {

@@ -17,7 +17,7 @@ enum HronErrorKind {
   /// Parse error (invalid syntax).
   parse,
 
-  /// Evaluation error (e.g., invalid date).
+  /// Evaluation error.
   eval,
 
   /// Cron conversion error (expression not representable in cron).
@@ -78,13 +78,6 @@ class HronError implements Exception {
       HronError(HronErrorKind.cron, message);
 
   /// Returns a formatted error message with source context and underline.
-  ///
-  /// Example output:
-  /// ```
-  /// error: unexpected token
-  ///   every dya at 9am
-  ///         ^^^
-  /// ```
   String displayRich() {
     if ((kind == HronErrorKind.lex || kind == HronErrorKind.parse) &&
         span != null &&

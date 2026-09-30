@@ -1,7 +1,7 @@
 namespace Hron.Ast;
 
 /// <summary>
-/// A day-based repeat expression like "every day at 9:00" or "every 3 days at 09:00".
+/// An expression that fires every day or every N days, optionally only on certain days.
 /// </summary>
 /// <param name="Interval">The number of days between occurrences (1 for every day)</param>
 /// <param name="Days">The day filter (every, weekday, weekend, or specific days)</param>

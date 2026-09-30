@@ -1,7 +1,6 @@
 use crate::ast::*;
 use crate::error::ScheduleError;
 
-/// Convert a Schedule to a 5-field cron expression (minute hour dom month dow).
 pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
     if !schedule.except.is_empty() {
         return Err(ScheduleError::cron(
@@ -46,7 +45,6 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
             to,
             day_filter,
         } => {
-            // Only expressible if window is full day (00:00 to 23:59)
             let full_day = from.hour == 0 && from.minute == 0 && to.hour == 23 && to.minute == 59;
             if !full_day {
                 return Err(ScheduleError::cron(
@@ -162,15 +160,9 @@ fn cron_dow_number(day: Weekday) -> u8 {
     }
 }
 
-// ============================================================================
-// from_cron: Parse 5-field cron expressions (and @ shortcuts)
-// ============================================================================
-
-/// Parse a 5-field cron expression into a Schedule.
 pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
     let cron = cron.trim();
 
-    // Handle @ shortcuts first
     if cron.starts_with('@') {
         return parse_cron_shortcut(cron);
     }
@@ -193,24 +185,20 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
     let dom_field = if dom_field == "?" { "*" } else { dom_field };
     let dow_field = if dow_field == "?" { "*" } else { dow_field };
 
-    // Parse month field into during clause
     let during = parse_month_field(month_field)?;
 
-    // Check for special DOW patterns: nth weekday (#), last weekday (5L)
     if let Some(schedule) =
         try_parse_nth_weekday(minute_field, hour_field, dom_field, dow_field, &during)?
     {
         return Ok(schedule);
     }
 
-    // Check for L (last day) or LW (last weekday) in DOM
     if let Some(schedule) =
         try_parse_last_day(minute_field, hour_field, dom_field, dow_field, &during)?
     {
         return Ok(schedule);
     }
 
-    // Check for W (nearest weekday): e.g., 15W
     if dom_field.ends_with('W') && dom_field != "LW" {
         if let Some(schedule) =
             try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, &during)?
@@ -219,19 +207,16 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
         }
     }
 
-    // Check for interval patterns: */N or range/N
     if let Some(schedule) =
         try_parse_interval(minute_field, hour_field, dom_field, dow_field, &during)?
     {
         return Ok(schedule);
     }
 
-    // Standard time-based cron
     let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
     let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
     let time = TimeOfDay { hour, minute };
 
-    // DOM-based (monthly) - when DOM is specified and DOW is *
     if dom_field != "*" && dow_field == "*" {
         let target = parse_dom_field(dom_field)?;
         let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
@@ -243,7 +228,6 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
         return Ok(schedule);
     }
 
-    // DOW-based (day repeat)
     let days = parse_cron_dow(dow_field)?;
     let mut schedule = Schedule::new(ScheduleExpr::DayRepeat {
         interval: 1,
@@ -254,7 +238,6 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
     Ok(schedule)
 }
 
-/// Parse @ shortcuts like @daily, @hourly, etc.
 fn parse_cron_shortcut(cron: &str) -> Result<Schedule, ScheduleError> {
     match cron.to_lowercase().as_str() {
         "@yearly" | "@annually" => Ok(Schedule::new(ScheduleExpr::YearRepeat {
@@ -294,7 +277,6 @@ fn parse_cron_shortcut(cron: &str) -> Result<Schedule, ScheduleError> {
     }
 }
 
-/// Parse month field into a Vec<MonthName> for the `during` clause.
 fn parse_month_field(field: &str) -> Result<Vec<MonthName>, ScheduleError> {
     if field == "*" {
         return Ok(vec![]);
@@ -302,7 +284,7 @@ fn parse_month_field(field: &str) -> Result<Vec<MonthName>, ScheduleError> {
 
     let mut months = Vec::new();
     for part in field.split(',') {
-        // Check for step values FIRST (e.g., 1-12/3 or */3)
+        // Steps first: a step such as 1-12/3 also contains a range.
         if let Some((range, step)) = part.split_once('/') {
             let (start, end) = if range == "*" {
                 (1u8, 12u8)
@@ -328,7 +310,6 @@ fn parse_month_field(field: &str) -> Result<Vec<MonthName>, ScheduleError> {
                 n += step;
             }
         } else if let Some((start, end)) = part.split_once('-') {
-            // Range like 1-3 or JAN-MAR
             let start_month = parse_month_value(start)?;
             let end_month = parse_month_value(end)?;
             let start_num = start_month.number();
@@ -343,7 +324,6 @@ fn parse_month_field(field: &str) -> Result<Vec<MonthName>, ScheduleError> {
                 months.push(month_from_number(n)?);
             }
         } else {
-            // Single month
             months.push(parse_month_value(part)?);
         }
     }
@@ -351,13 +331,10 @@ fn parse_month_field(field: &str) -> Result<Vec<MonthName>, ScheduleError> {
     Ok(months)
 }
 
-/// Parse a single month value (number 1-12 or name JAN-DEC).
 fn parse_month_value(s: &str) -> Result<MonthName, ScheduleError> {
-    // Try as number first
     if let Ok(n) = s.parse::<u8>() {
         return month_from_number(n);
     }
-    // Try as name
     parse_month_name(s).ok_or_else(|| ScheduleError::cron(format!("invalid month: {}", s)))
 }
 
@@ -387,7 +364,6 @@ fn try_parse_nth_weekday(
     dow_field: &str,
     during: &[MonthName],
 ) -> Result<Option<Schedule>, ScheduleError> {
-    // Check for # pattern (nth weekday of month)
     if let Some((dow_str, nth_str)) = dow_field.split_once('#') {
         let dow_num = parse_dow_value(dow_str)?;
         let weekday = cron_dow_to_weekday(dow_num)?;
@@ -424,7 +400,6 @@ fn try_parse_nth_weekday(
         return Ok(Some(schedule));
     }
 
-    // Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
     if dow_field.ends_with('L') && dow_field.len() > 1 {
         let dow_str = &dow_field[..dow_field.len() - 1];
         let dow_num = parse_dow_value(dow_str)?;
@@ -543,7 +518,6 @@ fn try_parse_interval(
     dow_field: &str,
     during: &[MonthName],
 ) -> Result<Option<Schedule>, ScheduleError> {
-    // Minute interval: */N or range/N
     if minute_field.contains('/') {
         let (range_part, step_str) = minute_field
             .split_once('/')
@@ -581,7 +555,6 @@ fn try_parse_interval(
             (s, 59)
         };
 
-        // Determine the hour window
         let (from_hour, to_hour) = if hour_field == "*" {
             (0u8, 23u8)
         } else if let Some((start, end)) = hour_field.split_once('-') {
@@ -593,7 +566,7 @@ fn try_parse_interval(
                 .map_err(|_| ScheduleError::cron("invalid hour range"))?;
             (s, e)
         } else if hour_field.contains('/') {
-            // Hour also has step - this is complex, handle as hour interval
+            // Steps in both minute and hour are not supported.
             return Ok(None);
         } else {
             let h: u8 = hour_field
@@ -602,7 +575,6 @@ fn try_parse_interval(
             (h, h)
         };
 
-        // Check if this should be a day filter
         let day_filter = if dow_field == "*" {
             None
         } else {
@@ -610,12 +582,10 @@ fn try_parse_interval(
         };
 
         if dom_field == "*" || dom_field == "?" {
-            // Determine the end minute based on context
             let end_minute = if from_minute == 0 && to_minute == 59 && to_hour == 23 {
-                // Full day: 00:00 to 23:59
                 59
             } else if from_minute == 0 && to_minute == 59 {
-                // Partial day with full minutes range: use :00 for cleaner output
+                // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
                 0
             } else {
                 to_minute
@@ -639,7 +609,6 @@ fn try_parse_interval(
         }
     }
 
-    // Hour interval: 0 */N or 0 range/N
     if hour_field.contains('/') && (minute_field == "0" || minute_field == "00") {
         let (range_part, step_str) = hour_field
             .split_once('/')
@@ -677,7 +646,6 @@ fn try_parse_interval(
         };
 
         if (dom_field == "*" || dom_field == "?") && (dow_field == "*" || dow_field == "?") {
-            // Use :59 only for full day (00:00 to 23:59), otherwise use :00
             let end_minute = if from_hour == 0 && to_hour == 23 {
                 59
             } else {
@@ -705,13 +673,11 @@ fn try_parse_interval(
     Ok(None)
 }
 
-/// Parse a DOM field into a MonthTarget.
 fn parse_dom_field(field: &str) -> Result<MonthTarget, ScheduleError> {
     let mut specs = Vec::new();
 
     for part in field.split(',') {
         if let Some((range_part, step_str)) = part.split_once('/') {
-            // Step value: 1-31/2 or */5
             let (start, end) = if range_part == "*" {
                 (1u8, 31u8)
             } else if let Some((s, e)) = range_part.split_once('-') {
@@ -751,7 +717,6 @@ fn parse_dom_field(field: &str) -> Result<MonthTarget, ScheduleError> {
                 d += step;
             }
         } else if let Some((start_str, end_str)) = part.split_once('-') {
-            // Range: 1-5
             let start: u8 = start_str.parse().map_err(|_| {
                 ScheduleError::cron(format!("invalid DOM range start: {}", start_str))
             })?;
@@ -768,7 +733,6 @@ fn parse_dom_field(field: &str) -> Result<MonthTarget, ScheduleError> {
             validate_dom(end)?;
             specs.push(DayOfMonthSpec::Range(start, end));
         } else {
-            // Single: 15
             let day: u8 = part
                 .parse()
                 .map_err(|_| ScheduleError::cron(format!("invalid DOM value: {}", part)))?;
@@ -790,7 +754,6 @@ fn validate_dom(day: u8) -> Result<(), ScheduleError> {
     Ok(())
 }
 
-/// Parse a DOW field into a DayFilter.
 fn parse_cron_dow(field: &str) -> Result<DayFilter, ScheduleError> {
     if field == "*" {
         return Ok(DayFilter::Every);
@@ -800,7 +763,6 @@ fn parse_cron_dow(field: &str) -> Result<DayFilter, ScheduleError> {
 
     for part in field.split(',') {
         if let Some((range_part, step_str)) = part.split_once('/') {
-            // Step value: 0-6/2 or */2
             let (start, end) = if range_part == "*" {
                 (0u8, 6u8)
             } else if let Some((s, e)) = range_part.split_once('-') {
@@ -831,7 +793,6 @@ fn parse_cron_dow(field: &str) -> Result<DayFilter, ScheduleError> {
                 d += step;
             }
         } else if let Some((start_str, end_str)) = part.split_once('-') {
-            // Range: 1-5 or MON-FRI
             // Parse without normalizing 7 to 0 for range purposes
             let start = parse_dow_value_raw(start_str)?;
             let end = parse_dow_value_raw(end_str)?;
@@ -842,18 +803,15 @@ fn parse_cron_dow(field: &str) -> Result<DayFilter, ScheduleError> {
                 )));
             }
             for d in start..=end {
-                // Normalize 7 to 0 (Sunday) when converting to weekday
                 let normalized = if d == 7 { 0 } else { d };
                 days.push(cron_dow_to_weekday(normalized)?);
             }
         } else {
-            // Single: 1 or MON
             let dow = parse_dow_value(part)?;
             days.push(cron_dow_to_weekday(dow)?);
         }
     }
 
-    // Check for special patterns
     if days.len() == 5 {
         let mut sorted = days.clone();
         sorted.sort_by_key(|d| d.number());
@@ -872,23 +830,19 @@ fn parse_cron_dow(field: &str) -> Result<DayFilter, ScheduleError> {
     Ok(DayFilter::Days(days))
 }
 
-/// Parse a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0.
 fn parse_dow_value(s: &str) -> Result<u8, ScheduleError> {
     let raw = parse_dow_value_raw(s)?;
     // Normalize 7 to 0 (both mean Sunday)
     Ok(if raw == 7 { 0 } else { raw })
 }
 
-/// Parse a DOW value without normalizing 7 to 0 (for range checking).
 fn parse_dow_value_raw(s: &str) -> Result<u8, ScheduleError> {
-    // Try as number first
     if let Ok(n) = s.parse::<u8>() {
         if n > 7 {
             return Err(ScheduleError::cron(format!("DOW must be 0-7, got {}", n)));
         }
         return Ok(n);
     }
-    // Try as name
     match s.to_uppercase().as_str() {
         "SUN" => Ok(0),
         "MON" => Ok(1),
@@ -914,7 +868,6 @@ fn cron_dow_to_weekday(n: u8) -> Result<Weekday, ScheduleError> {
     }
 }
 
-/// Parse a single numeric value with validation.
 fn parse_single_value(field: &str, name: &str, min: u8, max: u8) -> Result<u8, ScheduleError> {
     let value: u8 = field
         .parse()
@@ -928,12 +881,10 @@ fn parse_single_value(field: &str, name: &str, min: u8, max: u8) -> Result<u8, S
     Ok(value)
 }
 
-/// Explain a cron expression in human-readable form (best effort).
 pub fn explain_cron(cron: &str) -> Result<String, ScheduleError> {
     let schedule = from_cron(cron)?;
     let mut explanation = schedule.to_string();
 
-    // Add warnings for cron quirks
     let fields: Vec<&str> = cron.split_whitespace().collect();
     if fields.len() == 5 {
         if let Some(minute_field) = fields.first() {

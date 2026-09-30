@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// ToCron converts a schedule to a 5-field cron expression.
+// ToCron converts a schedule to a 5-field cron expression, or returns an error
+// if the schedule has no cron equivalent.
 func ToCron(schedule *ScheduleData) (string, error) {
 	if len(schedule.Except) > 0 {
 		return "", CronError("not expressible as cron (except clauses not supported)")
@@ -47,7 +48,6 @@ func ToCron(schedule *ScheduleData) (string, error) {
 			}
 			return fmt.Sprintf("*/%d * * * *", expr.Interval), nil
 		}
-		// hours
 		return fmt.Sprintf("0 */%d * * *", expr.Interval), nil
 
 	case ScheduleExprKindWeek:
@@ -120,11 +120,11 @@ func formatIntList(nums []int) string {
 	return strings.Join(parts, ",")
 }
 
-// FromCron converts a 5-field cron expression to a Schedule.
+// FromCron converts a 5-field cron expression, or an @ shortcut such as @daily,
+// to ScheduleData.
 func FromCron(cron string) (*ScheduleData, error) {
 	cron = strings.TrimSpace(cron)
 
-	// Handle @ shortcuts first
 	if strings.HasPrefix(cron, "@") {
 		return parseCronShortcut(cron)
 	}
@@ -148,13 +148,11 @@ func FromCron(cron string) (*ScheduleData, error) {
 		dowField = "*"
 	}
 
-	// Parse month field into during clause
 	during, err := parseMonthField(monthField)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check for special DOW patterns: nth weekday (#), last weekday (5L)
 	schedule, handled, err := tryParseNthWeekday(minuteField, hourField, domField, dowField, during)
 	if err != nil {
 		return nil, err
@@ -163,7 +161,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 		return schedule, nil
 	}
 
-	// Check for L (last day) or LW (last weekday) in DOM
 	schedule, handled, err = tryParseLastDay(minuteField, hourField, domField, dowField, during)
 	if err != nil {
 		return nil, err
@@ -172,7 +169,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 		return schedule, nil
 	}
 
-	// Check for W (nearest weekday) pattern like 15W
 	schedule, handled, err = tryParseNearestWeekday(minuteField, hourField, domField, dowField, during)
 	if err != nil {
 		return nil, err
@@ -181,7 +177,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 		return schedule, nil
 	}
 
-	// Check for interval patterns: */N or range/N
 	schedule, handled, err = tryParseInterval(minuteField, hourField, domField, dowField, during)
 	if err != nil {
 		return nil, err
@@ -190,7 +185,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 		return schedule, nil
 	}
 
-	// Standard time-based cron
 	minute, err := parseSingleValue(minuteField, "minute", 0, 59)
 	if err != nil {
 		return nil, err
@@ -201,7 +195,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 	}
 	t := TimeOfDay{hour, minute}
 
-	// DOM-based (monthly) - when DOM is specified and DOW is *
 	if domField != "*" && dowField == "*" {
 		target, err := parseDOMField(domField)
 		if err != nil {
@@ -212,7 +205,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 		return schedule, nil
 	}
 
-	// DOW-based (day repeat)
 	days, err := parseCronDOW(dowField)
 	if err != nil {
 		return nil, err
@@ -222,7 +214,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 	return schedule, nil
 }
 
-// parseCronShortcut parses @ shortcuts like @daily, @hourly, etc.
 func parseCronShortcut(cron string) (*ScheduleData, error) {
 	switch strings.ToLower(cron) {
 	case "@yearly", "@annually":
@@ -240,7 +231,6 @@ func parseCronShortcut(cron string) (*ScheduleData, error) {
 	}
 }
 
-// parseMonthField parses the month field into a []MonthName for the `during` clause.
 func parseMonthField(field string) ([]MonthName, error) {
 	if field == "*" {
 		return nil, nil
@@ -283,7 +273,6 @@ func parseMonthField(field string) ([]MonthName, error) {
 				months = append(months, m)
 			}
 		} else if strings.Contains(part, "-") {
-			// Range like 1-3 or JAN-MAR
 			startStr, endStr, _ := strings.Cut(part, "-")
 			startMonth, err := parseMonthValue(startStr)
 			if err != nil {
@@ -305,7 +294,6 @@ func parseMonthField(field string) ([]MonthName, error) {
 				months = append(months, m)
 			}
 		} else {
-			// Single month
 			m, err := parseMonthValue(part)
 			if err != nil {
 				return nil, err
@@ -317,13 +305,10 @@ func parseMonthField(field string) ([]MonthName, error) {
 	return months, nil
 }
 
-// parseMonthValue parses a single month value (number 1-12 or name JAN-DEC).
 func parseMonthValue(s string) (MonthName, error) {
-	// Try as number first
 	if n, err := strconv.Atoi(s); err == nil {
 		return monthFromNumber(n)
 	}
-	// Try as name
 	if m, ok := ParseMonthName(s); ok {
 		return m, nil
 	}
@@ -339,7 +324,6 @@ func monthFromNumber(n int) (MonthName, error) {
 
 // tryParseNthWeekday tries to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday).
 func tryParseNthWeekday(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
-	// Check for # pattern (nth weekday of month)
 	if strings.Contains(dowField, "#") {
 		dowStr, nthStr, _ := strings.Cut(dowField, "#")
 		dowNum, err := parseDOWValue(dowStr)
@@ -426,12 +410,10 @@ func tryParseNthWeekday(minuteField, hourField, domField, dowField string, durin
 
 // tryParseNearestWeekday tries to parse W (nearest weekday) patterns like 15W.
 func tryParseNearestWeekday(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
-	// Check for pattern like 15W, 1W, etc.
 	if !strings.HasSuffix(domField, "W") || domField == "LW" {
 		return nil, false, nil
 	}
 
-	// Extract the day number before the W
 	dayStr := domField[:len(domField)-1]
 	day, err := strconv.Atoi(dayStr)
 	if err != nil {
@@ -491,9 +473,7 @@ func tryParseLastDay(minuteField, hourField, domField, dowField string, during [
 	return schedule, true, nil
 }
 
-// tryParseInterval tries to parse interval patterns: */N, range/N in minute or hour fields.
 func tryParseInterval(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
-	// Minute interval: */N or range/N
 	if strings.Contains(minuteField, "/") {
 		rangePart, stepStr, _ := strings.Cut(minuteField, "/")
 		interval, err := strconv.Atoi(stepStr)
@@ -530,7 +510,6 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 			fromMinute, toMinute = s, 59
 		}
 
-		// Determine the hour window
 		var fromHour, toHour int
 		if hourField == "*" {
 			fromHour, toHour = 0, 23
@@ -546,7 +525,6 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 			}
 			fromHour, toHour = s, e
 		} else if strings.Contains(hourField, "/") {
-			// Hour also has step - this is complex, handle as hour interval
 			return nil, false, nil
 		} else {
 			h, err := strconv.Atoi(hourField)
@@ -556,7 +534,6 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 			fromHour, toHour = h, h
 		}
 
-		// Check if this should be a day filter
 		var dayFilter *DayFilter
 		if dowField != "*" {
 			df, err := parseCronDOW(dowField)
@@ -567,13 +544,11 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 		}
 
 		if domField == "*" || domField == "?" {
-			// Determine the end minute based on context
 			var endMinute int
 			if fromMinute == 0 && toMinute == 59 && toHour == 23 {
-				// Full day: 00:00 to 23:59
 				endMinute = 59
 			} else if fromMinute == 0 && toMinute == 59 {
-				// Partial day with full minutes range: use :00 for cleaner output
+				// `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
 				endMinute = 0
 			} else {
 				endMinute = toMinute
@@ -591,7 +566,6 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 		}
 	}
 
-	// Hour interval: 0 */N or 0 range/N
 	if strings.Contains(hourField, "/") && (minuteField == "0" || minuteField == "00") {
 		rangePart, stepStr, _ := strings.Cut(hourField, "/")
 		interval, err := strconv.Atoi(stepStr)
@@ -628,7 +602,6 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 		}
 
 		if (domField == "*" || domField == "?") && (dowField == "*" || dowField == "?") {
-			// Use :59 only for full day (00:00 to 23:59), otherwise use :00
 			var endMinute int
 			if fromHour == 0 && toHour == 23 {
 				endMinute = 59
@@ -651,13 +624,11 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 	return nil, false, nil
 }
 
-// parseDOMField parses a DOM field into a MonthTarget.
 func parseDOMField(field string) (MonthTarget, error) {
 	var specs []DayOfMonthSpec
 
 	for _, part := range strings.Split(field, ",") {
 		if strings.Contains(part, "/") {
-			// Step value: 1-31/2 or */5
 			rangePart, stepStr, _ := strings.Cut(part, "/")
 			var start, end int
 			if rangePart == "*" {
@@ -703,7 +674,6 @@ func parseDOMField(field string) (MonthTarget, error) {
 				specs = append(specs, NewSingleDay(d))
 			}
 		} else if strings.Contains(part, "-") {
-			// Range: 1-5
 			startStr, endStr, _ := strings.Cut(part, "-")
 			start, err := strconv.Atoi(startStr)
 			if err != nil {
@@ -724,7 +694,6 @@ func parseDOMField(field string) (MonthTarget, error) {
 			}
 			specs = append(specs, NewDayRange(start, end))
 		} else {
-			// Single: 15
 			day, err := strconv.Atoi(part)
 			if err != nil {
 				return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM value: %s", part))
@@ -746,7 +715,6 @@ func validateDOM(day int) error {
 	return nil
 }
 
-// parseCronDOW parses a DOW field into a DayFilter.
 func parseCronDOW(field string) (DayFilter, error) {
 	if field == "*" {
 		return NewDayFilterEvery(), nil
@@ -756,7 +724,6 @@ func parseCronDOW(field string) (DayFilter, error) {
 
 	for _, part := range strings.Split(field, ",") {
 		if strings.Contains(part, "/") {
-			// Step value: 0-6/2 or */2
 			rangePart, stepStr, _ := strings.Cut(part, "/")
 			var start, end int
 			if rangePart == "*" {
@@ -799,7 +766,6 @@ func parseCronDOW(field string) (DayFilter, error) {
 				days = append(days, wd)
 			}
 		} else if strings.Contains(part, "-") {
-			// Range: 1-5 or MON-FRI
 			startStr, endStr, _ := strings.Cut(part, "-")
 			// Parse without normalizing 7 to 0 for range purposes
 			start, err := parseDOWValueRaw(startStr)
@@ -814,7 +780,6 @@ func parseCronDOW(field string) (DayFilter, error) {
 				return DayFilter{}, CronError(fmt.Sprintf("range start must be <= end: %s-%s", startStr, endStr))
 			}
 			for d := start; d <= end; d++ {
-				// Normalize 7 to 0 (Sunday) when converting to weekday
 				normalized := d
 				if d == 7 {
 					normalized = 0
@@ -826,7 +791,6 @@ func parseCronDOW(field string) (DayFilter, error) {
 				days = append(days, wd)
 			}
 		} else {
-			// Single: 1 or MON
 			dow, err := parseDOWValue(part)
 			if err != nil {
 				return DayFilter{}, err
@@ -839,7 +803,6 @@ func parseCronDOW(field string) (DayFilter, error) {
 		}
 	}
 
-	// Check for special patterns
 	if len(days) == 5 {
 		sorted := make([]Weekday, len(days))
 		copy(sorted, days)
@@ -878,7 +841,6 @@ func weekdaysEqual(a, b []Weekday) bool {
 	return true
 }
 
-// parseDOWValue parses a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0.
 func parseDOWValue(s string) (int, error) {
 	raw, err := parseDOWValueRaw(s)
 	if err != nil {
@@ -891,16 +853,13 @@ func parseDOWValue(s string) (int, error) {
 	return raw, nil
 }
 
-// parseDOWValueRaw parses a DOW value without normalizing 7 to 0 (for range checking).
 func parseDOWValueRaw(s string) (int, error) {
-	// Try as number first
 	if n, err := strconv.Atoi(s); err == nil {
 		if n > 7 {
 			return 0, CronError(fmt.Sprintf("DOW must be 0-7, got %d", n))
 		}
 		return n, nil
 	}
-	// Try as name
 	switch strings.ToUpper(s) {
 	case "SUN":
 		return 0, nil
@@ -940,7 +899,6 @@ func cronDOWToWeekday(n int) (Weekday, error) {
 	return wd, nil
 }
 
-// parseSingleValue parses a single numeric value with validation.
 func parseSingleValue(field, name string, min, max int) (int, error) {
 	value, err := strconv.Atoi(field)
 	if err != nil {

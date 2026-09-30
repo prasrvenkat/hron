@@ -9,16 +9,6 @@ namespace Hron;
 /// <summary>
 /// The main entry point for parsing and evaluating hron schedule expressions.
 /// </summary>
-/// <example>
-/// <code>
-/// var schedule = Schedule.Parse("every weekday at 9:00 except dec 25 in America/New_York");
-/// var next = schedule.NextFrom(DateTimeOffset.Now);
-/// if (next.HasValue)
-/// {
-///     Console.WriteLine($"Next occurrence: {next.Value}");
-/// }
-/// </code>
-/// </example>
 public sealed class Schedule
 {
     private readonly ScheduleData _data;
@@ -75,19 +65,18 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Computes the next occurrence after the given time.
+    /// Computes the next occurrence strictly after the given time.
     /// </summary>
     /// <param name="now">The reference time</param>
     /// <returns>The next occurrence, or null if none exists</returns>
     public DateTimeOffset? NextFrom(DateTimeOffset now)
     {
-        // Convert now to the schedule's timezone
         var nowInTz = TimeZoneInfo.ConvertTime(now, _zoneInfo);
         return Evaluator.NextFrom(_data, nowInTz, _zoneInfo);
     }
 
     /// <summary>
-    /// Computes the next n occurrences after the given time.
+    /// Computes the next n occurrences strictly after the given time.
     /// </summary>
     /// <param name="now">The reference time</param>
     /// <param name="count">The number of occurrences to compute</param>
@@ -121,7 +110,7 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Returns a lazy enumerable of occurrences starting after the given time.
+    /// Returns a lazy enumerable of occurrences strictly after the given time.
     /// </summary>
     /// <param name="from">The reference time (exclusive)</param>
     /// <returns>An enumerable of occurrences</returns>
@@ -176,15 +165,12 @@ public sealed class Schedule
             return TimeZoneInfo.Utc;
         }
 
-        // Try IANA timezone ID first
         try
         {
             return TimeZoneInfo.FindSystemTimeZoneById(tzName);
         }
         catch (TimeZoneNotFoundException)
         {
-            // On Windows, may need to try TZConvert or alternative ID
-            // .NET 6+ should support IANA IDs on all platforms
             throw HronException.Parse($"unknown timezone: {tzName}", new Span(0, 0), tzName);
         }
     }

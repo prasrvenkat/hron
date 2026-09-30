@@ -24,8 +24,6 @@ public class ApiConformanceTest
         Assert.NotNull(version);
     }
 
-    // Static methods
-
     [Fact]
     public void TestParse()
     {
@@ -46,8 +44,6 @@ public class ApiConformanceTest
         Assert.True(Schedule.Validate("every day at 09:00"));
         Assert.False(Schedule.Validate("not a schedule"));
     }
-
-    // Instance methods
 
     [Fact]
     public void TestNextFrom()
@@ -104,8 +100,6 @@ public class ApiConformanceTest
         Assert.Equal("every day at 09:00", s.ToString());
     }
 
-    // Getters
-
     [Fact]
     public void TestTimezoneNone()
     {
@@ -120,8 +114,6 @@ public class ApiConformanceTest
         Assert.NotNull(s.Timezone);
         Assert.Equal("America/New_York", s.Timezone);
     }
-
-    // Error types
 
     [Fact]
     public void TestErrorKinds()
@@ -176,8 +168,6 @@ public class ApiConformanceTest
         Assert.Contains("error:", rich);
     }
 
-    // Behavioral tests
-
     [Fact]
     public void TestExactTimeBoundary()
     {
@@ -203,8 +193,6 @@ public class ApiConformanceTest
         // Since 09:00 has passed, next should be Feb 9
         Assert.Equal(9, next.Value.Day);
     }
-
-    // Spec coverage tests - verify all api.json methods are implemented
 
     [Fact]
     public void SpecStaticMethodsExist()

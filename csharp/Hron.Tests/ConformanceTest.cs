@@ -17,8 +17,6 @@ public partial class ConformanceTest
         DefaultNow = ParseZonedDateTime(Spec.RootElement.GetProperty("now").GetString()!);
     }
 
-    // Parse tests
-
     public static TheoryData<string, string, string> GetParseTests()
     {
         var data = new TheoryData<string, string, string>();
@@ -49,7 +47,6 @@ public partial class ConformanceTest
         var s = Schedule.Parse(input);
         Assert.Equal(canonical, s.ToString());
 
-        // Roundtrip test
         var s2 = Schedule.Parse(canonical);
         Assert.Equal(canonical, s2.ToString());
     }
@@ -76,8 +73,6 @@ public partial class ConformanceTest
         _ = _name; // Used for test display
         Assert.Throws<HronException>(() => Schedule.Parse(input));
     }
-
-    // Eval tests
 
     public static TheoryData<string, string, string?, string?> GetEvalNextTests()
     {
@@ -246,8 +241,6 @@ public partial class ConformanceTest
         Assert.Equal(expectedLength, results.Count);
     }
 
-    // PreviousFrom tests
-
     public static TheoryData<string, string, string, string?> GetPreviousFromTests()
     {
         var data = new TheoryData<string, string, string, string?>();
@@ -287,8 +280,6 @@ public partial class ConformanceTest
         }
     }
 
-    // Matches tests
-
     public static TheoryData<string, string, string, bool> GetMatchesTests()
     {
         var data = new TheoryData<string, string, string, bool>();
@@ -318,8 +309,6 @@ public partial class ConformanceTest
 
         Assert.Equal(expected, result);
     }
-
-    // Occurrences tests
 
     public static TheoryData<string, string, string, int, string[]> GetOccurrencesTests()
     {
@@ -357,8 +346,6 @@ public partial class ConformanceTest
             Assert.Equal(expected.ToUniversalTime(), results[i].ToUniversalTime());
         }
     }
-
-    // Between tests
 
     public static TheoryData<string, string, string, string, string[]?, int?> GetBetweenTests()
     {
@@ -417,8 +404,6 @@ public partial class ConformanceTest
         }
     }
 
-    // Eval error tests
-
     public static TheoryData<string, string> GetEvalErrorTests()
     {
         var data = new TheoryData<string, string>();
@@ -444,8 +429,6 @@ public partial class ConformanceTest
         // so these should fail at parse time.
         Assert.Throws<HronException>(() => Schedule.Parse(expression));
     }
-
-    // Cron tests
 
     public static TheoryData<string, string, string> GetToCronTests()
     {
@@ -574,7 +557,6 @@ public partial class ConformanceTest
         Assert.Equal(cron, cron2);
     }
 
-    // Helper: parse zoned datetime with timezone in brackets
     // Format: "2026-02-06T12:00:00+00:00[UTC]"
     [GeneratedRegex(@"^(.+?)\[([^\]]+)\]$")]
     private static partial Regex ZdtPattern();
@@ -584,7 +566,6 @@ public partial class ConformanceTest
         var match = ZdtPattern().Match(s);
         if (!match.Success)
         {
-            // Try parsing without brackets
             return DateTimeOffset.Parse(s);
         }
 

@@ -5,10 +5,6 @@ fn hron() -> Command {
     Command::cargo_bin("hron").unwrap()
 }
 
-// ============================================================
-// Basic expressions
-// ============================================================
-
 #[test]
 fn test_basic_expression() {
     hron()
@@ -80,10 +76,6 @@ fn test_week_repeat_expression() {
         .success();
 }
 
-// ============================================================
-// Trailing clause expressions
-// ============================================================
-
 #[test]
 fn test_except_expression() {
     hron()
@@ -111,10 +103,6 @@ fn test_starting_expression() {
         .assert()
         .success();
 }
-
-// ============================================================
-// Flags
-// ============================================================
 
 #[test]
 fn test_n_flag() {
@@ -170,10 +158,6 @@ fn test_parse_json_with_except() {
         .stdout(predicate::str::contains("\"except\""));
 }
 
-// ============================================================
-// Cron conversion
-// ============================================================
-
 #[test]
 fn test_to_cron() {
     hron()
@@ -219,10 +203,6 @@ fn test_explain() {
         .stdout(predicate::str::contains("weekday"));
 }
 
-// ============================================================
-// Output formats
-// ============================================================
-
 #[test]
 fn test_json_output() {
     hron()
@@ -231,10 +211,6 @@ fn test_json_output() {
         .success()
         .stdout(predicate::str::starts_with("["));
 }
-
-// ============================================================
-// New features: multi-time, during, day ranges
-// ============================================================
 
 #[test]
 fn test_multi_time_expression() {
@@ -304,10 +280,6 @@ fn test_to_cron_day_range() {
         .success()
         .stdout(predicate::str::contains("0 9 1,2,3,4,5 * *"));
 }
-
-// ============================================================
-// Error cases
-// ============================================================
 
 #[test]
 fn test_no_expression() {

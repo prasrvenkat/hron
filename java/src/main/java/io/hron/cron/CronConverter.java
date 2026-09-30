@@ -79,7 +79,6 @@ public final class CronConverter {
       return String.format("*/%d * * * *", ir.interval());
     }
 
-    // Hours
     return String.format("0 */%d * * *", ir.interval());
   }
 
@@ -142,7 +141,6 @@ public final class CronConverter {
   public static ScheduleData fromCron(String cron) throws HronException {
     cron = cron.trim();
 
-    // Handle @ shortcuts first
     if (cron.startsWith("@")) {
       return parseCronShortcut(cron);
     }
@@ -166,22 +164,18 @@ public final class CronConverter {
       dowField = "*";
     }
 
-    // Parse month field into during clause
     List<MonthName> during = parseMonthField(monthField);
 
-    // Check for special DOW patterns: nth weekday (#), last weekday (5L)
     ScheduleData nthResult = tryParseNthWeekday(minuteField, hourField, domField, dowField, during);
     if (nthResult != null) {
       return nthResult;
     }
 
-    // Check for L (last day) or LW (last weekday) in DOM
     ScheduleData lastResult = tryParseLastDay(minuteField, hourField, domField, dowField, during);
     if (lastResult != null) {
       return lastResult;
     }
 
-    // Check for W (nearest weekday): e.g., 15W
     if (domField.endsWith("W") && !domField.equals("LW")) {
       ScheduleData wResult =
           tryParseNearestWeekday(minuteField, hourField, domField, dowField, during);
@@ -190,32 +184,27 @@ public final class CronConverter {
       }
     }
 
-    // Check for interval patterns: */N or range/N
     ScheduleData intervalResult =
         tryParseInterval(minuteField, hourField, domField, dowField, during);
     if (intervalResult != null) {
       return intervalResult;
     }
 
-    // Standard time-based cron
     int minute = parseSingleValue(minuteField, "minute", 0, 59);
     int hour = parseSingleValue(hourField, "hour", 0, 23);
     TimeOfDay time = new TimeOfDay(hour, minute);
 
-    // DOM-based (monthly) - when DOM is specified and DOW is *
     if (!domField.equals("*") && dowField.equals("*")) {
       MonthTarget target = parseDomField(domField);
       ScheduleExpr expr = new MonthRepeat(1, target, List.of(time));
       return new ScheduleData(expr, null, List.of(), null, null, during);
     }
 
-    // DOW-based (day repeat)
     DayFilter days = parseCronDOW(dowField);
     ScheduleExpr expr = new DayRepeat(1, days, List.of(time));
     return new ScheduleData(expr, null, List.of(), null, null, during);
   }
 
-  /** Parse @ shortcuts like @daily, @hourly, etc. */
   private static ScheduleData parseCronShortcut(String cron) throws HronException {
     String lower = cron.toLowerCase();
     return switch (lower) {
@@ -243,7 +232,6 @@ public final class CronConverter {
     };
   }
 
-  /** Parse month field into a List of MonthName for the during clause. */
   private static List<MonthName> parseMonthField(String field) throws HronException {
     if (field.equals("*")) {
       return List.of();
@@ -251,7 +239,7 @@ public final class CronConverter {
 
     List<MonthName> months = new ArrayList<>();
     for (String part : field.split(",")) {
-      // Check for step values FIRST (e.g., 1-12/3 or */3)
+      // Before the range check: a step such as 1-12/3 also contains '-'.
       if (part.contains("/")) {
         String[] stepParts = part.split("/", 2);
         String rangePart = stepParts[0];
@@ -285,7 +273,6 @@ public final class CronConverter {
           months.add(monthFromNumber(n));
         }
       } else if (part.contains("-")) {
-        // Range like 1-3 or JAN-MAR
         String[] rangeBounds = part.split("-", 2);
         MonthName startMonth = parseMonthValue(rangeBounds[0]);
         MonthName endMonth = parseMonthValue(rangeBounds[1]);
@@ -299,7 +286,6 @@ public final class CronConverter {
           months.add(monthFromNumber(n));
         }
       } else {
-        // Single month
         months.add(parseMonthValue(part));
       }
     }
@@ -307,16 +293,13 @@ public final class CronConverter {
     return months;
   }
 
-  /** Parse a single month value (number 1-12 or name JAN-DEC). */
   private static MonthName parseMonthValue(String s) throws HronException {
-    // Try as number first
     try {
       int n = Integer.parseInt(s);
       return monthFromNumber(n);
     } catch (NumberFormatException e) {
       // Not a number, try as name
     }
-    // Try as name
     return parseMonthName(s);
   }
 
@@ -350,7 +333,6 @@ public final class CronConverter {
       String dowField,
       List<MonthName> during)
       throws HronException {
-    // Check for # pattern (nth weekday of month)
     if (dowField.contains("#")) {
       String[] parts = dowField.split("#", 2);
       String dowStr = parts[0];
@@ -391,7 +373,6 @@ public final class CronConverter {
       return new ScheduleData(expr, null, List.of(), null, null, during);
     }
 
-    // Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
     if (dowField.endsWith("L") && dowField.length() > 1) {
       String dowStr = dowField.substring(0, dowField.length() - 1);
       int dowNum = parseDowValue(dowStr);
@@ -437,7 +418,6 @@ public final class CronConverter {
     return new ScheduleData(expr, null, List.of(), null, null, during);
   }
 
-  /** Try to parse W (nearest weekday) patterns: 15W, 1W, etc. */
   private static ScheduleData tryParseNearestWeekday(
       String minuteField,
       String hourField,
@@ -473,7 +453,6 @@ public final class CronConverter {
     return new ScheduleData(expr, null, List.of(), null, null, during);
   }
 
-  /** Try to parse interval patterns like *&#47;N, range/N in minute or hour fields. */
   private static ScheduleData tryParseInterval(
       String minuteField,
       String hourField,
@@ -481,7 +460,6 @@ public final class CronConverter {
       String dowField,
       List<MonthName> during)
       throws HronException {
-    // Minute interval: */N or range/N
     if (minuteField.contains("/")) {
       String[] parts = minuteField.split("/", 2);
       String rangePart = parts[0];
@@ -523,7 +501,6 @@ public final class CronConverter {
         toMinute = 59;
       }
 
-      // Determine the hour window
       int fromHour, toHour;
       if (hourField.equals("*")) {
         fromHour = 0;
@@ -537,7 +514,6 @@ public final class CronConverter {
           throw HronException.cron("invalid hour range");
         }
       } else if (hourField.contains("/")) {
-        // Hour also has step - this is complex, handle as hour interval
         return null;
       } else {
         try {
@@ -547,20 +523,17 @@ public final class CronConverter {
         }
       }
 
-      // Check if this should be a day filter
       DayFilter dayFilter = null;
       if (!dowField.equals("*")) {
         dayFilter = parseCronDOW(dowField);
       }
 
       if (domField.equals("*") || domField.equals("?")) {
-        // Determine the end minute based on context
         int endMinute;
         if (fromMinute == 0 && toMinute == 59 && toHour == 23) {
-          // Full day: 00:00 to 23:59
           endMinute = 59;
         } else if (fromMinute == 0 && toMinute == 59) {
-          // Partial day with full minutes range: use :00 for cleaner output
+          // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
           endMinute = 0;
         } else {
           endMinute = toMinute;
@@ -577,7 +550,6 @@ public final class CronConverter {
       }
     }
 
-    // Hour interval: 0 */N or 0 range/N
     if (hourField.contains("/") && (minuteField.equals("0") || minuteField.equals("00"))) {
       String[] parts = hourField.split("/", 2);
       String rangePart = parts[0];
@@ -637,13 +609,11 @@ public final class CronConverter {
     return null;
   }
 
-  /** Parse a DOM field into a MonthTarget. */
   private static MonthTarget parseDomField(String field) throws HronException {
     List<DayOfMonthSpec> specs = new ArrayList<>();
 
     for (String part : field.split(",")) {
       if (part.contains("/")) {
-        // Step value: 1-31/2 or */5
         String[] stepParts = part.split("/", 2);
         String rangePart = stepParts[0];
         String stepStr = stepParts[1];
@@ -689,7 +659,6 @@ public final class CronConverter {
           specs.add(DayOfMonthSpec.single(d));
         }
       } else if (part.contains("-")) {
-        // Range: 1-5
         String[] rangeBounds = part.split("-", 2);
         int start, end;
         try {
@@ -705,7 +674,6 @@ public final class CronConverter {
         validateDom(end);
         specs.add(DayOfMonthSpec.range(start, end));
       } else {
-        // Single: 15
         int day;
         try {
           day = Integer.parseInt(part);
@@ -726,7 +694,6 @@ public final class CronConverter {
     }
   }
 
-  /** Parse a DOW field into a DayFilter. */
   private static DayFilter parseCronDOW(String field) throws HronException {
     if (field.equals("*")) {
       return DayFilter.every();
@@ -736,7 +703,6 @@ public final class CronConverter {
 
     for (String part : field.split(",")) {
       if (part.contains("/")) {
-        // Step value: 0-6/2 or */2
         String[] stepParts = part.split("/", 2);
         String rangePart = stepParts[0];
         String stepStr = stepParts[1];
@@ -772,8 +738,7 @@ public final class CronConverter {
           days.add(cronDowToWeekday(d));
         }
       } else if (part.contains("-")) {
-        // Range: 1-5 or MON-FRI
-        // Parse without normalizing 7 to 0 for range purposes
+        // Keep 7 as Sunday here so that a range such as 5-7 stays ascending.
         String[] rangeBounds = part.split("-", 2);
         int start = parseDowValueRaw(rangeBounds[0]);
         int end = parseDowValueRaw(rangeBounds[1]);
@@ -782,18 +747,15 @@ public final class CronConverter {
               "range start must be <= end: " + rangeBounds[0] + "-" + rangeBounds[1]);
         }
         for (int d = start; d <= end; d++) {
-          // Normalize 7 to 0 (Sunday) when converting to weekday
           int normalized = (d == 7) ? 0 : d;
           days.add(cronDowToWeekday(normalized));
         }
       } else {
-        // Single: 1 or MON
         int dow = parseDowValue(part);
         days.add(cronDowToWeekday(dow));
       }
     }
 
-    // Check for special patterns
     if (days.size() == 5) {
       List<Weekday> sorted = new ArrayList<>(days);
       sorted.sort((a, b) -> Integer.compare(a.number(), b.number()));
@@ -816,7 +778,6 @@ public final class CronConverter {
     return DayFilter.days(days);
   }
 
-  /** Parse a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0. */
   private static int parseDowValue(String s) throws HronException {
     int raw = parseDowValueRaw(s);
     // Normalize 7 to 0 (both mean Sunday)
@@ -825,7 +786,6 @@ public final class CronConverter {
 
   /** Parse a DOW value without normalizing 7 to 0 (for range checking). */
   private static int parseDowValueRaw(String s) throws HronException {
-    // Try as number first
     try {
       int n = Integer.parseInt(s);
       if (n > 7) {
@@ -835,7 +795,6 @@ public final class CronConverter {
     } catch (NumberFormatException e) {
       // Not a number, try as name
     }
-    // Try as name
     String upper = s.toUpperCase();
     return switch (upper) {
       case "SUN" -> 0;
@@ -862,7 +821,6 @@ public final class CronConverter {
     };
   }
 
-  /** Parse a single numeric value with validation. */
   private static int parseSingleValue(String field, String name, int min, int max)
       throws HronException {
     int value;

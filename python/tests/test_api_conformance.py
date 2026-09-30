@@ -1,5 +1,3 @@
-"""API conformance test — verifies Python exposes all methods from spec/api.json."""
-
 from __future__ import annotations
 
 import json
@@ -16,11 +14,6 @@ with open(_api_spec_path) as _f:
 _schedule_spec = _api_spec["schedule"]
 
 
-# ===========================================================================
-# Static methods
-# ===========================================================================
-
-
 class TestStaticMethods:
     def test_parse(self) -> None:
         schedule = Schedule.parse("every day at 09:00")
@@ -33,11 +26,6 @@ class TestStaticMethods:
     def test_validate(self) -> None:
         assert Schedule.validate("every day at 09:00") is True
         assert Schedule.validate("not a schedule") is False
-
-
-# ===========================================================================
-# Instance methods
-# ===========================================================================
 
 
 class TestInstanceMethods:
@@ -74,11 +62,6 @@ class TestInstanceMethods:
         assert display == "every day at 09:00"
 
 
-# ===========================================================================
-# Getters
-# ===========================================================================
-
-
 class TestGetters:
     def test_timezone_none(self) -> None:
         schedule = Schedule.parse("every day at 09:00")
@@ -89,13 +72,7 @@ class TestGetters:
         assert schedule.timezone == "America/New_York"
 
 
-# ===========================================================================
-# Spec coverage — verify all api.json methods are tested above
-# ===========================================================================
-
-
 class TestSpecCoverage:
-    # Map camelCase spec names to the snake_case Python equivalents
     _STATIC_METHOD_MAP = {
         "parse": "parse",
         "fromCron": "from_cron",
@@ -148,7 +125,6 @@ class TestSpecCoverage:
 
     def test_error_display_rich_exists(self) -> None:
         for method in _api_spec["error"]["methods"]:
-            # camelCase -> snake_case
             py_name = "display_rich" if method["name"] == "displayRich" else method["name"]
             err = HronError.eval("test message")
             assert hasattr(err, py_name), f"HronError missing method: {py_name}"

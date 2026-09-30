@@ -10,7 +10,6 @@ package io.hron.ast;
  */
 public record ExceptionSpec(Kind kind, MonthName month, int day, String date) {
 
-  /** The type of exception specification. */
   public enum Kind {
     /** A named exception (e.g., dec 25). */
     NAMED,
@@ -18,13 +17,6 @@ public record ExceptionSpec(Kind kind, MonthName month, int day, String date) {
     ISO
   }
 
-  /**
-   * Creates a named exception specification.
-   *
-   * @param month the month
-   * @param day the day
-   * @return a new named exception specification
-   */
   public static ExceptionSpec named(MonthName month, int day) {
     return new ExceptionSpec(Kind.NAMED, month, day, null);
   }

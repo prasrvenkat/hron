@@ -11,19 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-/**
- * The main entry point for parsing and evaluating hron schedule expressions.
- *
- * <p>Example usage:
- *
- * <pre>{@code
- * Schedule schedule = Schedule.parse("every weekday at 9:00 except dec 25 in America/New_York");
- * Optional<ZonedDateTime> next = schedule.nextFrom(ZonedDateTime.now());
- * if (next.isPresent()) {
- *     System.out.println("Next occurrence: " + next.get());
- * }
- * }</pre>
- */
+/** The main entry point for parsing and evaluating hron schedule expressions. */
 public final class Schedule {
   private final ScheduleData data;
   private final ZoneId zoneId;
@@ -75,19 +63,18 @@ public final class Schedule {
   }
 
   /**
-   * Computes the next occurrence after the given time.
+   * Computes the next occurrence strictly after the given time.
    *
    * @param now the reference time
    * @return the next occurrence, or empty if none exists
    */
   public Optional<ZonedDateTime> nextFrom(ZonedDateTime now) {
-    // Convert now to the schedule's timezone
     ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
     return Evaluator.nextFrom(data, nowInTz, zoneId);
   }
 
   /**
-   * Computes the next n occurrences after the given time.
+   * Computes the next n occurrences strictly after the given time.
    *
    * @param now the reference time
    * @param n the number of occurrences to compute
@@ -121,7 +108,7 @@ public final class Schedule {
   }
 
   /**
-   * Returns a lazy stream of occurrences starting after the given time.
+   * Returns a lazy stream of occurrences strictly after the given time.
    *
    * @param from the reference time (exclusive)
    * @return a stream of occurrences

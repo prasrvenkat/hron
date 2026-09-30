@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// API spec structure
 type APISpec struct {
 	Schedule ScheduleAPI `json:"schedule"`
 	Error    ErrorAPI    `json:"error"`
@@ -47,9 +46,7 @@ func loadAPISpec(t *testing.T) *APISpec {
 	return &spec
 }
 
-// TestStaticMethods verifies that all static methods from the spec exist.
 func TestStaticMethods(t *testing.T) {
-	// Test Parse exists and works
 	t.Run("parse", func(t *testing.T) {
 		s, err := ParseSchedule("every day at 09:00")
 		if err != nil {
@@ -60,7 +57,6 @@ func TestStaticMethods(t *testing.T) {
 		}
 	})
 
-	// Test FromCron exists and works
 	t.Run("fromCron", func(t *testing.T) {
 		s, err := FromCronExpr("0 9 * * *")
 		if err != nil {
@@ -71,7 +67,6 @@ func TestStaticMethods(t *testing.T) {
 		}
 	})
 
-	// Test Validate exists and works
 	t.Run("validate", func(t *testing.T) {
 		if !Validate("every day at 09:00") {
 			t.Error("Validate() returned false for valid expression")
@@ -82,7 +77,6 @@ func TestStaticMethods(t *testing.T) {
 	})
 }
 
-// TestInstanceMethods verifies that all instance methods from the spec exist.
 func TestInstanceMethods(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00")
 	if err != nil {
@@ -91,7 +85,6 @@ func TestInstanceMethods(t *testing.T) {
 
 	now := time.Date(2026, 2, 6, 12, 0, 0, 0, time.UTC)
 
-	// Test NextFrom
 	t.Run("nextFrom", func(t *testing.T) {
 		result := s.NextFrom(now)
 		if result == nil {
@@ -99,7 +92,6 @@ func TestInstanceMethods(t *testing.T) {
 		}
 	})
 
-	// Test NextNFrom
 	t.Run("nextNFrom", func(t *testing.T) {
 		results := s.NextNFrom(now, 3)
 		if len(results) != 3 {
@@ -107,7 +99,6 @@ func TestInstanceMethods(t *testing.T) {
 		}
 	})
 
-	// Test PreviousFrom
 	t.Run("previousFrom", func(t *testing.T) {
 		result := s.PreviousFrom(now)
 		if result == nil {
@@ -115,13 +106,10 @@ func TestInstanceMethods(t *testing.T) {
 		}
 	})
 
-	// Test Matches
 	t.Run("matches", func(t *testing.T) {
-		// Just verify the method exists and returns a bool
 		_ = s.Matches(now)
 	})
 
-	// Test ToCron
 	t.Run("toCron", func(t *testing.T) {
 		cron, err := s.ToCron()
 		if err != nil {
@@ -132,7 +120,6 @@ func TestInstanceMethods(t *testing.T) {
 		}
 	})
 
-	// Test String
 	t.Run("toString", func(t *testing.T) {
 		str := s.String()
 		if str != "every day at 09:00" {
@@ -141,9 +128,7 @@ func TestInstanceMethods(t *testing.T) {
 	})
 }
 
-// TestGetters verifies that all getters from the spec exist.
 func TestGetters(t *testing.T) {
-	// Timezone() returns empty string when not specified
 	t.Run("timezone_none", func(t *testing.T) {
 		s, err := ParseSchedule("every day at 09:00")
 		if err != nil {
@@ -154,7 +139,6 @@ func TestGetters(t *testing.T) {
 		}
 	})
 
-	// Timezone() returns IANA name when specified
 	t.Run("timezone_present", func(t *testing.T) {
 		s, err := ParseSchedule("every day at 09:00 in America/New_York")
 		if err != nil {
@@ -166,9 +150,7 @@ func TestGetters(t *testing.T) {
 	})
 }
 
-// TestErrorTypes verifies that all error types and constructors exist.
 func TestErrorTypes(t *testing.T) {
-	// Test error kinds
 	t.Run("error_kinds", func(t *testing.T) {
 		kinds := []ErrorKind{ErrorKindLex, ErrorKindParse, ErrorKindEval, ErrorKindCron}
 		expected := []string{"lex", "parse", "eval", "cron"}
@@ -179,7 +161,6 @@ func TestErrorTypes(t *testing.T) {
 		}
 	})
 
-	// Test error constructors
 	t.Run("lex_constructor", func(t *testing.T) {
 		err := LexError("test", Span{0, 1}, "input")
 		if err.Kind != ErrorKindLex {
@@ -208,7 +189,6 @@ func TestErrorTypes(t *testing.T) {
 		}
 	})
 
-	// Test DisplayRich method
 	t.Run("display_rich", func(t *testing.T) {
 		err := ParseError("test error", Span{0, 4}, "test input", "")
 		rich := err.DisplayRich()
@@ -218,11 +198,9 @@ func TestErrorTypes(t *testing.T) {
 	})
 }
 
-// TestSpecCoverage verifies that all methods from api.json are implemented.
 func TestSpecCoverage(t *testing.T) {
 	spec := loadAPISpec(t)
 
-	// Map camelCase spec names to Go equivalents
 	staticMethodMap := map[string]string{
 		"parse":    "ParseSchedule",
 		"fromCron": "FromCronExpr",
@@ -304,7 +282,6 @@ func TestSpecCoverage(t *testing.T) {
 	t.Run("error_display_rich_exists", func(t *testing.T) {
 		for _, method := range spec.Error.Methods {
 			if method.Name == "displayRich" {
-				// Verify DisplayRich exists by calling it
 				err := EvalError("test message")
 				_ = err.DisplayRich()
 			}

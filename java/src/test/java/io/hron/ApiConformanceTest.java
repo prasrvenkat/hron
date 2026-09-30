@@ -26,8 +26,6 @@ public class ApiConformanceTest {
     SPEC = MAPPER.readTree(json);
   }
 
-  // Static methods
-
   @Test
   void testParse() throws HronException {
     Schedule s = Schedule.parse("every day at 09:00");
@@ -45,8 +43,6 @@ public class ApiConformanceTest {
     assertTrue(Schedule.validate("every day at 09:00"));
     assertFalse(Schedule.validate("not a schedule"));
   }
-
-  // Instance methods
 
   @Test
   void testNextFrom() throws HronException {
@@ -97,8 +93,6 @@ public class ApiConformanceTest {
     assertEquals("every day at 09:00", s.toString());
   }
 
-  // Getters
-
   @Test
   void testTimezoneNone() throws HronException {
     Schedule s = Schedule.parse("every day at 09:00");
@@ -111,8 +105,6 @@ public class ApiConformanceTest {
     assertTrue(s.timezone().isPresent());
     assertEquals("America/New_York", s.timezone().get());
   }
-
-  // Error types
 
   @Test
   void testErrorKinds() {
@@ -161,8 +153,6 @@ public class ApiConformanceTest {
     assertTrue(rich.contains("error:"));
   }
 
-  // Behavioral tests
-
   @Test
   void testExactTimeBoundary() throws HronException {
     // If now equals an occurrence exactly, skip it
@@ -186,8 +176,6 @@ public class ApiConformanceTest {
     // Since 09:00 has passed, next should be Feb 9
     assertEquals(9, next.get().getDayOfMonth());
   }
-
-  // Spec coverage tests - verify all api.json methods are implemented
 
   @Test
   void specVersionIsPresent() {

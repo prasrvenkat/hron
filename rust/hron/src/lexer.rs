@@ -1,6 +1,5 @@
 use crate::error::{ScheduleError, Span};
 
-/// Token produced by the lexer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub kind: TokenKind,
@@ -9,7 +8,6 @@ pub struct Token {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
-    // Keywords
     Every,
     On,
     At,
@@ -28,35 +26,27 @@ pub enum TokenKind {
     Next,
     Previous,
 
-    // Day keywords
     Day,
     Weekday,
     Weekend,
     Weeks,
     Month,
 
-    // Day names
     DayName(String), // lowercase full name: "monday", "tuesday", ...
 
-    // Month names
     MonthName(String), // lowercase short: "jan", "feb", ...
 
-    // Ordinals
     Ordinal(String), // "first", "second", "third", "fourth", "fifth"
 
-    // Interval units
     IntervalUnit(String), // "min", "mins", "minute", "minutes", "hour", "hours", "hr", "hrs"
 
-    // Literals
     Number(u32),
     OrdinalNumber(u32), // 1st, 2nd, 3rd, 15th — the number part
     Time(u8, u8),       // HH:MM
     IsoDate(String),    // 2026-03-15
 
-    // Punctuation
     Comma,
 
-    // Timezone (IANA string)
     Timezone(String),
 }
 
@@ -64,7 +54,6 @@ pub struct Lexer<'a> {
     input: &'a str,
     bytes: &'a [u8],
     pos: usize,
-    /// Set after we emit an `In` token so we know to parse a timezone next.
     after_in: bool,
 }
 
@@ -86,7 +75,7 @@ impl<'a> Lexer<'a> {
                 break;
             }
 
-            // After `in` keyword, consume the rest as a timezone string
+            // The word after `in` is an IANA timezone name, not a keyword, so it gets its own lexer.
             if self.after_in {
                 self.after_in = false;
                 let tok = self.lex_timezone()?;
@@ -106,14 +95,12 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            // Try time literal: HH:MM (but not ISO date YYYY-MM-DD)
             if ch.is_ascii_digit() {
                 let tok = self.lex_number_or_time_or_date()?;
                 tokens.push(tok);
                 continue;
             }
 
-            // Word
             if ch.is_ascii_alphabetic() {
                 let tok = self.lex_word()?;
                 tokens.push(tok);
@@ -138,7 +125,6 @@ impl<'a> Lexer<'a> {
     fn lex_timezone(&mut self) -> Result<Token, ScheduleError> {
         self.skip_whitespace();
         let start = self.pos;
-        // Consume everything remaining as the timezone
         while self.pos < self.bytes.len() && !self.bytes[self.pos].is_ascii_whitespace() {
             self.pos += 1;
         }
@@ -159,20 +145,17 @@ impl<'a> Lexer<'a> {
 
     fn lex_number_or_time_or_date(&mut self) -> Result<Token, ScheduleError> {
         let start = self.pos;
-        // Read digits
         let num_start = self.pos;
         while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
             self.pos += 1;
         }
         let digits = &self.input[num_start..self.pos];
 
-        // Check for ISO date: YYYY-MM-DD
         if digits.len() == 4
             && self.pos < self.bytes.len()
             && self.bytes[self.pos] == b'-'
             && self.pos + 3 <= self.bytes.len()
         {
-            // Peek ahead to see if this is YYYY-MM-DD
             let remaining = &self.input[self.pos..];
             if remaining.len() >= 6 {
                 let maybe_date = &self.input[start..];
@@ -193,7 +176,6 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Check for time: HH:MM
         if (digits.len() == 1 || digits.len() == 2)
             && self.pos < self.bytes.len()
             && self.bytes[self.pos] == b':'
@@ -229,7 +211,6 @@ impl<'a> Lexer<'a> {
             ScheduleError::lex("invalid number", Span::new(start, self.pos), self.input)
         })?;
 
-        // Check for ordinal suffix: st, nd, rd, th
         // Compare bytes directly to avoid panicking on multi-byte UTF-8 chars
         if self.pos + 1 < self.bytes.len()
             && matches!(

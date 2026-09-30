@@ -1,5 +1,3 @@
-// Evaluator — computes next occurrences and matches for hron schedules.
-
 import { Temporal } from "@js-temporal/polyfill";
 import type {
   DateSpec,
@@ -26,73 +24,18 @@ import {
 type ZDT = Temporal.ZonedDateTime;
 type PD = Temporal.PlainDate;
 
-// =============================================================================
-// Iteration Safety Limits
-// =============================================================================
-// MAX_ITERATIONS (1000): Maximum iterations for nextFrom/previousFrom loops.
-// Prevents infinite loops when searching for valid occurrences.
-//
-// Expression-specific limits:
-// - Day repeat: 8 days (covers one week + margin)
-// - Week repeat: 54 weeks (covers one year + margin)
-// - Month repeat: 24 * interval months (covers 2 years scaled by interval)
-// - Year repeat: 8 * interval years (covers reasonable future horizon)
-//
-// These limits are generous safety bounds. In practice, valid schedules
-// find occurrences within the first few iterations.
-// =============================================================================
-
-// =============================================================================
-// DST (Daylight Saving Time) Handling
-// =============================================================================
-// When resolving a wall-clock time to an instant:
-//
-// 1. DST Gap (Spring Forward):
-//    - Time doesn't exist (e.g., 2:30 AM during spring forward)
-//    - Solution: Push forward to the next valid time after the gap
-//    - Example: 2:30 AM -> 3:00 AM (or 3:30 AM depending on gap size)
-//
-// 2. DST Fold (Fall Back):
-//    - Time is ambiguous (e.g., 1:30 AM occurs twice)
-//    - Solution: Use first occurrence (fold=0 / pre-transition time)
-//    - This matches user expectation for scheduling
-//
-// All implementations use the same algorithm for cross-language consistency.
-// =============================================================================
-
-// =============================================================================
-// Interval Alignment (Anchor Date)
-// =============================================================================
-// For schedules with interval > 1 (e.g., "every 3 days"), we need to
-// determine which dates are valid based on alignment with an anchor.
-//
-// Formula: (date_offset - anchor_offset) mod interval == 0
-//
-// Where:
-//   - date_offset: days/weeks/months from epoch to candidate date
-//   - anchor_offset: days/weeks/months from epoch to anchor date
-//   - interval: the repeat interval (e.g., 3 for "every 3 days")
-//
-// Default anchor: Epoch (1970-01-01)
-// Custom anchor: Set via "starting YYYY-MM-DD" clause
-//
-// For week repeats, we use epoch Monday (1970-01-05) as the reference
-// point to align week boundaries correctly.
-// =============================================================================
-
-// --- Timezone resolution ---
-
-/** Resolve timezone, defaulting to UTC for deterministic behavior. */
 function resolveTz(tz: string | null): string {
   return tz ?? "UTC";
 }
-
-// --- Helpers ---
 
 function toPlainTime(tod: TimeOfDay): Temporal.PlainTime {
   return Temporal.PlainTime.from({ hour: tod.hour, minute: tod.minute });
 }
 
+// Temporal's "compatible" disambiguation matches spec/README.md "DST
+// spring-forward (gaps)" and "DST fall-back (ambiguous times)": a gap time
+// shifts forward by the gap length, and an ambiguous time takes its first
+// occurrence.
 function atTimeOnDate(date: PD, time: Temporal.PlainTime, tz: string): ZDT {
   return date.toPlainDateTime(time).toZonedDateTime(tz, {
     disambiguation: "compatible",
@@ -147,7 +90,6 @@ function nearestWeekday(
   const last = lastDayOfMonth(year, month);
   const lastDay = last.day;
 
-  // If target day doesn't exist in this month, return null (skip this month)
   if (targetDay > lastDay) {
     return null;
   }
@@ -155,47 +97,32 @@ function nearestWeekday(
   const date = Temporal.PlainDate.from({ year, month, day: targetDay });
   const dow = date.dayOfWeek; // 1=Monday, 7=Sunday
 
-  // Already a weekday (Monday=1 through Friday=5)
   if (dow >= 1 && dow <= 5) {
     return date;
   }
 
-  // Saturday (dow === 6)
   if (dow === 6) {
     if (direction === null) {
-      // Standard: prefer Friday, but if at month start, use Monday
       if (targetDay === 1) {
-        // Can't go to previous month, use Monday (day 3)
         return date.add({ days: 2 });
       }
-      // Friday
       return date.subtract({ days: 1 });
     }
     if (direction === "next") {
-      // Always Monday (may cross month)
       return date.add({ days: 2 });
     }
-    // direction === "previous"
-    // Always Friday (may cross month if day==1)
     return date.subtract({ days: 1 });
   }
 
-  // Sunday (dow === 7)
   if (direction === null) {
-    // Standard: prefer Monday, but if at month end, use Friday
     if (targetDay >= lastDay) {
-      // Can't go to next month, use Friday (day - 2)
       return date.subtract({ days: 2 });
     }
-    // Monday
     return date.add({ days: 1 });
   }
   if (direction === "next") {
-    // Always Monday (may cross month)
     return date.add({ days: 1 });
   }
-  // direction === "previous"
-  // Always Friday (go back 2 days, may cross month)
   return date.subtract({ days: 2 });
 }
 
@@ -246,7 +173,6 @@ function monthsBetweenYM(a: PD, b: PD): number {
   return b.year * 12 + b.month - (a.year * 12 + a.month);
 }
 
-/** Euclidean modulo (always non-negative). */
 function euclideanMod(a: number, b: number): number {
   return ((a % b) + b) % b;
 }
@@ -300,7 +226,6 @@ function matchesDuring(date: PD, during: MonthName[]): boolean {
   return during.some((mn) => monthNumber(mn) === date.month);
 }
 
-/** Find the 1st of the next valid `during` month after `date`. */
 function nextDuringMonth(date: PD, during: MonthName[]): PD {
   const currentMonth = date.month;
   const months = during.map((mn) => monthNumber(mn)).sort((a, b) => a - b);
@@ -310,7 +235,6 @@ function nextDuringMonth(date: PD, during: MonthName[]): PD {
       return Temporal.PlainDate.from({ year: date.year, month: m, day: 1 });
     }
   }
-  // Wrap to first month of next year
   return Temporal.PlainDate.from({
     year: date.year + 1,
     month: months[0],
@@ -372,8 +296,6 @@ function earliestFutureAtTimes(
   return best;
 }
 
-// --- Public API ---
-
 export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   const tz = resolveTz(schedule.timezone);
 
@@ -383,7 +305,6 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   const hasExceptions = schedule.except.length > 0;
   const hasDuring = schedule.during.length > 0;
 
-  // Check if expression is NearestWeekday with direction (can cross month boundaries)
   const handlesDuringInternally =
     schedule.expr.type === "monthRepeat" &&
     schedule.expr.target.type === "nearestWeekday" &&
@@ -401,30 +322,24 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
 
     if (candidate === null) return null;
 
-    // Convert to target tz once for all filter checks
     const cDate = candidate.withTimeZone(tz).toPlainDate();
 
-    // Apply until filter
     if (untilDate) {
       if (Temporal.PlainDate.compare(cDate, untilDate) > 0) {
         return null;
       }
     }
 
-    // Apply during filter
-    // Skip this check for expressions that handle during internally (NearestWeekday with direction)
     if (
       hasDuring &&
       !handlesDuringInternally &&
       !matchesDuring(cDate, schedule.during)
     ) {
-      // Skip ahead to 1st of next valid during month
       const skipTo = nextDuringMonth(cDate, schedule.during);
       current = atTimeOnDate(skipTo, MIDNIGHT, tz).subtract({ seconds: 1 });
       continue;
     }
 
-    // Apply except filter
     if (hasExceptions && isExceptedParsed(cDate, parsedExceptions)) {
       const nextDay = cDate.add({ days: 1 });
       current = atTimeOnDate(nextDay, MIDNIGHT, tz).subtract({ seconds: 1 });
@@ -612,7 +527,6 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
         if (!targetDate) return false;
         return Temporal.PlainDate.compare(date, targetDate) === 0;
       }
-      // nearestWeekday
       const targetDate = nearestWeekday(
         date.year,
         date.month,
@@ -687,8 +601,6 @@ function matchesYearTarget(target: YearTarget, date: PD): boolean {
   }
 }
 
-// --- Per-variant next functions ---
-
 function nextDayRepeat(
   interval: number,
   days: DayFilter,
@@ -701,7 +613,6 @@ function nextDayRepeat(
   let date = nowInTz.toPlainDate();
 
   if (interval <= 1) {
-    // Original behavior for interval=1
     if (matchesDayFilter(date, days)) {
       const candidate = earliestFutureAtTimes(date, times, tz, now);
       if (candidate) return candidate;
@@ -718,10 +629,9 @@ function nextDayRepeat(
     return null;
   }
 
-  // Interval > 1: day intervals only apply to DayFilter::Every
+  // The grammar only allows an interval with plain `N days`, so `days` is always `every` here.
   const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
 
-  // Find the next aligned day >= today
   const offset = daysBetween(anchorDate, date);
   const remainder = euclideanMod(offset, interval);
   let alignedDate =
@@ -800,30 +710,25 @@ function nextWeekRepeat(
 
   const date = nowInTz.toPlainDate();
 
-  // Sort target DOWs by number for earliest-first matching
   const sortedDays = [...days].sort(
     (a, b) => weekdayNameToNumber(a) - weekdayNameToNumber(b),
   );
 
-  // Find Monday of current week and Monday of anchor week
   const dowOffset = date.dayOfWeek - 1;
   let currentMonday = date.subtract({ days: dowOffset });
 
   const anchorDowOffset = anchorDate.dayOfWeek - 1;
   const anchorMonday = anchorDate.subtract({ days: anchorDowOffset });
 
-  // Loop up to 54 iterations (covers >1 year for any interval)
   for (let i = 0; i < 54; i++) {
     const weeks = weeksBetween(anchorMonday, currentMonday);
 
-    // Skip weeks before anchor - anchor Monday is always the first aligned week
     if (weeks < 0) {
       currentMonday = anchorMonday;
       continue;
     }
 
     if (weeks % interval === 0) {
-      // Aligned week — try each target DOW
       for (const wd of sortedDays) {
         const dayOffset = weekdayNameToNumber(wd) - 1;
         const targetDate = currentMonday.add({ days: dayOffset });
@@ -832,7 +737,6 @@ function nextWeekRepeat(
       }
     }
 
-    // Skip to next aligned week
     const remainder = weeks % interval;
     const skipWeeks = remainder === 0 ? interval : interval - remainder;
     currentMonday = currentMonday.add({ days: skipWeeks * 7 });
@@ -857,15 +761,14 @@ function nextMonthRepeat(
   const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
   const maxIter = interval > 1 ? 24 * interval : 24;
 
-  // For NearestWeekday with direction, we need to apply the during filter here
-  // because the result can cross month boundaries
+  // A directional nearest weekday can land in a neighbouring month, so `during`
+  // is checked against the target month here, not against the result date.
   const applyDuringFilter =
     during.length > 0 &&
     target.type === "nearestWeekday" &&
     target.direction !== null;
 
   for (let i = 0; i < maxIter; i++) {
-    // Check during filter for NearestWeekday with direction
     if (applyDuringFilter && !during.some((mn) => monthNumber(mn) === month)) {
       month++;
       if (month > 12) {
@@ -875,7 +778,6 @@ function nextMonthRepeat(
       continue;
     }
 
-    // Check interval alignment
     if (interval > 1) {
       const cur = Temporal.PlainDate.from({ year, month, day: 1 });
       const monthOffset = monthsBetweenYM(anchorDate, cur);
@@ -925,7 +827,6 @@ function nextMonthRepeat(
         dateCandidates.push(owDate);
       }
     } else {
-      // nearestWeekday
       const nwDate = nearestWeekday(year, month, target.day, target.direction);
       if (nwDate) {
         dateCandidates.push(nwDate);
@@ -1013,7 +914,6 @@ function nextYearRepeat(
   for (let y = 0; y < maxIter; y++) {
     const year = startYear + y;
 
-    // Check interval alignment
     if (interval > 1) {
       const yearOffset = year - anchorYear;
       if (yearOffset < 0 || euclideanMod(yearOffset, interval) !== 0) {
@@ -1082,21 +982,15 @@ function nextYearRepeat(
   return null;
 }
 
-/**
- * Compute the most recent occurrence strictly before `now`.
- * Returns null if no previous occurrence exists (e.g., before a starting anchor
- * or for single dates in the future).
- */
+/** The most recent occurrence strictly before `now`, or null if there is none. */
 export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   const tz = resolveTz(schedule.timezone);
   const anchor = schedule.anchor;
 
-  // Parse exceptions once
   const parsedExceptions = parseExceptions(schedule.except);
   const hasExceptions = schedule.except.length > 0;
   const hasDuring = schedule.during.length > 0;
 
-  // Retry loop for exceptions and during filter
   let current = now;
   for (let i = 0; i < 1000; i++) {
     const candidate = prevExpr(schedule, tz, anchor, current);
@@ -1105,7 +999,6 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
 
     const cDate = candidate.withTimeZone(tz).toPlainDate();
 
-    // Check starting anchor - if before anchor, no previous occurrence
     if (anchor) {
       const anchorDate = Temporal.PlainDate.from(anchor);
       if (Temporal.PlainDate.compare(cDate, anchorDate) < 0) {
@@ -1113,8 +1006,6 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
       }
     }
 
-    // Apply until filter for previousFrom:
-    // If candidate is after until, search earlier
     if (schedule.until) {
       const untilDate = resolveUntil(schedule.until, now);
       if (Temporal.PlainDate.compare(cDate, untilDate) > 0) {
@@ -1125,7 +1016,6 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
       }
     }
 
-    // Apply during filter
     if (hasDuring && !matchesDuring(cDate, schedule.during)) {
       const skipTo = prevDuringMonth(cDate, schedule.during);
       const endOfDay = toPlainTime({ hour: 23, minute: 59 });
@@ -1135,7 +1025,6 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
       continue;
     }
 
-    // Apply except filter
     if (hasExceptions && isExceptedParsed(cDate, parsedExceptions)) {
       const prevDay = cDate.subtract({ days: 1 });
       const endOfDay = toPlainTime({ hour: 23, minute: 59 });
@@ -1151,9 +1040,6 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   return null;
 }
 
-/**
- * Compute previous occurrence for the expression part.
- */
 function prevExpr(
   schedule: ScheduleData,
   tz: string,
@@ -1191,12 +1077,10 @@ function prevDayRepeat(
   const { interval, days, times } = expr;
 
   if (interval <= 1) {
-    // Check today for times that have passed
     if (matchesDayFilter(date, days)) {
       const candidate = latestPastAtTimes(date, times, tz, now);
       if (candidate !== null) return candidate;
     }
-    // Go back day by day
     for (let i = 0; i < 8; i++) {
       date = date.subtract({ days: 1 });
       if (matchesDayFilter(date, days)) {
@@ -1207,7 +1091,6 @@ function prevDayRepeat(
     return null;
   }
 
-  // Interval > 1
   const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
   const offset = daysBetween(anchorDate, date);
   const remainder = ((offset % interval) + interval) % interval;
@@ -1290,7 +1173,6 @@ function prevWeekRepeat(
   const anchorDayOfWeek = anchorDate.dayOfWeek;
   const anchorMonday = anchorDate.subtract({ days: anchorDayOfWeek - 1 });
 
-  // Sort days descending (latest first)
   const sortedDays = [...days].sort((a, b) => dayToNumber(b) - dayToNumber(a));
 
   let checkMonday = currentMonday;
@@ -1394,7 +1276,6 @@ function prevSingleDate(
     }
     return latestAtTimes(targetDate, times, tz);
   } else {
-    // Named date - find most recent occurrence
     const { month, day } = dateSpec;
     const monthNum = monthNumber(month);
 
@@ -1468,8 +1349,6 @@ function prevYearRepeat(
 
   return null;
 }
-
-// Helper functions for prev*
 
 function latestPastAtTimes(
   date: Temporal.PlainDate,
@@ -1652,12 +1531,9 @@ function dayToNumber(day: Weekday): number {
   return map[day];
 }
 
-// --- Iterator functions ---
-
 /**
- * Returns a lazy iterator of occurrences starting after `from`.
- * The iterator is unbounded for repeating schedules (will iterate forever unless limited),
- * but respects the `until` clause if specified in the schedule.
+ * Lazily yields occurrences strictly after `from`. Unbounded for repeating
+ * schedules unless an `until` clause ends them.
  */
 export function* occurrences(
   schedule: ScheduleData,
@@ -1667,16 +1543,12 @@ export function* occurrences(
   for (;;) {
     const next = nextFrom(schedule, current);
     if (next === null) return;
-    // Advance cursor by 1 minute to avoid returning same occurrence
     current = next.add({ minutes: 1 });
     yield next;
   }
 }
 
-/**
- * Returns a bounded iterator of occurrences where `from < occurrence <= to`.
- * The iterator yields occurrences strictly after `from` and up to and including `to`.
- */
+/** Yields occurrences where `from < occurrence <= to`. */
 export function* between(
   schedule: ScheduleData,
   from: ZDT,

@@ -1,7 +1,5 @@
-// API conformance test — verifies Dart exposes all methods from spec/api.json.
-//
-// Dart doesn't have runtime reflection, so we verify each method exists and
-// returns the correct type by calling them directly.
+// Calls each spec/api.json method directly: finding them by reflection would
+// need dart:mirrors, which is unavailable on some platforms (Flutter, AOT).
 
 import 'dart:convert';
 import 'dart:io';
@@ -18,7 +16,6 @@ late Map<String, dynamic> apiSpec;
 void main() {
   tz.initializeTimeZones();
 
-  // Find spec/api.json relative to the dart/ directory
   var dir = Directory.current.path;
   if (p.basename(dir) == 'dart') {
     dir = p.dirname(dir);
@@ -30,7 +27,6 @@ void main() {
   final scheduleMap = apiSpec['schedule'] as Map<String, dynamic>;
 
   group('API conformance', () {
-    // Static methods
     group('static methods', () {
       test('parse', () {
         final schedule = Schedule.parse('every day at 09:00');
@@ -50,7 +46,6 @@ void main() {
       });
     });
 
-    // Instance methods
     group('instance methods', () {
       final schedule = Schedule.parse('every day at 09:00');
       final now = TZDateTime.utc(2026, 2, 6, 12, 0, 0);
@@ -70,7 +65,6 @@ void main() {
         final result = schedule.previousFrom(now);
         expect(result, isA<TZDateTime?>());
         expect(result, isNotNull);
-        // Previous should be today at 09:00
         expect(result!.day, equals(6));
         expect(result.hour, equals(9));
       });
@@ -92,7 +86,6 @@ void main() {
       });
     });
 
-    // Getters
     group('getters', () {
       test('timezone (null)', () {
         final schedule = Schedule.parse('every day at 09:00');
@@ -107,7 +100,6 @@ void main() {
       });
     });
 
-    // Verify all spec methods are covered
     group('spec coverage', () {
       final staticMethods = (scheduleMap['staticMethods'] as List<dynamic>)
           .map((m) => m['name'] as String)

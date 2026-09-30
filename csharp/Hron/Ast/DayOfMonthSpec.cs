@@ -5,14 +5,8 @@ namespace Hron.Ast;
 /// </summary>
 public sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start, int End)
 {
-    /// <summary>
-    /// Creates a single day specification.
-    /// </summary>
     public static DayOfMonthSpec Single(int day) => new(DayOfMonthSpecKind.Single, day, 0, 0);
 
-    /// <summary>
-    /// Creates a day range specification.
-    /// </summary>
     public static DayOfMonthSpec Range(int start, int end) => new(DayOfMonthSpecKind.Range, 0, start, end);
 
     /// <summary>
@@ -39,8 +33,6 @@ public sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start,
 /// </summary>
 public enum DayOfMonthSpecKind
 {
-    /// <summary>A single day.</summary>
     Single,
-    /// <summary>A range of days.</summary>
     Range
 }

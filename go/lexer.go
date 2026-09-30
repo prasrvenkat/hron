@@ -60,7 +60,6 @@ type Token struct {
 	TimezoneVal  string
 }
 
-// lexer is the internal lexer state.
 type lexer struct {
 	input   string
 	pos     int
@@ -146,14 +145,12 @@ func (l *lexer) lexTimezone() (Token, error) {
 func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
 	start := l.pos
 
-	// Read digits
 	numStart := l.pos
 	for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
 		l.pos++
 	}
 	digits := l.input[numStart:l.pos]
 
-	// Check for ISO date: YYYY-MM-DD
 	if len(digits) == 4 && l.pos < len(l.input) && l.input[l.pos] == '-' {
 		remaining := l.input[start:]
 		if len(remaining) >= 10 &&
@@ -168,7 +165,6 @@ func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
 		}
 	}
 
-	// Check for time: HH:MM
 	if (len(digits) == 1 || len(digits) == 2) && l.pos < len(l.input) && l.input[l.pos] == ':' {
 		l.pos++ // skip ':'
 		minStart := l.pos
@@ -197,7 +193,6 @@ func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
 		return Token{}, LexError("invalid number", Span{start, l.pos}, l.input)
 	}
 
-	// Check for ordinal suffix: st, nd, rd, th
 	if l.pos+1 < len(l.input) {
 		suffix := strings.ToLower(l.input[l.pos : l.pos+2])
 		if suffix == "st" || suffix == "nd" || suffix == "rd" || suffix == "th" {
@@ -217,7 +212,6 @@ func (l *lexer) lexWord() (Token, error) {
 	word := strings.ToLower(l.input[start:l.pos])
 	span := Span{start, l.pos}
 
-	// Check keyword map
 	tok, ok := keywordMap[word]
 	if !ok {
 		return Token{}, LexError("unknown keyword '"+word+"'", span, l.input)
@@ -232,7 +226,6 @@ func (l *lexer) lexWord() (Token, error) {
 	return tok, nil
 }
 
-// keywordMap maps lowercase keywords to tokens.
 var keywordMap = map[string]Token{
 	"every":    {Kind: TokenEvery},
 	"on":       {Kind: TokenOn},
@@ -318,8 +311,6 @@ var keywordMap = map[string]Token{
 	"hr":      {Kind: TokenIntervalUnit, UnitVal: IntervalHours},
 	"hrs":     {Kind: TokenIntervalUnit, UnitVal: IntervalHours},
 }
-
-// Helper functions
 
 func isDigit(b byte) bool {
 	return b >= '0' && b <= '9'

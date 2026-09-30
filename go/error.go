@@ -79,7 +79,6 @@ func (e *HronError) DisplayRich() string {
 		sb.WriteString(fmt.Sprintf("error: %s\n", e.Message))
 		sb.WriteString(fmt.Sprintf("  %s\n", e.Input))
 
-		// Add padding and underline
 		padding := strings.Repeat(" ", e.Span.Start+2)
 		underlineLen := e.Span.End - e.Span.Start
 		if underlineLen < 1 {

@@ -1,5 +1,3 @@
-// API conformance test — verifies TS exposes all methods from spec/api.json.
-
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";

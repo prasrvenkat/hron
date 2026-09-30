@@ -30,9 +30,6 @@ public static class OrdinalPositionExtensions
     /// </summary>
     public static int ToN(this OrdinalPosition ordinal) => (int)ordinal;
 
-    /// <summary>
-    /// Returns the lowercase display name.
-    /// </summary>
     public static string ToDisplayString(this OrdinalPosition ordinal) => ordinal switch
     {
         OrdinalPosition.First => "first",

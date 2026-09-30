@@ -90,6 +90,10 @@ Named exceptions (e.g., `except dec 25`) recur every year. ISO exceptions (e.g.,
 
 Schedules with mutually exclusive constraints parse successfully but return no occurrences. For example, `every weekend at 09:00 except sat, sun` is valid but `nextFrom` always returns null. Implementations must never error or loop on contradictory schedules.
 
+### DST spring-forward (gaps)
+
+When a schedule fires at a wall-clock time that does not exist because of a DST spring-forward transition, implementations must fire at that time shifted forward by the length of the gap: 02:30 becomes 03:30 when clocks jump from 02:00 to 03:00, and a 30-minute gap (e.g. `Australia/Lord_Howe`) shifts it by 30 minutes. See the `dst_spring_forward` cases in `tests.json`.
+
 ### DST fall-back (ambiguous times)
 
 When a schedule fires at a time that occurs twice during a DST fall-back transition (e.g., 01:30 when clocks go from 02:00 back to 01:00), implementations must use the **first** (pre-transition) occurrence.

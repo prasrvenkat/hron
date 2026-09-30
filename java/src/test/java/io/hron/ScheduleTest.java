@@ -6,7 +6,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import org.junit.jupiter.api.Test;
 
-/** Additional unit tests for Schedule functionality. */
 public class ScheduleTest {
 
   @Test

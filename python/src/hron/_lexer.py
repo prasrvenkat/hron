@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from ._ast import IntervalUnit, MonthName, OrdinalPosition, Weekday
 from ._error import HronError, Span
 
-# --- Token kinds ---
-
 
 @dataclass(frozen=True, slots=True)
 class TEvery:
@@ -211,8 +209,6 @@ class Token:
     span: Span
 
 
-# --- Keyword map ---
-
 _KEYWORD_MAP: dict[str, TokenKind] = {
     "every": TEvery(),
     "on": TOn(),
@@ -242,7 +238,6 @@ _KEYWORD_MAP: dict[str, TokenKind] = {
     "week": TWeeks(),
     "month": TMonth(),
     "months": TMonth(),
-    # Day names
     "monday": TDayName(Weekday.MONDAY),
     "mon": TDayName(Weekday.MONDAY),
     "tuesday": TDayName(Weekday.TUESDAY),
@@ -257,7 +252,6 @@ _KEYWORD_MAP: dict[str, TokenKind] = {
     "sat": TDayName(Weekday.SATURDAY),
     "sunday": TDayName(Weekday.SUNDAY),
     "sun": TDayName(Weekday.SUNDAY),
-    # Month names
     "january": TMonthName(MonthName.JAN),
     "jan": TMonthName(MonthName.JAN),
     "february": TMonthName(MonthName.FEB),
@@ -281,13 +275,11 @@ _KEYWORD_MAP: dict[str, TokenKind] = {
     "nov": TMonthName(MonthName.NOV),
     "december": TMonthName(MonthName.DEC),
     "dec": TMonthName(MonthName.DEC),
-    # Ordinals
     "first": TOrdinal(OrdinalPosition.FIRST),
     "second": TOrdinal(OrdinalPosition.SECOND),
     "third": TOrdinal(OrdinalPosition.THIRD),
     "fourth": TOrdinal(OrdinalPosition.FOURTH),
     "fifth": TOrdinal(OrdinalPosition.FIFTH),
-    # Interval units
     "min": TIntervalUnit(IntervalUnit.MIN),
     "mins": TIntervalUnit(IntervalUnit.MIN),
     "minute": TIntervalUnit(IntervalUnit.MIN),
@@ -366,7 +358,6 @@ class _Lexer:
             self._pos += 1
         digits = self._input[num_start : self._pos]
 
-        # Check for ISO date: YYYY-MM-DD
         if len(digits) == 4 and self._pos < len(self._input) and self._input[self._pos] == "-":
             remaining = self._input[start:]
             if (
@@ -381,7 +372,6 @@ class _Lexer:
                 self._pos = start + 10
                 return Token(TIsoDate(self._input[start : self._pos]), Span(start, self._pos))
 
-        # Check for time: HH:MM
         if len(digits) in (1, 2) and self._pos < len(self._input) and self._input[self._pos] == ":":
             self._pos += 1  # skip ':'
             min_start = self._pos
@@ -397,7 +387,6 @@ class _Lexer:
 
         num = int(digits)
 
-        # Check for ordinal suffix: st, nd, rd, th
         if self._pos + 1 < len(self._input):
             suffix = self._input[self._pos : self._pos + 2].lower()
             if suffix in ("st", "nd", "rd", "th"):

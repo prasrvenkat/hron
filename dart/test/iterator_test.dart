@@ -1,10 +1,5 @@
-// Iterator-specific tests for `occurrences()` and `between()` methods.
-//
-// These tests verify Dart-specific iterable behavior beyond conformance tests:
-// - Laziness (iterables don't evaluate eagerly)
-// - Early termination
-// - Integration with Iterable methods (take, where, map, etc.)
-// - For-in loop patterns
+// Dart Iterable behaviour of occurrences() and between() that spec/tests.json
+// cannot express: laziness, early termination, and Iterable methods.
 import 'package:hron/hron.dart';
 import 'package:test/test.dart';
 import 'package:timezone/data/latest.dart' as tz;
@@ -14,7 +9,6 @@ void main() {
   tz.initializeTimeZones();
 
   tz.TZDateTime parseZoned(String s) {
-    // Parse '2026-02-06T12:00:00+00:00[UTC]' format
     final bracketIdx = s.indexOf('[');
     String tzName;
     String isoStr;
@@ -35,20 +29,14 @@ void main() {
     );
   }
 
-  // ===========================================================================
-  // Laziness Tests
-  // ===========================================================================
-
   group('laziness', () {
     test('occurrences is lazy - does not evaluate unbounded schedule', () {
       // An unbounded schedule should not hang or OOM when creating the iterator
       final schedule = Schedule.parse('every day at 09:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      // Creating the iterable should be instant (lazy)
       final iter = schedule.occurrences(from);
 
-      // Taking just 1 should work without evaluating the rest
       final results = iter.take(1).toList();
       expect(results.length, equals(1));
     });
@@ -58,7 +46,6 @@ void main() {
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
       final to = parseZoned('2026-12-31T23:59:00+00:00[UTC]');
 
-      // Creating the iterable should be instant
       final iter = schedule.between(from, to);
 
       // Taking just 3 should not evaluate all ~330 days
@@ -66,10 +53,6 @@ void main() {
       expect(results.length, equals(3));
     });
   });
-
-  // ===========================================================================
-  // Early Termination Tests
-  // ===========================================================================
 
   group('early termination', () {
     test('occurrences early termination with take', () {
@@ -122,16 +105,11 @@ void main() {
     });
   });
 
-  // ===========================================================================
-  // Iterable Methods Tests
-  // ===========================================================================
-
   group('iterable methods', () {
     test('works with where (filter)', () {
       final schedule = Schedule.parse('every day at 09:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      // Filter to only weekends from first 14 days
       final weekends = schedule
           .occurrences(from)
           .take(14)
@@ -146,7 +124,6 @@ void main() {
       final schedule = Schedule.parse('every day at 09:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      // Map to just the day number
       final days = schedule
           .occurrences(from)
           .take(5)
@@ -160,11 +137,9 @@ void main() {
       final schedule = Schedule.parse('every day at 09:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      // Skip first 5, take next 3
       final results = schedule.occurrences(from).skip(5).take(3).toList();
 
       expect(results.length, equals(3));
-      // Should be Feb 6, 7, 8
       expect(results[0].day, equals(6));
       expect(results[1].day, equals(7));
       expect(results[2].day, equals(8));
@@ -175,7 +150,6 @@ void main() {
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
       final to = parseZoned('2026-02-10T23:59:00+00:00[UTC]');
 
-      // Count occurrences in range
       final count = schedule.between(from, to).length;
 
       // Feb 1-10 inclusive = 10 days
@@ -205,10 +179,6 @@ void main() {
     });
   });
 
-  // ===========================================================================
-  // Collect Patterns
-  // ===========================================================================
-
   group('collect patterns', () {
     test('occurrences collect to list', () {
       final schedule = Schedule.parse(
@@ -231,10 +201,6 @@ void main() {
       expect(results.length, equals(7));
     });
   });
-
-  // ===========================================================================
-  // For-in Patterns
-  // ===========================================================================
 
   group('for-in patterns', () {
     test('occurrences for-in with break', () {
@@ -263,10 +229,6 @@ void main() {
       expect(days, equals([1, 2, 3]));
     });
   });
-
-  // ===========================================================================
-  // Edge Cases
-  // ===========================================================================
 
   group('edge cases', () {
     test('occurrences empty when past until', () {
@@ -301,10 +263,6 @@ void main() {
     });
   });
 
-  // ===========================================================================
-  // Timezone Handling
-  // ===========================================================================
-
   group('timezone handling', () {
     test('occurrences preserves timezone', () {
       final schedule = Schedule.parse('every day at 09:00 in America/New_York');
@@ -326,17 +284,12 @@ void main() {
 
       final results = schedule.between(from, to).toList();
 
-      // Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
       expect(results.length, equals(3));
       expect(results[0].hour, equals(2)); // Mar 7 02:30
       expect(results[1].hour, equals(3)); // Mar 8 03:30 (shifted due to DST)
       expect(results[2].hour, equals(2)); // Mar 9 02:30
     });
   });
-
-  // ===========================================================================
-  // Multiple Times Per Day
-  // ===========================================================================
 
   group('multiple times per day', () {
     test('occurrences multiple times per day', () {
@@ -351,23 +304,17 @@ void main() {
           .toList(); // 3 days worth
 
       expect(results.length, equals(9));
-      // First day: 09:00, 12:00, 17:00
       expect(results[0].hour, equals(9));
       expect(results[1].hour, equals(12));
       expect(results[2].hour, equals(17));
     });
   });
 
-  // ===========================================================================
-  // Complex Iterator Chains
-  // ===========================================================================
-
   group('complex chains', () {
     test('complex chain', () {
       final schedule = Schedule.parse('every day at 09:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      // Complex chain: skip weekends, take first 5 weekdays, get their day numbers
       final weekdayDays = schedule
           .occurrences(from)
           .take(14) // Two weeks to ensure we have enough
@@ -380,10 +327,6 @@ void main() {
       expect(weekdayDays, equals([2, 3, 4, 5, 6]));
     });
   });
-
-  // ===========================================================================
-  // Iterator Type Checks
-  // ===========================================================================
 
   group('type checks', () {
     test('occurrences returns Iterable', () {

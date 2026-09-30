@@ -46,7 +46,6 @@ public final class Parser {
   private ScheduleData parseSchedule() throws HronException {
     ScheduleExpr expr = parseExpr();
 
-    // Parse optional clauses in order: except, until, starting, during, in
     List<ExceptionSpec> except = List.of();
     UntilSpec until = null;
     String anchor = null;
@@ -173,7 +172,6 @@ public final class Parser {
       case INTERVAL_UNIT -> parseIntervalRepeat(interval);
       case DAY -> {
         pos++;
-        // Normalize "every 1 day" -> "every day"
         var days = interval == 1 ? DayFilter.every() : null;
         var times = parseAtTimes();
         yield new DayRepeat(interval, days != null ? days : DayFilter.every(), times);
@@ -339,7 +337,6 @@ public final class Parser {
           next != null ? next.span() : endSpan());
     }
 
-    // Check for ordinal + day_name (e.g., "first monday")
     if (tok.kind() == TokenKind.ORDINAL) {
       OrdinalPosition ordinal = tok.ordinalVal();
       pos++;
@@ -348,26 +345,17 @@ public final class Parser {
       return MonthTarget.ordinalWeekday(ordinal, weekday);
     }
 
-    // Check for [next|previous] nearest weekday to <day>
     if (tok.kind() == TokenKind.NEXT
         || tok.kind() == TokenKind.PREVIOUS
         || tok.kind() == TokenKind.NEAREST) {
       return parseNearestWeekdayTarget();
     }
 
-    // Parse day specs (single or range)
     List<DayOfMonthSpec> specs = parseDayOfMonthSpecs();
     return MonthTarget.days(specs);
   }
 
-  /**
-   * Parses [next|previous] nearest weekday to <ordinal_day>.
-   *
-   * @return a nearest weekday month target
-   * @throws HronException if parsing fails
-   */
   private MonthTarget parseNearestWeekdayTarget() throws HronException {
-    // Optional direction: "next" or "previous"
     NearestDirection direction = null;
     Token tok = peek();
     if (tok != null && tok.kind() == TokenKind.NEXT) {
@@ -444,13 +432,11 @@ public final class Parser {
       throw parseError("unexpected end of input after 'on'", endSpan());
     }
 
-    // Check for "the" (ordinal weekday, day of month, or last weekday)
     if (tok.kind() == TokenKind.THE) {
       pos++;
       return parseYearTargetAfterThe();
     }
 
-    // Named date: month day (e.g., dec 25)
     Token monthTok = expect(TokenKind.MONTH_NAME);
     Token dayTok = parseDayNumber();
     validateNamedDate(monthTok.monthNameVal(), dayTok.numberVal(), dayTok.span());
@@ -463,18 +449,15 @@ public final class Parser {
       throw parseError("unexpected end of input after 'the'", endSpan());
     }
 
-    // "the last ..."
     if (tok.kind() == TokenKind.LAST) {
       pos++;
       Token next = peek();
       if (next != null && next.kind() == TokenKind.DAY_NAME) {
-        // "the last friday of month"
         Weekday weekday = tokens.get(pos++).dayNameVal();
         expect(TokenKind.OF);
         Token monthTok = expect(TokenKind.MONTH_NAME);
         return YearTarget.ordinalWeekday(OrdinalPosition.LAST, weekday, monthTok.monthNameVal());
       } else if (next != null && next.kind() == TokenKind.WEEKDAY) {
-        // "the last weekday of month"
         pos++;
         expect(TokenKind.OF);
         Token monthTok = expect(TokenKind.MONTH_NAME);
@@ -484,7 +467,6 @@ public final class Parser {
           "expected day name or 'weekday' after 'last'", next != null ? next.span() : endSpan());
     }
 
-    // "the first/second/... weekday of month"
     if (tok.kind() == TokenKind.ORDINAL) {
       OrdinalPosition ordinal = tokens.get(pos++).ordinalVal();
       Token dayTok = expect(TokenKind.DAY_NAME);
@@ -493,7 +475,6 @@ public final class Parser {
       return YearTarget.ordinalWeekday(ordinal, dayTok.dayNameVal(), monthTok.monthNameVal());
     }
 
-    // "the 15th of month"
     if (tok.kind() == TokenKind.ORDINAL_NUMBER) {
       int day = tokens.get(pos++).numberVal();
       expect(TokenKind.OF);
@@ -648,8 +629,6 @@ public final class Parser {
     pos++;
     return tok.timezoneVal();
   }
-
-  // Helper methods
 
   private static final int[] MAX_DAYS = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 

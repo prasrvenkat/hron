@@ -49,69 +49,10 @@ from ._ast import (
     expand_month_target,
 )
 
-# =============================================================================
-# Iteration Safety Limits
-# =============================================================================
-# MAX_ITERATIONS (1000): Maximum iterations for next_from/previous_from loops.
-# Prevents infinite loops when searching for valid occurrences.
-#
-# Expression-specific limits:
-# - Day repeat: 8 days (covers one week + margin)
-# - Week repeat: 54 weeks (covers one year + margin)
-# - Month repeat: 24 * interval months (covers 2 years scaled by interval)
-# - Year repeat: 8 * interval years (covers reasonable future horizon)
-#
-# These limits are generous safety bounds. In practice, valid schedules
-# find occurrences within the first few iterations.
-# =============================================================================
-
-# =============================================================================
-# DST (Daylight Saving Time) Handling
-# =============================================================================
-# When resolving a wall-clock time to an instant:
-#
-# 1. DST Gap (Spring Forward):
-#    - Time doesn't exist (e.g., 2:30 AM during spring forward)
-#    - Solution: Push forward to the next valid time after the gap
-#    - Example: 2:30 AM -> 3:00 AM (or 3:30 AM depending on gap size)
-#
-# 2. DST Fold (Fall Back):
-#    - Time is ambiguous (e.g., 1:30 AM occurs twice)
-#    - Solution: Use first occurrence (fold=0 / pre-transition time)
-#    - This matches user expectation for scheduling
-#
-# All implementations use the same algorithm for cross-language consistency.
-# =============================================================================
-
-# =============================================================================
-# Interval Alignment (Anchor Date)
-# =============================================================================
-# For schedules with interval > 1 (e.g., "every 3 days"), we need to
-# determine which dates are valid based on alignment with an anchor.
-#
-# Formula: (date_offset - anchor_offset) mod interval == 0
-#
-# Where:
-#   - date_offset: days/weeks/months from epoch to candidate date
-#   - anchor_offset: days/weeks/months from epoch to anchor date
-#   - interval: the repeat interval (e.g., 3 for "every 3 days")
-#
-# Default anchor: Epoch (1970-01-01)
-# Custom anchor: Set via "starting YYYY-MM-DD" clause
-#
-# For week repeats, we use epoch Monday (1970-01-05) as the reference
-# point to align week boundaries correctly.
-# =============================================================================
-
-# --- Timezone resolution ---
-
 
 def _resolve_tz(tz_name: str | None) -> ZoneInfo:
     """Resolve timezone, defaulting to UTC for deterministic behavior."""
     return ZoneInfo(tz_name) if tz_name else ZoneInfo("UTC")
-
-
-# --- Helpers ---
 
 
 def _make_aware(d: date, t: time, tz: ZoneInfo) -> datetime:
@@ -122,9 +63,9 @@ def _make_aware(d: date, t: time, tz: ZoneInfo) -> datetime:
 
 def _at_time_on_date(d: date, tod: TimeOfDay, tz: ZoneInfo) -> datetime:
     t = time(tod.hour, tod.minute)
-    # Create with fold=0 (compatible disambiguation — first occurrence in fall-back)
     aware = _make_aware(d, t, tz)
-    # Normalize through UTC round-trip to handle spring-forward gaps
+    # With fold=0, timestamp() reads a time in a DST gap at the pre-gap offset, so the
+    # round-trip shifts it forward by the gap length (02:30 becomes 03:30).
     utc_ts = aware.timestamp()
     return datetime.fromtimestamp(utc_ts, tz=tz)
 
@@ -177,23 +118,10 @@ def _last_weekday_in_month(year: int, month: int, weekday: Weekday) -> date:
 def _nearest_weekday(
     year: int, month: int, target_day: int, direction: NearestDirection | None
 ) -> date | None:
-    """Get the nearest weekday to a given day in a month.
-
-    Args:
-        year: The year
-        month: The month (1-12)
-        target_day: The target day of month (1-31)
-        direction: None for standard cron W behavior (never crosses month boundary),
-                   NearestDirection.NEXT for always prefer following weekday,
-                   NearestDirection.PREVIOUS for always prefer preceding weekday.
-
-    Returns:
-        The nearest weekday date, or None if target_day doesn't exist in the month.
-    """
+    """Return the nearest weekday to target_day, or None if target_day is not in the month."""
     last = _last_day_of_month(year, month)
     last_day = last.day
 
-    # If target day doesn't exist in this month, return None (skip this month)
     if target_day > last_day:
         return None
 
@@ -204,40 +132,31 @@ def _nearest_weekday(
 
     dow = d.isoweekday()  # Monday=1, Sunday=7
 
-    # Already a weekday (Mon-Fri)
     if 1 <= dow <= 5:
         return d
 
-    # Saturday (dow=6)
     if dow == 6:
         if direction is None:
             # Standard: prefer Friday, but if at month start, use Monday
             if target_day == 1:
-                # Can't go to previous month, use Monday (day 3)
                 return d + timedelta(days=2)
             else:
                 return d - timedelta(days=1)  # Friday
         elif direction == NearestDirection.NEXT:
-            # Always Monday (may cross month)
             return d + timedelta(days=2)
         else:  # PREVIOUS
-            # Always Friday (may cross month if day==1)
             return d - timedelta(days=1)
 
-    # Sunday (dow=7)
     if dow == 7:
         if direction is None:
             # Standard: prefer Monday, but if at month end, use Friday
             if target_day >= last_day:
-                # Can't go to next month, use Friday (day - 2)
                 return d - timedelta(days=2)
             else:
                 return d + timedelta(days=1)  # Monday
         elif direction == NearestDirection.NEXT:
-            # Always Monday (may cross month)
             return d + timedelta(days=1)
         else:  # PREVIOUS
-            # Always Friday (go back 2 days, may cross month)
             return d - timedelta(days=2)
 
     return d
@@ -309,7 +228,6 @@ def _next_during_month(d: date, during: tuple[MonthName, ...]) -> date:
     for m in months:
         if m > current_month:
             return date(d.year, m, 1)
-    # Wrap to first month of next year
     return date(d.year + 1, months[0], 1)
 
 
@@ -343,9 +261,6 @@ def _earliest_future_at_times(
     return best
 
 
-# --- Public API ---
-
-
 def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
     tz = _resolve_tz(schedule.timezone)
 
@@ -355,7 +270,8 @@ def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
     has_exceptions = len(schedule.except_) > 0
     has_during = len(schedule.during) > 0
 
-    # Check if expression is NearestWeekday with direction (can cross month boundaries)
+    # NearestWeekday with a direction can land in another month,
+    # so it applies the during filter itself.
     handles_during_internally = (
         isinstance(schedule.expr, MonthRepeat)
         and isinstance(schedule.expr.target, NearestWeekdayTarget)
@@ -371,12 +287,9 @@ def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
 
         c_date = candidate.astimezone(tz).date()
 
-        # Apply until filter
         if until_date is not None and c_date > until_date:
             return None
 
-        # Apply during filter
-        # Skip for expressions that handle during internally (NearestWeekday w/ direction)
         during_mismatch = has_during and not _matches_during(c_date, schedule.during)
         if during_mismatch and not handles_during_internally:
             skip_to = _next_during_month(c_date, schedule.during)
@@ -384,7 +297,6 @@ def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
             current = midnight - timedelta(seconds=1)
             continue
 
-        # Apply except filter
         if has_exceptions and _is_excepted_parsed(c_date, named_exc, iso_exc):
             next_day = c_date + timedelta(days=1)
             midnight = _at_time_on_date(next_day, TimeOfDay(0, 0), tz)
@@ -456,8 +368,7 @@ def matches(schedule: ScheduleData, dt: datetime) -> bool:
         for tod in times:
             if zdt.hour == tod.hour and zdt.minute == tod.minute:
                 return True
-            # DST gap check: if scheduled time falls in a gap, check if it resolves
-            # to the same instant as the candidate
+            # A time in a DST gap fires at its shifted instant, not at its wall-clock time.
             resolved = _at_time_on_date(d, tod, tz)
             if resolved.timestamp() == dt.timestamp():
                 return True
@@ -593,9 +504,6 @@ def _matches_year_target(target: YearTarget, d: date) -> bool:
     return False  # pragma: no cover
 
 
-# --- Per-variant next functions ---
-
-
 def _next_day_repeat(
     interval: int,
     days: DayFilter,
@@ -608,7 +516,6 @@ def _next_day_repeat(
     d = now_in_tz.date()
 
     if interval <= 1:
-        # Original behavior for interval=1
         if _matches_day_filter(d, days):
             candidate = _earliest_future_at_times(d, times, tz, now)
             if candidate:
@@ -626,7 +533,6 @@ def _next_day_repeat(
     # Interval > 1: day intervals only apply to DayFilter::Every
     anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
 
-    # Find the next aligned day >= today
     offset = _days_between(anchor_date, d)
     remainder = offset % interval
     aligned_date = d if remainder == 0 else d + timedelta(days=interval - remainder)
@@ -695,10 +601,8 @@ def _next_week_repeat(
 
     d = now_in_tz.date()
 
-    # Sort target DOWs for earliest-first matching
     sorted_days = sorted(days, key=lambda wd: wd.number)
 
-    # Find Monday of current week and Monday of anchor week
     dow_offset = d.isoweekday() - 1
     current_monday = d - timedelta(days=dow_offset)
 
@@ -714,7 +618,6 @@ def _next_week_repeat(
             continue
 
         if weeks % interval == 0:
-            # Aligned week — try each target DOW
             for wd in sorted_days:
                 day_offset = wd.number - 1
                 target_date = current_monday + timedelta(days=day_offset)
@@ -722,7 +625,6 @@ def _next_week_repeat(
                 if candidate:
                     return candidate
 
-        # Skip to next aligned week
         remainder = weeks % interval
         skip_weeks = interval if remainder == 0 else interval - remainder
         current_monday += timedelta(days=skip_weeks * 7)
@@ -755,7 +657,6 @@ def _next_month_repeat(
     )
 
     for _ in range(max_iter):
-        # Check during filter for NearestWeekday with direction
         if apply_during_filter:
             during_months = {mn.number for mn in during}
             if month not in during_months:
@@ -764,7 +665,6 @@ def _next_month_repeat(
                     month = 1
                     year += 1
                 continue
-        # Check interval alignment
         if interval > 1:
             cur = date(year, month, 1)
             month_offset = _months_between_ym(anchor_date, cur)
@@ -862,7 +762,6 @@ def _next_year_repeat(
     for y in range(max_iter):
         year = start_year + y
 
-        # Check interval alignment
         if interval > 1:
             year_offset = year - anchor_year
             if year_offset < 0 or year_offset % interval != 0:
@@ -897,15 +796,7 @@ def _next_year_repeat(
     return None
 
 
-# --- Iterator functions ---
-
-
 def occurrences(schedule: ScheduleData, from_: datetime) -> Iterator[datetime]:
-    """Returns a lazy iterator of occurrences starting after `from_`.
-
-    The iterator is unbounded for repeating schedules (will iterate forever unless limited),
-    but respects the `until` clause if specified in the schedule.
-    """
     current = from_
     while True:
         nxt = next_from(schedule, current)
@@ -917,25 +808,13 @@ def occurrences(schedule: ScheduleData, from_: datetime) -> Iterator[datetime]:
 
 
 def between(schedule: ScheduleData, from_: datetime, to: datetime) -> Iterator[datetime]:
-    """Returns a bounded iterator of occurrences where `from_ < occurrence <= to`.
-
-    The iterator yields occurrences strictly after `from_` and up to and including `to`.
-    """
     for dt in occurrences(schedule, from_):
         if dt > to:
             return
         yield dt
 
 
-# --- Previous From ---
-
-
 def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
-    """Compute the most recent occurrence strictly before `now`.
-
-    Returns None if no previous occurrence exists (e.g., before a starting anchor
-    or for single dates in the future).
-    """
     tz = _resolve_tz(schedule.timezone)
     anchor = schedule.anchor
 
@@ -952,14 +831,11 @@ def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
 
         c_date = candidate.astimezone(tz).date()
 
-        # Check starting anchor - if before anchor, no previous occurrence
         if anchor:
             anchor_date = date.fromisoformat(anchor)
             if c_date < anchor_date:
                 return None
 
-        # Apply until filter for previousFrom:
-        # If candidate is after until, search earlier
         if schedule.until:
             until_date = _resolve_until(schedule.until, now)
             if c_date > until_date:
@@ -967,13 +843,11 @@ def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
                 current = end_of_day + timedelta(seconds=1)
                 continue
 
-        # Apply during filter
         if has_during and not _matches_during(c_date, schedule.during):
             skip_to = _prev_during_month(c_date, schedule.during)
             current = _at_time_on_date(skip_to, TimeOfDay(23, 59), tz) + timedelta(seconds=1)
             continue
 
-        # Apply except filter
         if has_exceptions and _is_excepted_parsed(c_date, named_exc, iso_exc):
             prev_day = c_date - timedelta(days=1)
             current = _at_time_on_date(prev_day, TimeOfDay(23, 59), tz) + timedelta(seconds=1)
@@ -1021,7 +895,6 @@ def _prev_during_month(d: date, during: tuple[MonthName, ...]) -> date:
         month = 12
         year -= 1
 
-    # Search backwards through months to find one in the during list
     for _ in range(13):
         if month in during_months:
             return _last_day_of_month(year, month)
@@ -1053,7 +926,6 @@ def _latest_at_times(
     times: tuple[TimeOfDay, ...],
     tz: ZoneInfo,
 ) -> datetime | None:
-    """Find the latest time on date d."""
     if not times:
         return None
     sorted_times = sorted(times, key=lambda t: (t.hour, t.minute))
@@ -1073,13 +945,11 @@ def _prev_day_repeat(
     d = now_in_tz.date()
 
     if interval <= 1:
-        # Check today for times that have passed
         if _matches_day_filter(d, days):
             candidate = _latest_past_at_times(d, times, tz, now)
             if candidate is not None:
                 return candidate
 
-        # Go back day by day
         for _ in range(8):
             d -= timedelta(days=1)
             if _matches_day_filter(d, days):
@@ -1089,7 +959,6 @@ def _prev_day_repeat(
 
         return None
 
-    # Interval > 1
     anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
     offset = _days_between(anchor_date, d)
     remainder = offset % interval
@@ -1160,10 +1029,8 @@ def _prev_week_repeat(
     d = now_in_tz.date()
     anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_MONDAY
 
-    # Sort target DOWs in reverse order for latest-first matching
     sorted_days = sorted(days, key=lambda wd: wd.number, reverse=True)
 
-    # Find Monday of current week and Monday of anchor week
     dow_offset = d.isoweekday() - 1
     current_monday = d - timedelta(days=dow_offset)
 
@@ -1177,7 +1044,6 @@ def _prev_week_repeat(
             return None
 
         if weeks % interval == 0:
-            # Aligned week — try each target DOW in reverse order
             for wd in sorted_days:
                 day_offset = wd.number - 1
                 target_date = current_monday + timedelta(days=day_offset)
@@ -1192,7 +1058,6 @@ def _prev_week_repeat(
                     if candidate is not None:
                         return candidate
 
-        # Go back to previous aligned week
         remainder = weeks % interval
         skip_weeks = interval if remainder == 0 else remainder
         current_monday -= timedelta(days=skip_weeks * 7)
@@ -1217,7 +1082,6 @@ def _prev_month_repeat(
     max_iter = 24 * interval if interval > 1 else 24
 
     for _ in range(max_iter):
-        # Check interval alignment
         if interval > 1:
             cur = date(year, month, 1)
             month_offset = _months_between_ym(anchor_date, cur)
@@ -1254,7 +1118,6 @@ def _prev_month_repeat(
                 if ordinal_date is not None:
                     date_candidates.append(ordinal_date)
 
-        # Sort in reverse order for latest first
         for dc in sorted(date_candidates, reverse=True):
             if dc > start_date:
                 continue
@@ -1293,7 +1156,6 @@ def _prev_single_date(
                 return _latest_past_at_times(target_date, times, tz, now)
             return _latest_at_times(target_date, times, tz)
         case NamedDate(month=m, day=day_num):
-            # Find most recent occurrence
             try:
                 this_year = date(now_date.year, m.number, day_num)
             except ValueError:
@@ -1338,7 +1200,6 @@ def _prev_year_repeat(
     for y in range(max_iter):
         year = start_year - y
 
-        # Check interval alignment
         if interval > 1:
             year_offset = year - anchor_year
             if year_offset < 0 or year_offset % interval != 0:

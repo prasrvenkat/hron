@@ -201,8 +201,6 @@ func (t TimeOfDay) TotalMinutes() int {
 	return t.Hour*60 + t.Minute
 }
 
-// --- Day filter ---
-
 // DayFilterKind represents the type of day filter.
 type DayFilterKind int
 
@@ -238,8 +236,6 @@ func NewDayFilterWeekend() DayFilter {
 func NewDayFilterDays(days []Weekday) DayFilter {
 	return DayFilter{Kind: DayFilterKindDays, Days: days}
 }
-
-// --- Day of month spec ---
 
 // DayOfMonthSpecKind represents the type of day-of-month specification.
 type DayOfMonthSpecKind int
@@ -278,8 +274,6 @@ func (d DayOfMonthSpec) Expand() []int {
 	}
 	return days
 }
-
-// --- Month target ---
 
 // MonthTargetKind represents the type of month target.
 type MonthTargetKind int
@@ -351,8 +345,6 @@ func (m MonthTarget) ExpandDays() []int {
 	return days
 }
 
-// --- Year target ---
-
 // YearTargetKind represents the type of year target.
 type YearTargetKind int
 
@@ -392,8 +384,6 @@ func NewYearLastWeekdayTarget(month MonthName) YearTarget {
 	return YearTarget{Kind: YearTargetKindLastWeekday, Month: month}
 }
 
-// --- Date spec ---
-
 // DateSpecKind represents the type of date specification.
 type DateSpecKind int
 
@@ -419,8 +409,6 @@ func NewNamedDate(month MonthName, day int) DateSpec {
 func NewISODate(date string) DateSpec {
 	return DateSpec{Kind: DateSpecKindISO, Date: date}
 }
-
-// --- Exception spec ---
 
 // ExceptionSpecKind represents the type of exception specification.
 type ExceptionSpecKind int
@@ -448,8 +436,6 @@ func NewISOException(date string) ExceptionSpec {
 	return ExceptionSpec{Kind: ExceptionSpecKindISO, Date: date}
 }
 
-// --- Until spec ---
-
 // UntilSpecKind represents the type of until specification.
 type UntilSpecKind int
 
@@ -476,8 +462,6 @@ func NewNamedUntil(month MonthName, day int) UntilSpec {
 	return UntilSpec{Kind: UntilSpecKindNamed, Month: month, Day: day}
 }
 
-// --- Schedule expressions ---
-
 // ScheduleExprKind represents the type of schedule expression.
 type ScheduleExprKind int
 
@@ -490,7 +474,7 @@ const (
 	ScheduleExprKindYear
 )
 
-// ScheduleExpr represents a schedule expression (one of the 6 variants).
+// ScheduleExpr represents a schedule expression. Kind selects which fields apply.
 type ScheduleExpr struct {
 	Kind ScheduleExprKind
 
@@ -580,8 +564,6 @@ func NewYearRepeat(interval int, target YearTarget, times []TimeOfDay) ScheduleE
 		Times:      times,
 	}
 }
-
-// --- Schedule data ---
 
 // ScheduleData represents the complete parsed schedule with all clauses.
 type ScheduleData struct {

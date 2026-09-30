@@ -1,5 +1,3 @@
-// hron-js — Public API
-
 import type { Temporal } from "@js-temporal/polyfill";
 import type { ScheduleData, ScheduleExpr } from "./ast.js";
 import { fromCron, toCron } from "./cron.js";
@@ -21,12 +19,12 @@ export class Schedule {
     this.data = data;
   }
 
-  /** Parse an hron expression string. */
+  /** Parse an hron expression string. Throws `HronError` if it is invalid. */
   static parse(input: string): Schedule {
     return new Schedule(parse(input));
   }
 
-  /** Convert a 5-field cron expression to a Schedule. */
+  /** Convert a 5-field cron expression to a Schedule. Throws `HronError` if it is invalid. */
   static fromCron(cronExpr: string): Schedule {
     return new Schedule(fromCron(cronExpr));
   }
@@ -41,17 +39,17 @@ export class Schedule {
     }
   }
 
-  /** Compute the next occurrence after `now`. */
+  /** Compute the next occurrence strictly after `now`, or null if there is none. */
   nextFrom(now: Temporal.ZonedDateTime): Temporal.ZonedDateTime | null {
     return nextFrom(this.data, now);
   }
 
-  /** Compute the next `n` occurrences after `now`. */
+  /** Compute up to `n` occurrences strictly after `now`; fewer if the schedule ends first. */
   nextNFrom(now: Temporal.ZonedDateTime, n: number): Temporal.ZonedDateTime[] {
     return nextNFrom(this.data, now, n);
   }
 
-  /** Compute the most recent occurrence strictly before `now`. */
+  /** Compute the most recent occurrence strictly before `now`, or null if there is none. */
   previousFrom(now: Temporal.ZonedDateTime): Temporal.ZonedDateTime | null {
     return previousFrom(this.data, now);
   }
@@ -62,9 +60,8 @@ export class Schedule {
   }
 
   /**
-   * Returns a lazy iterator of occurrences starting after `from`.
-   * The iterator is unbounded for repeating schedules (will iterate forever unless limited),
-   * but respects the `until` clause if specified in the schedule.
+   * Lazily yields occurrences strictly after `from`. Unbounded for repeating
+   * schedules unless an `until` clause ends them.
    */
   *occurrences(
     from: Temporal.ZonedDateTime,
@@ -72,10 +69,7 @@ export class Schedule {
     yield* occurrences(this.data, from);
   }
 
-  /**
-   * Returns a bounded iterator of occurrences where `from < occurrence <= to`.
-   * The iterator yields occurrences strictly after `from` and up to and including `to`.
-   */
+  /** Yields occurrences where `from < occurrence <= to`. */
   *between(
     from: Temporal.ZonedDateTime,
     to: Temporal.ZonedDateTime,
@@ -83,7 +77,7 @@ export class Schedule {
     yield* between(this.data, from, to);
   }
 
-  /** Convert this schedule to a 5-field cron expression. */
+  /** Convert this schedule to a 5-field cron expression. Throws `HronError` if it has no cron equivalent. */
   toCron(): string {
     return toCron(this.data);
   }
@@ -122,5 +116,4 @@ export type {
   YearTarget,
 } from "./ast.js";
 export type { HronErrorKind, Span } from "./error.js";
-// Re-exports
 export { HronError } from "./error.js";

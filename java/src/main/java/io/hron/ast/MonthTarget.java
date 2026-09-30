@@ -23,11 +23,8 @@ public record MonthTarget(
     OrdinalPosition ordinal,
     Weekday weekday) {
 
-  /** The type of month target. */
   public enum Kind {
-    /** Specific days of the month. */
     DAYS,
-    /** The last day of the month. */
     LAST_DAY,
     /** The last weekday (Mon-Fri) of the month. */
     LAST_WEEKDAY,
@@ -40,30 +37,14 @@ public record MonthTarget(
     ORDINAL_WEEKDAY
   }
 
-  /**
-   * Creates a month target for specific days.
-   *
-   * @param specs the day specifications
-   * @return a new days target
-   */
   public static MonthTarget days(List<DayOfMonthSpec> specs) {
     return new MonthTarget(Kind.DAYS, List.copyOf(specs), 0, null, null, null);
   }
 
-  /**
-   * Creates a month target for the last day of the month.
-   *
-   * @return a new last-day target
-   */
   public static MonthTarget lastDay() {
     return new MonthTarget(Kind.LAST_DAY, List.of(), 0, null, null, null);
   }
 
-  /**
-   * Creates a month target for the last weekday of the month.
-   *
-   * @return a new last-weekday target
-   */
   public static MonthTarget lastWeekday() {
     return new MonthTarget(Kind.LAST_WEEKDAY, List.of(), 0, null, null, null);
   }
@@ -90,21 +71,14 @@ public record MonthTarget(
     return new MonthTarget(Kind.NEAREST_WEEKDAY, List.of(), day, direction, null, null);
   }
 
-  /**
-   * Creates a month target for an ordinal weekday (e.g., first monday, last friday).
-   *
-   * @param ordinal the ordinal position
-   * @param weekday the weekday
-   * @return a new ordinal weekday target
-   */
   public static MonthTarget ordinalWeekday(OrdinalPosition ordinal, Weekday weekday) {
     return new MonthTarget(Kind.ORDINAL_WEEKDAY, List.of(), 0, null, ordinal, weekday);
   }
 
   /**
-   * Returns all days specified by this target (for DAYS kind only).
+   * Returns all days specified by this target.
    *
-   * @return a list of all days
+   * @return the days for the DAYS kind, or an empty list for any other kind
    */
   public List<Integer> expandDays() {
     if (kind != Kind.DAYS) {

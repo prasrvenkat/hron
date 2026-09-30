@@ -5,29 +5,17 @@ import java.util.Optional;
 
 /** Represents a month of the year. */
 public enum MonthName {
-  /** January. */
   JANUARY(1, "jan"),
-  /** February. */
   FEBRUARY(2, "feb"),
-  /** March. */
   MARCH(3, "mar"),
-  /** April. */
   APRIL(4, "apr"),
-  /** May. */
   MAY(5, "may"),
-  /** June. */
   JUNE(6, "jun"),
-  /** July. */
   JULY(7, "jul"),
-  /** August. */
   AUGUST(8, "aug"),
-  /** September. */
   SEPTEMBER(9, "sep"),
-  /** October. */
   OCTOBER(10, "oct"),
-  /** November. */
   NOVEMBER(11, "nov"),
-  /** December. */
   DECEMBER(12, "dec");
 
   private final int monthNumber;
@@ -88,21 +76,10 @@ public enum MonthName {
     return Optional.ofNullable(PARSE_MAP.get(s.toLowerCase()));
   }
 
-  /**
-   * Returns a MonthName from a java.time.Month.
-   *
-   * @param month the Month
-   * @return the corresponding MonthName
-   */
   public static MonthName fromMonth(java.time.Month month) {
     return values()[month.getValue() - 1];
   }
 
-  /**
-   * Converts this MonthName to a java.time.Month.
-   *
-   * @return the corresponding Month
-   */
   public java.time.Month toMonth() {
     return java.time.Month.of(monthNumber);
   }

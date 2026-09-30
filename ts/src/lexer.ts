@@ -132,7 +132,6 @@ class Lexer {
     }
     const digits = this.input.slice(numStart, this.pos);
 
-    // Check for ISO date: YYYY-MM-DD
     if (
       digits.length === 4 &&
       this.pos < this.input.length &&
@@ -156,7 +155,6 @@ class Lexer {
       }
     }
 
-    // Check for time: HH:MM
     if (
       (digits.length === 1 || digits.length === 2) &&
       this.pos < this.input.length &&
@@ -194,7 +192,6 @@ class Lexer {
       );
     }
 
-    // Check for ordinal suffix: st, nd, rd, th
     if (this.pos + 1 < this.input.length) {
       const suffix = this.input.slice(this.pos, this.pos + 2).toLowerCase();
       if (

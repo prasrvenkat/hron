@@ -45,7 +45,6 @@ code,
 
 [hidden] { display: none !important; }
 
-/* ── Logo ── */
 .hron-logo {
   display: inline-flex;
   align-items: center;
@@ -71,7 +70,6 @@ code,
   color: var(--accent);
 }
 
-/* ── Header ── */
 .site-header {
   position: sticky;
   top: 0;
@@ -156,7 +154,6 @@ code,
   :root:not([data-theme="light"]) .icon-moon { display: block; }
 }
 
-/* ── Buttons ── */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -185,7 +182,6 @@ code,
 }
 .btn-ghost:hover { background: var(--surface); }
 
-/* ── Footer ── */
 .site-footer {
   margin-top: auto;
   border-top: 1px solid var(--line);
@@ -221,7 +217,6 @@ code,
   gap: 0.6rem;
 }
 
-/* ── Utility ── */
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 0.72rem;

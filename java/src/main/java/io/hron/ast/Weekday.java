@@ -5,19 +5,12 @@ import java.util.Optional;
 
 /** Represents a day of the week. */
 public enum Weekday {
-  /** Monday. */
   MONDAY(1, "monday"),
-  /** Tuesday. */
   TUESDAY(2, "tuesday"),
-  /** Wednesday. */
   WEDNESDAY(3, "wednesday"),
-  /** Thursday. */
   THURSDAY(4, "thursday"),
-  /** Friday. */
   FRIDAY(5, "friday"),
-  /** Saturday. */
   SATURDAY(6, "saturday"),
-  /** Sunday. */
   SUNDAY(7, "sunday");
 
   private final int isoNumber;
@@ -92,21 +85,10 @@ public enum Weekday {
     return Optional.of(values()[n - 1]);
   }
 
-  /**
-   * Returns a Weekday from a java.time.DayOfWeek.
-   *
-   * @param dow the DayOfWeek
-   * @return the corresponding Weekday
-   */
   public static Weekday fromDayOfWeek(java.time.DayOfWeek dow) {
     return values()[dow.getValue() - 1];
   }
 
-  /**
-   * Converts this Weekday to a java.time.DayOfWeek.
-   *
-   * @return the corresponding DayOfWeek
-   */
   public java.time.DayOfWeek toDayOfWeek() {
     return java.time.DayOfWeek.of(isoNumber);
   }

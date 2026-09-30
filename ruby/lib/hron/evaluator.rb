@@ -7,64 +7,9 @@ require_relative "ast"
 require_relative "error"
 
 module Hron
-  # =============================================================================
-  # Iteration Safety Limits
-  # =============================================================================
-  # MAX_ITERATIONS (1000): Maximum iterations for next_from/previous_from loops.
-  # Prevents infinite loops when searching for valid occurrences.
-  #
-  # Expression-specific limits:
-  # - Day repeat: 8 days (covers one week + margin)
-  # - Week repeat: 54 weeks (covers one year + margin)
-  # - Month repeat: 24 * interval months (covers 2 years scaled by interval)
-  # - Year repeat: 8 * interval years (covers reasonable future horizon)
-  #
-  # These limits are generous safety bounds. In practice, valid schedules
-  # find occurrences within the first few iterations.
-  # =============================================================================
-
-  # =============================================================================
-  # DST (Daylight Saving Time) Handling
-  # =============================================================================
-  # When resolving a wall-clock time to an instant:
-  #
-  # 1. DST Gap (Spring Forward):
-  #    - Time doesn't exist (e.g., 2:30 AM during spring forward)
-  #    - Solution: Push forward to the next valid time after the gap
-  #    - Example: 2:30 AM -> 3:00 AM (or 3:30 AM depending on gap size)
-  #
-  # 2. DST Fold (Fall Back):
-  #    - Time is ambiguous (e.g., 1:30 AM occurs twice)
-  #    - Solution: Use first occurrence (fold=0 / pre-transition time)
-  #    - This matches user expectation for scheduling
-  #
-  # All implementations use the same algorithm for cross-language consistency.
-  # =============================================================================
-
-  # =============================================================================
-  # Interval Alignment (Anchor Date)
-  # =============================================================================
-  # For schedules with interval > 1 (e.g., "every 3 days"), we need to
-  # determine which dates are valid based on alignment with an anchor.
-  #
-  # Formula: (date_offset - anchor_offset) mod interval == 0
-  #
-  # Where:
-  #   - date_offset: days/weeks/months from epoch to candidate date
-  #   - anchor_offset: days/weeks/months from epoch to anchor date
-  #   - interval: the repeat interval (e.g., 3 for "every 3 days")
-  #
-  # Default anchor: Epoch (1970-01-01)
-  # Custom anchor: Set via "starting YYYY-MM-DD" clause
-  #
-  # For week repeats, we use epoch Monday (1970-01-05) as the reference
-  # point to align week boundaries correctly.
-  # =============================================================================
-
   EPOCH_DATE = Date.new(1970, 1, 1)
   EPOCH_MONDAY = Date.new(1970, 1, 5)
 
-  # Timezone resolution
   module TzResolver
     def self.resolve(tz_name)
       if tz_name && !tz_name.empty?
@@ -76,55 +21,42 @@ module Hron
     end
   end
 
-  # Evaluator helpers
   module EvalHelpers
     def self.at_time_on_date(d, tod, tz)
       # Create local time representation (using UTC to avoid system TZ interference)
       local_time = Time.utc(d.year, d.month, d.day, tod.hour, tod.minute, 0)
 
-      # Get periods for this local time
       periods = tz.periods_for_local(local_time)
 
       case periods.length
       when 0
-        # Time doesn't exist (spring forward gap)
-        # Push the time forward past the gap (like "compatible" disambiguation)
-        # For example: 02:30 during DST spring forward -> 03:30
-
-        # Find the transition on this date
+        # A time in a DST gap shifts forward by the gap length (02:30 becomes 03:30),
+        # but only when the transition falls on this UTC date.
         day_start = Time.utc(d.year, d.month, d.day, 0, 0, 0)
         day_end = Time.utc(d.year, d.month, d.day, 23, 59, 59)
         transitions = tz.transitions_up_to(day_end, day_start)
 
         if transitions.any?
-          # Find the spring-forward transition (where offset increases / DST starts)
           transition = transitions.find { |t| t.offset.dst? }
           if transition
-            # The transition time is when the gap starts
-            # We need to push the requested time forward by the gap size
             prev_offset = transition.previous_offset.utc_total_offset
             new_offset = transition.offset.utc_total_offset
             gap_seconds = new_offset - prev_offset # Positive for spring forward
 
-            # Push the local time forward by the gap amount
-            # E.g., 02:30 + 1 hour = 03:30 local
             pushed_local = local_time + gap_seconds
 
-            # Convert the pushed local time to UTC using the new offset
-            # E.g., 03:30 local EDT (-4h) -> 07:30 UTC
             return pushed_local - new_offset
           end
         end
 
-        # Fallback: try to construct the time and let TZInfo handle it
-        # This shouldn't normally be reached
+        # Reached when the transition falls on the previous UTC date (e.g. Australia/Sydney):
+        # TZInfo raises and the day is skipped.
         begin
           tz.local_to_utc(local_time)
         rescue TZInfo::AmbiguousTime, TZInfo::PeriodNotFound
           nil
         end
       when 1
-        # Unambiguous time - straightforward conversion
         period = periods[0]
         utc_offset = period.offset.utc_total_offset
         local_time - utc_offset
@@ -163,43 +95,33 @@ module Hron
       d
     end
 
-    # Get the nearest weekday to a given day in a month.
-    # - direction=nil: standard cron W behavior (never crosses month boundary)
-    # - direction=NearestDirection::NEXT: always prefer following weekday (can cross to next month)
-    # - direction=NearestDirection::PREVIOUS: always prefer preceding weekday (can cross to prev month)
-    # Returns nil if the target_day doesn't exist in the month (e.g., day 31 in February).
+    # Returns nil if target_day does not exist in the month. A nil direction never
+    # leaves the month (cron W); a direction may cross it.
     def self.nearest_weekday(year, month, target_day, direction)
       last = last_day_of_month(year, month)
       last_day_num = last.day
 
-      # If target day doesn't exist in this month, return nil (skip this month)
       return nil if target_day > last_day_num
 
       date = Date.new(year, month, target_day)
       dow = date.cwday # Monday=1 ... Sunday=7
 
-      # Already a weekday (Mon-Fri = 1-5)
       return date if dow.between?(1, 5)
 
       case direction
       when nil
         # Standard cron W behavior: never cross month boundary
         if dow == 6 && target_day == 1
-          # Saturday at 1st: can't go to previous month, use Monday (day 3)
           date + 2
         elsif dow == 6
-          # Saturday: Friday
           date - 1
         elsif target_day >= last_day_num
-          # Sunday at end of month: can't go to next month, use Friday
           date - 2
         else
-          # Sunday: Monday
           date + 1
         end
 
       when NearestDirection::NEXT
-        # Always prefer following weekday (can cross month)
         if dow == 6 # Saturday -> Monday
           date + 2
         else # Sunday -> Monday
@@ -207,7 +129,6 @@ module Hron
         end
 
       when NearestDirection::PREVIOUS
-        # Always prefer preceding weekday (can cross month if day==1)
         if dow == 6 # Saturday -> Friday
           date - 1
         else # Sunday -> Friday (go back 2 days)
@@ -271,7 +192,6 @@ module Hron
         return Date.new(d.year, m, 1) if m > d.month
       end
 
-      # Wrap to first month of next year
       Date.new(d.year + 1, months[0], 1)
     end
 
@@ -320,14 +240,12 @@ module Hron
         return last_day_of_month(d.year, m) if m < d.month
       end
 
-      # Wrap to last month of previous year
       return last_day_of_month(d.year - 1, months[0]) unless months.empty?
 
       nil
     end
   end
 
-  # Main evaluator class
   class Evaluator
     def self.next_from(schedule, now)
       tz = TzResolver.resolve(schedule.timezone)
@@ -335,7 +253,7 @@ module Hron
       has_exceptions = !schedule.except.empty?
       has_during = !schedule.during.empty?
 
-      # Check if expression is NearestWeekday with direction (can cross month boundaries)
+      # NearestWeekday with a direction can land in another month, so it applies the during filter itself.
       handles_during_internally = schedule.expr.is_a?(MonthRepeat) &&
         schedule.expr.target.is_a?(NearestWeekdayTarget) &&
         !schedule.expr.target.direction.nil?
@@ -347,11 +265,8 @@ module Hron
 
         c_date = candidate.to_date
 
-        # Apply until filter
         return nil if until_date && c_date > until_date
 
-        # Apply during filter
-        # Skip this check for expressions that handle during internally (NearestWeekday with direction)
         if has_during && !handles_during_internally && !EvalHelpers.matches_during(c_date, schedule.during)
           skip_to = EvalHelpers.next_during_month(c_date, schedule.during)
           midnight = EvalHelpers.at_time_on_date(skip_to, TimeOfDay.new(0, 0), tz)
@@ -359,7 +274,6 @@ module Hron
           next
         end
 
-        # Apply except filter
         if has_exceptions && EvalHelpers.is_excepted(c_date, schedule.except)
           next_day = c_date + 1
           midnight = EvalHelpers.at_time_on_date(next_day, TimeOfDay.new(0, 0), tz)
@@ -392,7 +306,6 @@ module Hron
       has_exceptions = !schedule.except.empty?
       has_during = !schedule.during.empty?
 
-      # Handle until clause - if now is after until, search from end of until date
       search_from = now
       if schedule.until
         until_date = EvalHelpers.resolve_until(schedule.until, now)
@@ -409,10 +322,8 @@ module Hron
 
         c_date = candidate.to_date
 
-        # Check if before anchor
         return nil if anchor_date && c_date < anchor_date
 
-        # Check until date - should not return occurrences after until
         if schedule.until
           until_date = EvalHelpers.resolve_until(schedule.until, now)
           if c_date > until_date
@@ -421,13 +332,11 @@ module Hron
           end
         end
 
-        # Apply except filter
         if has_exceptions && EvalHelpers.is_excepted(c_date, schedule.except)
           search_from = candidate
           next
         end
 
-        # Apply during filter
         if has_during && !EvalHelpers.matches_during(c_date, schedule.during)
           prev_month = EvalHelpers.prev_during_month(c_date, schedule.during)
           return nil unless prev_month
@@ -500,7 +409,6 @@ module Hron
           next
         end
 
-        # Build list of times in window
         window_times = []
         m = from_minutes
         while m <= to_minutes
@@ -508,7 +416,6 @@ module Hron
           m += step_minutes
         end
 
-        # Search backwards through window
         window_times.reverse_each do |slot|
           h = slot / 60
           min = slot % 60
@@ -527,7 +434,6 @@ module Hron
       now_local = tz.utc_to_local(now.utc)
       d = now_local.to_date
 
-      # Sort target DOWs in descending order for backwards search
       sorted_days = days.sort_by { |wd| -Weekday.number(wd) }
 
       dow_offset = d.cwday - 1
@@ -675,8 +581,8 @@ module Hron
       nil
     end
 
-    # Returns a lazy Enumerator of occurrences starting after `from`.
-    # The iterator respects the `until` clause if specified.
+    # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for
+    # repeating schedules unless an until clause ends them.
     def self.occurrences(schedule, from)
       Enumerator.new do |yielder|
         current = from
@@ -703,7 +609,6 @@ module Hron
 
     def self.matches(schedule, dt)
       tz = TzResolver.resolve(schedule.timezone)
-      # Convert to local time in the target timezone
       dt_local = tz.utc_to_local(dt.utc)
       d = dt_local.to_date
 
@@ -806,7 +711,7 @@ module Hron
         if dt.hour == tod.hour && dt.min == tod.minute
           true
         else
-          # DST gap check
+          # A time in a DST gap fires at its shifted instant, not at its wall-clock time.
           resolved = EvalHelpers.at_time_on_date(d, tod, tz)
           resolved && resolved.to_i == dt.to_i
         end
@@ -873,7 +778,6 @@ module Hron
       end
     end
 
-    # Per-variant next functions
     def self.next_day_repeat(interval, days, times, tz, anchor, now)
       now_local = tz.utc_to_local(now.utc)
       d = now_local.to_date
@@ -895,7 +799,6 @@ module Hron
         return nil
       end
 
-      # Interval > 1
       anchor_date = anchor ? Date.parse(anchor) : EPOCH_DATE
       offset = EvalHelpers.days_between(anchor_date, d)
       remainder = offset % interval
@@ -916,7 +819,6 @@ module Hron
       from_minutes = (from_time.hour * 60) + from_time.minute
       to_minutes = (to_time.hour * 60) + to_time.minute
 
-      # Convert now to local time in the target timezone
       now_local = tz.utc_to_local(now.utc)
       d = now_local.to_date
 
@@ -944,7 +846,6 @@ module Hron
           candidate = EvalHelpers.at_time_on_date(d, TimeOfDay.new(h, m), tz)
           return candidate if candidate && candidate > now
 
-          # Slot didn't exist (DST gap) or wasn't in the future, try next slot
           next_slot += step_minutes
         end
 
@@ -1009,7 +910,6 @@ module Hron
         !target.direction.nil?
 
       max_iter.times do
-        # Check during filter for NearestWeekday with direction
         if apply_during_filter && !during.any? { |mn| MonthName.number(mn) == month }
           month += 1
           if month > 12

@@ -5,15 +5,9 @@ namespace Hron.Ast;
 /// </summary>
 public sealed record DateSpec(DateSpecKind Kind, MonthName? Month, int Day, string? Date)
 {
-    /// <summary>
-    /// Creates a named date specification.
-    /// </summary>
     public static DateSpec Named(MonthName month, int day)
         => new(DateSpecKind.Named, month, day, null);
 
-    /// <summary>
-    /// Creates an ISO date specification.
-    /// </summary>
     public static DateSpec Iso(string date)
         => new(DateSpecKind.Iso, null, 0, date);
 }

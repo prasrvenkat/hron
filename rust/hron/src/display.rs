@@ -4,10 +4,9 @@ use crate::ast::*;
 
 impl fmt::Display for Schedule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Write the expression
         write!(f, "{}", self.expr)?;
 
-        // Write trailing clauses in order: except, until, starting, during, timezone
+        // Trailing clauses in the grammar's fixed order, so the output parses back.
         if !self.except.is_empty() {
             write!(f, " except ")?;
             for (i, exc) in self.except.iter().enumerate() {

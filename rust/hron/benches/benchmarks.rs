@@ -10,10 +10,6 @@ fn fixed_now() -> jiff::Zoned {
         .unwrap()
 }
 
-// ---------------------------------------------------------------------------
-// Parse benchmarks
-// ---------------------------------------------------------------------------
-
 fn bench_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("parse");
 
@@ -33,47 +29,37 @@ fn bench_parse(c: &mut Criterion) {
     group.finish();
 }
 
-// ---------------------------------------------------------------------------
-// Eval benchmarks (next_from)
-// ---------------------------------------------------------------------------
-
 fn bench_eval(c: &mut Criterion) {
     let mut group = c.benchmark_group("eval");
     let now = fixed_now();
 
-    // DayRepeat
     let day_repeat = Schedule::parse("every weekday at 09:00 in UTC").unwrap();
     group.bench_function("day_repeat", |b| {
         b.iter(|| day_repeat.next_from(black_box(&now)).unwrap());
     });
 
-    // WeekRepeat
     let week_repeat =
         Schedule::parse("every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC").unwrap();
     group.bench_function("week_repeat", |b| {
         b.iter(|| week_repeat.next_from(black_box(&now)).unwrap());
     });
 
-    // MonthRepeat
     let month_repeat = Schedule::parse("every month on the 1st at 09:00 in UTC").unwrap();
     group.bench_function("month_repeat", |b| {
         b.iter(|| month_repeat.next_from(black_box(&now)).unwrap());
     });
 
-    // OrdinalWeekday (MonthRepeat)
     let ordinal_weekday =
         Schedule::parse("every month on the first monday at 10:00 in UTC").unwrap();
     group.bench_function("ordinal_weekday", |b| {
         b.iter(|| ordinal_weekday.next_from(black_box(&now)).unwrap());
     });
 
-    // YearRepeat
     let year_repeat = Schedule::parse("every year on dec 25 at 00:00 in UTC").unwrap();
     group.bench_function("year_repeat", |b| {
         b.iter(|| year_repeat.next_from(black_box(&now)).unwrap());
     });
 
-    // IntervalRepeat
     let interval_repeat = Schedule::parse("every 30 min from 09:00 to 17:00 in UTC").unwrap();
     group.bench_function("interval_repeat", |b| {
         b.iter(|| interval_repeat.next_from(black_box(&now)).unwrap());
@@ -81,10 +67,6 @@ fn bench_eval(c: &mut Criterion) {
 
     group.finish();
 }
-
-// ---------------------------------------------------------------------------
-// Display benchmark (parse + to_string roundtrip)
-// ---------------------------------------------------------------------------
 
 fn bench_display(c: &mut Criterion) {
     let mut group = c.benchmark_group("display");
@@ -101,20 +83,14 @@ fn bench_display(c: &mut Criterion) {
     group.finish();
 }
 
-// ---------------------------------------------------------------------------
-// Cron benchmarks
-// ---------------------------------------------------------------------------
-
 fn bench_cron(c: &mut Criterion) {
     let mut group = c.benchmark_group("cron");
 
-    // to_cron
     let schedule = Schedule::parse("every weekday at 09:00").unwrap();
     group.bench_function("to_cron", |b| {
         b.iter(|| black_box(&schedule).to_cron().unwrap());
     });
 
-    // from_cron
     group.bench_function("from_cron", |b| {
         b.iter(|| Schedule::from_cron(black_box("0 9 * * 1-5")).unwrap());
     });

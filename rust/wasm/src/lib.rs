@@ -15,7 +15,7 @@ impl Schedule {
         Ok(Schedule { inner })
     }
 
-    /// Compute the next occurrence after `now`.
+    /// Compute the next occurrence strictly after `now`.
     #[wasm_bindgen(js_name = "nextFrom")]
     pub fn next_from(&self, now: &str) -> Result<Option<String>, JsError> {
         let now: jiff::Zoned = now
@@ -28,7 +28,7 @@ impl Schedule {
         Ok(result.map(|z| z.to_string()))
     }
 
-    /// Compute the next `n` occurrences after `now`.
+    /// Compute the next `n` occurrences strictly after `now`.
     #[wasm_bindgen(js_name = "nextNFrom")]
     pub fn next_n_from(&self, now: &str, n: u32) -> Result<JsValue, JsError> {
         let now: jiff::Zoned = now
@@ -96,7 +96,7 @@ impl Schedule {
         self.inner.timezone().map(|s| s.to_string())
     }
 
-    /// Returns occurrences starting after `from`, limited to `limit` results.
+    /// Returns occurrences strictly after `from`, limited to `limit` results.
     /// Returns an array of datetime strings.
     pub fn occurrences(&self, from: &str, limit: u32) -> Result<JsValue, JsError> {
         let from: jiff::Zoned = from

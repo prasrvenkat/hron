@@ -98,7 +98,6 @@ public sealed class Lexer
     {
         var start = _pos;
 
-        // Read digits
         var numStart = _pos;
         while (_pos < _input.Length && IsDigit(_input[_pos]))
         {
@@ -106,7 +105,6 @@ public sealed class Lexer
         }
         var digits = _input[numStart.._pos];
 
-        // Check for ISO date: YYYY-MM-DD
         if (digits.Length == 4 && _pos < _input.Length && _input[_pos] == '-')
         {
             var remaining = _input[start..];
@@ -123,7 +121,6 @@ public sealed class Lexer
             }
         }
 
-        // Check for time: HH:MM or H:MM
         if ((digits.Length == 1 || digits.Length == 2)
             && _pos < _input.Length
             && _input[_pos] == ':')
@@ -149,7 +146,6 @@ public sealed class Lexer
 
         var num = int.Parse(digits);
 
-        // Check for ordinal suffix: st, nd, rd, th
         if (_pos + 1 < _input.Length)
         {
             var suffix = _input[_pos..(_pos + 2)].ToLowerInvariant();
@@ -178,7 +174,6 @@ public sealed class Lexer
             throw HronException.Lex($"unknown keyword '{word}'", span, _input);
         }
 
-        // Create a new token with the actual span
         var result = template.Kind switch
         {
             TokenKind.DayName => Token.DayName(template.DayNameVal!.Value, span),
@@ -205,7 +200,6 @@ public sealed class Lexer
 
     private static readonly Dictionary<string, Token> KeywordMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        // Keywords
         ["every"] = Token.Keyword(TokenKind.Every, DummySpan),
         ["on"] = Token.Keyword(TokenKind.On, DummySpan),
         ["at"] = Token.Keyword(TokenKind.At, DummySpan),
@@ -235,7 +229,6 @@ public sealed class Lexer
         ["next"] = Token.Keyword(TokenKind.Next, DummySpan),
         ["previous"] = Token.Keyword(TokenKind.Previous, DummySpan),
 
-        // Day names
         ["monday"] = Token.DayName(Ast.Weekday.Monday, DummySpan),
         ["mon"] = Token.DayName(Ast.Weekday.Monday, DummySpan),
         ["tuesday"] = Token.DayName(Ast.Weekday.Tuesday, DummySpan),
@@ -251,7 +244,6 @@ public sealed class Lexer
         ["sunday"] = Token.DayName(Ast.Weekday.Sunday, DummySpan),
         ["sun"] = Token.DayName(Ast.Weekday.Sunday, DummySpan),
 
-        // Month names
         ["january"] = Token.MonthName(Ast.MonthName.January, DummySpan),
         ["jan"] = Token.MonthName(Ast.MonthName.January, DummySpan),
         ["february"] = Token.MonthName(Ast.MonthName.February, DummySpan),
@@ -276,14 +268,12 @@ public sealed class Lexer
         ["december"] = Token.MonthName(Ast.MonthName.December, DummySpan),
         ["dec"] = Token.MonthName(Ast.MonthName.December, DummySpan),
 
-        // Ordinals
         ["first"] = Token.Ordinal(OrdinalPosition.First, DummySpan),
         ["second"] = Token.Ordinal(OrdinalPosition.Second, DummySpan),
         ["third"] = Token.Ordinal(OrdinalPosition.Third, DummySpan),
         ["fourth"] = Token.Ordinal(OrdinalPosition.Fourth, DummySpan),
         ["fifth"] = Token.Ordinal(OrdinalPosition.Fifth, DummySpan),
 
-        // Interval units
         ["min"] = Token.IntervalUnit(Ast.IntervalUnit.Minutes, DummySpan),
         ["mins"] = Token.IntervalUnit(Ast.IntervalUnit.Minutes, DummySpan),
         ["minute"] = Token.IntervalUnit(Ast.IntervalUnit.Minutes, DummySpan),

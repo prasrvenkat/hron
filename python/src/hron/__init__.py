@@ -86,29 +86,21 @@ class Schedule:
         return _next_n_from(self._data, now, n)
 
     def previous_from(self, now: datetime) -> datetime | None:
-        """Compute the most recent occurrence strictly before `now`.
-
-        Returns None if no previous occurrence exists (e.g., before a starting anchor
-        or for single dates in the future).
-        """
+        """Return the most recent occurrence strictly before `now`, or None if there is none."""
         return _previous_from(self._data, now)
 
     def matches(self, dt: datetime) -> bool:
         return _matches(self._data, dt)
 
     def occurrences(self, from_: datetime) -> Iterator[datetime]:
-        """Returns a lazy iterator of occurrences starting after `from_`.
+        """Return a lazy iterator of occurrences strictly after `from_`.
 
-        The iterator is unbounded for repeating schedules (will iterate forever unless limited),
-        but respects the `until` clause if specified in the schedule.
+        Unbounded for repeating schedules unless an `until` clause ends them.
         """
         return _occurrences(self._data, from_)
 
     def between(self, from_: datetime, to: datetime) -> Iterator[datetime]:
-        """Returns a bounded iterator of occurrences where `from_ < occurrence <= to`.
-
-        The iterator yields occurrences strictly after `from_` and up to and including `to`.
-        """
+        """Return a lazy iterator of occurrences where `from_ < occurrence <= to`."""
         return _between(self._data, from_, to)
 
     def to_cron(self) -> str:

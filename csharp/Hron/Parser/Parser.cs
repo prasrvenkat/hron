@@ -42,7 +42,6 @@ public sealed class Parser
     {
         var expr = ParseExpr();
 
-        // Parse optional clauses in order: except, until, starting, during, in
         IReadOnlyList<ExceptionSpec> except = [];
         UntilSpec? until = null;
         string? anchor = null;
@@ -343,7 +342,6 @@ public sealed class Parser
             throw ParseError("expected 'day', 'weekday', or day name after 'last'", next?.Span ?? EndSpan());
         }
 
-        // Check for ordinal + day name (e.g., "first monday")
         if (tok.Kind == TokenKind.Ordinal)
         {
             var ordinal = _tokens[_pos++].OrdinalVal!.Value;
@@ -351,13 +349,11 @@ public sealed class Parser
             return MonthTarget.OrdinalWeekday(ordinal, dayTok.DayNameVal!.Value);
         }
 
-        // Check for [next|previous] nearest weekday to <day>
         if (tok.Kind == TokenKind.Next || tok.Kind == TokenKind.Previous || tok.Kind == TokenKind.Nearest)
         {
             return ParseNearestWeekdayTarget();
         }
 
-        // Parse day specs (single or range)
         var specs = ParseDayOfMonthSpecs();
         return MonthTarget.Days(specs);
     }
@@ -367,7 +363,6 @@ public sealed class Parser
         NearestDirection? direction = null;
         var tok = Peek();
 
-        // Optional direction: "next" or "previous"
         if (tok is not null && tok.Kind == TokenKind.Next)
         {
             _pos++;
@@ -454,14 +449,12 @@ public sealed class Parser
             throw ParseError("unexpected end of input after 'on'", EndSpan());
         }
 
-        // Check for "the" (ordinal weekday, day of month, or last weekday)
         if (tok.Kind == TokenKind.The)
         {
             _pos++;
             return ParseYearTargetAfterThe();
         }
 
-        // Named date: month day (e.g., dec 25)
         var monthTok = Expect(TokenKind.MonthName);
         var dayTok = ParseDayNumber();
         ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
@@ -476,14 +469,12 @@ public sealed class Parser
             throw ParseError("unexpected end of input after 'the'", EndSpan());
         }
 
-        // "the last ..."
         if (tok.Kind == TokenKind.Last)
         {
             _pos++;
             var next = Peek();
             if (next is not null && next.Kind == TokenKind.DayName)
             {
-                // "the last friday of month"
                 var weekday = _tokens[_pos++].DayNameVal!.Value;
                 Expect(TokenKind.Of);
                 var monthTok = Expect(TokenKind.MonthName);
@@ -491,7 +482,6 @@ public sealed class Parser
             }
             if (next is not null && next.Kind == TokenKind.Weekday)
             {
-                // "the last weekday of month"
                 _pos++;
                 Expect(TokenKind.Of);
                 var monthTok = Expect(TokenKind.MonthName);
@@ -500,7 +490,6 @@ public sealed class Parser
             throw ParseError("expected day name or 'weekday' after 'last'", next?.Span ?? EndSpan());
         }
 
-        // "the first/second/... weekday of month"
         if (tok.Kind == TokenKind.Ordinal)
         {
             var ordinal = _tokens[_pos++].OrdinalVal!.Value;
@@ -510,7 +499,6 @@ public sealed class Parser
             return YearTarget.OrdinalWeekday(ordinal, dayTok.DayNameVal!.Value, monthTok.MonthNameVal!.Value);
         }
 
-        // "the 15th of month"
         if (tok.Kind == TokenKind.OrdinalNumber)
         {
             var day = _tokens[_pos++].NumberVal;
@@ -687,8 +675,6 @@ public sealed class Parser
         _pos++;
         return tok.TimezoneVal!;
     }
-
-    // Helper methods
 
     private static readonly int[] MaxDays = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 

@@ -7,67 +7,12 @@ use jiff::Zoned;
 use crate::ast::*;
 use crate::error::ScheduleError;
 
-// =============================================================================
-// Iteration Safety Limits
-// =============================================================================
-// MAX_ITERATIONS (1000): Maximum iterations for next_from/previous_from loops.
-// Prevents infinite loops when searching for valid occurrences.
-//
-// Expression-specific limits:
-// - Day repeat: 8 days (covers one week + margin)
-// - Week repeat: 54 weeks (covers one year + margin)
-// - Month repeat: 24 * interval months (covers 2 years scaled by interval)
-// - Year repeat: 8 * interval years (covers reasonable future horizon)
-//
-// These limits are generous safety bounds. In practice, valid schedules
-// find occurrences within the first few iterations.
-// =============================================================================
-
-// =============================================================================
-// DST (Daylight Saving Time) Handling
-// =============================================================================
-// When resolving a wall-clock time to an instant:
-//
-// 1. DST Gap (Spring Forward):
-//    - Time doesn't exist (e.g., 2:30 AM during spring forward)
-//    - Solution: Push forward to the next valid time after the gap
-//    - Example: 2:30 AM -> 3:00 AM (or 3:30 AM depending on gap size)
-//
-// 2. DST Fold (Fall Back):
-//    - Time is ambiguous (e.g., 1:30 AM occurs twice)
-//    - Solution: Use first occurrence (fold=0 / pre-transition time)
-//    - This matches user expectation for scheduling
-//
-// All implementations use the same algorithm for cross-language consistency.
-// =============================================================================
-
-// =============================================================================
-// Interval Alignment (Anchor Date)
-// =============================================================================
-// For schedules with interval > 1 (e.g., "every 3 days"), we need to
-// determine which dates are valid based on alignment with an anchor.
-//
-// Formula: (date_offset - anchor_offset) mod interval == 0
-//
-// Where:
-//   - date_offset: days/weeks/months from epoch to candidate date
-//   - anchor_offset: days/weeks/months from epoch to anchor date
-//   - interval: the repeat interval (e.g., 3 for "every 3 days")
-//
-// Default anchor: Epoch (1970-01-01)
-// Custom anchor: Set via "starting YYYY-MM-DD" clause
-//
-// For week repeats, we use epoch Monday (1970-01-05) as the reference
-// point to align week boundaries correctly.
-// =============================================================================
-
-/// Epoch anchor for multi-week intervals: Monday 1970-01-05.
+/// Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment").
 static EPOCH_MONDAY: LazyLock<Date> = LazyLock::new(|| Date::new(1970, 1, 5).unwrap());
 
-/// Epoch anchor for day/month/year intervals: 1970-01-01.
+/// Default anchor for day, month and year intervals.
 static EPOCH_DATE: LazyLock<Date> = LazyLock::new(|| Date::new(1970, 1, 1).unwrap());
 
-/// Resolve the timezone for a schedule, falling back to UTC for deterministic behavior.
 fn resolve_tz(tz: &Option<String>) -> Result<TimeZone, ScheduleError> {
     match tz {
         Some(name) => TimeZone::get(name)
@@ -76,19 +21,19 @@ fn resolve_tz(tz: &Option<String>) -> Result<TimeZone, ScheduleError> {
     }
 }
 
-/// Convert TimeOfDay to jiff Time.
 fn to_time(tod: &TimeOfDay) -> Time {
     Time::new(tod.hour as i8, tod.minute as i8, 0, 0).unwrap()
 }
 
-/// Set the time on a date in a timezone, returning a Zoned datetime.
+/// jiff's "compatible" disambiguation matches spec/README.md "DST spring-forward
+/// (gaps)" and "DST fall-back (ambiguous times)": a gap time shifts forward by the
+/// gap length, and a time repeated by a fall-back transition takes its first occurrence.
 fn at_time_on_date(date: Date, time: Time, tz: &TimeZone) -> Result<Zoned, ScheduleError> {
     let dt = date.to_datetime(time);
     dt.to_zoned(tz.clone())
         .map_err(|e| ScheduleError::eval(format!("cannot create zoned datetime: {e}")))
 }
 
-/// Check if a date's weekday matches the day filter.
 fn matches_day_filter(date: Date, filter: &DayFilter) -> bool {
     let wd = Weekday::from_jiff(date.weekday());
     match filter {
@@ -106,7 +51,6 @@ fn matches_day_filter(date: Date, filter: &DayFilter) -> bool {
     }
 }
 
-/// Get the last day of a month.
 fn last_day_of_month(year: i16, month: i8) -> Date {
     if month == 12 {
         // December always has 31 days; avoids year+1 overflow at i16::MAX
@@ -131,17 +75,14 @@ fn last_weekday_of_month(year: i16, month: i8) -> Date {
 /// Get the nth weekday of a month (1-indexed). Returns None if it doesn't exist.
 fn nth_weekday_of_month(year: i16, month: i8, weekday: Weekday, n: u8) -> Option<Date> {
     let target_wd = weekday.to_jiff();
-    // Find first occurrence
     let first = Date::new(year, month, 1).ok()?;
     let mut d = first;
     while d.weekday() != target_wd {
         d = d.tomorrow().ok()?;
     }
-    // Advance to nth
     for _ in 1..n {
         d = d.checked_add(jiff::Span::new().days(7)).ok()?;
     }
-    // Check still in same month
     if d.month() != month {
         None
     } else {
@@ -161,8 +102,6 @@ fn last_weekday_in_month(year: i16, month: i8, weekday: Weekday) -> Date {
 
 /// Get the nearest weekday to a given day in a month.
 /// - direction=None: standard cron W behavior (never crosses month boundary)
-/// - direction=Some(Next): always prefer following weekday (can cross to next month)
-/// - direction=Some(Previous): always prefer preceding weekday (can cross to prev month)
 ///
 /// Returns None if the target_day doesn't exist in the month (e.g., day 31 in February).
 fn nearest_weekday(
@@ -174,7 +113,6 @@ fn nearest_weekday(
     let last = last_day_of_month(year, month);
     let last_day = last.day() as u8;
 
-    // If target day doesn't exist in this month, return None (skip this month)
     if target_day > last_day {
         return None;
     }
@@ -185,7 +123,6 @@ fn nearest_weekday(
     use jiff::civil::Weekday as JiffWd;
 
     match (wd, direction) {
-        // Already a weekday
         (
             JiffWd::Monday
             | JiffWd::Tuesday
@@ -195,60 +132,49 @@ fn nearest_weekday(
             _,
         ) => Some(date),
 
-        // Saturday handling
         (JiffWd::Saturday, None) => {
             // Standard: prefer Friday, but if at month start, use Monday
             if target_day == 1 {
-                // Can't go to previous month, use Monday (day 3)
                 Some(date.checked_add(jiff::Span::new().days(2)).ok()?)
             } else {
-                // Friday
                 Some(date.yesterday().ok()?)
             }
         }
         (JiffWd::Saturday, Some(NearestDirection::Next)) => {
-            // Always Monday (may cross month)
             Some(date.checked_add(jiff::Span::new().days(2)).ok()?)
         }
         (JiffWd::Saturday, Some(NearestDirection::Previous)) => {
-            // Always Friday (may cross month if day==1)
+            // Crosses into the previous month when the target is the 1st.
             Some(date.yesterday().ok()?)
         }
 
-        // Sunday handling
         (JiffWd::Sunday, None) => {
             // Standard: prefer Monday, but if at month end, use Friday
             if target_day >= last_day {
-                // Can't go to next month, use Friday (day - 2)
                 Some(date.checked_add(jiff::Span::new().days(-2)).ok()?)
             } else {
-                // Monday
                 Some(date.tomorrow().ok()?)
             }
         }
         (JiffWd::Sunday, Some(NearestDirection::Next)) => {
-            // Always Monday (may cross month)
+            // Crosses into the next month when the target is the last day.
             Some(date.tomorrow().ok()?)
         }
         (JiffWd::Sunday, Some(NearestDirection::Previous)) => {
-            // Always Friday (go back 2 days, may cross month)
             Some(date.checked_add(jiff::Span::new().days(-2)).ok()?)
         }
     }
 }
 
-/// Count ISO weeks between two dates.
 fn weeks_between(a: Date, b: Date) -> i64 {
     let span = a.until(b).unwrap();
     span.get_days() as i64 / 7
 }
 
-/// Count days between two dates (signed).
 fn days_between(a: Date, b: Date) -> i64 {
     a.until(b).unwrap().get_days() as i64
 }
 
-/// Count months between two dates (year*12+month arithmetic).
 fn months_between_ym(a: Date, b: Date) -> i64 {
     (b.year() as i64 * 12 + b.month() as i64) - (a.year() as i64 * 12 + a.month() as i64)
 }
@@ -293,8 +219,6 @@ impl ParsedExceptions {
     }
 }
 
-/// Check if a date's month is in the `during` list.
-/// If `during` is empty, all months match.
 fn matches_during(date: Date, during: &[MonthName]) -> bool {
     if during.is_empty() {
         return true;
@@ -303,23 +227,19 @@ fn matches_during(date: Date, during: &[MonthName]) -> bool {
     during.iter().any(|mn| mn.number() == m)
 }
 
-/// Find the 1st of the next valid `during` month after `date`.
 fn next_during_month(date: Date, during: &[MonthName]) -> Date {
     let current_month = date.month() as u8;
     let mut months: Vec<u8> = during.iter().map(|mn| mn.number()).collect();
     months.sort();
 
-    // Find first month > current_month
     for &m in &months {
         if m > current_month {
             return Date::new(date.year(), m as i8, 1).unwrap();
         }
     }
-    // Wrap to first month of next year
     Date::new(date.year() + 1, months[0] as i8, 1).unwrap()
 }
 
-/// Resolve an UntilSpec to a concrete Date.
 fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> {
     match until {
         UntilSpec::Iso(s) => s
@@ -327,7 +247,6 @@ fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> 
             .map_err(|e| ScheduleError::eval(format!("invalid until date '{s}': {e}"))),
         UntilSpec::Named { month, day } => {
             let year = now.date().year();
-            // Try this year first, then next year
             for y in [year, year + 1] {
                 if let Ok(d) = Date::new(y, month.number() as i8, *day as i8) {
                     if d >= now.date() {
@@ -335,19 +254,14 @@ fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> 
                     }
                 }
             }
-            // Fallback: next year
             Date::new(year + 1, month.number() as i8, *day as i8)
                 .map_err(|e| ScheduleError::eval(format!("invalid until date: {e}")))
         }
     }
 }
 
-/// Check if a datetime matches any of the scheduled times, accounting for DST gaps.
-///
-/// A time matches if either:
-/// 1. The wall-clock time matches exactly (hour and minute), or
-/// 2. The scheduled time falls in a DST gap and resolves to the candidate's time
-///    (e.g., scheduled 2:00 AM during spring-forward resolves to 3:00 AM).
+/// True when `zdt` is at one of `times` on the wall clock, or is the instant a
+/// time in a DST gap shifted to.
 fn time_matches_with_dst(
     date: Date,
     times: &[TimeOfDay],
@@ -356,12 +270,9 @@ fn time_matches_with_dst(
 ) -> Result<bool, ScheduleError> {
     for tod in times {
         let t = to_time(tod);
-        // Direct wall-clock match
         if zdt.time().hour() == t.hour() && zdt.time().minute() == t.minute() {
             return Ok(true);
         }
-        // DST gap check: resolve the scheduled time on this date and compare
-        // the resulting instant. Covers cases where e.g. 2:00 AM → 3:00 AM.
         let resolved = at_time_on_date(date, t, tz)?;
         if resolved.timestamp() == zdt.timestamp() {
             return Ok(true);
@@ -370,7 +281,6 @@ fn time_matches_with_dst(
     Ok(false)
 }
 
-/// For a given date, generate candidates at all given times and return the earliest one > now.
 fn earliest_future_at_times(
     date: Date,
     times: &[TimeOfDay],
@@ -392,12 +302,10 @@ fn earliest_future_at_times(
     Ok(best)
 }
 
-/// Compute next occurrence from `now` for a given schedule.
 pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
     let tz = resolve_tz(&schedule.timezone)?;
     let anchor = schedule.anchor;
 
-    // Resolve until date if present
     let until_date = match &schedule.until {
         Some(until) => Some(resolve_until(until, now)?),
         None => None,
@@ -408,7 +316,8 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
     let has_during = !schedule.during.is_empty();
     let needs_tz_conversion = until_date.is_some() || has_during || has_exceptions;
 
-    // Check if expression is NearestWeekday with direction (can cross month boundaries)
+    // Directional nearest-weekday can cross into a neighbouring month, so
+    // next_month_repeat applies `during` itself.
     let handles_during_internally = matches!(
         &schedule.expr,
         ScheduleExpr::MonthRepeat {
@@ -420,7 +329,6 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
         }
     );
 
-    // Retry loop for exceptions and during filter: if candidate is filtered, skip and retry
     let mut current = now.clone();
     for _ in 0..1000 {
         let candidate = next_expr(&schedule.expr, &tz, &anchor, &current, &schedule.during)?;
@@ -430,27 +338,22 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
             None => return Ok(None),
         };
 
-        // Convert to target tz once for all filter checks
         let c_date = if needs_tz_conversion {
             Some(candidate.with_time_zone(tz.clone()).date())
         } else {
             None
         };
 
-        // Apply until filter
         if let Some(ref until) = until_date {
             if c_date.unwrap() > *until {
                 return Ok(None);
             }
         }
 
-        // Apply during filter
-        // Skip this check for expressions that handle during internally (NearestWeekday with direction)
         if has_during
             && !handles_during_internally
             && !matches_during(c_date.unwrap(), &schedule.during)
         {
-            // Skip ahead to 1st of next valid during month
             let skip_to = next_during_month(c_date.unwrap(), &schedule.during);
             current = at_time_on_date(skip_to, Time::new(0, 0, 0, 0).unwrap(), &tz)?
                 .checked_add(jiff::Span::new().seconds(-1))
@@ -458,9 +361,7 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
             continue;
         }
 
-        // Apply except filter
         if has_exceptions && parsed_exceptions.is_excepted(c_date.unwrap()) {
-            // Advance past this day and retry
             let next_day = c_date
                 .unwrap()
                 .tomorrow()
@@ -474,14 +375,11 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
         return Ok(Some(candidate));
     }
 
-    // Exhausted retry limit — every candidate was filtered by exceptions or
-    // during-clause. This includes contradictory schedules (e.g. "on feb 14
-    // during mar") where no occurrence can ever match. Treat as "no more
-    // occurrences" rather than an error.
+    // Every candidate was filtered out, as with a contradictory schedule
+    // (spec/README.md, "Contradictory schedules").
     Ok(None)
 }
 
-/// Compute next occurrence for the expression part only.
 fn next_expr(
     expr: &ScheduleExpr,
     tz: &TimeZone,
@@ -526,7 +424,6 @@ fn next_expr(
     }
 }
 
-/// Compute next N occurrences.
 pub fn next_n_from(
     schedule: &Schedule,
     now: &Zoned,
@@ -535,14 +432,14 @@ pub fn next_n_from(
     Occurrences::new(schedule, now.clone()).take(n).collect()
 }
 
-/// Lazy iterator over schedule occurrences starting after a given datetime.
+/// Lazy iterator over schedule occurrences strictly after a given datetime.
 pub struct Occurrences<'a> {
     schedule: &'a Schedule,
     current: Zoned,
 }
 
 impl<'a> Occurrences<'a> {
-    /// Create a new iterator starting after `from`.
+    /// Create a new iterator over occurrences strictly after `from`.
     pub fn new(schedule: &'a Schedule, from: Zoned) -> Self {
         Self {
             schedule,
@@ -599,23 +496,19 @@ impl Iterator for BoundedOccurrences<'_> {
     }
 }
 
-/// Create a bounded iterator of occurrences in the range (from, to].
 pub fn between<'a>(schedule: &'a Schedule, from: &Zoned, to: &Zoned) -> BoundedOccurrences<'a> {
     BoundedOccurrences::new(schedule, from.clone(), to.clone())
 }
 
-/// Check if a datetime matches the schedule.
 pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleError> {
     let tz = resolve_tz(&schedule.timezone)?;
     let zdt = datetime.with_time_zone(tz.clone());
     let date = zdt.date();
 
-    // Check during filter
     if !matches_during(date, &schedule.during) {
         return Ok(false);
     }
 
-    // Check exceptions
     if !schedule.except.is_empty() {
         let parsed_exceptions = ParsedExceptions::from_exceptions(&schedule.except);
         if parsed_exceptions.is_excepted(date) {
@@ -623,7 +516,6 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
         }
     }
 
-    // Check until
     if let Some(ref until) = schedule.until {
         let until_date = resolve_until(until, datetime)?;
         if date > until_date {
@@ -824,18 +716,12 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
     }
 }
 
-/// Compute the most recent occurrence strictly before `now`.
-/// Returns None if no previous occurrence exists (e.g., before a starting anchor
-/// or for single dates in the future).
 pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
     let tz = resolve_tz(&schedule.timezone)?;
     let anchor = schedule.anchor;
 
-    // Resolve starting date - if result would be before this, return None
     let starting_date = anchor;
 
-    // Resolve until date if present - for previousFrom, we still find occurrences
-    // but if now is after until, the previous occurrence is bounded by until
     let until_date = match &schedule.until {
         Some(until) => Some(resolve_until(until, now)?),
         None => None,
@@ -845,7 +731,6 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
     let has_exceptions = !schedule.except.is_empty();
     let has_during = !schedule.during.is_empty();
 
-    // Check if expression is NearestWeekday with direction (can cross month boundaries)
     let handles_during_internally = matches!(
         &schedule.expr,
         ScheduleExpr::MonthRepeat {
@@ -857,7 +742,6 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
         }
     );
 
-    // Retry loop for exceptions and during filter
     let mut current = now.clone();
     for _ in 0..1000 {
         let candidate = prev_expr(&schedule.expr, &tz, &anchor, &current, &schedule.during)?;
@@ -869,7 +753,6 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
 
         let c_date = candidate.with_time_zone(tz.clone()).date();
 
-        // Apply starting filter - if before starting anchor, no previous occurrence
         if let Some(start) = starting_date {
             if c_date < start {
                 return Ok(None);
@@ -881,20 +764,14 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
             }
         }
 
-        // Apply until filter for previousFrom:
-        // If candidate is after until, we need to search earlier
-        // This handles the case where now is after until
         if let Some(ref until) = until_date {
             if c_date > *until {
-                // Move current backward past until and retry
                 current = at_time_on_date(*until, Time::new(23, 59, 59, 0).unwrap(), &tz)?;
                 continue;
             }
         }
 
-        // Apply during filter
         if has_during && !handles_during_internally && !matches_during(c_date, &schedule.during) {
-            // Skip backward to last day of previous valid during month
             let skip_to = prev_during_month(c_date, &schedule.during);
             current = at_time_on_date(skip_to, Time::new(23, 59, 59, 0).unwrap(), &tz)?
                 .checked_add(jiff::Span::new().seconds(1))
@@ -902,9 +779,7 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
             continue;
         }
 
-        // Apply except filter
         if has_exceptions && parsed_exceptions.is_excepted(c_date) {
-            // Go back to end of previous day and retry
             let prev_day = c_date
                 .yesterday()
                 .map_err(|e| ScheduleError::eval(format!("{e}")))?;
@@ -920,7 +795,6 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
     Ok(None)
 }
 
-/// Compute previous occurrence for the expression part only.
 fn prev_expr(
     expr: &ScheduleExpr,
     tz: &TimeZone,
@@ -965,12 +839,10 @@ fn prev_expr(
     }
 }
 
-/// Find the last day of the previous valid during month.
 fn prev_during_month(date: Date, during: &[MonthName]) -> Date {
     let mut m = date.month();
     let mut y = date.year();
 
-    // Go back one month first
     if m == 1 {
         m = 12;
         y -= 1;
@@ -978,7 +850,6 @@ fn prev_during_month(date: Date, during: &[MonthName]) -> Date {
         m -= 1;
     }
 
-    // Find a valid during month going backward
     for _ in 0..12 {
         if let Some(month_name) = month_number_to_name(m as u8) {
             if during.contains(&month_name) {
@@ -997,7 +868,6 @@ fn prev_during_month(date: Date, during: &[MonthName]) -> Date {
     date.yesterday().unwrap_or(date)
 }
 
-/// Convert month number (1-12) to MonthName.
 fn month_number_to_name(n: u8) -> Option<MonthName> {
     match n {
         1 => Some(MonthName::January),
@@ -1027,8 +897,6 @@ fn ordinal_to_n(ord: OrdinalPosition) -> Option<u8> {
     }
 }
 
-// --- Eval helpers for each schedule variant ---
-
 fn next_day_repeat(
     interval: u32,
     days: &DayFilter,
@@ -1041,7 +909,6 @@ fn next_day_repeat(
     let mut date = now_in_tz.date();
 
     if interval <= 1 {
-        // Original behavior for interval=1
         if matches_day_filter(date, days) {
             if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
                 return Ok(Some(candidate));
@@ -1060,10 +927,7 @@ fn next_day_repeat(
         return Ok(None);
     }
 
-    // Interval > 1: day intervals only apply to DayFilter::Every.
-    // O(1) alignment via modular arithmetic: compute the next aligned day
-    // >= today, then check at most 2 dates (today's aligned date if time
-    // hasn't passed, otherwise the next aligned date).
+    // Day intervals only parse with DayFilter::Every, so `days` needs no check here.
     let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
     let interval_i64 = interval as i64;
 
@@ -1076,7 +940,8 @@ fn next_day_repeat(
             .map_err(|e| ScheduleError::eval(format!("{e}")))?
     };
 
-    // At most 2 iterations: aligned_date (if time hasn't passed) or next aligned date.
+    // At most two iterations: aligned_date if one of its times is still ahead,
+    // otherwise the next aligned date.
     let mut cur = aligned_date;
     for _ in 0..2 {
         if let Some(candidate) = earliest_future_at_times(cur, times, tz, now)? {
@@ -1111,7 +976,6 @@ fn next_interval_repeat(
     let to_minutes = to_t.hour() as i64 * 60 + to_t.minute() as i64;
     let mut date = now_in_tz.date();
 
-    // Search up to 400 days forward (covers weekday gaps, etc.)
     for _ in 0..400 {
         if let Some(df) = day_filter {
             if !matches_day_filter(date, df) {
@@ -1122,7 +986,6 @@ fn next_interval_repeat(
             }
         }
 
-        // Compute the next valid slot
         let now_minutes = if date == now_in_tz.date() {
             now_in_tz.time().hour() as i64 * 60 + now_in_tz.time().minute() as i64
         } else {
@@ -1167,11 +1030,9 @@ fn next_week_repeat(
 
     let date = now_in_tz.date();
 
-    // Sort target DOWs by number for earliest-first matching
     let mut sorted_days: Vec<Weekday> = days.to_vec();
     sorted_days.sort_by_key(|d| d.to_jiff().to_monday_one_offset());
 
-    // Find Monday of current week and Monday of anchor week
     let dow_offset = date.weekday().to_monday_one_offset() as i64 - 1;
     let current_monday = date
         .checked_add(jiff::Span::new().days(-dow_offset))
@@ -1182,12 +1043,8 @@ fn next_week_repeat(
         .checked_add(jiff::Span::new().days(-anchor_dow_offset))
         .map_err(|e| ScheduleError::eval(format!("{e}")))?;
 
-    // O(1) alignment: compute the first aligned Monday >= current Monday,
-    // then check at most 2 aligned weeks (current aligned week if any
-    // target day's time hasn't passed, otherwise the next aligned week).
     let weeks_since_anchor = weeks_between(anchor_monday, current_monday);
     let first_aligned_monday = if weeks_since_anchor < 0 {
-        // Current week is before anchor week, so anchor_monday is the first aligned week
         anchor_monday
     } else {
         let remainder = weeks_since_anchor % (interval as i64);
@@ -1202,8 +1059,9 @@ fn next_week_repeat(
 
     let mut cur_monday = first_aligned_monday;
 
+    // At most two iterations: the first aligned week if one of its times is still
+    // ahead, otherwise the next aligned week.
     for _ in 0..2 {
-        // Aligned week — try each target DOW
         for wd in &sorted_days {
             let day_offset = wd.to_jiff().to_monday_one_offset() as i64 - 1;
             let target_date = cur_monday
@@ -1214,7 +1072,6 @@ fn next_week_repeat(
             }
         }
 
-        // Advance to next aligned week
         let skip_weeks = interval as i64;
         cur_monday = cur_monday
             .checked_add(jiff::Span::new().days(skip_weeks * 7))
@@ -1256,9 +1113,7 @@ fn next_month_repeat(
             }
         );
 
-    // Search forward
     for _ in 0..max_iter {
-        // Check during filter for NearestWeekday with direction
         if apply_during_filter && !during.iter().any(|mn| mn.number() == month as u8) {
             month += 1;
             if month > 12 {
@@ -1268,7 +1123,6 @@ fn next_month_repeat(
             continue;
         }
 
-        // Check interval alignment
         if interval > 1 {
             let cur = Date::new(year, month, 1).unwrap();
             let month_offset = months_between_ym(anchor_date, cur);
@@ -1286,7 +1140,6 @@ fn next_month_repeat(
                 let expanded = target.expand_days();
                 let mut c = Vec::new();
                 for day_num in expanded {
-                    // Skip if this month doesn't have this day
                     let last = last_day_of_month(year, month);
                     if (day_num as i8) <= last.day() {
                         if let Ok(date) = Date::new(year, month, day_num as i8) {
@@ -1317,7 +1170,6 @@ fn next_month_repeat(
             },
         };
 
-        // For each candidate date, try all times and find the earliest future one
         let mut best: Option<Zoned> = None;
         for date in date_candidates {
             if let Some(candidate) = earliest_future_at_times(date, times, tz, now)? {
@@ -1332,7 +1184,6 @@ fn next_month_repeat(
             return Ok(best);
         }
 
-        // Next month
         month += 1;
         if month > 12 {
             month = 1;
@@ -1391,7 +1242,6 @@ fn next_year_repeat(
     for y in 0..max_iter {
         let year = start_year + y;
 
-        // Check interval alignment
         if interval > 1 {
             let year_offset = (year as i64) - (anchor_year as i64);
             if year_offset < 0 || year_offset.rem_euclid(interval as i64) != 0 {
@@ -1433,8 +1283,6 @@ fn next_year_repeat(
     Ok(None)
 }
 
-// --- Prev helpers for each schedule variant (mirror of next_* functions) ---
-
 fn prev_day_repeat(
     interval: u32,
     days: &DayFilter,
@@ -1447,13 +1295,11 @@ fn prev_day_repeat(
     let mut date = now_in_tz.date();
 
     if interval <= 1 {
-        // Check today first (for times that have already passed)
         if matches_day_filter(date, days) {
             if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
                 return Ok(Some(candidate));
             }
         }
-        // Go back day by day
         for _ in 0..8 {
             date = date
                 .yesterday()
@@ -1467,7 +1313,6 @@ fn prev_day_repeat(
         return Ok(None);
     }
 
-    // Interval > 1: align to the previous aligned day
     let anchor_date = anchor.unwrap_or(*EPOCH_DATE);
     let interval_i64 = interval as i64;
 
@@ -1480,13 +1325,11 @@ fn prev_day_repeat(
             .map_err(|e| ScheduleError::eval(format!("{e}")))?
     };
 
-    // Check aligned_date (if time hasn't passed) or previous aligned date
     let mut cur = aligned_date;
     for _ in 0..2 {
         if let Some(candidate) = latest_past_at_times(cur, times, tz, now)? {
             return Ok(Some(candidate));
         }
-        // If we're on aligned_date but times haven't passed, go to previous aligned
         if let Some(candidate) = latest_at_times(cur, times, tz)? {
             if candidate < *now {
                 return Ok(Some(candidate));
@@ -1526,7 +1369,6 @@ fn prev_interval_repeat(
     let from_minutes = from_t.hour() as i64 * 60 + from_t.minute() as i64;
     let to_minutes = to_t.hour() as i64 * 60 + to_t.minute() as i64;
 
-    // Search up to 8 days back
     for _ in 0..8 {
         if let Some(ref df) = day_filter {
             if !matches_day_filter(date, df) {
@@ -1537,23 +1379,18 @@ fn prev_interval_repeat(
             }
         }
 
-        // Find the last slot on this day that is before now
         let search_until = if date == now_in_tz.date() {
-            // On the same day, search until now
             now_minutes.min(to_minutes)
         } else {
-            // On a previous day, search until end of window
             to_minutes
         };
 
         if search_until >= from_minutes {
-            // Calculate the last slot <= search_until
             let slots_in_range = (search_until - from_minutes) / step_minutes;
             let last_slot_minutes = from_minutes + slots_in_range * step_minutes;
 
             // On the same day, we need strictly before now
             if date == now_in_tz.date() && last_slot_minutes >= now_minutes {
-                // Go back one step
                 let prev_slot = last_slot_minutes - step_minutes;
                 if prev_slot >= from_minutes {
                     let h = (prev_slot / 60) as i8;
@@ -1588,14 +1425,12 @@ fn prev_week_repeat(
     let now_in_tz = now.with_time_zone(tz.clone());
     let date = now_in_tz.date();
 
-    // Get the Monday of the current week
     let days_since_monday = (date.weekday().to_monday_zero_offset()) as i64;
     let current_monday = date
         .checked_add(jiff::Span::new().days(-days_since_monday))
         .map_err(|e| ScheduleError::eval(format!("{e}")))?;
 
     let anchor_date = anchor.unwrap_or(*EPOCH_MONDAY);
-    // Get Monday of anchor week
     let anchor_days_since_monday = anchor_date.weekday().to_monday_zero_offset() as i64;
     let anchor_monday = anchor_date
         .checked_add(jiff::Span::new().days(-anchor_days_since_monday))
@@ -1603,12 +1438,10 @@ fn prev_week_repeat(
 
     let interval_i64 = interval as i64;
 
-    // First check current week if it's aligned
     let weeks = weeks_between(anchor_monday, current_monday);
     let aligned = weeks >= 0 && weeks % interval_i64 == 0;
 
     if aligned {
-        // Check days in this week up to and including today (in reverse order)
         let mut sorted_days = days.to_vec();
         sorted_days.sort_by_key(|d| d.to_jiff().to_monday_zero_offset());
         sorted_days.reverse();
@@ -1620,12 +1453,10 @@ fn prev_week_repeat(
                 .map_err(|e| ScheduleError::eval(format!("{e}")))?;
 
             if target_date < date {
-                // This day has fully passed, return latest time
                 if let Some(candidate) = latest_at_times(target_date, times, tz)? {
                     return Ok(Some(candidate));
                 }
             } else if target_date == date {
-                // Same day, check for times that have passed
                 if let Some(candidate) = latest_past_at_times(target_date, times, tz, now)? {
                     return Ok(Some(candidate));
                 }
@@ -1633,13 +1464,11 @@ fn prev_week_repeat(
         }
     }
 
-    // Go back to previous aligned weeks
     let mut check_monday = if aligned {
         current_monday
             .checked_add(jiff::Span::new().days(-interval_i64 * 7))
             .map_err(|e| ScheduleError::eval(format!("{e}")))?
     } else {
-        // Find the most recent aligned Monday
         let remainder = weeks.rem_euclid(interval_i64);
         current_monday
             .checked_add(jiff::Span::new().days(-remainder * 7))
@@ -1652,7 +1481,6 @@ fn prev_week_repeat(
             return Ok(None); // Before anchor
         }
 
-        // Check all days in this week (reverse order for latest first)
         let mut sorted_days = days.to_vec();
         sorted_days.sort_by_key(|d| d.to_jiff().to_monday_zero_offset());
         sorted_days.reverse();
@@ -1697,11 +1525,9 @@ fn prev_month_repeat(
     let mut month = start_date.month();
 
     for _ in 0..max_iter {
-        // Check interval alignment
         if interval > 1 {
             let month_offset = months_between_ym(anchor_date, Date::new(year, month, 1).unwrap());
             if month_offset < 0 || month_offset.rem_euclid(interval as i64) != 0 {
-                // Go to previous month
                 if month == 1 {
                     month = 12;
                     year -= 1;
@@ -1749,7 +1575,6 @@ fn prev_month_repeat(
                 continue; // Skip future dates
             }
             if date == start_date {
-                // Check for times that have passed
                 if let Some(candidate) = latest_past_at_times(date, times, tz, now)? {
                     return Ok(Some(candidate));
                 }
@@ -1761,7 +1586,6 @@ fn prev_month_repeat(
             }
         }
 
-        // Go to previous month
         if month == 1 {
             month = 12;
             year -= 1;
@@ -1795,11 +1619,9 @@ fn prev_single_date(
                 if d < now_date {
                     d
                 } else if d == now_date {
-                    // Check if any time has passed
                     if let Some(candidate) = latest_past_at_times(d, times, tz, now)? {
                         return Ok(Some(candidate));
                     }
-                    // No time passed yet, use last year
                     last_year.unwrap_or(d)
                 } else {
                     last_year.unwrap_or(d)
@@ -1810,7 +1632,6 @@ fn prev_single_date(
         }
     };
 
-    // For ISO dates, check if it's in the past
     if let DateSpec::Iso(_) = date_spec {
         if target_date > now_date {
             return Ok(None); // Single date in the future
@@ -1821,7 +1642,6 @@ fn prev_single_date(
         return latest_at_times(target_date, times, tz);
     }
 
-    // For named dates (already handled above for current vs last year)
     latest_at_times(target_date, times, tz)
 }
 
@@ -1843,7 +1663,6 @@ fn prev_year_repeat(
     for y in 0..max_iter {
         let year = start_year - y;
 
-        // Check interval alignment
         if interval > 1 {
             let year_offset = (year as i64) - (anchor_year as i64);
             if year_offset < 0 || year_offset.rem_euclid(interval as i64) != 0 {
@@ -1933,7 +1752,6 @@ mod tests {
     use crate::parser::parse;
 
     fn fixed_now() -> Zoned {
-        // 2026-02-06T12:00:00 in system tz
         let date = Date::new(2026, 2, 6).unwrap();
         let time = Time::new(12, 0, 0, 0).unwrap();
         date.to_datetime(time).to_zoned(TimeZone::UTC).unwrap()
@@ -2066,9 +1884,7 @@ mod tests {
 
     #[test]
     fn test_except_skips_holiday() {
-        // Every weekday at 09:00, except dec 25 and jan 1
         let s = parse("every weekday at 09:00 except dec 25, jan 1 in UTC").unwrap();
-        // Set now to just before Christmas 2026 (dec 24 evening)
         let now = Date::new(2026, 12, 24)
             .unwrap()
             .to_datetime(Time::new(20, 0, 0, 0).unwrap())

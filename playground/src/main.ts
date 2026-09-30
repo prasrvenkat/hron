@@ -10,13 +10,9 @@ const copyCron = document.getElementById("copy-cron") as HTMLButtonElement;
 const tzNameEl = document.getElementById("tz-name") as HTMLElement;
 const themeToggle = document.getElementById("theme-toggle") as HTMLButtonElement | null;
 
-// ── Version (optional — landing carries the version pill) ──
-
 declare const __HRON_VERSION__: string;
 const versionEl = document.getElementById("version");
 if (versionEl) versionEl.textContent = `v${__HRON_VERSION__}`;
-
-// ── Theme ──
 
 function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -35,14 +31,12 @@ themeToggle?.addEventListener("click", () => {
   applyTheme(current === "dark" ? "light" : "dark");
 });
 
-// ── Constants & helpers ──
-
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const BATCH = 6;
 const MAX_OCCURRENCES = 120;
 
-/** A zoned timestamp in the viewer's local zone, the anchor for "next" queries. */
+/** Current time as a zoned ISO string in the viewer's local zone. */
 function nowZoned(): string {
   const now = new Date();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -76,13 +70,10 @@ function relativeTime(iso: string): string {
   return `in ${Math.round(days / 365)} years`;
 }
 
-/** Auto-grow the single-line-feeling textarea to fit its content. */
 function grow() {
   textarea.style.height = "auto";
   textarea.style.height = `${textarea.scrollHeight}px`;
 }
-
-// ── Rendering ──
 
 function renderOccurrence(iso: string, isFirst: boolean): HTMLLIElement {
   const li = document.createElement("li");
@@ -198,8 +189,6 @@ function renderCron(cron: string | null) {
   }
 }
 
-// ── Evaluation ──
-
 let currentSchedule: Schedule | null = null;
 let currentNow = "";
 let shownCount = 0;
@@ -232,14 +221,12 @@ function evaluate(input: string) {
   currentNow = nowZoned();
   tzNameEl.textContent = "UTC";
 
-  // Cron equivalent
   try {
     renderCron(currentSchedule.toCron());
   } catch {
     renderCron(null);
   }
 
-  // Next occurrences
   shownCount = 0;
   occEl.replaceChildren();
   showMore();
@@ -285,8 +272,6 @@ function showMore() {
   }
 }
 
-// ── Copy cron ──
-
 copyCron.addEventListener("click", () => {
   if (!lastCron || !navigator.clipboard) return;
   const label = copyCron.querySelector("span");
@@ -299,8 +284,6 @@ copyCron.addEventListener("click", () => {
     }, 1300);
   });
 });
-
-// ── Input wiring ──
 
 let timer: ReturnType<typeof setTimeout>;
 textarea.addEventListener("input", () => {
@@ -326,7 +309,6 @@ try {
   /* keep default placeholder */
 }
 
-// Seed a default so the page feels alive on first load.
 textarea.value = "every weekday at 9:00";
 grow();
 evaluate(textarea.value);

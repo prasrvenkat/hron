@@ -3,7 +3,7 @@ package io.hron.ast;
 import java.util.List;
 
 /**
- * A day-based repeat expression like "every day at 9:00" or "every 3 days at 09:00".
+ * An expression that fires every day or every N days, optionally only on certain days.
  *
  * @param interval the number of days between occurrences (1 for every day)
  * @param days the day filter (every, weekday, weekend, or specific days)
@@ -11,7 +11,6 @@ import java.util.List;
  */
 public record DayRepeat(int interval, DayFilter days, List<TimeOfDay> times)
     implements ScheduleExpr {
-  /** Creates a new DayRepeat with defensive copy of times list. */
   public DayRepeat {
     times = List.copyOf(times);
   }

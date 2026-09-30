@@ -1,4 +1,4 @@
-/** Byte range within the input string. */
+/** Start and end offsets into the input string, in UTF-16 code units. */
 export interface Span {
   start: number;
   end: number;

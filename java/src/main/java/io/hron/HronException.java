@@ -4,16 +4,12 @@ import java.util.Optional;
 
 /** Exception thrown for errors in hron parsing, evaluation, or cron conversion. */
 public final class HronException extends Exception {
-  /** The error kind. */
   private final ErrorKind kind;
 
-  /** The source span where the error occurred. */
   private final Span span;
 
-  /** The original input string. */
   private final String input;
 
-  /** An optional suggestion for fixing the error. */
   private final String suggestion;
 
   private HronException(
@@ -107,15 +103,8 @@ public final class HronException extends Exception {
   }
 
   /**
-   * Formats a rich error message with underline and optional suggestion.
-   *
-   * <p>For lex and parse errors with span and input, produces output like:
-   *
-   * <pre>
-   * error: unexpected token
-   *   every blorp at 09:00
-   *         ^^^^^
-   * </pre>
+   * Formats the error for display. Lex and parse errors show the input with the span underlined,
+   * followed by the suggestion if there is one; other errors show the message alone.
    *
    * @return a formatted error message
    */
@@ -125,7 +114,6 @@ public final class HronException extends Exception {
       sb.append("error: ").append(getMessage()).append("\n");
       sb.append("  ").append(input).append("\n");
 
-      // Add padding and underline
       sb.append(" ".repeat(span.start() + 2));
       sb.append("^".repeat(span.length()));
 

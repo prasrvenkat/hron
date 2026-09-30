@@ -3,31 +3,20 @@ using Xunit;
 namespace Hron.Tests;
 
 /// <summary>
-/// Iterator-specific tests for <c>Occurrences()</c> and <c>Between()</c> methods.
-///
-/// These tests verify C#-specific IEnumerable behavior beyond conformance tests:
-/// - Laziness (IEnumerables don't evaluate eagerly)
-/// - Early termination
-/// - Integration with LINQ methods
-/// - foreach patterns
+/// IEnumerable behaviour of <c>Occurrences()</c> and <c>Between()</c> that the conformance suite
+/// cannot check: laziness, early termination and composition with LINQ.
 /// </summary>
 public class IteratorTest
 {
     private static DateTimeOffset ParseZoned(string s)
     {
-        // Parse '2026-02-06T12:00:00+00:00[UTC]' format
         var bracketIdx = s.IndexOf('[');
         var isoStr = s.Substring(0, bracketIdx);
         var tzName = s.Substring(bracketIdx + 1, s.Length - bracketIdx - 2);
         var dto = DateTimeOffset.Parse(isoStr);
-        // Convert to the target timezone
         var tz = TimeZoneInfo.FindSystemTimeZoneById(tzName);
         return TimeZoneInfo.ConvertTime(dto, tz);
     }
-
-    // =========================================================================
-    // Laziness Tests
-    // =========================================================================
 
     [Fact]
     public void OccurrencesIsLazy()
@@ -36,10 +25,8 @@ public class IteratorTest
         var schedule = Schedule.Parse("every day at 09:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        // Creating the enumerable should be instant (lazy)
         var iter = schedule.Occurrences(from);
 
-        // Taking just 1 should work without evaluating the rest
         var results = iter.Take(1).ToList();
         Assert.Single(results);
     }
@@ -51,17 +38,12 @@ public class IteratorTest
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
         var to = ParseZoned("2026-12-31T23:59:00+00:00[UTC]");
 
-        // Creating the enumerable should be instant
         var iter = schedule.Between(from, to);
 
         // Taking just 3 should not evaluate all ~330 days
         var results = iter.Take(3).ToList();
         Assert.Equal(3, results.Count);
     }
-
-    // =========================================================================
-    // Early Termination Tests
-    // =========================================================================
 
     [Fact]
     public void OccurrencesEarlyTerminationWithTake()
@@ -111,7 +93,6 @@ public class IteratorTest
         var schedule = Schedule.Parse("every day at 09:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        // Find the first Saturday occurrence
         var saturday = schedule.Occurrences(from)
             .First(dt => dt.DayOfWeek == DayOfWeek.Saturday);
 
@@ -119,17 +100,12 @@ public class IteratorTest
         Assert.Equal(7, saturday.Day);
     }
 
-    // =========================================================================
-    // LINQ Methods Tests
-    // =========================================================================
-
     [Fact]
     public void WorksWithWhere()
     {
         var schedule = Schedule.Parse("every day at 09:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        // Filter to only weekends from first 14 days
         var weekends = schedule.Occurrences(from)
             .Take(14)
             .Where(dt => dt.DayOfWeek == DayOfWeek.Saturday || dt.DayOfWeek == DayOfWeek.Sunday)
@@ -145,7 +121,6 @@ public class IteratorTest
         var schedule = Schedule.Parse("every day at 09:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        // Map to just the day number
         var days = schedule.Occurrences(from)
             .Take(5)
             .Select(dt => dt.Day)
@@ -160,7 +135,6 @@ public class IteratorTest
         var schedule = Schedule.Parse("every day at 09:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        // Skip first 5, take next 3
         var results = schedule.Occurrences(from)
             .Skip(5)
             .Take(3)
@@ -180,7 +154,6 @@ public class IteratorTest
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
         var to = ParseZoned("2026-02-10T23:59:00+00:00[UTC]");
 
-        // Count occurrences in range
         var count = schedule.Between(from, to).Count();
 
         // Feb 1-10 inclusive = 10 days
@@ -198,10 +171,6 @@ public class IteratorTest
 
         Assert.Equal(10, last.Day);
     }
-
-    // =========================================================================
-    // Collect Patterns
-    // =========================================================================
 
     [Fact]
     public void OccurrencesCollectToList()
@@ -238,10 +207,6 @@ public class IteratorTest
         Assert.Equal(4, results.Length);
     }
 
-    // =========================================================================
-    // foreach Patterns
-    // =========================================================================
-
     [Fact]
     public void OccurrencesForeachWithBreak()
     {
@@ -273,10 +238,6 @@ public class IteratorTest
 
         Assert.Equal(new[] { 1, 2, 3 }, days);
     }
-
-    // =========================================================================
-    // Edge Cases
-    // =========================================================================
 
     [Fact]
     public void OccurrencesEmptyWhenPastUntil()
@@ -313,10 +274,6 @@ public class IteratorTest
         Assert.Single(results);
     }
 
-    // =========================================================================
-    // Timezone Handling
-    // =========================================================================
-
     [Fact]
     public void OccurrencesPreservesTimezone()
     {
@@ -327,7 +284,6 @@ public class IteratorTest
 
         foreach (var dt in results)
         {
-            // Check that offset is either -5 or -4 (EST or EDT)
             Assert.True(dt.Offset == TimeSpan.FromHours(-5) || dt.Offset == TimeSpan.FromHours(-4));
         }
     }
@@ -350,10 +306,6 @@ public class IteratorTest
         Assert.Equal(2, results[2].Hour); // Mar 9 02:30
     }
 
-    // =========================================================================
-    // Multiple Times Per Day
-    // =========================================================================
-
     [Fact]
     public void OccurrencesMultipleTimesPerDay()
     {
@@ -369,17 +321,12 @@ public class IteratorTest
         Assert.Equal(17, results[2].Hour);
     }
 
-    // =========================================================================
-    // Complex LINQ Chains
-    // =========================================================================
-
     [Fact]
     public void ComplexLinqChain()
     {
         var schedule = Schedule.Parse("every day at 09:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        // Complex chain: skip weekends, take first 5 weekdays, get their day numbers
         var weekdayDays = schedule.Occurrences(from)
             .Take(14) // Two weeks to ensure we have enough
             .Where(dt => dt.DayOfWeek >= DayOfWeek.Monday && dt.DayOfWeek <= DayOfWeek.Friday)
@@ -390,10 +337,6 @@ public class IteratorTest
         // Feb 2026: 2,3,4,5,6 are Mon-Fri
         Assert.Equal(new[] { 2, 3, 4, 5, 6 }, weekdayDays);
     }
-
-    // =========================================================================
-    // IEnumerable Properties
-    // =========================================================================
 
     [Fact]
     public void OccurrencesReturnsIEnumerable()
@@ -426,9 +369,7 @@ public class IteratorTest
 
         var iter = schedule.Occurrences(from);
 
-        // First enumeration
         var first = iter.Count();
-        // Second enumeration
         var second = iter.Count();
 
         Assert.Equal(5, first);

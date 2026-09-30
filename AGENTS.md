@@ -23,9 +23,26 @@ ruby/             # Native Ruby implementation
 
 ## Code Style
 
-- Write self-describing code. Avoid comments unless they explain something not obvious from reading the code itself.
-- No unnecessary abstractions. Three similar lines is better than a premature helper.
+- Write self-describing code. No unnecessary abstractions: three similar lines is better than a premature helper.
 - Keep functions short and focused. If a name needs a comment to explain it, rename it.
+
+## Comments
+
+A comment is a claim about the code that nothing checks, so every comment must earn its place for the life of the code. Keep one only if it tells a future reader something the code cannot, and is unlikely to go stale:
+
+- **Why**, when the code cannot show it: a spec rule, a platform or library quirk, a workaround and what it works around.
+- **Public API contract**, in a line or two: what it returns, when it returns nothing, what it throws. IDEs and package registries show these.
+
+Everything else goes:
+
+- Restating what the code does, or labelling the next line.
+- Examples and usage. They belong in the language README, where readers look for them. Examples the toolchain runs are tests and stay: Rust doctests, Go `Example` functions, `dart/example/`.
+- History ("previously", "now uses", "fixed"). That is what git is for.
+- Section banners and dividers.
+- TODOs. Raise the work in GitHub Discussions instead.
+- Copies of the spec. Name the rule in `spec/README.md`, or the `spec/tests.json` case, instead of re-explaining it.
+
+When you change code, fix or delete every comment it makes untrue.
 
 ## Git Workflow
 
