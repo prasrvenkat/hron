@@ -213,6 +213,12 @@
           "name": "every_1_day_normalized",
           "input": "every 1 day at 09:00",
           "canonical": "every day at 09:00"
+        },
+        {
+          "name": "max_interval",
+          "input": "every 2147483647 days at 09:00",
+          "canonical": "every 2147483647 days at 09:00",
+          "description": "largest interval"
         }
       ]
     },
@@ -287,6 +293,12 @@
           "name": "unit_hrs",
           "input": "every 4 hrs from 00:00 to 23:59",
           "canonical": "every 4 hours from 00:00 to 23:59"
+        },
+        {
+          "name": "from_equals_to",
+          "input": "every 30 min from 09:00 to 09:00",
+          "canonical": "every 30 min from 09:00 to 09:00",
+          "description": "from equal to to is valid (one slot a day)"
         }
       ]
     },
@@ -844,8 +856,9 @@
         },
         {
           "name": "named_date",
-          "input": "every weekday at 09:00 until dec 31",
-          "canonical": "every weekday at 09:00 until dec 31"
+          "input": "every weekday at 09:00 until dec 31 starting 2026-06-01",
+          "canonical": "every weekday at 09:00 until dec 31 starting 2026-06-01",
+          "description": "a named until needs a starting date; display keeps the named form"
         },
         {
           "name": "on_interval",
@@ -881,6 +894,12 @@
           "name": "day_range_with_until",
           "input": "every month on the 1st to 5th at 9:00 until 2026-12-31",
           "canonical": "every month on the 1st to 5th at 09:00 until 2026-12-31"
+        },
+        {
+          "name": "named_date_resolves_next_year",
+          "input": "every day at 09:00 until jan 15 starting 2026-06-01",
+          "canonical": "every day at 09:00 until jan 15 starting 2026-06-01",
+          "description": "named until before the starting month keeps its named form"
         }
       ]
     },
@@ -1033,6 +1052,36 @@
           "name": "america_new_york",
           "input": "every year on dec 25 at 00:00 in America/New_York",
           "canonical": "every year on dec 25 at 00:00 in America/New_York"
+        },
+        {
+          "name": "lowercase_area_location",
+          "input": "every day at 09:00 in america/new_york",
+          "canonical": "every day at 09:00 in America/New_York",
+          "description": "timezone names are case-insensitive and display with IANA capitalization"
+        },
+        {
+          "name": "uppercase_area_location",
+          "input": "every day at 09:00 in AMERICA/NEW_YORK",
+          "canonical": "every day at 09:00 in America/New_York",
+          "description": "timezone names are case-insensitive and display with IANA capitalization"
+        },
+        {
+          "name": "lowercase_utc",
+          "input": "every day at 09:00 in utc",
+          "canonical": "every day at 09:00 in UTC",
+          "description": "utc is UTC"
+        },
+        {
+          "name": "etc_zone_mixed_case",
+          "input": "every day at 09:00 in Etc/Gmt+5",
+          "canonical": "every day at 09:00 in Etc/GMT+5",
+          "description": "IANA capitalization of an Etc zone"
+        },
+        {
+          "name": "link_keeps_own_name",
+          "input": "every day at 09:00 in us/eastern",
+          "canonical": "every day at 09:00 in US/Eastern",
+          "description": "a link keeps its own name, not its target's"
         }
       ]
     },
@@ -1163,8 +1212,8 @@
         },
         {
           "name": "ordinal_in_until",
-          "input": "every day at 09:00 until dec 31st",
-          "canonical": "every day at 09:00 until dec 31"
+          "input": "every day at 09:00 until dec 31st starting 2026-01-01",
+          "canonical": "every day at 09:00 until dec 31 starting 2026-01-01"
         },
         {
           "name": "ordinal_in_single_date",
@@ -1386,6 +1435,118 @@
         "name": "day_range_day_32",
         "input": "every month on the 32nd at 09:00",
         "error_contains": "invalid"
+      },
+      {
+        "name": "invalid_timezone",
+        "input": "every day at 09:00 in Invalid/Timezone",
+        "description": "invalid IANA timezone identifier"
+      },
+      {
+        "name": "invalid_timezone_with_modifiers",
+        "input": "every weekday at 09:00 except dec 25 in Bogus/City",
+        "description": "invalid timezone with modifier clauses"
+      },
+      {
+        "name": "invalid_timezone_misspelled",
+        "input": "every day at 12:00 in Amercia/New_York",
+        "description": "misspelled timezone name"
+      },
+      {
+        "name": "named_until_without_starting",
+        "input": "every weekday at 09:00 until dec 31",
+        "description": "a named until needs a year or a starting date",
+        "error_contains": "starting"
+      },
+      {
+        "name": "named_until_ordinal_without_starting",
+        "input": "every day at 09:00 until dec 31st",
+        "description": "a named until needs a year or a starting date",
+        "error_contains": "starting"
+      },
+      {
+        "name": "interval_reversed_range",
+        "input": "every 30 min from 17:00 to 09:00",
+        "description": "from must not be later than to"
+      },
+      {
+        "name": "interval_reversed_range_one_minute",
+        "input": "every 1 min from 09:01 to 09:00",
+        "description": "from must not be later than to"
+      },
+      {
+        "name": "timezone_abbreviation",
+        "input": "every day at 09:00 in EST",
+        "description": "only UTC or an Area/Location name is a timezone",
+        "error_contains": "timezone"
+      },
+      {
+        "name": "timezone_gmt",
+        "input": "every day at 09:00 in GMT",
+        "description": "only UTC or an Area/Location name is a timezone",
+        "error_contains": "timezone"
+      },
+      {
+        "name": "timezone_offset",
+        "input": "every day at 09:00 in +05:30",
+        "description": "an offset is not a timezone name",
+        "error_contains": "timezone"
+      },
+      {
+        "name": "timezone_z",
+        "input": "every day at 09:00 in Z",
+        "description": "Z is not a timezone name",
+        "error_contains": "timezone"
+      },
+      {
+        "name": "timezone_unknown",
+        "input": "every day at 09:00 in Nope/Zone",
+        "description": "unknown IANA timezone",
+        "error_contains": "timezone"
+      },
+      {
+        "name": "interval_too_large",
+        "input": "every 2147483648 days at 09:00",
+        "description": "interval above 2147483647"
+      },
+      {
+        "name": "interval_too_large_minutes",
+        "input": "every 2147483648 min from 09:00 to 17:00",
+        "description": "interval above 2147483647"
+      },
+      {
+        "name": "interval_twenty_digits",
+        "input": "every 99999999999999999999 days at 09:00",
+        "description": "a 20-digit interval is a parse error, not an overflow"
+      },
+      {
+        "name": "hour_twenty_digits",
+        "input": "every day at 99999999999999999999:00",
+        "description": "a 20-digit hour is a parse error, not an overflow"
+      },
+      {
+        "name": "day_of_month_twenty_digits",
+        "input": "every month on the 99999999999999999999th at 09:00",
+        "description": "a 20-digit day of month is a parse error, not an overflow"
+      },
+      {
+        "name": "named_date_day_twenty_digits",
+        "input": "on feb 99999999999999999999 at 09:00",
+        "description": "a 20-digit day is a parse error, not an overflow"
+      },
+      {
+        "name": "iso_year_zero_single_date",
+        "input": "on 0000-01-01 at 09:00",
+        "description": "ISO years start at 0001"
+      },
+      {
+        "name": "iso_year_zero_starting",
+        "input": "every day at 09:00 starting 0000-12-31",
+        "description": "ISO years start at 0001"
+      },
+      {
+        "name": "iso_year_zero_until",
+        "input": "every day at 09:00 until 0000-06-01",
+        "description": "ISO years start at 0001"
       }
     ]
   },
@@ -1522,6 +1683,13 @@
           "description": "starting 474 years ahead: the first occurrence is on the starting date",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2500-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "timezone_link_lowercase",
+          "expression": "every day at 09:00 in us/eastern",
+          "description": "us/eastern is the IANA link US/Eastern; it keeps its own name",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2026-02-06T09:00:00-05:00[US/Eastern]"
         }
       ]
     },
@@ -1642,6 +1810,17 @@
           "description": "a step longer than the window leaves only the from slot",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2026-02-07T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "from_equals_to_single_slot",
+          "expression": "every 30 min from 09:00 to 09:00 in UTC",
+          "description": "from equal to to is valid: one slot a day",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-08T09:00:00+00:00[UTC]",
+            "2026-02-09T09:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -2571,8 +2750,8 @@
         },
         {
           "name": "named_until_date",
-          "expression": "every day at 09:00 until feb 10 in UTC",
-          "description": "named until date",
+          "expression": "every day at 09:00 until feb 10 starting 2026-01-01 in UTC",
+          "description": "named until resolves to the first feb 10 on or after starting (2026-02-10): Feb 7, 8, 9, 10",
           "next_n_count": 10,
           "next_n_length": 4
         },
@@ -2631,6 +2810,16 @@
           "next_n": [
             "2026-02-14T09:00:00+00:00[UTC]",
             "2027-02-14T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "named_until_same_day_as_starting",
+          "expression": "every day at 09:00 until mar 1 starting 2026-03-01 in UTC",
+          "description": "until mar 1 with starting 2026-03-01 resolves to the starting date itself (inclusive)",
+          "now": "2026-02-01T00:00:00+00:00[UTC]",
+          "next_n_count": 3,
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]"
           ]
         }
       ]
@@ -6998,6 +7187,41 @@
           "description": "the most recent December with five Sundays is 9996",
           "now": "9999-12-29T00:00:00+00:00[UTC]",
           "expected": "9996-12-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_until_same_year",
+          "expression": "every day at 09:00 until dec 31 starting 2026-06-01 in UTC",
+          "description": "until dec 31 with starting 2026-06-01 resolves to 2026-12-31",
+          "now": "2027-06-01T00:00:00+00:00[UTC]",
+          "expected": "2026-12-31T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_until_next_year",
+          "expression": "every day at 09:00 until jan 15 starting 2026-06-01 in UTC",
+          "description": "until jan 15 with starting 2026-06-01 resolves to 2027-01-15",
+          "now": "2028-01-01T00:00:00+00:00[UTC]",
+          "expected": "2027-01-15T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_until_feb_29_across_2100",
+          "expression": "every day at 09:00 until feb 29 starting 2097-03-01 in UTC",
+          "description": "until feb 29 with starting 2097-03-01 resolves to 2104-02-29 (2100 is not a leap year)",
+          "now": "2110-01-01T00:00:00+00:00[UTC]",
+          "expected": "2104-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_until_dst_shifted_keeps_scheduled_date",
+          "expression": "every day at 23:30 until mar 28 starting 2026-03-01 in America/Nuuk",
+          "description": "until mar 28 (2026-03-28): Mar 28 23:30 is shifted to Mar 29 00:30 but scheduled on Mar 28, so it is the last occurrence",
+          "now": "2026-04-15T12:00:00-01:00[America/Nuuk]",
+          "expected": "2026-03-29T00:30:00-01:00[America/Nuuk]"
+        },
+        {
+          "name": "named_until_nearest_weekday_landing_date",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 until feb 27 starting 2026-01-01 in UTC",
+          "description": "until feb 27 (2026-02-27): Feb 27 is the landing date for target Mar 1 and is on the until date",
+          "now": "2026-12-01T00:00:00+00:00[UTC]",
+          "expected": "2026-02-27T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -8042,26 +8266,6 @@
         }
       ]
     }
-  },
-  "eval_errors": {
-    "description": "Expressions that parse syntactically but error during evaluation. Languages that validate timezone at construction time may catch these at parse — both are acceptable.",
-    "tests": [
-      {
-        "name": "invalid_timezone",
-        "expression": "every day at 09:00 in Invalid/Timezone",
-        "description": "invalid IANA timezone identifier"
-      },
-      {
-        "name": "invalid_timezone_with_modifiers",
-        "expression": "every weekday at 09:00 except dec 25 in Bogus/City",
-        "description": "invalid timezone with modifier clauses"
-      },
-      {
-        "name": "invalid_timezone_misspelled",
-        "expression": "every day at 12:00 in Amercia/New_York",
-        "description": "misspelled timezone name"
-      }
-    ]
   },
   "invariants": {
     "description": "Self-consistency checks with no expected values. For each test, parse the expression, evaluate it at 'now', and check that the library's answers agree with each other under every rule; timestamps are equal when they are the same instant.",

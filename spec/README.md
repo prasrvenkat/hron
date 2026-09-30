@@ -56,7 +56,6 @@ The other sections:
 
 - **`parse.*`** - `input`; asserts that `toString(parse(input))` equals `canonical`, and that parsing `canonical` again gives `canonical`.
 - **`parse_errors`** - `input`; asserts that `parse(input)` fails, and when `error_contains` is present, that the error message contains it.
-- **`eval_errors`** - `expression`; asserts that evaluating the schedule fails (at parse time or at the first `nextFrom`).
 - **`cron.to_cron`** - `hron`; asserts `toCron(parse(hron))` equals `cron`. **`cron.to_cron_errors`** - `hron`; asserts `toCron` fails.
 - **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`; asserts `fromCron` fails.
 - **`cron.roundtrip`** - `hron`; with `c = toCron(parse(hron))`, asserts `toCron(fromCron(c))` equals `c`.
@@ -94,6 +93,8 @@ Each error should include:
 - Include position context: "at position 15"
 - Be specific: "invalid hour 25, must be 0-23"
 
+Every invalid expression fails in `parse` (and `validate` returns false) with a `lex` or `parse` error; evaluating a parsed schedule never fails. An out-of-range number is an error of this kind, never a raw overflow exception.
+
 ### Rich Display
 
 Implementations should provide a `displayRich()` method that formats errors with:
@@ -104,6 +105,20 @@ Implementations should provide a `displayRich()` method that formats errors with
 ## Behavioral Semantics
 
 These rules govern evaluation behavior across all implementations. Third-party implementations must follow these semantics to pass the conformance suite.
+
+### Parse-time validation
+
+These are parse errors, not evaluation errors:
+
+- **Named `until` without `starting`**: `until dec 31` has no year, so it needs a `starting` date (or use an ISO date, `until 2026-12-31`); the error message says so and mentions `starting`.
+- **Reversed time range**: `from 17:00 to 09:00`. `from` equal to `to` is valid and gives one slot a day.
+- **Timezone names**: only `UTC` or an `Area/Location` name from the IANA database (`Etc/GMT+5` included). Abbreviations and offsets (`EST`, `GMT`, `Z`, `+05:30`) and unknown names are errors. Names match in any case and display with the IANA capitalization (`in utc` displays `in UTC`, `in america/new_york` displays `in America/New_York`); a link keeps its own name (`in us/eastern` displays `in US/Eastern`).
+- **Numbers**: an interval is 1 to 2147483647. Every numeric field rejects values out of its range (including very long digit strings) with a hron error.
+- **ISO dates**: years 0001 to 9999.
+
+### Named `until`
+
+`until MON DAY` with `starting S` means the first such date on or after `S`, in the schedule's calendar: `until jan 15 starting 2026-06-01` ends on 2027-01-15, `until mar 1 starting 2026-03-01` on 2026-03-01 (inclusive), and `until feb 29 starting 2097-03-01` on 2104-02-29, the first real Feb 29. After that it behaves like the ISO date it resolves to. Display keeps the named form.
 
 ### Exception recurrence
 
