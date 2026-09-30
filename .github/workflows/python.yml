@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
@@ -39,6 +39,9 @@ jobs:
 
       - name: Install dependencies
         run: cd python && uv sync --locked
+
+      - name: Verify interpreter matches matrix
+        run: cd python && uv run python -c "import sys; assert sys.version.startswith('${{ matrix.python-version }}.'), sys.version"
 
       - name: Format & Lint
         run: just lint-python

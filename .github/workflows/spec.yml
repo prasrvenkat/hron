@@ -5,9 +5,17 @@ on:
     branches: [main]
     paths:
       - "spec/**"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/spec.yml"
   pull_request:
     paths:
       - "spec/**"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/spec.yml"
 
 # When the spec changes, verify all implementations still conform.
 jobs:
@@ -48,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - run: cd python && uv sync --locked
