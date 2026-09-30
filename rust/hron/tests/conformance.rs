@@ -290,7 +290,6 @@ fn run_eval_error(index: usize) {
     match Schedule::parse(expr_str) {
         Err(_) => {
             // Caught at parse time — acceptable
-            return;
         }
         Ok(schedule) => {
             let now = default_now();

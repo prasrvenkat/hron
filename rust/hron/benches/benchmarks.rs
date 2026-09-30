@@ -1,5 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use hron::Schedule;
+use std::hint::black_box;
 
 fn fixed_now() -> jiff::Zoned {
     jiff::civil::Date::new(2026, 2, 6)

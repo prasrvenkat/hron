@@ -31,6 +31,20 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: just lint-rust
 
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: rust
+      - name: Check hron builds on its declared rust-version
+        run: |
+          msrv=$(grep '^rust-version' rust/hron/Cargo.toml | cut -d'"' -f2)
+          mise install "rust@$msrv"
+          mise exec "rust@$msrv" -- cargo check --locked -p hron --manifest-path rust/Cargo.toml
+
   test:
     name: Test
     runs-on: ubuntu-latest
