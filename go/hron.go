@@ -74,7 +74,17 @@ func (s *Schedule) NextFrom(now time.Time) *time.Time {
 
 // NextNFrom computes the next n occurrences strictly after now.
 func (s *Schedule) NextNFrom(now time.Time, n int) []time.Time {
-	return nextNFrom(s.data, s.location, now, n)
+	if n <= 0 {
+		return nil
+	}
+	var results []time.Time
+	for t := range s.Occurrences(now) {
+		if len(results) >= n {
+			break
+		}
+		results = append(results, t)
+	}
+	return results
 }
 
 // PreviousFrom computes the most recent occurrence strictly before now.
@@ -83,7 +93,7 @@ func (s *Schedule) PreviousFrom(now time.Time) *time.Time {
 	return previousFrom(s.data, s.location, now)
 }
 
-// Matches checks if a datetime matches this schedule.
+// Matches reports whether the minute containing dt (seconds dropped) is an occurrence.
 func (s *Schedule) Matches(dt time.Time) bool {
 	return matches(s.data, s.location, dt)
 }

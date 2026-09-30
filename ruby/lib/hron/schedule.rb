@@ -52,8 +52,8 @@ module Hron
       Evaluator.matches(@data, dt)
     end
 
-    # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for
-    # repeating schedules unless an until clause ends them.
+    # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for repeating
+    # schedules unless an until clause or the end of the supported range ends them.
     def occurrences(from)
       Evaluator.occurrences(@data, from)
     end

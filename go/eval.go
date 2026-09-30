@@ -5,327 +5,182 @@ import (
 	"time"
 )
 
-const maxIterations = 1000
+// Supported instants are rangeStart <= t < rangeEnd; nothing outside them is
+// an occurrence or a valid input (spec/README.md, "Supported range").
+var (
+	rangeStart = time.Date(1, 1, 2, 0, 0, 0, 0, time.UTC)
+	rangeEnd   = time.Date(9999, 12, 30, 0, 0, 0, 0, time.UTC)
+)
+
+func inRange(t time.Time) bool {
+	return !t.Before(rangeStart) && t.Before(rangeEnd)
+}
+
+// occurrence is an instant and the date it was scheduled on. A time shifted
+// forward by a DST gap can land on the next date, but the day filter and the
+// during, except and until clauses see its scheduled date (spec/README.md,
+// "DST spring-forward (gaps)").
+type occurrence struct {
+	at   time.Time
+	date time.Time
+}
 
 func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.Time {
+	if !inRange(now) {
+		return nil
+	}
+	if occ := firstAfter(schedule, loc, now); occ != nil {
+		return &occ.at
+	}
+	return nil
+}
+
+// firstAfter returns the earliest occurrence strictly after now. It starts a
+// day early because the previous date's time can be shifted past midnight.
+func firstAfter(schedule *ScheduleData, loc *time.Location, now time.Time) *occurrence {
+	return nextOccurrence(schedule, loc, now, dateOnly(now.In(loc)).AddDate(0, 0, -1))
+}
+
+// nextOccurrence returns the earliest occurrence strictly after now among those
+// scheduled on or after startDate.
+func nextOccurrence(schedule *ScheduleData, loc *time.Location, now, startDate time.Time) *occurrence {
+	if schedule.Anchor != "" {
+		anchorDate, _ := parseISODate(schedule.Anchor)
+		if startDate.Before(anchorDate) {
+			startDate = anchorDate
+		}
+	}
 	var untilDate *time.Time
 	if schedule.Until != nil {
-		ud := resolveUntil(*schedule.Until, now)
+		ud := dateOnly(resolveUntil(*schedule.Until, now))
 		untilDate = &ud
 	}
+	var targetDuring []MonthName
+	if appliesDuringToTarget(schedule.Expr) {
+		targetDuring = schedule.During
+	}
+	searchEnd := startDate.AddDate(horizonYears(schedule.Expr), 0, 0)
 
-	hasExceptions := len(schedule.Except) > 0
-	hasDuring := len(schedule.During) > 0
-
-	// NearestWeekday with a direction can land in another month, so it applies the during filter itself.
-	handlesDuringInternally := schedule.Expr.Kind == ScheduleExprKindMonth &&
-		schedule.Expr.MonthTarget.Kind == MonthTargetKindNearestWeekday &&
-		schedule.Expr.MonthTarget.Direction != NearestNone
-
-	current := now
-
-	for i := 0; i < maxIterations; i++ {
-		var candidate *time.Time
-		if handlesDuringInternally {
-			candidate = nextExprWithDuring(schedule.Expr, loc, schedule.Anchor, current, schedule.During)
-		} else {
-			candidate = nextExpr(schedule.Expr, loc, schedule.Anchor, current)
-		}
-		if candidate == nil {
+	for !startDate.After(searchEnd) && startDate.Before(rangeEnd) {
+		occ := nextExpr(schedule.Expr, loc, schedule.Anchor, now, startDate, targetDuring)
+		if occ == nil || !inRange(occ.at) {
 			return nil
 		}
 
-		cDate := candidate.In(loc)
-
-		if untilDate != nil && dateOnly(cDate).After(dateOnly(*untilDate)) {
+		if untilDate != nil && occ.date.After(*untilDate) {
 			return nil
 		}
 
-		if hasDuring && !handlesDuringInternally && !matchesDuring(cDate, schedule.During) {
-			skipTo := nextDuringMonth(cDate, schedule.During)
-			midnight := atTimeOnDate(skipTo, TimeOfDay{0, 0}, loc)
-			current = midnight.Add(-time.Second)
+		if targetDuring == nil && !matchesDuring(occ.date, schedule.During) {
+			startDate = nextDuringMonth(occ.date, schedule.During)
 			continue
 		}
 
-		if hasExceptions && isExcepted(cDate, schedule.Except) {
-			nextDay := cDate.AddDate(0, 0, 1)
-			midnight := atTimeOnDate(nextDay, TimeOfDay{0, 0}, loc)
-			current = midnight.Add(-time.Second)
+		if isExcepted(occ.date, schedule.Except) {
+			startDate = occ.date.AddDate(0, 0, 1)
 			continue
 		}
 
-		return candidate
+		if dateOnly(occ.at.In(loc)).After(occ.date) {
+			// Shifted past midnight: a time scheduled on the landing date can come first.
+			later := nextOccurrence(schedule, loc, now, occ.date.AddDate(0, 0, 1))
+			if later != nil && later.at.Before(occ.at) {
+				return later
+			}
+		}
+
+		return occ
 	}
 
 	return nil
 }
 
-func nextExpr(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time) *time.Time {
-	return nextExprWithDuring(expr, loc, anchor, now, nil)
+// appliesDuringToTarget reports whether during filters the target month rather
+// than the date an occurrence lands on: a directional nearest weekday can
+// cross into the adjacent month (spec/README.md, "Nearest weekday and during").
+func appliesDuringToTarget(expr ScheduleExpr) bool {
+	return expr.Kind == ScheduleExprKindMonth &&
+		expr.MonthTarget.Kind == MonthTargetKindNearestWeekday &&
+		expr.MonthTarget.Direction != NearestNone
 }
 
-func nextExprWithDuring(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time, during []MonthName) *time.Time {
+// horizonYears is 400 for expressions whose interval is not a calendar unit,
+// since the calendar itself repeats every 400 years.
+func horizonYears(expr ScheduleExpr) int {
+	units := unitsIn400Years(expr.Kind)
+	if units == 0 {
+		return 400
+	}
+	return ceilDiv(horizonUnits(calendarInterval(expr), units)*400, units)
+}
+
+// calendarInterval caps a day, week, month or year interval just beyond the
+// supported range. Any larger interval aligns only the anchor inside the range,
+// so the result is the same, and the cap keeps date arithmetic from overflowing.
+func calendarInterval(expr ScheduleExpr) int {
+	return min(expr.Interval, maxSearchYears/400*unitsIn400Years(expr.Kind)+1)
+}
+
+// unitsIn400Years returns how many of the expression's interval units make up
+// 400 years, or 0 if its interval is not a calendar unit.
+func unitsIn400Years(kind ScheduleExprKind) int {
+	switch kind {
+	case ScheduleExprKindDay:
+		return 146097
+	case ScheduleExprKindWeek:
+		return 20871
+	case ScheduleExprKindMonth:
+		return 400 * 12
+	case ScheduleExprKindYear:
+		return 400
+	default:
+		return 0
+	}
+}
+
+func nextExpr(expr ScheduleExpr, loc *time.Location, anchor string, now, startDate time.Time, targetDuring []MonthName) *occurrence {
 	switch expr.Kind {
 	case ScheduleExprKindDay:
-		return nextDayRepeat(expr.Interval, expr.Days, expr.Times, loc, anchor, now)
+		return nextDayRepeat(calendarInterval(expr), expr.Days, expr.Times, loc, anchor, now, startDate)
 	case ScheduleExprKindInterval:
-		return nextIntervalRepeat(expr.Interval, expr.Unit, expr.FromTime, expr.ToTime, expr.DayFilter, loc, now)
+		return nextIntervalRepeat(expr.Interval, expr.Unit, expr.FromTime, expr.ToTime, expr.DayFilter, loc, now, startDate)
 	case ScheduleExprKindWeek:
-		return nextWeekRepeat(expr.Interval, expr.WeekDays, expr.Times, loc, anchor, now)
+		return nextWeekRepeat(calendarInterval(expr), expr.WeekDays, expr.Times, loc, anchor, now, startDate)
 	case ScheduleExprKindMonth:
-		return nextMonthRepeatWithDuring(expr.Interval, expr.MonthTarget, expr.Times, loc, anchor, now, during)
+		return nextMonthRepeat(calendarInterval(expr), expr.MonthTarget, expr.Times, loc, anchor, now, startDate, targetDuring)
 	case ScheduleExprKindSingleDate:
-		return nextSingleDate(expr.DateSpec, expr.Times, loc, now)
+		return nextSingleDate(expr.DateSpec, expr.Times, loc, now, startDate)
 	case ScheduleExprKindYear:
-		return nextYearRepeat(expr.Interval, expr.YearTarget, expr.Times, loc, anchor, now)
+		return nextYearRepeat(calendarInterval(expr), expr.YearTarget, expr.Times, loc, anchor, now, startDate)
 	default:
 		return nil
 	}
 }
 
-func nextNFrom(schedule *ScheduleData, loc *time.Location, now time.Time, n int) []time.Time {
-	var results []time.Time
-	current := now
-
-	for len(results) < n {
-		next := nextFrom(schedule, loc, current)
-		if next == nil {
-			break
-		}
-		results = append(results, *next)
-		current = next.Add(time.Minute)
-	}
-
-	return results
-}
-
+// matches drops the seconds of dt and reports whether that minute is an
+// occurrence, by the same rules nextFrom uses.
 func matches(schedule *ScheduleData, loc *time.Location, dt time.Time) bool {
-	zdt := dt.In(loc)
-	d := dateOnly(zdt)
-
-	if !matchesDuring(d, schedule.During) {
+	local := dt.In(loc)
+	minute := local.Add(-time.Duration(local.Second())*time.Second - time.Duration(local.Nanosecond()))
+	if !inRange(minute) {
 		return false
 	}
-	if isExcepted(d, schedule.Except) {
-		return false
-	}
-
-	if schedule.Until != nil {
-		untilDate := resolveUntil(*schedule.Until, dt)
-		if d.After(dateOnly(untilDate)) {
-			return false
-		}
-	}
-
-	timeMatchesWithDST := func(times []TimeOfDay) bool {
-		for _, tod := range times {
-			if zdt.Hour() == tod.Hour && zdt.Minute() == tod.Minute {
-				return true
-			}
-			// A time in a DST gap fires at its shifted instant, not at its wall-clock time.
-			resolved := atTimeOnDate(d, tod, loc)
-			if resolved.Unix() == dt.Unix() {
-				return true
-			}
-		}
-		return false
-	}
-
-	switch schedule.Expr.Kind {
-	case ScheduleExprKindDay:
-		if !matchesDayFilter(d, schedule.Expr.Days) {
-			return false
-		}
-		if !timeMatchesWithDST(schedule.Expr.Times) {
-			return false
-		}
-		if schedule.Expr.Interval > 1 {
-			anchorDate := epochDate
-			if schedule.Anchor != "" {
-				anchorDate, _ = parseISODate(schedule.Anchor)
-			}
-			dayOffset := daysBetween(dateOnly(anchorDate), d)
-			return dayOffset >= 0 && dayOffset%schedule.Expr.Interval == 0
-		}
-		return true
-
-	case ScheduleExprKindInterval:
-		if schedule.Expr.DayFilter != nil && !matchesDayFilter(d, *schedule.Expr.DayFilter) {
-			return false
-		}
-		fromMinutes := schedule.Expr.FromTime.TotalMinutes()
-		toMinutes := schedule.Expr.ToTime.TotalMinutes()
-		currentMinutes := zdt.Hour()*60 + zdt.Minute()
-		if currentMinutes < fromMinutes || currentMinutes > toMinutes {
-			return false
-		}
-		diff := currentMinutes - fromMinutes
-		step := schedule.Expr.Interval
-		if schedule.Expr.Unit == IntervalHours {
-			step = schedule.Expr.Interval * 60
-		}
-		return diff >= 0 && diff%step == 0
-
-	case ScheduleExprKindWeek:
-		dow := isoWeekday(d)
-		found := false
-		for _, wd := range schedule.Expr.WeekDays {
-			if wd.Number() == dow {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-		if !timeMatchesWithDST(schedule.Expr.Times) {
-			return false
-		}
-		anchorDate := epochMonday
-		if schedule.Anchor != "" {
-			anchorDate, _ = parseISODate(schedule.Anchor)
-		}
-		weeks := weeksBetween(dateOnly(anchorDate), d)
-		return weeks >= 0 && weeks%schedule.Expr.Interval == 0
-
-	case ScheduleExprKindMonth:
-		if !timeMatchesWithDST(schedule.Expr.Times) {
-			return false
-		}
-		if schedule.Expr.Interval > 1 {
-			anchorDate := epochDate
-			if schedule.Anchor != "" {
-				anchorDate, _ = parseISODate(schedule.Anchor)
-			}
-			monthOffset := monthsBetweenYM(dateOnly(anchorDate), d)
-			if monthOffset < 0 || monthOffset%schedule.Expr.Interval != 0 {
-				return false
-			}
-		}
-		switch schedule.Expr.MonthTarget.Kind {
-		case MonthTargetKindDays:
-			expanded := schedule.Expr.MonthTarget.ExpandDays()
-			for _, day := range expanded {
-				if d.Day() == day {
-					return true
-				}
-			}
-			return false
-		case MonthTargetKindLastDay:
-			last := lastDayOfMonth(d.Year(), d.Month())
-			return d.Day() == last.Day()
-		case MonthTargetKindLastWeekday:
-			lwd := lastWeekdayOfMonth(d.Year(), d.Month())
-			return d.Day() == lwd.Day()
-		case MonthTargetKindNearestWeekday:
-			nwd, ok := nearestWeekday(d.Year(), d.Month(), schedule.Expr.MonthTarget.Day, schedule.Expr.MonthTarget.Direction)
-			if !ok {
-				return false
-			}
-			return d.Year() == nwd.Year() && d.Month() == nwd.Month() && d.Day() == nwd.Day()
-		case MonthTargetKindOrdinalWeekday:
-			var ordinalTarget time.Time
-			var ok bool
-			if schedule.Expr.MonthTarget.Ordinal == Last {
-				ordinalTarget = lastWeekdayInMonth(d.Year(), d.Month(), schedule.Expr.MonthTarget.Weekday)
-				ok = true
-			} else {
-				ordinalTarget, ok = nthWeekdayOfMonth(d.Year(), d.Month(), schedule.Expr.MonthTarget.Weekday, schedule.Expr.MonthTarget.Ordinal.ToN())
-			}
-			if !ok {
-				return false
-			}
-			return d.Day() == ordinalTarget.Day()
-		}
-		return false
-
-	case ScheduleExprKindSingleDate:
-		if !timeMatchesWithDST(schedule.Expr.Times) {
-			return false
-		}
-		switch schedule.Expr.DateSpec.Kind {
-		case DateSpecKindISO:
-			isoTarget, _ := parseISODate(schedule.Expr.DateSpec.Date)
-			return d.Year() == isoTarget.Year() && d.Month() == isoTarget.Month() && d.Day() == isoTarget.Day()
-		case DateSpecKindNamed:
-			return int(d.Month()) == schedule.Expr.DateSpec.Month.Number() && d.Day() == schedule.Expr.DateSpec.Day
-		}
-		return false
-
-	case ScheduleExprKindYear:
-		if !timeMatchesWithDST(schedule.Expr.Times) {
-			return false
-		}
-		if schedule.Expr.Interval > 1 {
-			anchorYear := epochDate.Year()
-			if schedule.Anchor != "" {
-				anchorDate, _ := parseISODate(schedule.Anchor)
-				anchorYear = anchorDate.Year()
-			}
-			yearOffset := d.Year() - anchorYear
-			if yearOffset < 0 || yearOffset%schedule.Expr.Interval != 0 {
-				return false
-			}
-		}
-		return matchesYearTarget(schedule.Expr.YearTarget, d)
-	}
-
-	return false
+	occ := firstAfter(schedule, loc, minute.Add(-time.Nanosecond))
+	return occ != nil && occ.at.Equal(minute)
 }
 
-func matchesYearTarget(target YearTarget, d time.Time) bool {
-	switch target.Kind {
-	case YearTargetKindDate:
-		return int(d.Month()) == target.Month.Number() && d.Day() == target.Day
-	case YearTargetKindOrdinalWeekday:
-		if int(d.Month()) != target.Month.Number() {
-			return false
-		}
-		var ordinalDate time.Time
-		var ok bool
-		if target.Ordinal == Last {
-			ordinalDate = lastWeekdayInMonth(d.Year(), d.Month(), target.Weekday)
-			ok = true
-		} else {
-			ordinalDate, ok = nthWeekdayOfMonth(d.Year(), d.Month(), target.Weekday, target.Ordinal.ToN())
-		}
-		if !ok {
-			return false
-		}
-		return d.Day() == ordinalDate.Day()
-	case YearTargetKindDayOfMonth:
-		return int(d.Month()) == target.Month.Number() && d.Day() == target.Day
-	case YearTargetKindLastWeekday:
-		if int(d.Month()) != target.Month.Number() {
-			return false
-		}
-		lwd := lastWeekdayOfMonth(d.Year(), d.Month())
-		return d.Day() == lwd.Day()
-	}
-	return false
-}
-
-func nextDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	d := dateOnly(nowInTz)
+func nextDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time) *occurrence {
+	d := startDate
 
 	if interval <= 1 {
-		if matchesDayFilter(d, days) {
-			candidate := earliestFutureAtTimes(d, times, loc, now)
-			if candidate != nil {
-				return candidate
-			}
-		}
-
-		for i := 0; i < 8; i++ {
-			d = d.AddDate(0, 0, 1)
+		// From the day before now's date (its time can be shifted past midnight) to a week after it.
+		for i := 0; i < 9; i++ {
 			if matchesDayFilter(d, days) {
-				candidate := earliestFutureAtTimes(d, times, loc, now)
-				if candidate != nil {
-					return candidate
+				if occ := earliestFutureAtTimes(d, times, loc, now, startDate); occ != nil {
+					return occ
 				}
 			}
+			d = d.AddDate(0, 0, 1)
 		}
 
 		return nil
@@ -338,19 +193,11 @@ func nextDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 	}
 
 	offset := daysBetween(dateOnly(anchorDate), d)
-	remainder := offset % interval
-	if remainder < 0 {
-		remainder += interval
-	}
-	alignedDate := d
-	if remainder != 0 {
-		alignedDate = d.AddDate(0, 0, interval-remainder)
-	}
+	alignedDate := d.AddDate(0, 0, floorMod(-offset, interval))
 
-	for i := 0; i < 400; i++ {
-		candidate := earliestFutureAtTimes(alignedDate, times, loc, now)
-		if candidate != nil {
-			return candidate
+	for i := 0; i < 3; i++ {
+		if occ := earliestFutureAtTimes(alignedDate, times, loc, now, startDate); occ != nil {
+			return occ
 		}
 		alignedDate = alignedDate.AddDate(0, 0, interval)
 	}
@@ -358,60 +205,57 @@ func nextDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 	return nil
 }
 
-func nextIntervalRepeat(interval int, unit IntervalUnit, fromTime, toTime TimeOfDay, dayFilter *DayFilter, loc *time.Location, now time.Time) *time.Time {
+func nextIntervalRepeat(interval int, unit IntervalUnit, fromTime, toTime TimeOfDay, dayFilter *DayFilter, loc *time.Location, now, startDate time.Time) *occurrence {
 	nowInTz := now.In(loc)
-	stepMinutes := interval
-	if unit == IntervalHours {
-		stepMinutes = interval * 60
-	}
+	stepMinutes := intervalStepMinutes(interval, unit)
 	fromMinutes := fromTime.TotalMinutes()
 	toMinutes := toTime.TotalMinutes()
+	nowMinutes := nowInTz.Hour()*60 + nowInTz.Minute()
 
-	d := dateOnly(nowInTz)
+	// Interval slots are never shifted, so none scheduled before today is after now.
+	today := dateOnly(nowInTz)
+	d := startDate
+	if d.Before(today) {
+		d = today
+	}
 
-	for i := 0; i < 400; i++ {
-		if dayFilter != nil && !matchesDayFilter(d, *dayFilter) {
-			d = d.AddDate(0, 0, 1)
-			continue
-		}
-
-		sameDay := d.Year() == nowInTz.Year() && d.Month() == nowInTz.Month() && d.Day() == nowInTz.Day()
-		nowMinutes := -1
-		if sameDay {
-			nowMinutes = nowInTz.Hour()*60 + nowInTz.Minute()
-		}
-
-		var nextSlot int
-		if nowMinutes < fromMinutes {
-			nextSlot = fromMinutes
-		} else {
-			elapsed := nowMinutes - fromMinutes
-			nextSlot = fromMinutes + (elapsed/stepMinutes+1)*stepMinutes
-		}
-
-		if nextSlot <= toMinutes {
-			h := nextSlot / 60
-			m := nextSlot % 60
-			candidate := atTimeOnDate(d, TimeOfDay{h, m}, loc)
-			if candidate.After(now) {
-				return &candidate
+	// Two weeks, since a window wholly inside a DST gap, or a skipped day (Pacific/Apia,
+	// 2011-12-30), leaves a filtered day with no slot.
+	for i := 0; i < 15; i++ {
+		if dayFilter == nil || matchesDayFilter(d, *dayFilter) {
+			firstSlot := fromMinutes
+			if d.Equal(today) && nowMinutes >= fromMinutes {
+				firstSlot = fromMinutes + ((nowMinutes-fromMinutes)/stepMinutes+1)*stepMinutes
+			}
+			// Later slots can still be past when now is in the second pass of a fall-back overlap.
+			for slot := firstSlot; slot <= toMinutes; slot += stepMinutes {
+				at, exists := resolveWallClock(d, TimeOfDay{slot / 60, slot % 60}, loc)
+				if exists && at.After(now) {
+					return &occurrence{at, d}
+				}
 			}
 		}
-
 		d = d.AddDate(0, 0, 1)
 	}
 
 	return nil
 }
 
-func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
+// intervalStepMinutes caps the step at a day, since a step of a day or more
+// leaves only the from slot; the cap also keeps huge intervals from overflowing.
+func intervalStepMinutes(interval int, unit IntervalUnit) int {
+	const day = 24 * 60
+	if unit == IntervalHours {
+		return min(interval, 24) * 60
+	}
+	return min(interval, day)
+}
+
+func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time) *occurrence {
 	anchorDate := epochMonday
 	if anchor != "" {
 		anchorDate, _ = parseISODate(anchor)
 	}
-
-	d := dateOnly(nowInTz)
 
 	sortedDays := make([]Weekday, len(days))
 	copy(sortedDays, days)
@@ -423,33 +267,22 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 		}
 	}
 
-	dowOffset := (isoWeekday(d) - 1)
-	currentMonday := d.AddDate(0, 0, -dowOffset)
-
-	anchorDowOffset := (isoWeekday(anchorDate) - 1)
-	anchorMonday := anchorDate.AddDate(0, 0, -anchorDowOffset)
+	currentMonday := startDate.AddDate(0, 0, -(isoWeekday(startDate) - 1))
+	anchorMonday := anchorDate.AddDate(0, 0, -(isoWeekday(anchorDate) - 1))
 
 	for i := 0; i < 54; i++ {
 		weeks := weeksBetween(dateOnly(anchorMonday), currentMonday)
 
-		// Skip weeks before anchor - anchor Monday is always the first aligned week
-		if weeks < 0 {
-			currentMonday = anchorMonday
-			continue
-		}
-
-		if weeks%interval == 0 {
+		if floorMod(weeks, interval) == 0 {
 			for _, wd := range sortedDays {
-				dayOffset := wd.Number() - 1
-				targetDate := currentMonday.AddDate(0, 0, dayOffset)
-				candidate := earliestFutureAtTimes(targetDate, times, loc, now)
-				if candidate != nil {
-					return candidate
+				targetDate := currentMonday.AddDate(0, 0, wd.Number()-1)
+				if occ := earliestFutureAtTimes(targetDate, times, loc, now, startDate); occ != nil {
+					return occ
 				}
 			}
 		}
 
-		remainder := weeks % interval
+		remainder := floorMod(weeks, interval)
 		skipWeeks := interval
 		if remainder != 0 {
 			skipWeeks = interval - remainder
@@ -460,190 +293,77 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 	return nil
 }
 
-func nextMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	return nextMonthRepeatWithDuring(interval, target, times, loc, anchor, now, nil)
-}
-
-func nextMonthRepeatWithDuring(interval int, target MonthTarget, times []TimeOfDay, loc *time.Location, anchor string, now time.Time, during []MonthName) *time.Time {
-	nowInTz := now.In(loc)
-	year := nowInTz.Year()
-	month := int(nowInTz.Month())
-
-	anchorDate := epochDate
-	if anchor != "" {
-		anchorDate, _ = parseISODate(anchor)
-	}
-	maxIter := 24 * interval
-	if interval <= 1 {
-		maxIter = 24
+// nextMonthRepeat filters target months by targetDuring when it is non-nil.
+func nextMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time, targetDuring []MonthName) *occurrence {
+	// Start a month early: a directional nearest weekday can land in the month after its target.
+	month := monthIndex(startDate) - 1
+	if interval > 1 {
+		anchorDate := epochDate
+		if anchor != "" {
+			anchorDate, _ = parseISODate(anchor)
+		}
+		month += floorMod(monthIndex(anchorDate)-month, interval)
 	}
 
-	// For NearestWeekday with direction, we need to apply the during filter here
-	// because the result can cross month boundaries
-	applyDuringFilter := len(during) > 0 &&
-		target.Kind == MonthTargetKindNearestWeekday &&
-		target.Direction != NearestNone
-
-	for i := 0; i < maxIter; i++ {
-		if applyDuringFilter {
-			found := false
-			for _, mn := range during {
-				if mn.Number() == month {
-					found = true
-					break
+	for i := 0; i <= searchSteps(interval, unitsIn400Years(ScheduleExprKindMonth)); i++ {
+		first := time.Date(0, time.Month(month+1), 1, 0, 0, 0, 0, time.UTC)
+		if matchesDuring(first, targetDuring) {
+			var best *occurrence
+			for _, d := range monthTargetDates(first.Year(), first.Month(), target) {
+				occ := earliestFutureAtTimes(d, times, loc, now, startDate)
+				if occ != nil && (best == nil || occ.at.Before(best.at)) {
+					best = occ
 				}
 			}
-			if !found {
-				month++
-				if month > 12 {
-					month = 1
-					year++
-				}
-				continue
+			if best != nil {
+				return best
 			}
 		}
-
-		if interval > 1 {
-			cur := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-			monthOffset := monthsBetweenYM(dateOnly(anchorDate), cur)
-			if monthOffset < 0 || monthOffset%interval != 0 {
-				month++
-				if month > 12 {
-					month = 1
-					year++
-				}
-				continue
-			}
-		}
-
-		var dateCandidates []time.Time
-
-		switch target.Kind {
-		case MonthTargetKindDays:
-			expanded := target.ExpandDays()
-			last := lastDayOfMonth(year, time.Month(month))
-			for _, dayNum := range expanded {
-				if dayNum <= last.Day() {
-					dateCandidates = append(dateCandidates, time.Date(year, time.Month(month), dayNum, 0, 0, 0, 0, time.UTC))
-				}
-			}
-		case MonthTargetKindLastDay:
-			dateCandidates = append(dateCandidates, lastDayOfMonth(year, time.Month(month)))
-		case MonthTargetKindLastWeekday:
-			dateCandidates = append(dateCandidates, lastWeekdayOfMonth(year, time.Month(month)))
-		case MonthTargetKindNearestWeekday:
-			if nwd, ok := nearestWeekday(year, time.Month(month), target.Day, target.Direction); ok {
-				dateCandidates = append(dateCandidates, nwd)
-			}
-		case MonthTargetKindOrdinalWeekday:
-			if target.Ordinal == Last {
-				dateCandidates = append(dateCandidates, lastWeekdayInMonth(year, time.Month(month), target.Weekday))
-			} else {
-				if od, ok := nthWeekdayOfMonth(year, time.Month(month), target.Weekday, target.Ordinal.ToN()); ok {
-					dateCandidates = append(dateCandidates, od)
-				}
-			}
-		}
-
-		var best *time.Time
-		for _, dc := range dateCandidates {
-			candidate := earliestFutureAtTimes(dc, times, loc, now)
-			if candidate != nil && (best == nil || candidate.Before(*best)) {
-				best = candidate
-			}
-		}
-		if best != nil {
-			return best
-		}
-
-		month++
-		if month > 12 {
-			month = 1
-			year++
-		}
+		month += max(interval, 1)
 	}
 
 	return nil
 }
 
-func nextSingleDate(dateSpec DateSpec, times []TimeOfDay, loc *time.Location, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-
+func nextSingleDate(dateSpec DateSpec, times []TimeOfDay, loc *time.Location, now, startDate time.Time) *occurrence {
 	switch dateSpec.Kind {
 	case DateSpecKindISO:
 		d, _ := parseISODate(dateSpec.Date)
-		return earliestFutureAtTimes(d, times, loc, now)
+		return earliestFutureAtTimes(d, times, loc, now, startDate)
 	case DateSpecKindNamed:
-		startYear := nowInTz.Year()
-		for y := 0; y < 8; y++ {
-			year := startYear + y
-			d := time.Date(year, time.Month(dateSpec.Month.Number()), dateSpec.Day, 0, 0, 0, 0, time.UTC)
-			if d.Month() != time.Month(dateSpec.Month.Number()) {
-				continue // Invalid date (e.g., Feb 30)
+		// Consecutive Feb 29s can be eight years apart (2096, 2104).
+		for year := startDate.Year(); year <= startDate.Year()+8; year++ {
+			d, ok := namedDate(year, dateSpec)
+			if !ok {
+				continue
 			}
-			candidate := earliestFutureAtTimes(d, times, loc, now)
-			if candidate != nil {
-				return candidate
+			if occ := earliestFutureAtTimes(d, times, loc, now, startDate); occ != nil {
+				return occ
 			}
 		}
-		return nil
 	}
 
 	return nil
 }
 
-func nextYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	startYear := nowInTz.Year()
-	anchorYear := epochDate.Year()
-	if anchor != "" {
-		anchorDate, _ := parseISODate(anchor)
-		anchorYear = anchorDate.Year()
+func nextYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time) *occurrence {
+	year := startDate.Year()
+	if interval > 1 {
+		anchorYear := epochDate.Year()
+		if anchor != "" {
+			anchorDate, _ := parseISODate(anchor)
+			anchorYear = anchorDate.Year()
+		}
+		year += floorMod(anchorYear-year, interval)
 	}
 
-	maxIter := 8 * interval
-	if interval <= 1 {
-		maxIter = 8
-	}
-
-	for y := 0; y < maxIter; y++ {
-		year := startYear + y
-
-		if interval > 1 {
-			yearOffset := year - anchorYear
-			if yearOffset < 0 || yearOffset%interval != 0 {
-				continue
+	for i := 0; i <= searchSteps(interval, unitsIn400Years(ScheduleExprKindYear)); i++ {
+		if d, ok := yearTargetDate(year, target); ok {
+			if occ := earliestFutureAtTimes(d, times, loc, now, startDate); occ != nil {
+				return occ
 			}
 		}
-
-		var targetDate time.Time
-		var valid bool
-
-		switch target.Kind {
-		case YearTargetKindDate:
-			targetDate = time.Date(year, time.Month(target.Month.Number()), target.Day, 0, 0, 0, 0, time.UTC)
-			valid = targetDate.Month() == time.Month(target.Month.Number()) && targetDate.Day() == target.Day
-		case YearTargetKindOrdinalWeekday:
-			if target.Ordinal == Last {
-				targetDate = lastWeekdayInMonth(year, time.Month(target.Month.Number()), target.Weekday)
-				valid = true
-			} else {
-				targetDate, valid = nthWeekdayOfMonth(year, time.Month(target.Month.Number()), target.Weekday, target.Ordinal.ToN())
-			}
-		case YearTargetKindDayOfMonth:
-			targetDate = time.Date(year, time.Month(target.Month.Number()), target.Day, 0, 0, 0, 0, time.UTC)
-			valid = targetDate.Month() == time.Month(target.Month.Number()) && targetDate.Day() == target.Day
-		case YearTargetKindLastWeekday:
-			targetDate = lastWeekdayOfMonth(year, time.Month(target.Month.Number()))
-			valid = true
-		}
-
-		if valid {
-			candidate := earliestFutureAtTimes(targetDate, times, loc, now)
-			if candidate != nil {
-				return candidate
-			}
-		}
+		year += max(interval, 1)
 	}
 
 	return nil
@@ -659,8 +379,7 @@ func Occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
 			if next == nil {
 				return
 			}
-			// Advance cursor by 1 minute to avoid returning same occurrence
-			current = next.Add(time.Minute)
+			current = *next
 			if !yield(*next) {
 				return
 			}
@@ -671,6 +390,9 @@ func Occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
 // Between returns a bounded iterator of occurrences where `from < occurrence <= to`.
 func Between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
 	return func(yield func(time.Time) bool) {
+		if !inRange(to) {
+			return
+		}
 		for dt := range Occurrences(schedule, from) {
 			if dt.After(to) {
 				return
@@ -683,67 +405,87 @@ func Between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
 }
 
 func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.Time {
-	hasExceptions := len(schedule.Except) > 0
-	hasDuring := len(schedule.During) > 0
+	if !inRange(now) {
+		return nil
+	}
+	// Start a day late: a fall-back overlap crossing midnight repeats the
+	// previous date after the next date's first times have passed.
+	startDate := dateOnly(now.In(loc)).AddDate(0, 0, 1)
+	if occ := previousOccurrence(schedule, loc, now, startDate); occ != nil {
+		return &occ.at
+	}
+	return nil
+}
 
-	current := now
+// previousOccurrence returns the latest occurrence strictly before now among
+// those scheduled on or before startDate.
+func previousOccurrence(schedule *ScheduleData, loc *time.Location, now, startDate time.Time) *occurrence {
+	var anchorDate *time.Time
+	if schedule.Anchor != "" {
+		ad, _ := parseISODate(schedule.Anchor)
+		anchorDate = &ad
+	}
+	if schedule.Until != nil {
+		untilDate := dateOnly(resolveUntil(*schedule.Until, now))
+		if startDate.After(untilDate) {
+			startDate = untilDate
+		}
+	}
+	var targetDuring []MonthName
+	if appliesDuringToTarget(schedule.Expr) {
+		targetDuring = schedule.During
+	}
+	searchEnd := startDate.AddDate(-horizonYears(schedule.Expr), 0, 0)
 
-	for i := 0; i < maxIterations; i++ {
-		candidate := prevExpr(schedule.Expr, loc, schedule.Anchor, current)
-		if candidate == nil {
+	for !startDate.Before(searchEnd) && !startDate.Before(rangeStart.AddDate(0, 0, -1)) {
+		occ := prevExpr(schedule.Expr, loc, schedule.Anchor, now, startDate, targetDuring)
+		if occ == nil || !inRange(occ.at) {
 			return nil
 		}
 
-		cDate := candidate.In(loc)
-
-		if schedule.Anchor != "" {
-			anchorDate, _ := parseISODate(schedule.Anchor)
-			if dateOnly(cDate).Before(dateOnly(anchorDate)) {
-				return nil
-			}
+		if anchorDate != nil && occ.date.Before(*anchorDate) {
+			return nil
 		}
 
-		if schedule.Until != nil {
-			untilDate := resolveUntil(*schedule.Until, now)
-			if dateOnly(cDate).After(dateOnly(untilDate)) {
-				endOfDay := atTimeOnDate(dateOnly(untilDate), TimeOfDay{23, 59}, loc)
-				current = endOfDay.Add(time.Second)
-				continue
-			}
-		}
-
-		if hasDuring && !matchesDuring(cDate, schedule.During) {
-			skipTo := prevDuringMonth(cDate, schedule.During)
-			current = atTimeOnDate(skipTo, TimeOfDay{23, 59}, loc).Add(time.Second)
+		if targetDuring == nil && !matchesDuring(occ.date, schedule.During) {
+			startDate = prevDuringMonth(occ.date, schedule.During)
 			continue
 		}
 
-		if hasExceptions && isExcepted(cDate, schedule.Except) {
-			prevDay := dateOnly(cDate).AddDate(0, 0, -1)
-			current = atTimeOnDate(prevDay, TimeOfDay{23, 59}, loc).Add(time.Second)
+		if isExcepted(occ.date, schedule.Except) {
+			startDate = occ.date.AddDate(0, 0, -1)
 			continue
 		}
 
-		return candidate
+		dayBefore := occ.date.AddDate(0, 0, -1)
+		if _, exists := resolveWallClock(dayBefore, TimeOfDay{23, 59}, loc); !exists {
+			// The day before ends in a gap, so its times can be shifted onto this date after occ.
+			earlier := previousOccurrence(schedule, loc, now, dayBefore)
+			if earlier != nil && earlier.at.After(occ.at) {
+				return earlier
+			}
+		}
+
+		return occ
 	}
 
 	return nil
 }
 
-func prevExpr(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time) *time.Time {
+func prevExpr(expr ScheduleExpr, loc *time.Location, anchor string, now, startDate time.Time, targetDuring []MonthName) *occurrence {
 	switch expr.Kind {
 	case ScheduleExprKindDay:
-		return prevDayRepeat(expr.Interval, expr.Days, expr.Times, loc, anchor, now)
+		return prevDayRepeat(calendarInterval(expr), expr.Days, expr.Times, loc, anchor, now, startDate)
 	case ScheduleExprKindInterval:
-		return prevIntervalRepeat(expr.Interval, expr.Unit, expr.FromTime, expr.ToTime, expr.DayFilter, loc, now)
+		return prevIntervalRepeat(expr.Interval, expr.Unit, expr.FromTime, expr.ToTime, expr.DayFilter, loc, now, startDate)
 	case ScheduleExprKindWeek:
-		return prevWeekRepeat(expr.Interval, expr.WeekDays, expr.Times, loc, anchor, now)
+		return prevWeekRepeat(calendarInterval(expr), expr.WeekDays, expr.Times, loc, anchor, now, startDate)
 	case ScheduleExprKindMonth:
-		return prevMonthRepeat(expr.Interval, expr.MonthTarget, expr.Times, loc, anchor, now)
+		return prevMonthRepeat(calendarInterval(expr), expr.MonthTarget, expr.Times, loc, anchor, now, startDate, targetDuring)
 	case ScheduleExprKindSingleDate:
-		return prevSingleDate(expr.DateSpec, expr.Times, loc, now)
+		return prevSingleDate(expr.DateSpec, expr.Times, loc, now, startDate)
 	case ScheduleExprKindYear:
-		return prevYearRepeat(expr.Interval, expr.YearTarget, expr.Times, loc, anchor, now)
+		return prevYearRepeat(calendarInterval(expr), expr.YearTarget, expr.Times, loc, anchor, now, startDate)
 	default:
 		return nil
 	}
@@ -777,63 +519,35 @@ func prevDuringMonth(d time.Time, during []MonthName) time.Time {
 	return d.AddDate(0, 0, -1)
 }
 
-// latestPastAtTimes finds the latest time on date d that is strictly before now.
-func latestPastAtTimes(d time.Time, times []TimeOfDay, loc *time.Location, now time.Time) *time.Time {
-	sortedTimes := make([]TimeOfDay, len(times))
-	copy(sortedTimes, times)
-	for i := 0; i < len(sortedTimes)-1; i++ {
-		for j := i + 1; j < len(sortedTimes); j++ {
-			if sortedTimes[i].TotalMinutes() < sortedTimes[j].TotalMinutes() {
-				sortedTimes[i], sortedTimes[j] = sortedTimes[j], sortedTimes[i]
-			}
-		}
-	}
-
-	for _, tod := range sortedTimes {
-		candidate := atTimeOnDate(d, tod, loc)
-		if candidate.Before(now) {
-			return &candidate
-		}
-	}
-	return nil
-}
-
-func latestAtTimes(d time.Time, times []TimeOfDay, loc *time.Location) *time.Time {
-	if len(times) == 0 {
+// latestPastAtTimes finds the latest of times on date d that is strictly
+// before now, if d is not after startDate.
+func latestPastAtTimes(d time.Time, times []TimeOfDay, loc *time.Location, now, startDate time.Time) *occurrence {
+	if d.After(startDate) {
 		return nil
 	}
-
-	latest := times[0]
-	for _, tod := range times[1:] {
-		if tod.TotalMinutes() > latest.TotalMinutes() {
-			latest = tod
+	var best *occurrence
+	for _, tod := range times {
+		at := atTimeOnDate(d, tod, loc)
+		if at.Before(now) && (best == nil || at.After(best.at)) {
+			best = &occurrence{at, d}
 		}
 	}
-
-	result := atTimeOnDate(d, latest, loc)
-	return &result
+	return best
 }
 
-func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	d := dateOnly(nowInTz)
+func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time) *occurrence {
+	d := startDate
 
 	if interval <= 1 {
-		if matchesDayFilter(d, days) {
-			candidate := latestPastAtTimes(d, times, loc, now)
-			if candidate != nil {
-				return candidate
-			}
-		}
-
-		for i := 0; i < 8; i++ {
-			d = d.AddDate(0, 0, -1)
+		// From the day after now's date back to eight days before it: a time
+		// shifted onto now's date can equal now, leaving the previous one eight days back.
+		for i := 0; i < 10; i++ {
 			if matchesDayFilter(d, days) {
-				candidate := latestAtTimes(d, times, loc)
-				if candidate != nil {
-					return candidate
+				if occ := latestPastAtTimes(d, times, loc, now, startDate); occ != nil {
+					return occ
 				}
 			}
+			d = d.AddDate(0, 0, -1)
 		}
 
 		return nil
@@ -845,23 +559,11 @@ func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 	}
 
 	offset := daysBetween(dateOnly(anchorDate), d)
-	remainder := offset % interval
-	if remainder < 0 {
-		remainder += interval
-	}
-	alignedDate := d
-	if remainder != 0 {
-		alignedDate = d.AddDate(0, 0, -remainder)
-	}
+	alignedDate := d.AddDate(0, 0, -floorMod(offset, interval))
 
-	for i := 0; i < 2; i++ {
-		candidate := latestPastAtTimes(alignedDate, times, loc, now)
-		if candidate != nil {
-			return candidate
-		}
-		latest := latestAtTimes(alignedDate, times, loc)
-		if latest != nil && latest.Before(now) {
-			return latest
+	for i := 0; i < 3; i++ {
+		if occ := latestPastAtTimes(alignedDate, times, loc, now, startDate); occ != nil {
+			return occ
 		}
 		alignedDate = alignedDate.AddDate(0, 0, -interval)
 	}
@@ -869,57 +571,50 @@ func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 	return nil
 }
 
-func prevIntervalRepeat(interval int, unit IntervalUnit, fromTime, toTime TimeOfDay, dayFilter *DayFilter, loc *time.Location, now time.Time) *time.Time {
+func prevIntervalRepeat(interval int, unit IntervalUnit, fromTime, toTime TimeOfDay, dayFilter *DayFilter, loc *time.Location, now, startDate time.Time) *occurrence {
 	nowInTz := now.In(loc)
-	d := dateOnly(nowInTz)
-
-	stepMinutes := interval
-	if unit == IntervalHours {
-		stepMinutes = interval * 60
-	}
+	stepMinutes := intervalStepMinutes(interval, unit)
 	fromMinutes := fromTime.TotalMinutes()
-	toMinutes := toTime.TotalMinutes()
+	lastSlot := fromMinutes + (toTime.TotalMinutes()-fromMinutes)/stepMinutes*stepMinutes
 
-	for dayOffset := 0; dayOffset < 8; dayOffset++ {
-		if dayFilter != nil && !matchesDayFilter(d, *dayFilter) {
-			d = d.AddDate(0, 0, -1)
-			continue
-		}
+	// Today, slots after now's wall time are still ahead, unless now is in the
+	// second pass of a fall-back overlap, where they already passed.
+	today := dateOnly(nowInTz)
+	todayLastSlot := lastSlot
+	nowMinutes := nowInTz.Hour()*60 + nowInTz.Minute()
+	if firstPass, _ := resolveWallClock(today, TimeOfDay{nowInTz.Hour(), nowInTz.Minute()}, loc); now.Before(firstPass.Add(time.Minute)) {
+		todayLastSlot = min(lastSlot, fromMinutes+floorDiv(nowMinutes-fromMinutes, stepMinutes)*stepMinutes)
+	}
 
-		nowMinutes := toMinutes + 1
-		if dayOffset == 0 {
-			nowMinutes = nowInTz.Hour()*60 + nowInTz.Minute()
-		}
-		searchUntil := nowMinutes
-		if searchUntil > toMinutes {
-			searchUntil = toMinutes
-		}
-
-		if searchUntil >= fromMinutes {
-			slotsInRange := (searchUntil - fromMinutes) / stepMinutes
-			lastSlotMinutes := fromMinutes + slotsInRange*stepMinutes
-
-			if dayOffset == 0 && lastSlotMinutes >= nowMinutes {
-				lastSlotMinutes -= stepMinutes
+	d := startDate
+	// From the day after now's date back two weeks, since a window wholly inside a DST gap,
+	// or a skipped day (Pacific/Apia, 2011-12-30), leaves a filtered day with no slot.
+	for i := 0; i < 16; i++ {
+		if dayFilter == nil || matchesDayFilter(d, *dayFilter) {
+			top := lastSlot
+			switch {
+			case d.Equal(today):
+				top = todayLastSlot
+			case d.After(today):
+				// A later date's slots are past only in an overlap crossing midnight.
+				if first, _ := resolveWallClock(d, fromTime, loc); !first.Before(now) {
+					top = fromMinutes - 1
+				}
 			}
-
-			if lastSlotMinutes >= fromMinutes {
-				h := lastSlotMinutes / 60
-				m := lastSlotMinutes % 60
-				result := atTimeOnDate(d, TimeOfDay{h, m}, loc)
-				return &result
+			for slot := top; slot >= fromMinutes; slot -= stepMinutes {
+				at, exists := resolveWallClock(d, TimeOfDay{slot / 60, slot % 60}, loc)
+				if exists && at.Before(now) {
+					return &occurrence{at, d}
+				}
 			}
 		}
-
 		d = d.AddDate(0, 0, -1)
 	}
 
 	return nil
 }
 
-func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	d := dateOnly(nowInTz)
+func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time) *occurrence {
 	anchorDate := epochMonday
 	if anchor != "" {
 		anchorDate, _ = parseISODate(anchor)
@@ -935,41 +630,22 @@ func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 		}
 	}
 
-	dowOffset := isoWeekday(d) - 1
-	currentMonday := d.AddDate(0, 0, -dowOffset)
-
-	anchorDowOffset := isoWeekday(anchorDate) - 1
-	anchorMonday := anchorDate.AddDate(0, 0, -anchorDowOffset)
+	currentMonday := startDate.AddDate(0, 0, -(isoWeekday(startDate) - 1))
+	anchorMonday := anchorDate.AddDate(0, 0, -(isoWeekday(anchorDate) - 1))
 
 	for i := 0; i < 54; i++ {
 		weeks := weeksBetween(dateOnly(anchorMonday), currentMonday)
 
-		if weeks < 0 {
-			return nil
-		}
-
-		if weeks%interval == 0 {
+		if floorMod(weeks, interval) == 0 {
 			for _, wd := range sortedDays {
-				dayOff := wd.Number() - 1
-				targetDate := currentMonday.AddDate(0, 0, dayOff)
-				if targetDate.After(d) {
-					continue
-				}
-				if targetDate.Year() == d.Year() && targetDate.Month() == d.Month() && targetDate.Day() == d.Day() {
-					candidate := latestPastAtTimes(targetDate, times, loc, now)
-					if candidate != nil {
-						return candidate
-					}
-				} else {
-					candidate := latestAtTimes(targetDate, times, loc)
-					if candidate != nil {
-						return candidate
-					}
+				targetDate := currentMonday.AddDate(0, 0, wd.Number()-1)
+				if occ := latestPastAtTimes(targetDate, times, loc, now, startDate); occ != nil {
+					return occ
 				}
 			}
 		}
 
-		remainder := weeks % interval
+		remainder := floorMod(weeks, interval)
 		skipWeeks := interval
 		if remainder != 0 {
 			skipWeeks = remainder
@@ -980,205 +656,77 @@ func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 	return nil
 }
 
-func prevMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	startDate := dateOnly(nowInTz)
-	year := nowInTz.Year()
-	month := int(nowInTz.Month())
-
-	anchorDate := epochDate
-	if anchor != "" {
-		anchorDate, _ = parseISODate(anchor)
-	}
-	maxIter := 24 * interval
-	if interval <= 1 {
-		maxIter = 24
+// prevMonthRepeat filters target months by targetDuring when it is non-nil.
+func prevMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time, targetDuring []MonthName) *occurrence {
+	// Start a month late: a directional nearest weekday can land in the month before its target.
+	month := monthIndex(startDate) + 1
+	if interval > 1 {
+		anchorDate := epochDate
+		if anchor != "" {
+			anchorDate, _ = parseISODate(anchor)
+		}
+		month -= floorMod(month-monthIndex(anchorDate), interval)
 	}
 
-	for i := 0; i < maxIter; i++ {
-		if interval > 1 {
-			cur := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-			monthOffset := monthsBetweenYM(dateOnly(anchorDate), cur)
-			if monthOffset < 0 || monthOffset%interval != 0 {
-				month--
-				if month < 1 {
-					month = 12
-					year--
+	for i := 0; i <= searchSteps(interval, unitsIn400Years(ScheduleExprKindMonth)); i++ {
+		first := time.Date(0, time.Month(month+1), 1, 0, 0, 0, 0, time.UTC)
+		if matchesDuring(first, targetDuring) {
+			var best *occurrence
+			for _, d := range monthTargetDates(first.Year(), first.Month(), target) {
+				occ := latestPastAtTimes(d, times, loc, now, startDate)
+				if occ != nil && (best == nil || occ.at.After(best.at)) {
+					best = occ
 				}
-				continue
+			}
+			if best != nil {
+				return best
 			}
 		}
-
-		var dateCandidates []time.Time
-
-		switch target.Kind {
-		case MonthTargetKindDays:
-			expanded := target.ExpandDays()
-			last := lastDayOfMonth(year, time.Month(month))
-			for _, dayNum := range expanded {
-				if dayNum <= last.Day() {
-					dateCandidates = append(dateCandidates, time.Date(year, time.Month(month), dayNum, 0, 0, 0, 0, time.UTC))
-				}
-			}
-		case MonthTargetKindLastDay:
-			dateCandidates = append(dateCandidates, lastDayOfMonth(year, time.Month(month)))
-		case MonthTargetKindLastWeekday:
-			dateCandidates = append(dateCandidates, lastWeekdayOfMonth(year, time.Month(month)))
-		case MonthTargetKindNearestWeekday:
-			if nwd, ok := nearestWeekday(year, time.Month(month), target.Day, target.Direction); ok {
-				dateCandidates = append(dateCandidates, nwd)
-			}
-		case MonthTargetKindOrdinalWeekday:
-			if target.Ordinal == Last {
-				dateCandidates = append(dateCandidates, lastWeekdayInMonth(year, time.Month(month), target.Weekday))
-			} else {
-				if od, ok := nthWeekdayOfMonth(year, time.Month(month), target.Weekday, target.Ordinal.ToN()); ok {
-					dateCandidates = append(dateCandidates, od)
-				}
-			}
-		}
-
-		for k := 0; k < len(dateCandidates)-1; k++ {
-			for j := k + 1; j < len(dateCandidates); j++ {
-				if dateCandidates[k].Before(dateCandidates[j]) {
-					dateCandidates[k], dateCandidates[j] = dateCandidates[j], dateCandidates[k]
-				}
-			}
-		}
-
-		for _, dc := range dateCandidates {
-			if dc.After(startDate) {
-				continue
-			}
-			if dc.Year() == startDate.Year() && dc.Month() == startDate.Month() && dc.Day() == startDate.Day() {
-				candidate := latestPastAtTimes(dc, times, loc, now)
-				if candidate != nil {
-					return candidate
-				}
-			} else {
-				candidate := latestAtTimes(dc, times, loc)
-				if candidate != nil {
-					return candidate
-				}
-			}
-		}
-
-		month--
-		if month < 1 {
-			month = 12
-			year--
-		}
+		month -= max(interval, 1)
 	}
 
 	return nil
 }
 
-func prevSingleDate(dateSpec DateSpec, times []TimeOfDay, loc *time.Location, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	nowDate := dateOnly(nowInTz)
-
+func prevSingleDate(dateSpec DateSpec, times []TimeOfDay, loc *time.Location, now, startDate time.Time) *occurrence {
 	switch dateSpec.Kind {
 	case DateSpecKindISO:
-		targetDate, _ := parseISODate(dateSpec.Date)
-		if targetDate.After(nowDate) {
-			return nil // Future date
-		}
-		if targetDate.Year() == nowDate.Year() && targetDate.Month() == nowDate.Month() && targetDate.Day() == nowDate.Day() {
-			return latestPastAtTimes(targetDate, times, loc, now)
-		}
-		return latestAtTimes(targetDate, times, loc)
+		d, _ := parseISODate(dateSpec.Date)
+		return latestPastAtTimes(d, times, loc, now, startDate)
 	case DateSpecKindNamed:
-		thisYear := time.Date(nowDate.Year(), time.Month(dateSpec.Month.Number()), dateSpec.Day, 0, 0, 0, 0, time.UTC)
-		lastYear := time.Date(nowDate.Year()-1, time.Month(dateSpec.Month.Number()), dateSpec.Day, 0, 0, 0, 0, time.UTC)
-
-		thisYearValid := thisYear.Month() == time.Month(dateSpec.Month.Number()) && thisYear.Day() == dateSpec.Day
-		lastYearValid := lastYear.Month() == time.Month(dateSpec.Month.Number()) && lastYear.Day() == dateSpec.Day
-
-		if thisYearValid && thisYear.Before(nowDate) {
-			return latestAtTimes(thisYear, times, loc)
-		}
-		if thisYearValid && thisYear.Year() == nowDate.Year() && thisYear.Month() == nowDate.Month() && thisYear.Day() == nowDate.Day() {
-			candidate := latestPastAtTimes(thisYear, times, loc, now)
-			if candidate != nil {
-				return candidate
+		// Consecutive Feb 29s can be eight years apart (2096, 2104).
+		for year := startDate.Year(); year >= startDate.Year()-8; year-- {
+			d, ok := namedDate(year, dateSpec)
+			if !ok {
+				continue
 			}
-			if lastYearValid {
-				return latestAtTimes(lastYear, times, loc)
+			if occ := latestPastAtTimes(d, times, loc, now, startDate); occ != nil {
+				return occ
 			}
-			return nil
 		}
-		if lastYearValid {
-			return latestAtTimes(lastYear, times, loc)
-		}
-		return nil
 	}
 
 	return nil
 }
 
-func prevYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
-	nowInTz := now.In(loc)
-	startDate := dateOnly(nowInTz)
-	startYear := nowInTz.Year()
-	anchorYear := epochDate.Year()
-	if anchor != "" {
-		anchorDate, _ := parseISODate(anchor)
-		anchorYear = anchorDate.Year()
+func prevYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *time.Location, anchor string, now, startDate time.Time) *occurrence {
+	year := startDate.Year()
+	if interval > 1 {
+		anchorYear := epochDate.Year()
+		if anchor != "" {
+			anchorDate, _ := parseISODate(anchor)
+			anchorYear = anchorDate.Year()
+		}
+		year -= floorMod(year-anchorYear, interval)
 	}
 
-	maxIter := 8 * interval
-	if interval <= 1 {
-		maxIter = 8
-	}
-
-	for y := 0; y < maxIter; y++ {
-		year := startYear - y
-
-		if interval > 1 {
-			yearOffset := year - anchorYear
-			if yearOffset < 0 || yearOffset%interval != 0 {
-				continue
+	for i := 0; i <= searchSteps(interval, unitsIn400Years(ScheduleExprKindYear)); i++ {
+		if d, ok := yearTargetDate(year, target); ok {
+			if occ := latestPastAtTimes(d, times, loc, now, startDate); occ != nil {
+				return occ
 			}
 		}
-
-		var targetDate time.Time
-		var valid bool
-
-		switch target.Kind {
-		case YearTargetKindDate:
-			targetDate = time.Date(year, time.Month(target.Month.Number()), target.Day, 0, 0, 0, 0, time.UTC)
-			valid = targetDate.Month() == time.Month(target.Month.Number()) && targetDate.Day() == target.Day
-		case YearTargetKindOrdinalWeekday:
-			if target.Ordinal == Last {
-				targetDate = lastWeekdayInMonth(year, time.Month(target.Month.Number()), target.Weekday)
-				valid = true
-			} else {
-				targetDate, valid = nthWeekdayOfMonth(year, time.Month(target.Month.Number()), target.Weekday, target.Ordinal.ToN())
-			}
-		case YearTargetKindDayOfMonth:
-			targetDate = time.Date(year, time.Month(target.Month.Number()), target.Day, 0, 0, 0, 0, time.UTC)
-			valid = targetDate.Month() == time.Month(target.Month.Number()) && targetDate.Day() == target.Day
-		case YearTargetKindLastWeekday:
-			targetDate = lastWeekdayOfMonth(year, time.Month(target.Month.Number()))
-			valid = true
-		}
-
-		if valid {
-			if targetDate.After(startDate) {
-				continue // Future
-			}
-			if targetDate.Year() == startDate.Year() && targetDate.Month() == startDate.Month() && targetDate.Day() == startDate.Day() {
-				candidate := latestPastAtTimes(targetDate, times, loc, now)
-				if candidate != nil {
-					return candidate
-				}
-			} else {
-				candidate := latestAtTimes(targetDate, times, loc)
-				if candidate != nil {
-					return candidate
-				}
-			}
-		}
+		year -= max(interval, 1)
 	}
 
 	return nil

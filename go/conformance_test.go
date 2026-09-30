@@ -2,8 +2,10 @@ package hron
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,14 +14,22 @@ import (
 type TestSpec struct {
 	Now         string                     `json:"now"`
 	Parse       map[string]json.RawMessage `json:"parse"`
-	ParseErrors ParseErrorGroup            `json:"parse_errors"`
+	ParseErrors json.RawMessage            `json:"parse_errors"`
 	Eval        map[string]json.RawMessage `json:"eval"`
-	Cron        CronSpec                   `json:"cron"`
-	EvalErrors  EvalErrorGroup             `json:"eval_errors"`
+	Cron        map[string]json.RawMessage `json:"cron"`
+	EvalErrors  json.RawMessage            `json:"eval_errors"`
+	Invariants  json.RawMessage            `json:"invariants"`
 }
 
-type EvalErrorGroup struct {
-	Tests []EvalErrorTest `json:"tests"`
+type InvariantSettings struct {
+	Count int               `json:"count"`
+	Rules map[string]string `json:"rules"`
+}
+
+type InvariantTest struct {
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+	Now        string `json:"now"`
 }
 
 type EvalErrorTest struct {
@@ -28,91 +38,56 @@ type EvalErrorTest struct {
 	Description string `json:"description"`
 }
 
-type ParseGroup struct {
-	Tests []ParseTest `json:"tests"`
-}
-
 type ParseTest struct {
 	Name      string `json:"name"`
 	Input     string `json:"input"`
 	Canonical string `json:"canonical"`
 }
 
-type ParseErrorGroup struct {
-	Tests []ParseErrorTest `json:"tests"`
-}
-
 type ParseErrorTest struct {
-	Name        string `json:"name"`
-	Input       string `json:"input"`
-	Description string `json:"description"`
-}
-
-type EvalGroup struct {
-	Tests []EvalTest `json:"tests"`
+	Name          string `json:"name"`
+	Input         string `json:"input"`
+	Description   string `json:"description"`
+	ErrorContains string `json:"error_contains"`
 }
 
 type EvalTest struct {
-	Name        string   `json:"name"`
-	Expression  string   `json:"expression"`
-	Description string   `json:"description,omitempty"`
-	Now         string   `json:"now,omitempty"`
-	Next        *string  `json:"next,omitempty"`
-	NextDate    string   `json:"next_date,omitempty"`
-	NextN       []string `json:"next_n,omitempty"`
-	NextNCount  int      `json:"next_n_count,omitempty"`
-	NextNLength int      `json:"next_n_length,omitempty"`
-}
-
-type OccurrencesGroup struct {
-	Tests []OccurrencesTest `json:"tests"`
+	Name        string          `json:"name"`
+	Expression  string          `json:"expression"`
+	Description string          `json:"description,omitempty"`
+	Now         string          `json:"now,omitempty"`
+	Next        json.RawMessage `json:"next,omitempty"`
+	NextDate    json.RawMessage `json:"next_date,omitempty"`
+	NextN       *[]string       `json:"next_n,omitempty"`
+	NextNCount  int             `json:"next_n_count,omitempty"`
+	NextNLength *int            `json:"next_n_length,omitempty"`
 }
 
 type OccurrencesTest struct {
-	Name        string   `json:"name"`
-	Expression  string   `json:"expression"`
-	Description string   `json:"description,omitempty"`
-	From        string   `json:"from"`
-	Take        int      `json:"take"`
-	Expected    []string `json:"expected"`
-}
-
-type BetweenGroup struct {
-	Tests []BetweenTest `json:"tests"`
+	Name        string    `json:"name"`
+	Expression  string    `json:"expression"`
+	Description string    `json:"description,omitempty"`
+	From        string    `json:"from"`
+	Take        int       `json:"take"`
+	Expected    *[]string `json:"expected"`
 }
 
 type BetweenTest struct {
-	Name          string   `json:"name"`
-	Expression    string   `json:"expression"`
-	Description   string   `json:"description,omitempty"`
-	From          string   `json:"from"`
-	To            string   `json:"to"`
-	Expected      []string `json:"expected,omitempty"`
-	ExpectedCount int      `json:"expected_count,omitempty"`
-}
-
-type PreviousFromGroup struct {
-	Tests []PreviousFromTest `json:"tests"`
+	Name          string    `json:"name"`
+	Expression    string    `json:"expression"`
+	Description   string    `json:"description,omitempty"`
+	From          string    `json:"from"`
+	To            string    `json:"to"`
+	Expected      *[]string `json:"expected,omitempty"`
+	ExpectedCount *int      `json:"expected_count,omitempty"`
 }
 
 type PreviousFromTest struct {
-	Name        string  `json:"name"`
-	Expression  string  `json:"expression"`
-	Description string  `json:"description,omitempty"`
-	Now         string  `json:"now"`
-	Expected    *string `json:"expected"`
-}
-
-type CronSpec struct {
-	ToCron         ToCronGroup        `json:"to_cron"`
-	ToCronErrors   ToCronErrorGroup   `json:"to_cron_errors"`
-	FromCron       FromCronGroup      `json:"from_cron"`
-	FromCronErrors FromCronErrorGroup `json:"from_cron_errors"`
-	Roundtrip      RoundtripGroup     `json:"roundtrip"`
-}
-
-type ToCronGroup struct {
-	Tests []ToCronTest `json:"tests"`
+	Name        string          `json:"name"`
+	Expression  string          `json:"expression"`
+	Description string          `json:"description,omitempty"`
+	Now         string          `json:"now"`
+	Expected    json.RawMessage `json:"expected"`
 }
 
 type ToCronTest struct {
@@ -121,18 +96,10 @@ type ToCronTest struct {
 	Cron string `json:"cron"`
 }
 
-type ToCronErrorGroup struct {
-	Tests []ToCronErrorTest `json:"tests"`
-}
-
 type ToCronErrorTest struct {
 	Name        string `json:"name"`
 	Hron        string `json:"hron"`
 	Description string `json:"description"`
-}
-
-type FromCronGroup struct {
-	Tests []FromCronTest `json:"tests"`
 }
 
 type FromCronTest struct {
@@ -141,18 +108,10 @@ type FromCronTest struct {
 	Hron string `json:"hron"`
 }
 
-type FromCronErrorGroup struct {
-	Tests []FromCronErrorTest `json:"tests"`
-}
-
 type FromCronErrorTest struct {
 	Name        string `json:"name"`
 	Cron        string `json:"cron"`
 	Description string `json:"description"`
-}
-
-type RoundtripGroup struct {
-	Tests []RoundtripTest `json:"tests"`
 }
 
 type RoundtripTest struct {
@@ -160,17 +119,50 @@ type RoundtripTest struct {
 	Hron string `json:"hron"`
 }
 
-func loadSpec(t *testing.T) *TestSpec {
+func readSpec(t *testing.T) []byte {
 	data, err := os.ReadFile("../spec/tests.json")
 	if err != nil {
 		t.Fatalf("failed to read spec: %v", err)
 	}
+	return data
+}
+
+func loadSpec(t *testing.T) *TestSpec {
+	data := readSpec(t)
 
 	var spec TestSpec
 	if err := json.Unmarshal(data, &spec); err != nil {
 		t.Fatalf("failed to parse spec: %v", err)
 	}
 	return &spec
+}
+
+// decodeCases decodes a section's tests. A case field outside fields fails the
+// test, because this runner would not check it; name and description are labels.
+func decodeCases[T any](t *testing.T, section json.RawMessage, fields ...string) []T {
+	t.Helper()
+	var group struct {
+		Tests []json.RawMessage `json:"tests"`
+	}
+	if err := json.Unmarshal(section, &group); err != nil {
+		t.Fatalf("failed to parse section: %v", err)
+	}
+	cases := make([]T, len(group.Tests))
+	for i, raw := range group.Tests {
+		var caseFields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &caseFields); err != nil {
+			t.Fatalf("failed to parse case %d: %v", i, err)
+		}
+		for field := range caseFields {
+			if field != "name" && field != "description" && !slices.Contains(fields, field) {
+				t.Errorf("case %s: field %q is not checked by this runner", caseFields["name"], field)
+			}
+		}
+		if err := json.Unmarshal(raw, &cases[i]); err != nil {
+			t.Fatalf("failed to parse case %s: %v", caseFields["name"], err)
+		}
+	}
+	return cases
 }
 
 func parseZonedDateTime(s string) (time.Time, error) {
@@ -196,6 +188,28 @@ func parseZonedDateTime(s string) (time.Time, error) {
 	return t.In(loc), nil
 }
 
+// TestSpecSections fails on any section this runner does not check, so that a
+// new section cannot pass unchecked (spec/README.md, "Writing a runner").
+// Every eval section other than the four TestEval skips is a nextFrom section.
+func TestSpecSections(t *testing.T) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(readSpec(t), &top); err != nil {
+		t.Fatalf("failed to parse spec: %v", err)
+	}
+	checkKnownKeys(t, "top-level", top, "$schema", "version", "description", "now", "_eval_assertion_types",
+		"_behavioral_notes", "parse", "parse_errors", "eval", "cron", "eval_errors", "invariants")
+
+	checkKnownKeys(t, "cron", loadSpec(t).Cron, "description", "to_cron", "to_cron_errors", "from_cron", "from_cron_errors", "roundtrip")
+}
+
+func checkKnownKeys(t *testing.T, where string, sections map[string]json.RawMessage, known ...string) {
+	for name := range sections {
+		if !slices.Contains(known, name) {
+			t.Errorf("unknown %s section %q: this runner does not check it", where, name)
+		}
+	}
+}
+
 func TestParse(t *testing.T) {
 	spec := loadSpec(t)
 
@@ -204,14 +218,12 @@ func TestParse(t *testing.T) {
 			continue
 		}
 
-		var group ParseGroup
-		if err := json.Unmarshal(raw, &group); err != nil {
-			t.Fatalf("failed to parse section %s: %v", section, err)
-		}
-
 		t.Run(section, func(t *testing.T) {
-			for _, tc := range group.Tests {
+			for _, tc := range decodeCases[ParseTest](t, raw, "input", "canonical") {
 				t.Run(tc.Name, func(t *testing.T) {
+					if tc.Canonical == "" {
+						t.Fatalf("case has no canonical to assert")
+					}
 					s, err := ParseSchedule(tc.Input)
 					if err != nil {
 						t.Fatalf("failed to parse %q: %v", tc.Input, err)
@@ -239,11 +251,14 @@ func TestParse(t *testing.T) {
 func TestParseErrors(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range spec.ParseErrors.Tests {
+	for _, tc := range decodeCases[ParseErrorTest](t, spec.ParseErrors, "input", "error_contains") {
 		t.Run(tc.Name, func(t *testing.T) {
 			_, err := ParseSchedule(tc.Input)
 			if err == nil {
-				t.Errorf("expected parse error for %q (%s)", tc.Input, tc.Description)
+				t.Fatalf("expected parse error for %q (%s)", tc.Input, tc.Description)
+			}
+			if !strings.Contains(err.Error(), tc.ErrorContains) {
+				t.Errorf("parse error for %q is %q, want it to contain %q", tc.Input, err, tc.ErrorContains)
 			}
 		})
 	}
@@ -252,7 +267,7 @@ func TestParseErrors(t *testing.T) {
 func TestEvalErrors(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range spec.EvalErrors.Tests {
+	for _, tc := range decodeCases[EvalErrorTest](t, spec.EvalErrors, "expression") {
 		t.Run(tc.Name, func(t *testing.T) {
 			// Go validates timezone at construction time (NewSchedule/ParseSchedule),
 			// so these should fail at parse time.
@@ -273,18 +288,17 @@ func TestEval(t *testing.T) {
 	}
 
 	for section, raw := range spec.Eval {
-		if section == "description" || section == "occurrences" || section == "between" || section == "matches" {
+		if section == "description" || section == "occurrences" || section == "between" || section == "matches" || section == "previous_from" {
 			continue
 		}
 
-		var group EvalGroup
-		if err := json.Unmarshal(raw, &group); err != nil {
-			t.Fatalf("failed to parse eval section %s: %v", section, err)
-		}
-
 		t.Run(section, func(t *testing.T) {
-			for _, tc := range group.Tests {
+			cases := decodeCases[EvalTest](t, raw, "expression", "now", "next", "next_date", "next_n", "next_n_count", "next_n_length")
+			for _, tc := range cases {
 				t.Run(tc.Name, func(t *testing.T) {
+					if tc.Next == nil && tc.NextDate == nil && tc.NextN == nil && tc.NextNLength == nil {
+						t.Fatalf("case has no assertion field this runner understands (next, next_date, next_n, next_n_length)")
+					}
 					s, err := ParseSchedule(tc.Expression)
 					if err != nil {
 						t.Fatalf("failed to parse %q: %v", tc.Expression, err)
@@ -299,47 +313,37 @@ func TestEval(t *testing.T) {
 					}
 
 					if tc.Next != nil {
+						checkTimestamp(t, "NextFrom()", s.NextFrom(now), expectedTimestamp(t, tc.Next))
+					}
+
+					if tc.NextDate != nil {
+						var wantDate *string
+						if err := json.Unmarshal(tc.NextDate, &wantDate); err != nil {
+							t.Fatalf("failed to read next_date %s: %v", tc.NextDate, err)
+						}
 						result := s.NextFrom(now)
-						if *tc.Next == "" {
-							if result != nil {
-								t.Errorf("NextFrom() = %v, want nil", result)
-							}
-						} else {
-							expected, err := parseZonedDateTime(*tc.Next)
-							if err != nil {
-								t.Fatalf("failed to parse expected next %q: %v", *tc.Next, err)
-							}
-							if result == nil {
-								t.Errorf("NextFrom() = nil, want %v", expected)
-							} else if !result.Equal(expected) {
-								t.Errorf("NextFrom() = %v, want %v", result, expected)
-							}
+						switch {
+						case wantDate == nil && result != nil:
+							t.Errorf("NextFrom() = %v, want nil", *result)
+						case wantDate != nil && result == nil:
+							t.Errorf("NextFrom() = nil, want date %s", *wantDate)
+						case wantDate != nil && result.Format("2006-01-02") != *wantDate:
+							t.Errorf("NextFrom() date = %s, want %s", result.Format("2006-01-02"), *wantDate)
 						}
 					}
 
-					if tc.NextDate != "" {
-						result := s.NextFrom(now)
-						if result == nil {
-							t.Errorf("NextFrom() = nil, want date %s", tc.NextDate)
-						} else {
-							gotDate := result.In(time.UTC).Format("2006-01-02")
-							if gotDate != tc.NextDate {
-								t.Errorf("NextFrom() date = %s, want %s", gotDate, tc.NextDate)
-							}
-						}
-					}
-
-					if len(tc.NextN) > 0 {
-						n := len(tc.NextN)
+					if tc.NextN != nil {
+						expectedN := *tc.NextN
+						n := len(expectedN)
 						if tc.NextNCount > 0 {
 							n = tc.NextNCount
 						}
 						results := s.NextNFrom(now, n)
 
-						if len(results) != len(tc.NextN) {
-							t.Errorf("NextNFrom() returned %d results, want %d", len(results), len(tc.NextN))
+						if len(results) != len(expectedN) {
+							t.Errorf("NextNFrom() returned %d results, want %d", len(results), len(expectedN))
 						} else {
-							for i, expectedStr := range tc.NextN {
+							for i, expectedStr := range expectedN {
 								expected, err := parseZonedDateTime(expectedStr)
 								if err != nil {
 									t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
@@ -351,11 +355,10 @@ func TestEval(t *testing.T) {
 						}
 					}
 
-					if tc.NextNLength > 0 {
-						n := tc.NextNCount
-						results := s.NextNFrom(now, n)
-						if len(results) != tc.NextNLength {
-							t.Errorf("NextNFrom() returned %d results, want %d", len(results), tc.NextNLength)
+					if tc.NextNLength != nil {
+						results := s.NextNFrom(now, tc.NextNCount)
+						if len(results) != *tc.NextNLength {
+							t.Errorf("NextNFrom() returned %d results, want %d", len(results), *tc.NextNLength)
 						}
 					}
 				})
@@ -367,13 +370,12 @@ func TestEval(t *testing.T) {
 func TestOccurrences(t *testing.T) {
 	spec := loadSpec(t)
 
-	var group OccurrencesGroup
-	if err := json.Unmarshal(spec.Eval["occurrences"], &group); err != nil {
-		t.Fatalf("failed to parse occurrences section: %v", err)
-	}
-
-	for _, tc := range group.Tests {
+	for _, tc := range decodeCases[OccurrencesTest](t, spec.Eval["occurrences"], "expression", "from", "take", "expected") {
 		t.Run(tc.Name, func(t *testing.T) {
+			if tc.Expected == nil {
+				t.Fatalf("case has no expected list")
+			}
+			expectedList := *tc.Expected
 			s, err := ParseSchedule(tc.Expression)
 			if err != nil {
 				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
@@ -394,10 +396,10 @@ func TestOccurrences(t *testing.T) {
 				count++
 			}
 
-			if len(results) != len(tc.Expected) {
-				t.Errorf("Occurrences() returned %d results, want %d", len(results), len(tc.Expected))
+			if len(results) != len(expectedList) {
+				t.Errorf("Occurrences() returned %d results, want %d", len(results), len(expectedList))
 			} else {
-				for i, expectedStr := range tc.Expected {
+				for i, expectedStr := range expectedList {
 					expected, err := parseZonedDateTime(expectedStr)
 					if err != nil {
 						t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
@@ -414,13 +416,11 @@ func TestOccurrences(t *testing.T) {
 func TestBetween(t *testing.T) {
 	spec := loadSpec(t)
 
-	var group BetweenGroup
-	if err := json.Unmarshal(spec.Eval["between"], &group); err != nil {
-		t.Fatalf("failed to parse between section: %v", err)
-	}
-
-	for _, tc := range group.Tests {
+	for _, tc := range decodeCases[BetweenTest](t, spec.Eval["between"], "expression", "from", "to", "expected", "expected_count") {
 		t.Run(tc.Name, func(t *testing.T) {
+			if tc.Expected == nil && tc.ExpectedCount == nil {
+				t.Fatalf("case has neither expected nor expected_count")
+			}
 			s, err := ParseSchedule(tc.Expression)
 			if err != nil {
 				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
@@ -441,15 +441,17 @@ func TestBetween(t *testing.T) {
 				results = append(results, dt)
 			}
 
-			if tc.ExpectedCount > 0 {
-				if len(results) != tc.ExpectedCount {
-					t.Errorf("Between() returned %d results, want %d", len(results), tc.ExpectedCount)
+			if tc.ExpectedCount != nil {
+				if len(results) != *tc.ExpectedCount {
+					t.Errorf("Between() returned %d results, want %d", len(results), *tc.ExpectedCount)
 				}
-			} else {
-				if len(results) != len(tc.Expected) {
-					t.Errorf("Between() returned %d results, want %d", len(results), len(tc.Expected))
+			}
+			if tc.Expected != nil {
+				expectedList := *tc.Expected
+				if len(results) != len(expectedList) {
+					t.Errorf("Between() returned %d results, want %d", len(results), len(expectedList))
 				} else {
-					for i, expectedStr := range tc.Expected {
+					for i, expectedStr := range expectedList {
 						expected, err := parseZonedDateTime(expectedStr)
 						if err != nil {
 							t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
@@ -467,13 +469,11 @@ func TestBetween(t *testing.T) {
 func TestPreviousFrom(t *testing.T) {
 	spec := loadSpec(t)
 
-	var group PreviousFromGroup
-	if err := json.Unmarshal(spec.Eval["previous_from"], &group); err != nil {
-		t.Fatalf("failed to parse previous_from section: %v", err)
-	}
-
-	for _, tc := range group.Tests {
+	for _, tc := range decodeCases[PreviousFromTest](t, spec.Eval["previous_from"], "expression", "now", "expected") {
 		t.Run(tc.Name, func(t *testing.T) {
+			if tc.Expected == nil {
+				t.Fatalf("case has no expected field")
+			}
 			s, err := ParseSchedule(tc.Expression)
 			if err != nil {
 				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
@@ -484,25 +484,7 @@ func TestPreviousFrom(t *testing.T) {
 				t.Fatalf("failed to parse now %q: %v", tc.Now, err)
 			}
 
-			result := s.PreviousFrom(now)
-
-			if tc.Expected == nil {
-				if result != nil {
-					t.Errorf("PreviousFrom() = %v, want nil", result)
-				}
-			} else {
-				if result == nil {
-					t.Errorf("PreviousFrom() = nil, want %v", *tc.Expected)
-				} else {
-					expected, err := parseZonedDateTime(*tc.Expected)
-					if err != nil {
-						t.Fatalf("failed to parse expected %q: %v", *tc.Expected, err)
-					}
-					if !result.Equal(expected) {
-						t.Errorf("PreviousFrom() = %v, want %v", result, expected)
-					}
-				}
-			}
+			checkTimestamp(t, "PreviousFrom()", s.PreviousFrom(now), expectedTimestamp(t, tc.Expected))
 		})
 	}
 }
@@ -510,7 +492,7 @@ func TestPreviousFrom(t *testing.T) {
 func TestToCron(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range spec.Cron.ToCron.Tests {
+	for _, tc := range decodeCases[ToCronTest](t, spec.Cron["to_cron"], "hron", "cron") {
 		t.Run(tc.Name, func(t *testing.T) {
 			s, err := ParseSchedule(tc.Hron)
 			if err != nil {
@@ -532,7 +514,7 @@ func TestToCron(t *testing.T) {
 func TestToCronErrors(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range spec.Cron.ToCronErrors.Tests {
+	for _, tc := range decodeCases[ToCronErrorTest](t, spec.Cron["to_cron_errors"], "hron") {
 		t.Run(tc.Name, func(t *testing.T) {
 			s, err := ParseSchedule(tc.Hron)
 			if err != nil {
@@ -550,7 +532,7 @@ func TestToCronErrors(t *testing.T) {
 func TestFromCron(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range spec.Cron.FromCron.Tests {
+	for _, tc := range decodeCases[FromCronTest](t, spec.Cron["from_cron"], "cron", "hron") {
 		t.Run(tc.Name, func(t *testing.T) {
 			s, err := FromCronExpr(tc.Cron)
 			if err != nil {
@@ -568,7 +550,7 @@ func TestFromCron(t *testing.T) {
 func TestFromCronErrors(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range spec.Cron.FromCronErrors.Tests {
+	for _, tc := range decodeCases[FromCronErrorTest](t, spec.Cron["from_cron_errors"], "cron") {
 		t.Run(tc.Name, func(t *testing.T) {
 			_, err := FromCronExpr(tc.Cron)
 			if err == nil {
@@ -581,7 +563,7 @@ func TestFromCronErrors(t *testing.T) {
 func TestCronRoundtrip(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range spec.Cron.Roundtrip.Tests {
+	for _, tc := range decodeCases[RoundtripTest](t, spec.Cron["roundtrip"], "hron") {
 		t.Run(tc.Name, func(t *testing.T) {
 			s1, err := ParseSchedule(tc.Hron)
 			if err != nil {
@@ -610,27 +592,21 @@ func TestCronRoundtrip(t *testing.T) {
 	}
 }
 
-type MatchesGroup struct {
-	Tests []MatchesTest `json:"tests"`
-}
-
 type MatchesTest struct {
 	Name       string `json:"name"`
 	Expression string `json:"expression"`
 	Datetime   string `json:"datetime"`
-	Expected   bool   `json:"expected"`
+	Expected   *bool  `json:"expected"`
 }
 
 func TestMatches(t *testing.T) {
 	spec := loadSpec(t)
 
-	var group MatchesGroup
-	if err := json.Unmarshal(spec.Eval["matches"], &group); err != nil {
-		t.Fatalf("failed to parse matches section: %v", err)
-	}
-
-	for _, tc := range group.Tests {
+	for _, tc := range decodeCases[MatchesTest](t, spec.Eval["matches"], "expression", "datetime", "expected") {
 		t.Run(tc.Name, func(t *testing.T) {
+			if tc.Expected == nil {
+				t.Fatalf("case has no expected field")
+			}
 			s, err := ParseSchedule(tc.Expression)
 			if err != nil {
 				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
@@ -642,8 +618,8 @@ func TestMatches(t *testing.T) {
 			}
 
 			got := s.Matches(dt)
-			if got != tc.Expected {
-				t.Errorf("Matches(%q, %v) = %v, want %v", tc.Expression, dt, got, tc.Expected)
+			if got != *tc.Expected {
+				t.Errorf("Matches(%q, %v) = %v, want %v", tc.Expression, dt, got, *tc.Expected)
 			}
 		})
 	}
@@ -716,25 +692,189 @@ func TestIntervalAlignment(t *testing.T) {
 	}
 }
 
-func TestDST(t *testing.T) {
-	// March 8, 2026, 2:00 AM doesn't exist in America/New_York (spring forward)
-	s, err := ParseSchedule("every day at 02:30 in America/New_York")
+// expectedTimestamp decodes a timestamp assertion; null asserts no occurrence.
+func expectedTimestamp(t *testing.T, raw json.RawMessage) *time.Time {
+	if strings.TrimSpace(string(raw)) == "null" {
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(raw, &str); err != nil {
+		t.Fatalf("failed to read expected timestamp %s: %v", raw, err)
+	}
+	expected, err := parseZonedDateTime(str)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to parse expected timestamp %q: %v", str, err)
 	}
+	return &expected
+}
 
-	now := time.Date(2026, 3, 7, 23, 0, 0, 0, time.FixedZone("EST", -5*3600))
-	next := s.NextFrom(now)
-	if next == nil {
-		t.Fatal("expected non-nil result")
-	}
-
-	loc, _ := time.LoadLocation("America/New_York")
-	if next.In(loc).Hour() < 2 || (next.In(loc).Hour() == 2 && next.In(loc).Minute() < 30) {
-		t.Logf("DST handling result: %v", next.In(loc))
+func checkTimestamp(t *testing.T, call string, got, want *time.Time) {
+	switch {
+	case want == nil && got != nil:
+		t.Errorf("%s = %v, want nil", call, *got)
+	case want != nil && got == nil:
+		t.Errorf("%s = nil, want %v", call, *want)
+	case want != nil && !got.Equal(*want):
+		t.Errorf("%s = %v, want %v", call, *got, *want)
 	}
 }
 
-func isNullJSON(s string) bool {
-	return strings.TrimSpace(s) == "null"
+var invariantRules = map[string]func(t *testing.T, s *Schedule, now time.Time, count int){
+	"next_matches":       checkNextMatches,
+	"next_after_now":     checkNextAfterNow,
+	"next_n_chain":       checkNextNChain,
+	"occurrences_prefix": checkOccurrencesPrefix,
+	"between_window":     checkBetweenWindow,
+	"prev_inverse":       checkPrevInverse,
+	"prev_before_now":    checkPrevBeforeNow,
+	"display_roundtrip":  checkDisplayRoundtrip,
+}
+
+func TestInvariants(t *testing.T) {
+	spec := loadSpec(t)
+	var settings InvariantSettings
+	if err := json.Unmarshal(spec.Invariants, &settings); err != nil {
+		t.Fatalf("failed to parse invariants section: %v", err)
+	}
+	count := settings.Count
+	ruleNames := slices.Sorted(maps.Keys(settings.Rules))
+	if len(ruleNames) == 0 {
+		t.Fatalf("invariants section lists no rules")
+	}
+
+	for _, tc := range decodeCases[InvariantTest](t, spec.Invariants, "expression", "now") {
+		t.Run(tc.Name, func(t *testing.T) {
+			s, err := ParseSchedule(tc.Expression)
+			if err != nil {
+				t.Fatalf("failed to parse %q: %v", tc.Expression, err)
+			}
+			now, err := parseZonedDateTime(tc.Now)
+			if err != nil {
+				t.Fatalf("failed to parse now %q: %v", tc.Now, err)
+			}
+			for _, name := range ruleNames {
+				t.Run(name, func(t *testing.T) {
+					check, ok := invariantRules[name]
+					if !ok {
+						t.Fatalf("rule %q is not implemented by this runner", name)
+					}
+					check(t, s, now, count)
+				})
+			}
+		})
+	}
+}
+
+func checkNextMatches(t *testing.T, s *Schedule, now time.Time, _ int) {
+	next := s.NextFrom(now)
+	if next != nil && !s.Matches(*next) {
+		t.Errorf("%q: NextFrom(%v) = %v, but Matches(%v) is false", s, now, *next, *next)
+	}
+}
+
+func checkNextAfterNow(t *testing.T, s *Schedule, now time.Time, _ int) {
+	if next := s.NextFrom(now); next != nil && !next.After(now) {
+		t.Errorf("%q: NextFrom(%v) = %v is not after now", s, now, *next)
+	}
+}
+
+func checkNextNChain(t *testing.T, s *Schedule, now time.Time, count int) {
+	list := s.NextNFrom(now, count)
+	next := s.NextFrom(now)
+	if next == nil {
+		if len(list) != 0 {
+			t.Errorf("%q: NextFrom(%v) = nil, but NextNFrom = %v", s, now, list)
+		}
+		return
+	}
+	if len(list) == 0 || !list[0].Equal(*next) {
+		t.Errorf("%q: NextNFrom(%v) = %v does not start with NextFrom = %v", s, now, list, *next)
+		return
+	}
+	for i := 1; i < len(list); i++ {
+		if !list[i].After(list[i-1]) {
+			t.Errorf("%q: NextNFrom(%v) is not strictly increasing at %d: %v", s, now, i, list)
+		}
+		following := s.NextFrom(list[i-1])
+		if following == nil || !following.Equal(list[i]) {
+			t.Errorf("%q: NextFrom(%v) = %v, but NextNFrom has %v", s, list[i-1], following, list[i])
+		}
+	}
+}
+
+func checkOccurrencesPrefix(t *testing.T, s *Schedule, now time.Time, count int) {
+	var taken []time.Time
+	for dt := range s.Occurrences(now) {
+		if len(taken) == count {
+			break
+		}
+		taken = append(taken, dt)
+	}
+	if want := s.NextNFrom(now, count); !sameInstants(taken, want) {
+		t.Errorf("%q: first %d of Occurrences(%v) = %v, NextNFrom = %v", s, count, now, taken, want)
+	}
+}
+
+func checkBetweenWindow(t *testing.T, s *Schedule, now time.Time, count int) {
+	want := s.NextNFrom(now, count)
+	if len(want) == 0 {
+		return
+	}
+	last := want[len(want)-1]
+	var got []time.Time
+	for dt := range s.Between(now, last) {
+		got = append(got, dt)
+	}
+	if !sameInstants(got, want) {
+		t.Errorf("%q: Between(%v, %v) = %v, NextNFrom = %v", s, now, last, got, want)
+	}
+}
+
+func checkPrevInverse(t *testing.T, s *Schedule, now time.Time, count int) {
+	list := s.NextNFrom(now, count)
+	for i := 1; i < len(list); i++ {
+		prev := s.PreviousFrom(list[i])
+		if prev == nil || !prev.Equal(list[i-1]) {
+			t.Errorf("%q: PreviousFrom(%v) = %v, want %v", s, list[i], prev, list[i-1])
+		}
+	}
+}
+
+func checkPrevBeforeNow(t *testing.T, s *Schedule, now time.Time, _ int) {
+	prev := s.PreviousFrom(now)
+	if prev == nil {
+		return
+	}
+	if !prev.Before(now) {
+		t.Errorf("%q: PreviousFrom(%v) = %v is not before now", s, now, *prev)
+	}
+	if !s.Matches(*prev) {
+		t.Errorf("%q: PreviousFrom(%v) = %v, but Matches(%v) is false", s, now, *prev, *prev)
+	}
+	if next := s.NextFrom(*prev); next != nil && next.Before(now) {
+		t.Errorf("%q: PreviousFrom(%v) = %v, but NextFrom(%v) = %v is earlier than now", s, now, *prev, *prev, *next)
+	}
+}
+
+func checkDisplayRoundtrip(t *testing.T, s *Schedule, _ time.Time, _ int) {
+	display := s.String()
+	reparsed, err := ParseSchedule(display)
+	if err != nil {
+		t.Fatalf("%q: failed to re-parse display %q: %v", s, display, err)
+	}
+	if got := reparsed.String(); got != display {
+		t.Errorf("%q: re-parsed display is %q", display, got)
+	}
+}
+
+func sameInstants(a, b []time.Time) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !a[i].Equal(b[i]) {
+			return false
+		}
+	}
+	return true
 }

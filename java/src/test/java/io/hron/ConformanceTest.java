@@ -2,22 +2,27 @@ package io.hron;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DynamicContainer;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 /** Conformance tests loaded from spec/tests.json. */
@@ -34,459 +39,474 @@ public class ConformanceTest {
     DEFAULT_NOW = parseZonedDateTime(SPEC.get("now").asText());
   }
 
+  private interface CaseCheck {
+    void check(JsonNode tc, String label) throws Exception;
+  }
+
+  /** One test per case, failing on any field the check does not read. */
+  private static Stream<DynamicTest> cases(
+      JsonNode section, String prefix, Set<String> fields, CaseCheck check) {
+    List<DynamicTest> tests = new ArrayList<>();
+    for (JsonNode tc : section.get("tests")) {
+      String label = prefix + "/" + tc.get("name").asText();
+      tests.add(
+          DynamicTest.dynamicTest(
+              label,
+              () -> {
+                assertKnownFields(tc, fields, label);
+                check.check(tc, label);
+              }));
+    }
+    return tests.stream();
+  }
+
+  private static String text(JsonNode tc, String field, String label) {
+    return required(tc, field, label).asText();
+  }
+
   @TestFactory
   Stream<DynamicTest> parseTests() {
     List<DynamicTest> tests = new ArrayList<>();
-    JsonNode parse = SPEC.get("parse");
-    parse
-        .fieldNames()
-        .forEachRemaining(
+    SPEC.get("parse")
+        .properties()
+        .forEach(
             section -> {
-              if (section.equals("description")) return;
-              JsonNode group = parse.get(section);
-              JsonNode testsNode = group.get("tests");
-              if (testsNode == null || !testsNode.isArray()) return;
-
-              for (JsonNode tc : testsNode) {
-                String name = section + "/" + tc.get("name").asText();
-                String input = tc.get("input").asText();
-                String canonical = tc.get("canonical").asText();
-
-                tests.add(
-                    DynamicTest.dynamicTest(
-                        name,
-                        () -> {
-                          Schedule s = Schedule.parse(input);
-                          assertEquals(canonical, s.toString(), "parse(" + input + ").toString()");
-
-                          Schedule s2 = Schedule.parse(canonical);
-                          assertEquals(
-                              canonical,
-                              s2.toString(),
-                              "roundtrip: parse(" + canonical + ").toString()");
-                        }));
-              }
+              if (section.getKey().equals("description")) return;
+              cases(
+                      section.getValue(),
+                      "parse/" + section.getKey(),
+                      Set.of("input", "canonical"),
+                      (tc, label) -> {
+                        String input = text(tc, "input", label);
+                        String canonical = text(tc, "canonical", label);
+                        assertEquals(
+                            canonical, Schedule.parse(input).toString(), label + ": " + input);
+                        assertEquals(
+                            canonical,
+                            Schedule.parse(canonical).toString(),
+                            label + ": roundtrip of " + canonical);
+                      })
+                  .forEach(tests::add);
             });
     return tests.stream();
   }
 
   @TestFactory
   Stream<DynamicTest> parseErrorTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode errorTests = SPEC.get("parse_errors").get("tests");
+    return cases(
+        SPEC.get("parse_errors"),
+        "parse_errors",
+        Set.of("input", "error_contains"),
+        (tc, label) -> {
+          String input = text(tc, "input", label);
+          HronException e =
+              assertThrows(HronException.class, () -> Schedule.parse(input), label + ": " + input);
+          if (tc.has("error_contains")) {
+            String expected = tc.get("error_contains").asText();
+            assertTrue(
+                e.getMessage().contains(expected),
+                label + ": error '" + e.getMessage() + "' does not contain '" + expected + "'");
+          }
+        });
+  }
 
-    for (JsonNode tc : errorTests) {
-      String name = tc.get("name").asText();
-      String input = tc.get("input").asText();
+  private static final Set<String> TOP_LEVEL_KEYS =
+      Set.of(
+          "$schema",
+          "version",
+          "description",
+          "now",
+          "_eval_assertion_types",
+          "_behavioral_notes",
+          "parse",
+          "parse_errors",
+          "eval",
+          "cron",
+          "eval_errors",
+          "invariants");
 
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                assertThrows(
-                    HronException.class,
-                    () -> Schedule.parse(input),
-                    "expected parse error for: " + input);
-              }));
-    }
-    return tests.stream();
+  private static final Set<String> CRON_SECTIONS =
+      Set.of(
+          "description", "to_cron", "to_cron_errors", "from_cron", "from_cron_errors", "roundtrip");
+
+  private static final Set<String> NEXT_SECTIONS =
+      Set.of(
+          "day_repeat",
+          "interval_repeat",
+          "month_repeat",
+          "week_repeat",
+          "single_date",
+          "year_repeat",
+          "except",
+          "until",
+          "except_and_until",
+          "n_occurrences",
+          "multi_time",
+          "during",
+          "day_ranges",
+          "leap_year",
+          "dst_spring_forward",
+          "dst_fall_back",
+          "timezone_default",
+          "contradictory",
+          "edge_cases");
+
+  private static final Set<String> NEXT_ASSERTIONS =
+      Set.of("next", "next_date", "next_n", "next_n_length");
+
+  @Test
+  void specHasOnlyKnownSections() {
+    assertKnownFields(SPEC, TOP_LEVEL_KEYS, "tests.json");
+    assertKnownFields(SPEC.get("cron"), CRON_SECTIONS, "cron");
   }
 
   @TestFactory
   Stream<DynamicTest> evalTests() {
     List<DynamicTest> tests = new ArrayList<>();
-    JsonNode eval = SPEC.get("eval");
-    eval.fieldNames()
-        .forEachRemaining(
+    SPEC.get("eval")
+        .properties()
+        .forEach(
             section -> {
-              if (section.equals("description")) return;
-              JsonNode group = eval.get(section);
-              JsonNode testsNode = group.get("tests");
-              if (testsNode == null || !testsNode.isArray()) return;
-
-              for (JsonNode tc : testsNode) {
-                String name = section + "/" + tc.get("name").asText();
-                String expression = tc.get("expression").asText();
-
-                ZonedDateTime now =
-                    tc.has("now") ? parseZonedDateTime(tc.get("now").asText()) : DEFAULT_NOW;
-
-                if (tc.has("next")) {
-                  tests.add(
-                      DynamicTest.dynamicTest(
-                          name + "/next",
-                          () -> {
-                            Schedule s = Schedule.parse(expression);
-                            var result = s.nextFrom(now);
-
-                            JsonNode nextNode = tc.get("next");
-                            if (nextNode.isNull() || nextNode.asText().isEmpty()) {
-                              assertTrue(result.isEmpty(), "expected null for nextFrom()");
-                            } else {
-                              ZonedDateTime expected = parseZonedDateTime(nextNode.asText());
-                              assertTrue(result.isPresent(), "expected non-null for nextFrom()");
-                              assertEquals(
-                                  expected.toInstant(),
-                                  result.get().toInstant(),
-                                  "nextFrom() mismatch");
-                            }
-                          }));
-                }
-
-                if (tc.has("next_date")) {
-                  tests.add(
-                      DynamicTest.dynamicTest(
-                          name + "/next_date",
-                          () -> {
-                            Schedule s = Schedule.parse(expression);
-                            var result = s.nextFrom(now);
-
-                            String expectedDate = tc.get("next_date").asText();
-                            assertTrue(result.isPresent(), "expected non-null for nextFrom()");
-
-                            String gotDate = result.get().toLocalDate().toString();
-                            assertEquals(expectedDate, gotDate, "nextFrom() date mismatch");
-                          }));
-                }
-
-                if (tc.has("next_n")) {
-                  tests.add(
-                      DynamicTest.dynamicTest(
-                          name + "/next_n",
-                          () -> {
-                            Schedule s = Schedule.parse(expression);
-                            List<String> expectedStrs =
-                                MAPPER.convertValue(
-                                    tc.get("next_n"), new TypeReference<List<String>>() {});
-
-                            int n =
-                                tc.has("next_n_count")
-                                    ? tc.get("next_n_count").asInt()
-                                    : expectedStrs.size();
-
-                            List<ZonedDateTime> results = s.nextNFrom(now, n);
-                            assertEquals(
-                                expectedStrs.size(), results.size(), "nextNFrom() count mismatch");
-
-                            for (int i = 0; i < expectedStrs.size(); i++) {
-                              ZonedDateTime expected = parseZonedDateTime(expectedStrs.get(i));
-                              assertEquals(
-                                  expected.toInstant(),
-                                  results.get(i).toInstant(),
-                                  "nextNFrom()[" + i + "] mismatch");
-                            }
-                          }));
-                }
-
-                if (tc.has("next_n_length")) {
-                  tests.add(
-                      DynamicTest.dynamicTest(
-                          name + "/next_n_length",
-                          () -> {
-                            Schedule s = Schedule.parse(expression);
-                            int expectedLength = tc.get("next_n_length").asInt();
-                            int n = tc.get("next_n_count").asInt();
-
-                            List<ZonedDateTime> results = s.nextNFrom(now, n);
-                            assertEquals(
-                                expectedLength, results.size(), "nextNFrom() length mismatch");
-                          }));
-                }
+              if (section.getKey().equals("description")) return;
+              for (JsonNode tc : section.getValue().get("tests")) {
+                String name = section.getKey() + "/" + tc.get("name").asText();
+                tests.add(
+                    DynamicTest.dynamicTest(name, () -> checkEvalCase(section.getKey(), name, tc)));
               }
             });
     return tests.stream();
   }
 
-  @TestFactory
-  Stream<DynamicTest> previousFromTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode previousFromSection = SPEC.get("eval").get("previous_from");
-    if (previousFromSection == null) return tests.stream();
-
-    JsonNode testsNode = previousFromSection.get("tests");
-    if (testsNode == null || !testsNode.isArray()) return tests.stream();
-
-    for (JsonNode tc : testsNode) {
-      String name = tc.has("name") ? tc.get("name").asText() : tc.get("expression").asText();
-      String expression = tc.get("expression").asText();
-      String nowStr = tc.get("now").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              "previous_from/" + name,
-              () -> {
-                Schedule s = Schedule.parse(expression);
-                ZonedDateTime now = parseZonedDateTime(nowStr);
-                var result = s.previousFrom(now);
-
-                JsonNode expectedNode = tc.get("expected");
-                if (expectedNode.isNull()) {
-                  assertTrue(result.isEmpty(), "expected null for previousFrom()");
-                } else {
-                  ZonedDateTime expected = parseZonedDateTime(expectedNode.asText());
-                  assertTrue(result.isPresent(), "expected non-null for previousFrom()");
-                  assertEquals(
-                      expected.toInstant(), result.get().toInstant(), "previousFrom() mismatch");
-                }
-              }));
+  private static void checkEvalCase(String section, String name, JsonNode tc) throws HronException {
+    String label = name + " (" + tc.get("expression").asText() + ")";
+    Schedule s = Schedule.parse(tc.get("expression").asText());
+    switch (section) {
+      case "matches" -> {
+        assertKnownFields(tc, Set.of("expression", "datetime", "expected"), label);
+        ZonedDateTime datetime = parseZonedDateTime(required(tc, "datetime", label).asText());
+        JsonNode expectedNode = required(tc, "expected", label);
+        assertTrue(expectedNode.isBoolean(), label + ": expected is not a boolean");
+        boolean expected = expectedNode.asBoolean();
+        assertEquals(expected, s.matches(datetime), label + ": matches(" + datetime + ")");
+      }
+      case "previous_from" -> {
+        assertKnownFields(tc, Set.of("expression", "now", "expected"), label);
+        ZonedDateTime now = parseZonedDateTime(required(tc, "now", label).asText());
+        assertEquals(
+            timestamp(required(tc, "expected", label)),
+            s.previousFrom(now).map(ZonedDateTime::toInstant),
+            label + ": previousFrom(" + now + ")");
+      }
+      case "occurrences" -> {
+        assertKnownFields(tc, Set.of("expression", "from", "take", "expected"), label);
+        ZonedDateTime from = parseZonedDateTime(required(tc, "from", label).asText());
+        int take = required(tc, "take", label).asInt();
+        assertEquals(
+            timestamps(required(tc, "expected", label)),
+            instants(s.occurrences(from).limit(take).toList()),
+            label + ": occurrences(" + from + ")");
+      }
+      case "between" -> {
+        assertKnownFields(
+            tc, Set.of("expression", "from", "to", "expected", "expected_count"), label);
+        ZonedDateTime from = parseZonedDateTime(required(tc, "from", label).asText());
+        ZonedDateTime to = parseZonedDateTime(required(tc, "to", label).asText());
+        List<Instant> results = instants(s.between(from, to).toList());
+        assertTrue(
+            tc.has("expected") || tc.has("expected_count"),
+            label + ": no expected or expected_count");
+        if (tc.has("expected")) {
+          assertEquals(timestamps(tc.get("expected")), results, label + ": between()");
+        }
+        if (tc.has("expected_count")) {
+          assertEquals(tc.get("expected_count").asInt(), results.size(), label + ": between()");
+        }
+      }
+      default -> {
+        assertTrue(NEXT_SECTIONS.contains(section), "unknown eval section: " + section);
+        checkNextCase(s, tc, label);
+      }
     }
-    return tests.stream();
   }
 
-  @TestFactory
-  Stream<DynamicTest> matchesTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode matchesSection = SPEC.get("eval").get("matches");
-    if (matchesSection == null) return tests.stream();
+  private static void checkNextCase(Schedule s, JsonNode tc, String label) {
+    assertKnownFields(
+        tc,
+        Set.of("expression", "now", "next", "next_date", "next_n", "next_n_count", "next_n_length"),
+        label);
+    assertTrue(
+        NEXT_ASSERTIONS.stream().anyMatch(tc::has),
+        label + ": no assertion field among " + NEXT_ASSERTIONS);
+    ZonedDateTime now = tc.has("now") ? parseZonedDateTime(tc.get("now").asText()) : DEFAULT_NOW;
+    Optional<ZonedDateTime> next = s.nextFrom(now);
 
-    JsonNode testsNode = matchesSection.get("tests");
-    if (testsNode == null || !testsNode.isArray()) return tests.stream();
-
-    for (JsonNode tc : testsNode) {
-      String name = "matches/" + tc.get("name").asText();
-      String expression = tc.get("expression").asText();
-      String datetimeStr = tc.get("datetime").asText();
-      boolean expected = tc.get("expected").asBoolean();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                Schedule s = Schedule.parse(expression);
-                ZonedDateTime datetime = parseZonedDateTime(datetimeStr);
-                boolean result = s.matches(datetime);
-                assertEquals(
-                    expected, result, "matches() for: " + expression + " at " + datetimeStr);
-              }));
+    if (tc.has("next")) {
+      assertEquals(
+          timestamp(tc.get("next")), next.map(ZonedDateTime::toInstant), label + ": nextFrom()");
     }
-    return tests.stream();
+    if (tc.has("next_date")) {
+      JsonNode expected = tc.get("next_date");
+      assertEquals(
+          expected.isNull() ? Optional.empty() : Optional.of(expected.asText()),
+          next.map(t -> t.toLocalDate().toString()),
+          label + ": nextFrom() date");
+    }
+    if (tc.has("next_n")) {
+      List<Instant> expected = timestamps(tc.get("next_n"));
+      int n = tc.has("next_n_count") ? tc.get("next_n_count").asInt() : expected.size();
+      assertEquals(expected, instants(s.nextNFrom(now, n)), label + ": nextNFrom(" + n + ")");
+    }
+    if (tc.has("next_n_length")) {
+      int n = required(tc, "next_n_count", label).asInt();
+      assertEquals(
+          tc.get("next_n_length").asInt(),
+          s.nextNFrom(now, n).size(),
+          label + ": nextNFrom(" + n + ") length");
+    }
   }
 
-  @TestFactory
-  Stream<DynamicTest> occurrencesTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode occurrencesSection = SPEC.get("eval").get("occurrences");
-    if (occurrencesSection == null) return tests.stream();
-
-    JsonNode testsNode = occurrencesSection.get("tests");
-    if (testsNode == null || !testsNode.isArray()) return tests.stream();
-
-    for (JsonNode tc : testsNode) {
-      String name = "occurrences/" + tc.get("name").asText();
-      String expression = tc.get("expression").asText();
-      String fromStr = tc.get("from").asText();
-      int take = tc.get("take").asInt();
-      List<String> expectedStrs =
-          MAPPER.convertValue(tc.get("expected"), new TypeReference<List<String>>() {});
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                Schedule s = Schedule.parse(expression);
-                ZonedDateTime from = parseZonedDateTime(fromStr);
-
-                List<ZonedDateTime> results = s.occurrences(from).limit(take).toList();
-
-                assertEquals(expectedStrs.size(), results.size(), "occurrences() count mismatch");
-
-                for (int i = 0; i < expectedStrs.size(); i++) {
-                  ZonedDateTime expected = parseZonedDateTime(expectedStrs.get(i));
-                  assertEquals(
-                      expected.toInstant(),
-                      results.get(i).toInstant(),
-                      "occurrences()[" + i + "] mismatch");
-                }
-              }));
-    }
-    return tests.stream();
+  private static JsonNode required(JsonNode tc, String field, String label) {
+    assertTrue(tc.has(field), label + ": missing " + field);
+    return tc.get(field);
   }
 
-  @TestFactory
-  Stream<DynamicTest> betweenTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode betweenSection = SPEC.get("eval").get("between");
-    if (betweenSection == null) return tests.stream();
+  private static void assertKnownFields(JsonNode node, Set<String> allowed, String label) {
+    Set<String> common = Set.of("name", "description");
+    List<String> unknown = new ArrayList<>();
+    node.fieldNames()
+        .forEachRemaining(
+            field -> {
+              if (!allowed.contains(field) && !common.contains(field)) unknown.add(field);
+            });
+    assertEquals(List.of(), unknown, label + ": unknown fields");
+  }
 
-    JsonNode testsNode = betweenSection.get("tests");
-    if (testsNode == null || !testsNode.isArray()) return tests.stream();
+  private static Optional<Instant> timestamp(JsonNode node) {
+    return node.isNull()
+        ? Optional.empty()
+        : Optional.of(parseZonedDateTime(node.asText()).toInstant());
+  }
 
-    for (JsonNode tc : testsNode) {
-      String name = "between/" + tc.get("name").asText();
-      String expression = tc.get("expression").asText();
-      String fromStr = tc.get("from").asText();
-      String toStr = tc.get("to").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                Schedule s = Schedule.parse(expression);
-                ZonedDateTime from = parseZonedDateTime(fromStr);
-                ZonedDateTime to = parseZonedDateTime(toStr);
-
-                List<ZonedDateTime> results = s.between(from, to).toList();
-
-                if (tc.has("expected")) {
-                  List<String> expectedStrs =
-                      MAPPER.convertValue(tc.get("expected"), new TypeReference<List<String>>() {});
-
-                  assertEquals(expectedStrs.size(), results.size(), "between() count mismatch");
-
-                  for (int i = 0; i < expectedStrs.size(); i++) {
-                    ZonedDateTime expected = parseZonedDateTime(expectedStrs.get(i));
-                    assertEquals(
-                        expected.toInstant(),
-                        results.get(i).toInstant(),
-                        "between()[" + i + "] mismatch");
-                  }
-                } else if (tc.has("expected_count")) {
-                  int expectedCount = tc.get("expected_count").asInt();
-                  assertEquals(expectedCount, results.size(), "between() count mismatch");
-                }
-              }));
-    }
-    return tests.stream();
+  private static List<Instant> timestamps(JsonNode node) {
+    assertTrue(node.isArray(), "expected a list, got " + node);
+    List<Instant> result = new ArrayList<>();
+    node.forEach(item -> result.add(parseZonedDateTime(item.asText()).toInstant()));
+    return result;
   }
 
   @TestFactory
   Stream<DynamicTest> evalErrorTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode evalErrorsNode = SPEC.get("eval_errors");
-    if (evalErrorsNode == null) return tests.stream();
-
-    JsonNode testsNode = evalErrorsNode.get("tests");
-    if (testsNode == null || !testsNode.isArray()) return tests.stream();
-
-    for (JsonNode tc : testsNode) {
-      String name = tc.get("name").asText();
-      String expression = tc.get("expression").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                // Java validates timezone at construction time (Schedule.parse),
-                // so these should fail at parse time.
-                // The error may be HronException or a native ZoneRulesException.
-                assertThrows(
-                    Exception.class,
-                    () -> Schedule.parse(expression),
-                    "expected error for: " + expression);
-              }));
-    }
-    return tests.stream();
+    return cases(
+        SPEC.get("eval_errors"),
+        "eval_errors",
+        Set.of("expression"),
+        (tc, label) -> {
+          String expression = text(tc, "expression", label);
+          assertThrows(
+              Exception.class,
+              () -> Schedule.parse(expression).nextFrom(DEFAULT_NOW),
+              label + ": " + expression);
+        });
   }
 
   @TestFactory
-  Stream<DynamicTest> toCronTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode cronTests = SPEC.get("cron").get("to_cron").get("tests");
+  Stream<DynamicTest> cronTests() {
+    JsonNode cron = SPEC.get("cron");
+    return Stream.of(
+            cases(
+                cron.get("to_cron"),
+                "cron/to_cron",
+                Set.of("hron", "cron"),
+                (tc, label) ->
+                    assertEquals(
+                        text(tc, "cron", label),
+                        Schedule.parse(text(tc, "hron", label)).toCron(),
+                        label)),
+            cases(
+                cron.get("to_cron_errors"),
+                "cron/to_cron_errors",
+                Set.of("hron"),
+                (tc, label) -> {
+                  Schedule s = Schedule.parse(text(tc, "hron", label));
+                  assertThrows(HronException.class, s::toCron, label);
+                }),
+            cases(
+                cron.get("from_cron"),
+                "cron/from_cron",
+                Set.of("cron", "hron"),
+                (tc, label) ->
+                    assertEquals(
+                        text(tc, "hron", label),
+                        Schedule.fromCron(text(tc, "cron", label)).toString(),
+                        label)),
+            cases(
+                cron.get("from_cron_errors"),
+                "cron/from_cron_errors",
+                Set.of("cron"),
+                (tc, label) ->
+                    assertThrows(
+                        HronException.class,
+                        () -> Schedule.fromCron(text(tc, "cron", label)),
+                        label)),
+            cases(
+                cron.get("roundtrip"),
+                "cron/roundtrip",
+                Set.of("hron"),
+                (tc, label) -> {
+                  String c = Schedule.parse(text(tc, "hron", label)).toCron();
+                  assertEquals(c, Schedule.fromCron(c).toCron(), label);
+                }))
+        .flatMap(tests -> tests);
+  }
 
-    for (JsonNode tc : cronTests) {
-      String name = tc.get("name").asText();
-      String hron = tc.get("hron").asText();
-      String expectedCron = tc.get("cron").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                Schedule s = Schedule.parse(hron);
-                String cron = s.toCron();
-                assertEquals(expectedCron, cron);
-              }));
+  private record Invariant(String name, String expression, ZonedDateTime now, int count) {
+    Schedule schedule() throws HronException {
+      return Schedule.parse(expression);
     }
-    return tests.stream();
+
+    String rule(String rule) {
+      return "invariants/" + name + " (" + expression + ") " + rule;
+    }
+  }
+
+  private interface InvariantRule {
+    void check(Invariant inv) throws HronException;
   }
 
   @TestFactory
-  Stream<DynamicTest> toCronErrorTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode cronTests = SPEC.get("cron").get("to_cron_errors").get("tests");
+  Stream<DynamicContainer> invariantTests() {
+    JsonNode invariants = SPEC.get("invariants");
+    int count = invariants.get("count").asInt();
+    Map<String, InvariantRule> implemented =
+        Map.of(
+            "next_matches", ConformanceTest::nextMatches,
+            "next_after_now", ConformanceTest::nextAfterNow,
+            "next_n_chain", ConformanceTest::nextNChain,
+            "occurrences_prefix", ConformanceTest::occurrencesPrefix,
+            "between_window", ConformanceTest::betweenWindow,
+            "prev_inverse", ConformanceTest::prevInverse,
+            "prev_before_now", ConformanceTest::prevBeforeNow,
+            "display_roundtrip", ConformanceTest::displayRoundtrip);
+    List<String> rules = new ArrayList<>();
+    invariants.get("rules").fieldNames().forEachRemaining(rules::add);
 
-    for (JsonNode tc : cronTests) {
-      String name = tc.get("name").asText();
-      String hron = tc.get("hron").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                Schedule s = Schedule.parse(hron);
-                assertThrows(
-                    HronException.class, s::toCron, "expected toCron() error for: " + hron);
-              }));
+    List<DynamicContainer> containers = new ArrayList<>();
+    for (JsonNode tc : invariants.get("tests")) {
+      Invariant inv =
+          new Invariant(
+              tc.get("name").asText(),
+              tc.get("expression").asText(),
+              parseZonedDateTime(tc.get("now").asText()),
+              count);
+      Stream<DynamicTest> tests =
+          rules.stream()
+              .map(
+                  rule ->
+                      DynamicTest.dynamicTest(
+                          rule,
+                          () -> {
+                            assertKnownFields(
+                                tc, Set.of("expression", "now"), "invariants/" + inv.name());
+                            assertTrue(
+                                implemented.containsKey(rule), "rule not implemented: " + rule);
+                            implemented.get(rule).check(inv);
+                          }));
+      containers.add(DynamicContainer.dynamicContainer("invariants/" + inv.name(), tests));
     }
-    return tests.stream();
+    return containers.stream();
   }
 
-  @TestFactory
-  Stream<DynamicTest> fromCronTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode cronTests = SPEC.get("cron").get("from_cron").get("tests");
-
-    for (JsonNode tc : cronTests) {
-      String name = tc.get("name").asText();
-      String cron = tc.get("cron").asText();
-      String expectedHron = tc.get("hron").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                Schedule s = Schedule.fromCron(cron);
-                assertEquals(expectedHron, s.toString());
-              }));
-    }
-    return tests.stream();
+  private static void nextMatches(Invariant inv) throws HronException {
+    Schedule s = inv.schedule();
+    s.nextFrom(inv.now())
+        .ifPresent(
+            t ->
+                assertTrue(
+                    s.matches(t), inv.rule("next_matches") + ": matches(" + t + ") is false"));
   }
 
-  @TestFactory
-  Stream<DynamicTest> fromCronErrorTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode cronTests = SPEC.get("cron").get("from_cron_errors").get("tests");
-
-    for (JsonNode tc : cronTests) {
-      String name = tc.get("name").asText();
-      String cron = tc.get("cron").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                assertThrows(
-                    HronException.class,
-                    () -> Schedule.fromCron(cron),
-                    "expected fromCron() error for: " + cron);
-              }));
-    }
-    return tests.stream();
+  private static void nextAfterNow(Invariant inv) throws HronException {
+    inv.schedule()
+        .nextFrom(inv.now())
+        .ifPresent(
+            t ->
+                assertTrue(
+                    t.isAfter(inv.now()), inv.rule("next_after_now") + ": nextFrom is " + t));
   }
 
-  @TestFactory
-  Stream<DynamicTest> cronRoundtripTests() {
-    List<DynamicTest> tests = new ArrayList<>();
-    JsonNode cronTests = SPEC.get("cron").get("roundtrip").get("tests");
-
-    for (JsonNode tc : cronTests) {
-      String name = tc.get("name").asText();
-      String hron = tc.get("hron").asText();
-
-      tests.add(
-          DynamicTest.dynamicTest(
-              name,
-              () -> {
-                Schedule s1 = Schedule.parse(hron);
-                String cron = s1.toCron();
-
-                Schedule s2 = Schedule.fromCron(cron);
-                String cron2 = s2.toCron();
-
-                assertEquals(cron, cron2, "roundtrip failed for: " + hron);
-              }));
+  private static void nextNChain(Invariant inv) throws HronException {
+    Schedule s = inv.schedule();
+    List<ZonedDateTime> nextN = s.nextNFrom(inv.now(), inv.count());
+    Optional<ZonedDateTime> first = s.nextFrom(inv.now());
+    String rule = inv.rule("next_n_chain");
+    assertEquals(first.isEmpty(), nextN.isEmpty(), rule + ": emptiness differs from nextFrom(now)");
+    if (nextN.isEmpty()) {
+      return;
     }
-    return tests.stream();
+    assertEquals(first.get().toInstant(), nextN.getFirst().toInstant(), rule + ": first element");
+    for (int i = 1; i < nextN.size(); i++) {
+      ZonedDateTime before = nextN.get(i - 1);
+      assertTrue(before.isBefore(nextN.get(i)), rule + ": not strictly increasing at " + i);
+      assertEquals(
+          Optional.of(nextN.get(i).toInstant()),
+          s.nextFrom(before).map(ZonedDateTime::toInstant),
+          rule + ": element " + i + " is not nextFrom(" + before + ")");
+    }
+  }
+
+  private static void occurrencesPrefix(Invariant inv) throws HronException {
+    Schedule s = inv.schedule();
+    assertEquals(
+        instants(s.nextNFrom(inv.now(), inv.count())),
+        instants(s.occurrences(inv.now()).limit(inv.count()).toList()),
+        inv.rule("occurrences_prefix"));
+  }
+
+  private static void betweenWindow(Invariant inv) throws HronException {
+    Schedule s = inv.schedule();
+    List<ZonedDateTime> nextN = s.nextNFrom(inv.now(), inv.count());
+    if (nextN.isEmpty()) {
+      return;
+    }
+    assertEquals(
+        instants(nextN),
+        instants(s.between(inv.now(), nextN.getLast()).toList()),
+        inv.rule("between_window"));
+  }
+
+  private static void prevInverse(Invariant inv) throws HronException {
+    Schedule s = inv.schedule();
+    List<ZonedDateTime> nextN = s.nextNFrom(inv.now(), inv.count());
+    for (int i = 1; i < nextN.size(); i++) {
+      assertEquals(
+          Optional.of(nextN.get(i - 1).toInstant()),
+          s.previousFrom(nextN.get(i)).map(ZonedDateTime::toInstant),
+          inv.rule("prev_inverse") + ": previousFrom(" + nextN.get(i) + ")");
+    }
+  }
+
+  private static void prevBeforeNow(Invariant inv) throws HronException {
+    Schedule s = inv.schedule();
+    Optional<ZonedDateTime> prev = s.previousFrom(inv.now());
+    if (prev.isEmpty()) {
+      return;
+    }
+    ZonedDateTime p = prev.get();
+    String rule = inv.rule("prev_before_now") + ": previousFrom(now) is " + p;
+    assertTrue(p.isBefore(inv.now()), rule + ", not before now");
+    assertTrue(s.matches(p), rule + ", which does not match");
+    s.nextFrom(p)
+        .ifPresent(
+            next -> assertFalse(next.isBefore(inv.now()), rule + ", but nextFrom(p) is " + next));
+  }
+
+  private static void displayRoundtrip(Invariant inv) throws HronException {
+    String display = inv.schedule().toString();
+    assertEquals(display, Schedule.parse(display).toString(), inv.rule("display_roundtrip"));
+  }
+
+  private static List<Instant> instants(List<ZonedDateTime> times) {
+    return times.stream().map(ZonedDateTime::toInstant).toList();
   }
 
   // Format: "2026-02-06T12:00:00+00:00[UTC]"

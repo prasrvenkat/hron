@@ -68,11 +68,10 @@ public sealed class Schedule
     /// Computes the next occurrence strictly after the given time.
     /// </summary>
     /// <param name="now">The reference time</param>
-    /// <returns>The next occurrence, or null if none exists</returns>
+    /// <returns>The next occurrence, or null if none exists or now is outside the supported range</returns>
     public DateTimeOffset? NextFrom(DateTimeOffset now)
     {
-        var nowInTz = TimeZoneInfo.ConvertTime(now, _zoneInfo);
-        return Evaluator.NextFrom(_data, nowInTz, _zoneInfo);
+        return Evaluator.NextFrom(_data, now, _zoneInfo);
     }
 
     /// <summary>
@@ -80,44 +79,40 @@ public sealed class Schedule
     /// </summary>
     /// <param name="now">The reference time</param>
     /// <param name="count">The number of occurrences to compute</param>
-    /// <returns>A list of the next n occurrences</returns>
+    /// <returns>A list of the next n occurrences, empty when now is outside the supported range</returns>
     public IReadOnlyList<DateTimeOffset> NextNFrom(DateTimeOffset now, int count)
     {
-        var nowInTz = TimeZoneInfo.ConvertTime(now, _zoneInfo);
-        return Evaluator.NextNFrom(_data, nowInTz, count, _zoneInfo);
+        return Evaluator.NextNFrom(_data, now, count, _zoneInfo);
     }
 
     /// <summary>
     /// Computes the most recent occurrence strictly before the given time.
     /// </summary>
     /// <param name="now">The reference time (exclusive upper bound)</param>
-    /// <returns>The previous occurrence, or null if none exists</returns>
+    /// <returns>The previous occurrence, or null if none exists or now is outside the supported range</returns>
     public DateTimeOffset? PreviousFrom(DateTimeOffset now)
     {
-        var nowInTz = TimeZoneInfo.ConvertTime(now, _zoneInfo);
-        return Evaluator.PreviousFrom(_data, nowInTz, _zoneInfo);
+        return Evaluator.PreviousFrom(_data, now, _zoneInfo);
     }
 
     /// <summary>
-    /// Checks if a datetime matches this schedule.
+    /// Checks if the minute containing a datetime is an occurrence of this schedule.
     /// </summary>
-    /// <param name="dateTime">The datetime to check</param>
-    /// <returns>True if the datetime matches</returns>
+    /// <param name="dateTime">The datetime to check; its seconds are ignored</param>
+    /// <returns>True if the start of that minute is an occurrence; false outside the supported range</returns>
     public bool Matches(DateTimeOffset dateTime)
     {
-        var dtInTz = TimeZoneInfo.ConvertTime(dateTime, _zoneInfo);
-        return Evaluator.Matches(_data, dtInTz, _zoneInfo);
+        return Evaluator.Matches(_data, dateTime, _zoneInfo);
     }
 
     /// <summary>
     /// Returns a lazy enumerable of occurrences strictly after the given time.
     /// </summary>
     /// <param name="from">The reference time (exclusive)</param>
-    /// <returns>An enumerable of occurrences</returns>
+    /// <returns>An enumerable of occurrences, empty when from is outside the supported range</returns>
     public IEnumerable<DateTimeOffset> Occurrences(DateTimeOffset from)
     {
-        var fromInTz = TimeZoneInfo.ConvertTime(from, _zoneInfo);
-        return Evaluator.Occurrences(_data, fromInTz, _zoneInfo);
+        return Evaluator.Occurrences(_data, from, _zoneInfo);
     }
 
     /// <summary>
@@ -125,12 +120,10 @@ public sealed class Schedule
     /// </summary>
     /// <param name="from">The start time (exclusive)</param>
     /// <param name="to">The end time (inclusive)</param>
-    /// <returns>An enumerable of occurrences in the range</returns>
+    /// <returns>An enumerable of occurrences in the range, empty when either bound is outside the supported range</returns>
     public IEnumerable<DateTimeOffset> Between(DateTimeOffset from, DateTimeOffset to)
     {
-        var fromInTz = TimeZoneInfo.ConvertTime(from, _zoneInfo);
-        var toInTz = TimeZoneInfo.ConvertTime(to, _zoneInfo);
-        return Evaluator.Between(_data, fromInTz, toInTz, _zoneInfo);
+        return Evaluator.Between(_data, from, to, _zoneInfo);
     }
 
     /// <summary>

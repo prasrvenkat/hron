@@ -1,15 +1,11 @@
 import { Temporal } from "@js-temporal/polyfill";
 import type {
-  DateSpec,
   DayFilter,
-  Exception,
-  MonthName,
   MonthTarget,
   NearestDirection,
   OrdinalPosition,
   ScheduleData,
   ScheduleExpr,
-  TimeOfDay,
   UntilSpec,
   Weekday,
   YearTarget,
@@ -22,1513 +18,631 @@ import {
 } from "./ast.js";
 
 type ZDT = Temporal.ZonedDateTime;
-type PD = Temporal.PlainDate;
+type Direction = 1 | -1;
+type IntervalRepeat = Extract<ScheduleExpr, { type: "intervalRepeat" }>;
 
-function resolveTz(tz: string | null): string {
-  return tz ?? "UTC";
+// Dates are whole days since 1970-01-01 (proleptic Gregorian). A search can
+// scan a full 400-year calendar cycle of periods (spec/README.md, "Search
+// horizon"), and plain arithmetic keeps that fast where the Temporal polyfill
+// costs microseconds per date.
+
+function mod(a: number, b: number): number {
+  return ((a % b) + b) % b;
 }
 
-function toPlainTime(tod: TimeOfDay): Temporal.PlainTime {
-  return Temporal.PlainTime.from({ hour: tod.hour, minute: tod.minute });
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
 }
 
-// Temporal's "compatible" disambiguation matches spec/README.md "DST
-// spring-forward (gaps)" and "DST fall-back (ambiguous times)": a gap time
-// shifts forward by the gap length, and an ambiguous time takes its first
-// occurrence.
-function atTimeOnDate(date: PD, time: Temporal.PlainTime, tz: string): ZDT {
-  return date.toPlainDateTime(time).toZonedDateTime(tz, {
-    disambiguation: "compatible",
-  });
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
-function weekdayNameToNumber(day: Weekday): number {
-  return weekdayNumber(day);
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
-function matchesDayFilter(date: PD, filter: DayFilter): boolean {
-  const dow = date.dayOfWeek; // 1=Monday ... 7=Sunday
+// days_from_civil and civil_from_days from
+// https://howardhinnant.github.io/date_algorithms.html
+function epochDay(year: number, month: number, day: number): number {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yearOfEra = y - era * 400;
+  const dayOfYear = Math.floor((153 * mod(month + 9, 12) + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 +
+    Math.floor(yearOfEra / 4) -
+    Math.floor(yearOfEra / 100) +
+    dayOfYear;
+  return era * 146097 + dayOfEra - 719468;
+}
+
+function civil(epochDay: number): { year: number; month: number; day: number } {
+  const z = epochDay + 719468;
+  const era = Math.floor(z / 146097);
+  const dayOfEra = z - era * 146097;
+  const yearOfEra = Math.floor(
+    (dayOfEra -
+      Math.floor(dayOfEra / 1460) +
+      Math.floor(dayOfEra / 36524) -
+      Math.floor(dayOfEra / 146096)) /
+      365,
+  );
+  const dayOfYear =
+    dayOfEra -
+    (365 * yearOfEra + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100));
+  const mp = Math.floor((5 * dayOfYear + 2) / 153);
+  const month = mp < 10 ? mp + 3 : mp - 9;
+  return {
+    year: yearOfEra + era * 400 + (month <= 2 ? 1 : 0),
+    month,
+    day: dayOfYear - Math.floor((153 * mp + 2) / 5) + 1,
+  };
+}
+
+/** ISO day of week: Monday=1, Sunday=7. */
+function weekdayOf(day: number): number {
+  return mod(day + 3, 7) + 1;
+}
+
+function dayOf(date: { year: number; month: number; day: number }): number {
+  return epochDay(date.year, date.month, date.day);
+}
+
+function isoDay(iso: string): number {
+  const [year, month, day] = iso.split("-").map(Number);
+  return epochDay(year, month, day);
+}
+
+function matchesDayFilter(day: number, filter: DayFilter): boolean {
+  const dow = weekdayOf(day);
   switch (filter.type) {
     case "every":
       return true;
     case "weekday":
-      return dow >= 1 && dow <= 5;
+      return dow <= 5;
     case "weekend":
-      return dow === 6 || dow === 7;
+      return dow >= 6;
     case "days":
-      return filter.days.some((d) => weekdayNameToNumber(d) === dow);
+      return filter.days.some((d) => weekdayNumber(d) === dow);
   }
 }
 
-function lastDayOfMonth(year: number, month: number): PD {
-  return Temporal.PlainDate.from({ year, month, day: 1 })
-    .add({ months: 1 })
-    .subtract({ days: 1 });
+function lastDayOfMonth(year: number, month: number): number {
+  return epochDay(year, month, daysInMonth(year, month));
 }
 
-function lastWeekdayOfMonth(year: number, month: number): PD {
-  let d = lastDayOfMonth(year, month);
-  while (d.dayOfWeek === 6 || d.dayOfWeek === 7) {
-    d = d.subtract({ days: 1 });
+function lastWeekdayOfMonth(year: number, month: number): number {
+  const last = lastDayOfMonth(year, month);
+  return last - Math.max(0, weekdayOf(last) - 5);
+}
+
+function ordinalWeekday(
+  year: number,
+  month: number,
+  ordinal: OrdinalPosition,
+  weekday: Weekday,
+): number | null {
+  const target = weekdayNumber(weekday);
+  if (ordinal === "last") {
+    const last = lastDayOfMonth(year, month);
+    return last - mod(weekdayOf(last) - target, 7);
   }
-  return d;
+  const first = epochDay(year, month, 1);
+  const offset =
+    mod(target - weekdayOf(first), 7) + 7 * (ordinalToN(ordinal) - 1);
+  return offset < daysInMonth(year, month) ? first + offset : null;
 }
 
 /**
- * Get the nearest weekday to a given day in a month.
- * - direction=null: standard cron W behavior (never crosses month boundary)
- * - direction="next": always prefer following weekday (can cross to next month)
- * - direction="previous": always prefer preceding weekday (can cross to prev month)
- * Returns null if the target_day doesn't exist in the month (e.g., day 31 in February).
+ * spec/README.md, "Nearest weekday and `during`". Null when the month has no
+ * such day.
  */
 function nearestWeekday(
   year: number,
   month: number,
-  targetDay: number,
+  dayOfMonth: number,
   direction: NearestDirection | null,
-): PD | null {
-  const last = lastDayOfMonth(year, month);
-  const lastDay = last.day;
-
-  if (targetDay > lastDay) {
-    return null;
-  }
-
-  const date = Temporal.PlainDate.from({ year, month, day: targetDay });
-  const dow = date.dayOfWeek; // 1=Monday, 7=Sunday
-
-  if (dow >= 1 && dow <= 5) {
-    return date;
-  }
-
-  if (dow === 6) {
-    if (direction === null) {
-      if (targetDay === 1) {
-        return date.add({ days: 2 });
-      }
-      return date.subtract({ days: 1 });
-    }
-    if (direction === "next") {
-      return date.add({ days: 2 });
-    }
-    return date.subtract({ days: 1 });
-  }
-
-  if (direction === null) {
-    if (targetDay >= lastDay) {
-      return date.subtract({ days: 2 });
-    }
-    return date.add({ days: 1 });
-  }
-  if (direction === "next") {
-    return date.add({ days: 1 });
-  }
-  return date.subtract({ days: 2 });
+): number | null {
+  const length = daysInMonth(year, month);
+  if (dayOfMonth > length) return null;
+  const day = epochDay(year, month, dayOfMonth);
+  const dow = weekdayOf(day);
+  if (dow <= 5) return day;
+  const saturday = dow === 6;
+  if (direction === "next") return day + (saturday ? 2 : 1);
+  if (direction === "previous") return day - (saturday ? 1 : 2);
+  if (saturday) return dayOfMonth === 1 ? day + 2 : day - 1;
+  return dayOfMonth === length ? day - 2 : day + 1;
 }
 
-function nthWeekdayOfMonth(
-  year: number,
-  month: number,
-  weekday: Weekday,
-  n: number,
-): PD | null {
-  const targetDow = weekdayNameToNumber(weekday);
-  let d = Temporal.PlainDate.from({ year, month, day: 1 });
-  while (d.dayOfWeek !== targetDow) {
-    d = d.add({ days: 1 });
-  }
-  for (let i = 1; i < n; i++) {
-    d = d.add({ days: 7 });
-  }
-  if (d.month !== month) return null;
-  return d;
-}
-
-function lastWeekdayInMonth(year: number, month: number, weekday: Weekday): PD {
-  const targetDow = weekdayNameToNumber(weekday);
-  let d = lastDayOfMonth(year, month);
-  while (d.dayOfWeek !== targetDow) {
-    d = d.subtract({ days: 1 });
-  }
-  return d;
-}
-
-const EPOCH_MONDAY: PD = Temporal.PlainDate.from("1970-01-05");
-const EPOCH_DATE: PD = Temporal.PlainDate.from("1970-01-01");
-const MIDNIGHT: Temporal.PlainTime = Temporal.PlainTime.from({
-  hour: 0,
-  minute: 0,
-});
-
-function weeksBetween(a: PD, b: PD): number {
-  const days = a.until(b, { largestUnit: "days" }).days;
-  return Math.floor(days / 7);
-}
-
-function daysBetween(a: PD, b: PD): number {
-  return a.until(b, { largestUnit: "days" }).days;
-}
-
-function monthsBetweenYM(a: PD, b: PD): number {
-  return b.year * 12 + b.month - (a.year * 12 + a.month);
-}
-
-function euclideanMod(a: number, b: number): number {
-  return ((a % b) + b) % b;
-}
-
-function isExcepted(date: PD, exceptions: Exception[]): boolean {
-  for (const exc of exceptions) {
-    if (exc.type === "named") {
-      if (date.month === monthNumber(exc.month) && date.day === exc.day) {
-        return true;
-      }
-    } else {
-      const excDate = Temporal.PlainDate.from(exc.date);
-      if (Temporal.PlainDate.compare(date, excDate) === 0) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-interface ParsedExceptions {
-  named: Array<{ month: number; day: number }>;
-  isoDates: PD[];
-}
-
-function parseExceptions(exceptions: Exception[]): ParsedExceptions {
-  const named: Array<{ month: number; day: number }> = [];
-  const isoDates: PD[] = [];
-  for (const exc of exceptions) {
-    if (exc.type === "named") {
-      named.push({ month: monthNumber(exc.month), day: exc.day });
-    } else {
-      isoDates.push(Temporal.PlainDate.from(exc.date));
-    }
-  }
-  return { named, isoDates };
-}
-
-function isExceptedParsed(date: PD, parsed: ParsedExceptions): boolean {
-  for (const n of parsed.named) {
-    if (date.month === n.month && date.day === n.day) return true;
-  }
-  for (const d of parsed.isoDates) {
-    if (Temporal.PlainDate.compare(date, d) === 0) return true;
-  }
-  return false;
-}
-
-function matchesDuring(date: PD, during: MonthName[]): boolean {
-  if (during.length === 0) return true;
-  return during.some((mn) => monthNumber(mn) === date.month);
-}
-
-function nextDuringMonth(date: PD, during: MonthName[]): PD {
-  const currentMonth = date.month;
-  const months = during.map((mn) => monthNumber(mn)).sort((a, b) => a - b);
-
-  for (const m of months) {
-    if (m > currentMonth) {
-      return Temporal.PlainDate.from({ year: date.year, month: m, day: 1 });
-    }
-  }
-  return Temporal.PlainDate.from({
-    year: date.year + 1,
-    month: months[0],
-    day: 1,
-  });
-}
-
-function resolveUntil(until: UntilSpec, now: ZDT): PD {
-  if (until.type === "iso") {
-    return Temporal.PlainDate.from(until.date);
-  }
-  const year = now.toPlainDate().year;
-  for (const y of [year, year + 1]) {
-    try {
-      const d = Temporal.PlainDate.from(
-        {
-          year: y,
-          month: monthNumber(until.month),
-          day: until.day,
-        },
-        { overflow: "reject" },
-      );
-      if (Temporal.PlainDate.compare(d, now.toPlainDate()) >= 0) {
-        return d;
-      }
-    } catch {
-      // Invalid date, try next year
-    }
-  }
-  return Temporal.PlainDate.from(
-    {
-      year: year + 1,
-      month: monthNumber(until.month),
-      day: until.day,
-    },
-    { overflow: "reject" },
-  );
-}
-
-function earliestFutureAtTimes(
-  date: PD,
-  times: TimeOfDay[],
-  tz: string,
-  now: ZDT,
-): ZDT | null {
-  let best: ZDT | null = null;
-  for (const tod of times) {
-    const t = toPlainTime(tod);
-    const candidate = atTimeOnDate(date, t, tz);
-    if (Temporal.ZonedDateTime.compare(candidate, now) > 0) {
-      if (
-        best === null ||
-        Temporal.ZonedDateTime.compare(candidate, best) < 0
-      ) {
-        best = candidate;
-      }
-    }
-  }
-  return best;
-}
-
-export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
-  const tz = resolveTz(schedule.timezone);
-
-  const untilDate = schedule.until ? resolveUntil(schedule.until, now) : null;
-
-  const parsedExceptions = parseExceptions(schedule.except);
-  const hasExceptions = schedule.except.length > 0;
-  const hasDuring = schedule.during.length > 0;
-
-  const handlesDuringInternally =
-    schedule.expr.type === "monthRepeat" &&
-    schedule.expr.target.type === "nearestWeekday" &&
-    schedule.expr.target.direction !== null;
-
-  let current = now;
-  for (let i = 0; i < 1000; i++) {
-    const candidate = nextExpr(
-      schedule.expr,
-      tz,
-      schedule.anchor,
-      current,
-      schedule.during,
-    );
-
-    if (candidate === null) return null;
-
-    const cDate = candidate.withTimeZone(tz).toPlainDate();
-
-    if (untilDate) {
-      if (Temporal.PlainDate.compare(cDate, untilDate) > 0) {
-        return null;
-      }
-    }
-
-    if (
-      hasDuring &&
-      !handlesDuringInternally &&
-      !matchesDuring(cDate, schedule.during)
-    ) {
-      const skipTo = nextDuringMonth(cDate, schedule.during);
-      current = atTimeOnDate(skipTo, MIDNIGHT, tz).subtract({ seconds: 1 });
-      continue;
-    }
-
-    if (hasExceptions && isExceptedParsed(cDate, parsedExceptions)) {
-      const nextDay = cDate.add({ days: 1 });
-      current = atTimeOnDate(nextDay, MIDNIGHT, tz).subtract({ seconds: 1 });
-      continue;
-    }
-
-    return candidate;
-  }
-
-  return null;
-}
-
-function nextExpr(
-  expr: ScheduleExpr,
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-  during: MonthName[],
-): ZDT | null {
-  switch (expr.type) {
-    case "dayRepeat":
-      return nextDayRepeat(
-        expr.interval,
-        expr.days,
-        expr.times,
-        tz,
-        anchor,
-        now,
-      );
-    case "intervalRepeat":
-      return nextIntervalRepeat(
-        expr.interval,
-        expr.unit,
-        expr.from,
-        expr.to,
-        expr.dayFilter,
-        tz,
-        now,
-      );
-    case "weekRepeat":
-      return nextWeekRepeat(
-        expr.interval,
-        expr.days,
-        expr.times,
-        tz,
-        anchor,
-        now,
-      );
-    case "monthRepeat":
-      return nextMonthRepeat(
-        expr.interval,
-        expr.target,
-        expr.times,
-        tz,
-        anchor,
-        now,
-        during,
-      );
-    case "singleDate":
-      return nextSingleDate(expr.date, expr.times, tz, now);
-    case "yearRepeat":
-      return nextYearRepeat(
-        expr.interval,
-        expr.target,
-        expr.times,
-        tz,
-        anchor,
-        now,
-      );
-  }
-}
-
-export function nextNFrom(schedule: ScheduleData, now: ZDT, n: number): ZDT[] {
-  const results: ZDT[] = [];
-  let current = now;
-  for (let i = 0; i < n; i++) {
-    const next = nextFrom(schedule, current);
-    if (next === null) break;
-    current = next.add({ minutes: 1 });
-    results.push(next);
-  }
-  return results;
-}
-
-export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
-  const tz = resolveTz(schedule.timezone);
-  const zdt = datetime.withTimeZone(tz);
-  const date = zdt.toPlainDate();
-
-  if (!matchesDuring(date, schedule.during)) return false;
-  if (isExcepted(date, schedule.except)) return false;
-
-  if (schedule.until) {
-    const untilDate = resolveUntil(schedule.until, datetime);
-    if (Temporal.PlainDate.compare(date, untilDate) > 0) return false;
-  }
-
-  // DST-aware time matching: a time matches if either the wall-clock matches
-  // directly, or the scheduled time falls in a DST gap and resolves to the
-  // candidate's instant (e.g., scheduled 2:00 AM during spring-forward → 3:00 AM).
-  const timeMatchesWithDst = (times: TimeOfDay[]) =>
-    times.some((tod) => {
-      if (zdt.hour === tod.hour && zdt.minute === tod.minute) return true;
-      const t = toPlainTime(tod);
-      const resolved = atTimeOnDate(date, t, tz);
-      return resolved.epochNanoseconds === datetime.epochNanoseconds;
-    });
-
-  switch (schedule.expr.type) {
-    case "dayRepeat": {
-      if (!matchesDayFilter(date, schedule.expr.days)) return false;
-      if (!timeMatchesWithDst(schedule.expr.times)) return false;
-      if (schedule.expr.interval > 1) {
-        const anchorDate = schedule.anchor
-          ? Temporal.PlainDate.from(schedule.anchor)
-          : EPOCH_DATE;
-        const dayOffset = daysBetween(anchorDate, date);
-        return dayOffset >= 0 && dayOffset % schedule.expr.interval === 0;
-      }
-      return true;
-    }
-    case "intervalRepeat": {
-      const { interval, unit, from, to, dayFilter } = schedule.expr;
-      if (dayFilter && !matchesDayFilter(date, dayFilter)) return false;
-      const fromMinutes = from.hour * 60 + from.minute;
-      const toMinutes = to.hour * 60 + to.minute;
-      const currentMinutes = zdt.hour * 60 + zdt.minute;
-      if (currentMinutes < fromMinutes || currentMinutes > toMinutes)
-        return false;
-      const diff = currentMinutes - fromMinutes;
-      const step = unit === "min" ? interval : interval * 60;
-      return diff >= 0 && diff % step === 0;
-    }
-    case "weekRepeat": {
-      const { interval, days, times } = schedule.expr;
-      const dow = date.dayOfWeek;
-      if (!days.some((d) => weekdayNameToNumber(d) === dow)) return false;
-      if (!timeMatchesWithDst(times)) return false;
-      const anchorDate = schedule.anchor
-        ? Temporal.PlainDate.from(schedule.anchor)
-        : EPOCH_MONDAY;
-      const weeks = weeksBetween(anchorDate, date);
-      return weeks >= 0 && weeks % interval === 0;
-    }
-    case "monthRepeat": {
-      if (!timeMatchesWithDst(schedule.expr.times)) return false;
-      if (schedule.expr.interval > 1) {
-        const anchorDate = schedule.anchor
-          ? Temporal.PlainDate.from(schedule.anchor)
-          : EPOCH_DATE;
-        const monthOffset = monthsBetweenYM(anchorDate, date);
-        if (monthOffset < 0 || monthOffset % schedule.expr.interval !== 0) {
-          return false;
-        }
-      }
-      const { target } = schedule.expr;
-      if (target.type === "days") {
-        const expanded = expandMonthTarget(target);
-        return expanded.includes(date.day);
-      }
-      if (target.type === "lastDay") {
-        const last = lastDayOfMonth(date.year, date.month);
-        return Temporal.PlainDate.compare(date, last) === 0;
-      }
-      if (target.type === "lastWeekday") {
-        const lastWd = lastWeekdayOfMonth(date.year, date.month);
-        return Temporal.PlainDate.compare(date, lastWd) === 0;
-      }
-      if (target.type === "ordinalWeekday") {
-        let targetDate: PD | null;
-        if (target.ordinal === "last") {
-          targetDate = lastWeekdayInMonth(
-            date.year,
-            date.month,
-            target.weekday,
-          );
-        } else {
-          targetDate = nthWeekdayOfMonth(
-            date.year,
-            date.month,
-            target.weekday,
-            ordinalToN(target.ordinal),
-          );
-        }
-        if (!targetDate) return false;
-        return Temporal.PlainDate.compare(date, targetDate) === 0;
-      }
-      const targetDate = nearestWeekday(
-        date.year,
-        date.month,
-        target.day,
-        target.direction,
-      );
-      if (!targetDate) return false;
-      return Temporal.PlainDate.compare(date, targetDate) === 0;
-    }
-    case "singleDate": {
-      if (!timeMatchesWithDst(schedule.expr.times)) return false;
-      const { date: dateSpec } = schedule.expr;
-      if (dateSpec.type === "iso") {
-        const target = Temporal.PlainDate.from(dateSpec.date);
-        return Temporal.PlainDate.compare(date, target) === 0;
-      }
-      if (dateSpec.type === "named") {
-        return (
-          date.month === monthNumber(dateSpec.month) &&
-          date.day === dateSpec.day
-        );
-      }
-      return false;
-    }
-    case "yearRepeat": {
-      if (!timeMatchesWithDst(schedule.expr.times)) return false;
-      if (schedule.expr.interval > 1) {
-        const anchorYear = schedule.anchor
-          ? Temporal.PlainDate.from(schedule.anchor).year
-          : EPOCH_DATE.year;
-        const yearOffset = date.year - anchorYear;
-        if (yearOffset < 0 || yearOffset % schedule.expr.interval !== 0) {
-          return false;
-        }
-      }
-      return matchesYearTarget(schedule.expr.target, date);
-    }
-  }
-}
-
-function matchesYearTarget(target: YearTarget, date: PD): boolean {
-  switch (target.type) {
-    case "date":
-      return (
-        date.month === monthNumber(target.month) && date.day === target.day
-      );
-    case "ordinalWeekday": {
-      if (date.month !== monthNumber(target.month)) return false;
-      let targetDate: PD | null;
-      if (target.ordinal === "last") {
-        targetDate = lastWeekdayInMonth(date.year, date.month, target.weekday);
-      } else {
-        targetDate = nthWeekdayOfMonth(
-          date.year,
-          date.month,
-          target.weekday,
-          ordinalToN(target.ordinal),
-        );
-      }
-      if (!targetDate) return false;
-      return Temporal.PlainDate.compare(date, targetDate) === 0;
-    }
-    case "dayOfMonth":
-      return (
-        date.month === monthNumber(target.month) && date.day === target.day
-      );
-    case "lastWeekday": {
-      if (date.month !== monthNumber(target.month)) return false;
-      const lwd = lastWeekdayOfMonth(date.year, date.month);
-      return Temporal.PlainDate.compare(date, lwd) === 0;
-    }
-  }
-}
-
-function nextDayRepeat(
-  interval: number,
-  days: DayFilter,
-  times: TimeOfDay[],
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  let date = nowInTz.toPlainDate();
-
-  if (interval <= 1) {
-    if (matchesDayFilter(date, days)) {
-      const candidate = earliestFutureAtTimes(date, times, tz, now);
-      if (candidate) return candidate;
-    }
-
-    for (let i = 0; i < 8; i++) {
-      date = date.add({ days: 1 });
-      if (matchesDayFilter(date, days)) {
-        const candidate = earliestFutureAtTimes(date, times, tz, now);
-        if (candidate) return candidate;
-      }
-    }
-
-    return null;
-  }
-
-  // The grammar only allows an interval with plain `N days`, so `days` is always `every` here.
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
-
-  const offset = daysBetween(anchorDate, date);
-  const remainder = euclideanMod(offset, interval);
-  let alignedDate =
-    remainder === 0 ? date : date.add({ days: interval - remainder });
-
-  for (let i = 0; i < 400; i++) {
-    const candidate = earliestFutureAtTimes(alignedDate, times, tz, now);
-    if (candidate) return candidate;
-    alignedDate = alignedDate.add({ days: interval });
-  }
-
-  return null;
-}
-
-function nextIntervalRepeat(
-  interval: number,
-  unit: string,
-  from: TimeOfDay,
-  to: TimeOfDay,
-  dayFilter: DayFilter | null,
-  tz: string,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const stepMinutes = unit === "min" ? interval : interval * 60;
-  const fromMinutes = from.hour * 60 + from.minute;
-  const toMinutes = to.hour * 60 + to.minute;
-
-  let date = nowInTz.toPlainDate();
-
-  for (let d = 0; d < 400; d++) {
-    if (dayFilter && !matchesDayFilter(date, dayFilter)) {
-      date = date.add({ days: 1 });
-      continue;
-    }
-
-    const sameDay =
-      Temporal.PlainDate.compare(date, nowInTz.toPlainDate()) === 0;
-    const nowMinutes = sameDay ? nowInTz.hour * 60 + nowInTz.minute : -1;
-
-    let nextSlot: number;
-    if (nowMinutes < fromMinutes) {
-      nextSlot = fromMinutes;
-    } else {
-      const elapsed = nowMinutes - fromMinutes;
-      nextSlot =
-        fromMinutes + (Math.floor(elapsed / stepMinutes) + 1) * stepMinutes;
-    }
-
-    if (nextSlot <= toMinutes) {
-      const h = Math.floor(nextSlot / 60);
-      const m = nextSlot % 60;
-      const t = Temporal.PlainTime.from({ hour: h, minute: m });
-      const candidate = atTimeOnDate(date, t, tz);
-      if (Temporal.ZonedDateTime.compare(candidate, now) > 0) {
-        return candidate;
-      }
-    }
-
-    date = date.add({ days: 1 });
-  }
-
-  return null;
-}
-
-function nextWeekRepeat(
-  interval: number,
-  days: Weekday[],
-  times: TimeOfDay[],
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_MONDAY;
-
-  const date = nowInTz.toPlainDate();
-
-  const sortedDays = [...days].sort(
-    (a, b) => weekdayNameToNumber(a) - weekdayNameToNumber(b),
-  );
-
-  const dowOffset = date.dayOfWeek - 1;
-  let currentMonday = date.subtract({ days: dowOffset });
-
-  const anchorDowOffset = anchorDate.dayOfWeek - 1;
-  const anchorMonday = anchorDate.subtract({ days: anchorDowOffset });
-
-  for (let i = 0; i < 54; i++) {
-    const weeks = weeksBetween(anchorMonday, currentMonday);
-
-    if (weeks < 0) {
-      currentMonday = anchorMonday;
-      continue;
-    }
-
-    if (weeks % interval === 0) {
-      for (const wd of sortedDays) {
-        const dayOffset = weekdayNameToNumber(wd) - 1;
-        const targetDate = currentMonday.add({ days: dayOffset });
-        const candidate = earliestFutureAtTimes(targetDate, times, tz, now);
-        if (candidate) return candidate;
-      }
-    }
-
-    const remainder = weeks % interval;
-    const skipWeeks = remainder === 0 ? interval : interval - remainder;
-    currentMonday = currentMonday.add({ days: skipWeeks * 7 });
-  }
-
-  return null;
-}
-
-function nextMonthRepeat(
-  interval: number,
-  target: MonthTarget,
-  times: TimeOfDay[],
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-  during: MonthName[],
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  let year = nowInTz.year;
-  let month = nowInTz.month;
-
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
-  const maxIter = interval > 1 ? 24 * interval : 24;
-
-  // A directional nearest weekday can land in a neighbouring month, so `during`
-  // is checked against the target month here, not against the result date.
-  const applyDuringFilter =
-    during.length > 0 &&
-    target.type === "nearestWeekday" &&
-    target.direction !== null;
-
-  for (let i = 0; i < maxIter; i++) {
-    if (applyDuringFilter && !during.some((mn) => monthNumber(mn) === month)) {
-      month++;
-      if (month > 12) {
-        month = 1;
-        year++;
-      }
-      continue;
-    }
-
-    if (interval > 1) {
-      const cur = Temporal.PlainDate.from({ year, month, day: 1 });
-      const monthOffset = monthsBetweenYM(anchorDate, cur);
-      if (monthOffset < 0 || euclideanMod(monthOffset, interval) !== 0) {
-        month++;
-        if (month > 12) {
-          month = 1;
-          year++;
-        }
-        continue;
-      }
-    }
-
-    const dateCandidates: PD[] = [];
-
-    if (target.type === "days") {
-      const expanded = expandMonthTarget(target);
-      for (const dayNum of expanded) {
-        const last = lastDayOfMonth(year, month);
-        if (dayNum <= last.day) {
-          try {
-            dateCandidates.push(
-              Temporal.PlainDate.from({ year, month, day: dayNum }),
-            );
-          } catch {
-            // skip invalid
-          }
-        }
-      }
-    } else if (target.type === "lastDay") {
-      dateCandidates.push(lastDayOfMonth(year, month));
-    } else if (target.type === "lastWeekday") {
-      dateCandidates.push(lastWeekdayOfMonth(year, month));
-    } else if (target.type === "ordinalWeekday") {
-      let owDate: PD | null;
-      if (target.ordinal === "last") {
-        owDate = lastWeekdayInMonth(year, month, target.weekday);
-      } else {
-        owDate = nthWeekdayOfMonth(
-          year,
-          month,
-          target.weekday,
-          ordinalToN(target.ordinal),
-        );
-      }
-      if (owDate) {
-        dateCandidates.push(owDate);
-      }
-    } else {
-      const nwDate = nearestWeekday(year, month, target.day, target.direction);
-      if (nwDate) {
-        dateCandidates.push(nwDate);
-      }
-    }
-
-    let best: ZDT | null = null;
-    for (const date of dateCandidates) {
-      const candidate = earliestFutureAtTimes(date, times, tz, now);
-      if (candidate) {
-        if (
-          best === null ||
-          Temporal.ZonedDateTime.compare(candidate, best) < 0
-        ) {
-          best = candidate;
-        }
-      }
-    }
-    if (best) return best;
-
-    month++;
-    if (month > 12) {
-      month = 1;
-      year++;
-    }
-  }
-
-  return null;
-}
-
-function nextSingleDate(
-  dateSpec: DateSpec,
-  times: TimeOfDay[],
-  tz: string,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-
-  if (dateSpec.type === "iso") {
-    const date = Temporal.PlainDate.from(dateSpec.date);
-    return earliestFutureAtTimes(date, times, tz, now);
-  }
-
-  if (dateSpec.type === "named") {
-    const startYear = nowInTz.year;
-    for (let y = 0; y < 8; y++) {
-      const year = startYear + y;
-      try {
-        const date = Temporal.PlainDate.from(
-          {
-            year,
-            month: monthNumber(dateSpec.month),
-            day: dateSpec.day,
-          },
-          { overflow: "reject" },
-        );
-        const candidate = earliestFutureAtTimes(date, times, tz, now);
-        if (candidate) return candidate;
-      } catch {
-        // invalid date
-      }
-    }
-    return null;
-  }
-
-  return null;
-}
-
-function nextYearRepeat(
-  interval: number,
-  target: YearTarget,
-  times: TimeOfDay[],
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const startYear = nowInTz.year;
-  const anchorYear = anchor
-    ? Temporal.PlainDate.from(anchor).year
-    : EPOCH_DATE.year;
-
-  const maxIter = interval > 1 ? 8 * interval : 8;
-
-  for (let y = 0; y < maxIter; y++) {
-    const year = startYear + y;
-
-    if (interval > 1) {
-      const yearOffset = year - anchorYear;
-      if (yearOffset < 0 || euclideanMod(yearOffset, interval) !== 0) {
-        continue;
-      }
-    }
-
-    let targetDate: PD | null = null;
-
-    switch (target.type) {
-      case "date":
-        try {
-          targetDate = Temporal.PlainDate.from(
-            {
-              year,
-              month: monthNumber(target.month),
-              day: target.day,
-            },
-            { overflow: "reject" },
-          );
-        } catch {
-          continue;
-        }
-        break;
-      case "ordinalWeekday":
-        if (target.ordinal === "last") {
-          targetDate = lastWeekdayInMonth(
-            year,
-            monthNumber(target.month),
-            target.weekday,
-          );
-        } else {
-          targetDate = nthWeekdayOfMonth(
-            year,
-            monthNumber(target.month),
-            target.weekday,
-            ordinalToN(target.ordinal),
-          );
-        }
-        break;
-      case "dayOfMonth":
-        try {
-          targetDate = Temporal.PlainDate.from(
-            {
-              year,
-              month: monthNumber(target.month),
-              day: target.day,
-            },
-            { overflow: "reject" },
-          );
-        } catch {
-          continue;
-        }
-        break;
-      case "lastWeekday":
-        targetDate = lastWeekdayOfMonth(year, monthNumber(target.month));
-        break;
-    }
-
-    if (targetDate) {
-      const candidate = earliestFutureAtTimes(targetDate, times, tz, now);
-      if (candidate) return candidate;
-    }
-  }
-
-  return null;
-}
-
-/** The most recent occurrence strictly before `now`, or null if there is none. */
-export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
-  const tz = resolveTz(schedule.timezone);
-  const anchor = schedule.anchor;
-
-  const parsedExceptions = parseExceptions(schedule.except);
-  const hasExceptions = schedule.except.length > 0;
-  const hasDuring = schedule.during.length > 0;
-
-  let current = now;
-  for (let i = 0; i < 1000; i++) {
-    const candidate = prevExpr(schedule, tz, anchor, current);
-
-    if (candidate === null) return null;
-
-    const cDate = candidate.withTimeZone(tz).toPlainDate();
-
-    if (anchor) {
-      const anchorDate = Temporal.PlainDate.from(anchor);
-      if (Temporal.PlainDate.compare(cDate, anchorDate) < 0) {
-        return null;
-      }
-    }
-
-    if (schedule.until) {
-      const untilDate = resolveUntil(schedule.until, now);
-      if (Temporal.PlainDate.compare(cDate, untilDate) > 0) {
-        const endOfDay = toPlainTime({ hour: 23, minute: 59 });
-        const skipTo = atTimeOnDate(untilDate, endOfDay, tz);
-        current = skipTo.add({ seconds: 1 });
-        continue;
-      }
-    }
-
-    if (hasDuring && !matchesDuring(cDate, schedule.during)) {
-      const skipTo = prevDuringMonth(cDate, schedule.during);
-      const endOfDay = toPlainTime({ hour: 23, minute: 59 });
-      current = atTimeOnDate(skipTo, endOfDay, tz).add({
-        seconds: 1,
-      });
-      continue;
-    }
-
-    if (hasExceptions && isExceptedParsed(cDate, parsedExceptions)) {
-      const prevDay = cDate.subtract({ days: 1 });
-      const endOfDay = toPlainTime({ hour: 23, minute: 59 });
-      current = atTimeOnDate(prevDay, endOfDay, tz).add({
-        seconds: 1,
-      });
-      continue;
-    }
-
-    return candidate;
-  }
-
-  return null;
-}
-
-function prevExpr(
-  schedule: ScheduleData,
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const expr = schedule.expr;
-
-  switch (expr.type) {
-    case "dayRepeat":
-      return prevDayRepeat(expr, tz, anchor, now);
-    case "intervalRepeat":
-      return prevIntervalRepeat(expr, tz, now);
-    case "weekRepeat":
-      return prevWeekRepeat(expr, tz, anchor, now);
-    case "monthRepeat":
-      return prevMonthRepeat(expr, tz, anchor, now);
-    case "singleDate":
-      return prevSingleDate(expr, tz, now);
-    case "yearRepeat":
-      return prevYearRepeat(expr, tz, anchor, now);
-    default:
-      return null;
-  }
-}
-
-function prevDayRepeat(
-  expr: Extract<ScheduleExpr, { type: "dayRepeat" }>,
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  let date = nowInTz.toPlainDate();
-  const { interval, days, times } = expr;
-
-  if (interval <= 1) {
-    if (matchesDayFilter(date, days)) {
-      const candidate = latestPastAtTimes(date, times, tz, now);
-      if (candidate !== null) return candidate;
-    }
-    for (let i = 0; i < 8; i++) {
-      date = date.subtract({ days: 1 });
-      if (matchesDayFilter(date, days)) {
-        const candidate = latestAtTimes(date, times, tz);
-        if (candidate !== null) return candidate;
-      }
-    }
-    return null;
-  }
-
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
-  const offset = daysBetween(anchorDate, date);
-  const remainder = ((offset % interval) + interval) % interval;
-  const alignedDate =
-    remainder === 0 ? date : date.subtract({ days: remainder });
-
-  for (let i = 0; i < 2; i++) {
-    const checkDate = alignedDate.subtract({ days: i * interval });
-    const candidate = latestPastAtTimes(checkDate, times, tz, now);
-    if (candidate !== null) return candidate;
-    const latest = latestAtTimes(checkDate, times, tz);
-    if (latest !== null && Temporal.ZonedDateTime.compare(latest, now) < 0) {
-      return latest;
-    }
-  }
-
-  return null;
-}
-
-function prevIntervalRepeat(
-  expr: Extract<ScheduleExpr, { type: "intervalRepeat" }>,
-  tz: string,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  let date = nowInTz.toPlainDate();
-  const { interval, unit, from, to, dayFilter } = expr;
-
-  const stepMinutes = unit === "min" ? interval : interval * 60;
-  const fromMinutes = from.hour * 60 + from.minute;
-  const toMinutes = to.hour * 60 + to.minute;
-
-  for (let d = 0; d < 8; d++) {
-    if (dayFilter && !matchesDayFilter(date, dayFilter)) {
-      date = date.subtract({ days: 1 });
-      continue;
-    }
-
-    const nowMinutes =
-      d === 0 ? nowInTz.hour * 60 + nowInTz.minute : toMinutes + 1;
-    const searchUntil = Math.min(nowMinutes, toMinutes);
-
-    if (searchUntil >= fromMinutes) {
-      const slotsInRange = Math.floor(
-        (searchUntil - fromMinutes) / stepMinutes,
-      );
-      let lastSlotMinutes = fromMinutes + slotsInRange * stepMinutes;
-
-      if (d === 0 && lastSlotMinutes >= nowMinutes) {
-        lastSlotMinutes -= stepMinutes;
-      }
-
-      if (lastSlotMinutes >= fromMinutes) {
-        const h = Math.floor(lastSlotMinutes / 60);
-        const m = lastSlotMinutes % 60;
-        return atTimeOnDate(date, toPlainTime({ hour: h, minute: m }), tz);
-      }
-    }
-
-    date = date.subtract({ days: 1 });
-  }
-
-  return null;
-}
-
-function prevWeekRepeat(
-  expr: Extract<ScheduleExpr, { type: "weekRepeat" }>,
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const date = nowInTz.toPlainDate();
-  const { interval, days, times } = expr;
-
-  const dayOfWeek = date.dayOfWeek; // 1=Mon, 7=Sun
-  const currentMonday = date.subtract({ days: dayOfWeek - 1 });
-
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_MONDAY;
-  const anchorDayOfWeek = anchorDate.dayOfWeek;
-  const anchorMonday = anchorDate.subtract({ days: anchorDayOfWeek - 1 });
-
-  const sortedDays = [...days].sort((a, b) => dayToNumber(b) - dayToNumber(a));
-
-  let checkMonday = currentMonday;
-
-  for (let w = 0; w < 54; w++) {
-    const weeks = weeksBetween(anchorMonday, checkMonday);
-
-    if (weeks < 0) {
-      return null; // Before anchor
-    }
-
-    if (weeks % interval === 0) {
-      for (const wd of sortedDays) {
-        const dayNum = dayToNumber(wd);
-        const targetDate = checkMonday.add({ days: dayNum - 1 });
-
-        if (Temporal.PlainDate.compare(targetDate, date) < 0) {
-          const candidate = latestAtTimes(targetDate, times, tz);
-          if (candidate !== null) return candidate;
-        } else if (Temporal.PlainDate.compare(targetDate, date) === 0) {
-          const candidate = latestPastAtTimes(targetDate, times, tz, now);
-          if (candidate !== null) return candidate;
-        }
-      }
-    }
-
-    checkMonday = checkMonday.subtract({ days: interval * 7 });
-  }
-
-  return null;
-}
-
-function prevMonthRepeat(
-  expr: Extract<ScheduleExpr, { type: "monthRepeat" }>,
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const startDate = nowInTz.toPlainDate();
-  const { interval, target, times } = expr;
-
-  const anchorDate = anchor ? Temporal.PlainDate.from(anchor) : EPOCH_DATE;
-
-  let year = startDate.year;
-  let month = startDate.month;
-
-  const maxIter = interval > 1 ? 24 * interval : 24;
-
-  for (let i = 0; i < maxIter; i++) {
-    if (interval > 1) {
-      const monthOffset = monthsBetweenYM(
-        anchorDate,
-        Temporal.PlainDate.from({ year, month, day: 1 }),
-      );
-      if (monthOffset < 0 || monthOffset % interval !== 0) {
-        ({ year, month } = prevMonth(year, month));
-        continue;
-      }
-    }
-
-    const targetDates = getMonthTargetDates(year, month, target);
-
-    for (const d of targetDates.sort((a, b) =>
-      Temporal.PlainDate.compare(b, a),
-    )) {
-      if (Temporal.PlainDate.compare(d, startDate) > 0) continue;
-      if (Temporal.PlainDate.compare(d, startDate) === 0) {
-        const candidate = latestPastAtTimes(d, times, tz, now);
-        if (candidate !== null) return candidate;
-      } else {
-        const candidate = latestAtTimes(d, times, tz);
-        if (candidate !== null) return candidate;
-      }
-    }
-
-    ({ year, month } = prevMonth(year, month));
-  }
-
-  return null;
-}
-
-function prevSingleDate(
-  expr: Extract<ScheduleExpr, { type: "singleDate" }>,
-  tz: string,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const nowDate = nowInTz.toPlainDate();
-  const { date: dateSpec, times } = expr;
-
-  let targetDate: Temporal.PlainDate;
-
-  if (dateSpec.type === "iso") {
-    targetDate = Temporal.PlainDate.from(dateSpec.date);
-    if (Temporal.PlainDate.compare(targetDate, nowDate) > 0) {
-      return null; // Future date
-    }
-    if (Temporal.PlainDate.compare(targetDate, nowDate) === 0) {
-      return latestPastAtTimes(targetDate, times, tz, now);
-    }
-    return latestAtTimes(targetDate, times, tz);
-  } else {
-    const { month, day } = dateSpec;
-    const monthNum = monthNumber(month);
-
-    const thisYear = Temporal.PlainDate.from({
-      year: nowDate.year,
-      month: monthNum,
-      day,
-    });
-    const lastYear = Temporal.PlainDate.from({
-      year: nowDate.year - 1,
-      month: monthNum,
-      day,
-    });
-
-    if (Temporal.PlainDate.compare(thisYear, nowDate) < 0) {
-      targetDate = thisYear;
-    } else if (Temporal.PlainDate.compare(thisYear, nowDate) === 0) {
-      const candidate = latestPastAtTimes(thisYear, times, tz, now);
-      if (candidate !== null) return candidate;
-      targetDate = lastYear;
-    } else {
-      targetDate = lastYear;
-    }
-
-    return latestAtTimes(targetDate, times, tz);
-  }
-}
-
-function prevYearRepeat(
-  expr: Extract<ScheduleExpr, { type: "yearRepeat" }>,
-  tz: string,
-  anchor: string | null,
-  now: ZDT,
-): ZDT | null {
-  const nowInTz = now.withTimeZone(tz);
-  const startDate = nowInTz.toPlainDate();
-  const startYear = startDate.year;
-  const { interval, target, times } = expr;
-
-  const anchorYear = anchor
-    ? Temporal.PlainDate.from(anchor).year
-    : EPOCH_DATE.year;
-
-  const maxIter = interval > 1 ? 8 * interval : 8;
-
-  for (let y = 0; y < maxIter; y++) {
-    const year = startYear - y;
-
-    if (interval > 1) {
-      const yearOffset = year - anchorYear;
-      if (yearOffset < 0 || yearOffset % interval !== 0) {
-        continue;
-      }
-    }
-
-    const targetDate = getYearTargetDate(year, target);
-
-    if (targetDate !== null) {
-      if (Temporal.PlainDate.compare(targetDate, startDate) > 0) {
-        continue; // Future
-      }
-      if (Temporal.PlainDate.compare(targetDate, startDate) === 0) {
-        const candidate = latestPastAtTimes(targetDate, times, tz, now);
-        if (candidate !== null) return candidate;
-      } else {
-        const candidate = latestAtTimes(targetDate, times, tz);
-        if (candidate !== null) return candidate;
-      }
-    }
-  }
-
-  return null;
-}
-
-function latestPastAtTimes(
-  date: Temporal.PlainDate,
-  times: TimeOfDay[],
-  tz: string,
-  now: ZDT,
-): ZDT | null {
-  const sortedTimes = [...times].sort(
-    (a, b) => b.hour * 60 + b.minute - (a.hour * 60 + a.minute),
-  );
-
-  for (const tod of sortedTimes) {
-    const t = toPlainTime(tod);
-    const candidate = atTimeOnDate(date, t, tz);
-    if (Temporal.ZonedDateTime.compare(candidate, now) < 0) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function latestAtTimes(
-  date: Temporal.PlainDate,
-  times: TimeOfDay[],
-  tz: string,
-): ZDT | null {
-  const sortedTimes = [...times].sort(
-    (a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute),
-  );
-
-  if (sortedTimes.length === 0) return null;
-  const latest = sortedTimes[sortedTimes.length - 1];
-  return atTimeOnDate(date, toPlainTime(latest), tz);
-}
-
-function prevMonth(
-  year: number,
-  month: number,
-): { year: number; month: number } {
-  if (month === 1) {
-    return { year: year - 1, month: 12 };
-  }
-  return { year, month: month - 1 };
-}
-
-function prevDuringMonth(
-  date: Temporal.PlainDate,
-  during: MonthName[],
-): Temporal.PlainDate {
-  let { year, month } = prevMonth(date.year, date.month);
-
-  for (let i = 0; i < 12; i++) {
-    const monthName = numberToMonthName(month);
-    if (during.includes(monthName)) {
-      return lastDayOfMonth(year, month);
-    }
-    ({ year, month } = prevMonth(year, month));
-  }
-
-  return date.subtract({ days: 1 });
-}
-
-function numberToMonthName(n: number): MonthName {
-  const names: MonthName[] = [
-    "jan",
-    "feb",
-    "mar",
-    "apr",
-    "may",
-    "jun",
-    "jul",
-    "aug",
-    "sep",
-    "oct",
-    "nov",
-    "dec",
-  ];
-  return names[n - 1];
-}
-
-function getMonthTargetDates(
+function monthTargetDays(
   year: number,
   month: number,
   target: MonthTarget,
-): Temporal.PlainDate[] {
+): number[] {
   switch (target.type) {
     case "days": {
-      const expanded = expandMonthTarget(target);
-      return expanded
-        .map((d) => {
-          try {
-            return Temporal.PlainDate.from({ year, month, day: d });
-          } catch {
-            return null;
-          }
-        })
-        .filter((d): d is Temporal.PlainDate => d !== null);
+      const length = daysInMonth(year, month);
+      const days = [...new Set(expandMonthTarget(target))]
+        .filter((d) => d <= length)
+        .sort((a, b) => a - b);
+      return days.map((d) => epochDay(year, month, d));
     }
     case "lastDay":
       return [lastDayOfMonth(year, month)];
     case "lastWeekday":
       return [lastWeekdayOfMonth(year, month)];
-    case "nearestWeekday": {
-      const d = nearestWeekday(year, month, target.day, target.direction);
-      return d ? [d] : [];
-    }
-    case "ordinalWeekday": {
-      const d = getOrdinalWeekday(year, month, target.ordinal, target.weekday);
-      return d ? [d] : [];
-    }
-    default:
-      return [];
+    case "ordinalWeekday":
+      return orNone(
+        ordinalWeekday(year, month, target.ordinal, target.weekday),
+      );
+    case "nearestWeekday":
+      return orNone(nearestWeekday(year, month, target.day, target.direction));
   }
 }
 
-function getYearTargetDate(
-  year: number,
-  target: YearTarget,
-): Temporal.PlainDate | null {
+function yearTargetDay(year: number, target: YearTarget): number | null {
+  const month = monthNumber(target.month);
   switch (target.type) {
-    case "date": {
-      const monthNum = monthNumber(target.month);
-      try {
-        return Temporal.PlainDate.from({
-          year,
-          month: monthNum,
-          day: target.day,
-        });
-      } catch {
-        return null;
-      }
-    }
-    case "ordinalWeekday": {
-      const monthNum = monthNumber(target.month);
-      return getOrdinalWeekday(year, monthNum, target.ordinal, target.weekday);
-    }
-    case "dayOfMonth": {
-      const monthNum = monthNumber(target.month);
-      try {
-        return Temporal.PlainDate.from({
-          year,
-          month: monthNum,
-          day: target.day,
-        });
-      } catch {
-        return null;
-      }
-    }
-    case "lastWeekday": {
-      const monthNum = monthNumber(target.month);
-      return lastWeekdayOfMonth(year, monthNum);
-    }
-    default:
-      return null;
+    case "date":
+    case "dayOfMonth":
+      return target.day <= daysInMonth(year, month)
+        ? epochDay(year, month, target.day)
+        : null;
+    case "ordinalWeekday":
+      return ordinalWeekday(year, month, target.ordinal, target.weekday);
+    case "lastWeekday":
+      return lastWeekdayOfMonth(year, month);
   }
 }
 
-function getOrdinalWeekday(
-  year: number,
-  month: number,
-  ordinal: OrdinalPosition,
-  day: Weekday,
-): Temporal.PlainDate | null {
-  if (ordinal === "last") {
-    return lastWeekdayInMonth(year, month, day);
-  }
-  return nthWeekdayOfMonth(year, month, day, ordinalToN(ordinal));
+function orNone(day: number | null): number[] {
+  return day === null ? [] : [day];
 }
 
-function dayToNumber(day: Weekday): number {
-  const map: Record<Weekday, number> = {
-    monday: 1,
-    tuesday: 2,
-    wednesday: 3,
-    thursday: 4,
-    friday: 5,
-    saturday: 6,
-    sunday: 7,
+/**
+ * A calendar unit that intervals count in. `cycle` is how many units the
+ * Gregorian calendar takes to repeat (400 years), and `epoch` is the day whose
+ * period is the default interval anchor.
+ */
+interface Unit {
+  cycle: number;
+  epoch: number;
+  periodOf(day: number): number;
+}
+
+const EPOCH_MONDAY = isoDay("1970-01-05");
+
+const DAYS: Unit = { cycle: 146097, epoch: 0, periodOf: (day) => day };
+const WEEKS: Unit = {
+  cycle: 20871,
+  epoch: EPOCH_MONDAY,
+  periodOf: (day) => Math.floor((day - EPOCH_MONDAY) / 7),
+};
+const MONTHS: Unit = {
+  cycle: 4800,
+  epoch: 0,
+  periodOf: (day) => {
+    const { year, month } = civil(day);
+    return year * 12 + month - 1;
+  },
+};
+const YEARS: Unit = {
+  cycle: 400,
+  epoch: 0,
+  periodOf: (day) => civil(day).year,
+};
+// An ISO date has a single period, so the search visits it and stops.
+const ONCE: Unit = { cycle: 1, epoch: 0, periodOf: () => 0 };
+
+/**
+ * Where a schedule's occurrences can fall: every `interval`-th period of
+ * `unit` counted from `anchor`, and the candidate days (ascending) inside each
+ * period. `during` is already applied, to the target month of each period.
+ */
+interface Plan {
+  unit: Unit;
+  interval: number;
+  anchor: number;
+  daysIn(period: number): number[];
+}
+
+function planFor(schedule: ScheduleData): Plan {
+  const { expr } = schedule;
+  const during = schedule.during.map(monthNumber);
+  const inDuring = (month: number) =>
+    during.length === 0 || during.includes(month);
+  const dayIfInDuring = (day: number) =>
+    inDuring(civil(day).month) ? [day] : [];
+
+  const repeat = (
+    unit: Unit,
+    interval: number,
+    daysIn: (period: number) => number[],
+  ): Plan => {
+    const anchorDay =
+      schedule.anchor === null ? unit.epoch : isoDay(schedule.anchor);
+    return { unit, interval, anchor: unit.periodOf(anchorDay), daysIn };
   };
-  return map[day];
+
+  switch (expr.type) {
+    case "dayRepeat":
+      return repeat(DAYS, expr.interval, (day) =>
+        matchesDayFilter(day, expr.days) ? dayIfInDuring(day) : [],
+      );
+    case "intervalRepeat": {
+      const hasSlots = lastSlot(expr) >= 0;
+      return repeat(DAYS, 1, (day) =>
+        hasSlots &&
+        (expr.dayFilter === null || matchesDayFilter(day, expr.dayFilter))
+          ? dayIfInDuring(day)
+          : [],
+      );
+    }
+    case "weekRepeat": {
+      const offsets = expr.days.map((d) => weekdayNumber(d) - 1);
+      offsets.sort((a, b) => a - b);
+      return repeat(WEEKS, expr.interval, (week) =>
+        offsets.flatMap((o) => dayIfInDuring(EPOCH_MONDAY + 7 * week + o)),
+      );
+    }
+    case "monthRepeat":
+      return repeat(MONTHS, expr.interval, (period) => {
+        const month = mod(period, 12) + 1;
+        return inDuring(month)
+          ? monthTargetDays(Math.floor(period / 12), month, expr.target)
+          : [];
+      });
+    case "yearRepeat": {
+      const { target } = expr;
+      return repeat(YEARS, expr.interval, (year) =>
+        inDuring(monthNumber(target.month))
+          ? orNone(yearTargetDay(year, target))
+          : [],
+      );
+    }
+    case "singleDate": {
+      const { date } = expr;
+      if (date.type === "iso") {
+        const day = isoDay(date.date);
+        return repeat(ONCE, 1, (period) =>
+          period === 0 ? dayIfInDuring(day) : [],
+        );
+      }
+      const month = monthNumber(date.month);
+      return repeat(YEARS, 1, (year) =>
+        date.day <= daysInMonth(year, month)
+          ? dayIfInDuring(epochDay(year, month, date.day))
+          : [],
+      );
+    }
+  }
+}
+
+const FIRST_DAY = epochDay(1, 1, 1);
+const LAST_DAY = epochDay(9999, 12, 31);
+
+/**
+ * Candidate days from `start` (inclusive) in `direction`, over one full
+ * calendar cycle of aligned periods, and never outside years 1-9999.
+ */
+function* candidateDays(
+  plan: Plan,
+  from: number,
+  direction: Direction,
+): Generator<number> {
+  const { unit, interval } = plan;
+  const start = Math.min(Math.max(from, FIRST_DAY), LAST_DAY);
+  // Begin one period early: a directional nearest weekday can land in the
+  // period before or after the one it belongs to.
+  let period = unit.periodOf(start) - direction;
+  period += direction * mod(direction * (plan.anchor - period), interval);
+  const periods = unit.cycle / gcd(unit.cycle, interval);
+  for (let i = 0; i <= periods; i++, period += direction * interval) {
+    const days = plan.daysIn(period);
+    if (direction < 0) days.reverse();
+    for (const day of days) {
+      if (direction * (day - start) < 0) continue;
+      if (day < FIRST_DAY || day > LAST_DAY) return;
+      yield day;
+    }
+  }
+}
+
+function minutesOf(time: { hour: number; minute: number }): number {
+  return time.hour * 60 + time.minute;
+}
+
+function slotStep(expr: IntervalRepeat): number {
+  return expr.unit === "min" ? expr.interval : expr.interval * 60;
+}
+
+function lastSlot(expr: IntervalRepeat): number {
+  return Math.floor(
+    (minutesOf(expr.to) - minutesOf(expr.from)) / slotStep(expr),
+  );
+}
+
+const DAY_MS = 86_400_000;
+const MINUTE_MS = 60_000;
+const RANGE_START_MS = epochDay(1, 1, 2) * DAY_MS;
+const RANGE_END_MS = epochDay(9999, 12, 30) * DAY_MS;
+
+const NS_PER_MS = 1_000_000n;
+
+function floorMs(t: ZDT): number {
+  const ns = t.epochNanoseconds;
+  const ms = ns / NS_PER_MS;
+  return Number(ns % NS_PER_MS < 0n ? ms - 1n : ms);
+}
+
+function ceilMs(t: ZDT): number {
+  const ns = t.epochNanoseconds;
+  const ms = ns / NS_PER_MS;
+  return Number(ns % NS_PER_MS > 0n ? ms + 1n : ms);
+}
+
+function inRange(t: ZDT): boolean {
+  const ns = t.epochNanoseconds;
+  return (
+    ns >= BigInt(RANGE_START_MS) * NS_PER_MS &&
+    ns < BigInt(RANGE_END_MS) * NS_PER_MS
+  );
+}
+
+/**
+ * Resolves wall-clock times in one timezone. The Temporal polyfill costs
+ * microseconds per call, so offsets are looked up once per day and wall times
+ * are resolved with plain arithmetic.
+ */
+class Zone {
+  private midnightOffsets = new Map<number, number>();
+  private transitions = new Map<number, number>();
+
+  constructor(readonly id: string) {}
+
+  zoned(ms: number): ZDT {
+    return Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(
+      this.id,
+    );
+  }
+
+  offsetAt(ms: number): number {
+    return this.zoned(ms).offsetNanoseconds / 1e6;
+  }
+
+  localDay(ms: number): number {
+    return Math.floor((ms + this.offsetAt(ms)) / DAY_MS);
+  }
+
+  /**
+   * The instant of `minute` on `day` by the spec's rules: a repeated time
+   * takes its first pass, and a time in a gap shifts forward by the gap length,
+   * or is null when `skipGap` is set (interval slots).
+   */
+  resolve(day: number, minute: number, skipGap: boolean): number | null {
+    const local = day * DAY_MS + minute * MINUTE_MS;
+    // Every wall time on `day`, and a time shifted from it onto the next day,
+    // lies between UTC midnight of the day before and of the day after next.
+    // This assumes at most one offset change in those three days, so equal
+    // offsets at both ends mean no change.
+    const before = this.offsetAtMidnight(day - 1);
+    const after = this.offsetAtMidnight(day + 2);
+    if (before === after) return local - before;
+    const at = this.transitionAfter(day - 1, before);
+    if (local - before < at) return local - before;
+    if (local - after >= at) return local - after;
+    return skipGap ? null : local - before;
+  }
+
+  private offsetAtMidnight(day: number): number {
+    let offset = this.midnightOffsets.get(day);
+    if (offset === undefined) {
+      if (this.midnightOffsets.size > 64) this.midnightOffsets.clear();
+      offset = this.offsetAt(day * DAY_MS);
+      this.midnightOffsets.set(day, offset);
+    }
+    return offset;
+  }
+
+  /** The first instant of the three days from UTC midnight of `day` whose offset is not `before`. */
+  private transitionAfter(day: number, before: number): number {
+    let at = this.transitions.get(day);
+    if (at === undefined) {
+      if (this.transitions.size > 64) this.transitions.clear();
+      // Bisect rather than use getTimeZoneTransition, which in the polyfill
+      // never returns when three offsets fall inside one of its search steps.
+      let lo = day * DAY_MS;
+      let hi = lo + 3 * DAY_MS;
+      while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (this.offsetAt(mid) === before) lo = mid;
+        else hi = mid;
+      }
+      at = hi;
+      this.transitions.set(day, at);
+    }
+    return at;
+  }
+}
+
+/** Index of the first element of ascending `times` greater than `ms`. */
+function firstAfter(times: number[], ms: number): number {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] > ms) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+interface Occurrence {
+  ms: number;
+  day: number;
+}
+
+/**
+ * One schedule evaluated from one `now`: its plan, its clauses resolved to
+ * days, and the occurrences of each scheduled day, cached so that iterators
+ * resolve each day once.
+ */
+class Evaluation {
+  readonly zone: Zone;
+  private readonly plan: Plan;
+  private readonly until: number | null;
+  private readonly starting: number | null;
+  private readonly named: { month: number; day: number }[];
+  private readonly isoExceptions: number[];
+  private readonly days = new Map<number, number[]>();
+
+  constructor(
+    private readonly schedule: ScheduleData,
+    now: ZDT,
+  ) {
+    this.zone = new Zone(schedule.timezone ?? "UTC");
+    this.plan = planFor(schedule);
+    this.until =
+      schedule.until === null ? null : resolveUntil(schedule.until, now);
+    this.starting = schedule.anchor === null ? null : isoDay(schedule.anchor);
+    this.named = [];
+    this.isoExceptions = [];
+    for (const exc of schedule.except) {
+      if (exc.type === "named") {
+        this.named.push({ month: monthNumber(exc.month), day: exc.day });
+      } else {
+        this.isoExceptions.push(isoDay(exc.date));
+      }
+    }
+  }
+
+  // A time shifted by a spring-forward gap keeps its scheduled day for every
+  // clause but can land on the next date, after that date's early times. So
+  // the searches key on scheduled days and look one day beyond the best so
+  // far; occurrences two scheduled days apart are always in order.
+
+  /** The first occurrence after `afterMs`, scanning scheduled days from `fromDay`. */
+  next(
+    afterMs: number,
+    fromDay = this.zone.localDay(afterMs) - 1,
+  ): Occurrence | null {
+    let best: Occurrence | null = null;
+    const start = Math.max(fromDay, this.starting ?? fromDay);
+    for (const day of candidateDays(this.plan, start, 1)) {
+      if (best !== null && day > best.day + 1) break;
+      if (this.until !== null && day > this.until) break;
+      if (this.isExcepted(day)) continue;
+      const times = this.occurrencesOn(day);
+      const ms = times[firstAfter(times, afterMs)];
+      if (ms !== undefined && (best === null || ms < best.ms)) {
+        best = { ms, day };
+      }
+    }
+    return best !== null && best.ms < RANGE_END_MS ? best : null;
+  }
+
+  /** The last occurrence before `beforeMs`. */
+  previous(beforeMs: number): Occurrence | null {
+    // A fall-back across midnight can put `now` on the previous date after
+    // the first pass of the next date's times.
+    let start = this.zone.localDay(beforeMs) + 1;
+    if (this.until !== null) start = Math.min(start, this.until);
+    let best: Occurrence | null = null;
+    for (const day of candidateDays(this.plan, start, -1)) {
+      if (best !== null && day < best.day - 1) break;
+      if (this.starting !== null && day < this.starting) break;
+      if (this.isExcepted(day)) continue;
+      const times = this.occurrencesOn(day);
+      const ms = times[firstAfter(times, beforeMs - 1) - 1];
+      if (ms !== undefined && (best === null || ms > best.ms)) {
+        best = { ms, day };
+      }
+    }
+    return best !== null && best.ms >= RANGE_START_MS ? best : null;
+  }
+
+  private isExcepted(day: number): boolean {
+    if (this.isoExceptions.includes(day)) return true;
+    if (this.named.length === 0) return false;
+    const date = civil(day);
+    return this.named.some((n) => n.month === date.month && n.day === date.day);
+  }
+
+  /** The instants of `day`'s occurrences, ascending. */
+  private occurrencesOn(day: number): number[] {
+    let times = this.days.get(day);
+    if (times === undefined) {
+      if (this.days.size > 8) this.days.clear();
+      times = this.resolveDay(day);
+      this.days.set(day, times);
+    }
+    return times;
+  }
+
+  private resolveDay(day: number): number[] {
+    const { expr } = this.schedule;
+    const times: number[] = [];
+    if (expr.type === "intervalRepeat") {
+      const first = minutesOf(expr.from);
+      for (let k = 0; k <= lastSlot(expr); k++) {
+        const ms = this.zone.resolve(day, first + k * slotStep(expr), true);
+        if (ms !== null) times.push(ms);
+      }
+      return times;
+    }
+    for (const time of expr.times) {
+      const ms = this.zone.resolve(day, minutesOf(time), false);
+      if (ms !== null) times.push(ms);
+    }
+    return times.sort((a, b) => a - b);
+  }
+}
+
+function resolveUntil(until: UntilSpec, now: ZDT): number {
+  if (until.type === "iso") return isoDay(until.date);
+  const today = dayOf(now.toPlainDate());
+  const month = monthNumber(until.month);
+  const { year } = civil(today);
+  for (const y of [year, year + 1]) {
+    if (until.day <= daysInMonth(y, month)) {
+      const day = epochDay(y, month, until.day);
+      if (day >= today) return day;
+    }
+  }
+  throw new RangeError(
+    `no ${until.month} ${until.day} in ${year} or ${year + 1}`,
+  );
+}
+
+// spec/README.md, "Supported range": a `now` outside it has no occurrences.
+
+export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
+  if (!inRange(now)) return null;
+  const evaluation = new Evaluation(schedule, now);
+  const next = evaluation.next(floorMs(now));
+  return next === null ? null : evaluation.zone.zoned(next.ms);
+}
+
+/** The most recent occurrence strictly before `now`, or null if there is none. */
+export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
+  if (!inRange(now)) return null;
+  const evaluation = new Evaluation(schedule, now);
+  const previous = evaluation.previous(ceilMs(now));
+  return previous === null ? null : evaluation.zone.zoned(previous.ms);
+}
+
+/** True when the minute containing `datetime` is an occurrence. */
+export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
+  if (!inRange(datetime)) return false;
+  const evaluation = new Evaluation(schedule, datetime);
+  const ms = floorMs(datetime);
+  const offset = evaluation.zone.offsetAt(ms);
+  const minuteMs = Math.floor((ms + offset) / MINUTE_MS) * MINUTE_MS - offset;
+  if (minuteMs < RANGE_START_MS) return false;
+  return evaluation.next(minuteMs - 1)?.ms === minuteMs;
 }
 
 /**
@@ -1539,13 +653,23 @@ export function* occurrences(
   schedule: ScheduleData,
   from: ZDT,
 ): Generator<ZDT, void, unknown> {
-  let current = from;
-  for (;;) {
-    const next = nextFrom(schedule, current);
-    if (next === null) return;
-    current = next.add({ minutes: 1 });
-    yield next;
+  if (!inRange(from)) return;
+  const evaluation = new Evaluation(schedule, from);
+  let next = evaluation.next(floorMs(from));
+  while (next !== null) {
+    yield evaluation.zone.zoned(next.ms);
+    next = evaluation.next(next.ms, next.day - 1);
   }
+}
+
+export function nextNFrom(schedule: ScheduleData, now: ZDT, n: number): ZDT[] {
+  const results: ZDT[] = [];
+  if (n <= 0) return results;
+  for (const t of occurrences(schedule, now)) {
+    results.push(t);
+    if (results.length === n) break;
+  }
+  return results;
 }
 
 /** Yields occurrences where `from < occurrence <= to`. */
@@ -1554,8 +678,10 @@ export function* between(
   from: ZDT,
   to: ZDT,
 ): Generator<ZDT, void, unknown> {
-  for (const dt of occurrences(schedule, from)) {
-    if (Temporal.ZonedDateTime.compare(dt, to) > 0) return;
-    yield dt;
+  if (!inRange(to)) return;
+  const toNs = to.epochNanoseconds;
+  for (const t of occurrences(schedule, from)) {
+    if (t.epochNanoseconds > toNs) return;
+    yield t;
   }
 }

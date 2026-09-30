@@ -51,16 +51,17 @@ public partial class ConformanceTest
         Assert.Equal(canonical, s2.ToString());
     }
 
-    public static TheoryData<string, string> GetParseErrorTests()
+    public static TheoryData<string, string, string?> GetParseErrorTests()
     {
-        var data = new TheoryData<string, string>();
+        var data = new TheoryData<string, string, string?>();
         var tests = Spec.RootElement.GetProperty("parse_errors").GetProperty("tests");
 
         foreach (var tc in tests.EnumerateArray())
         {
             var name = tc.GetProperty("name").GetString()!;
             var input = tc.GetProperty("input").GetString()!;
-            data.Add(name, input);
+            var errorContains = tc.TryGetProperty("error_contains", out var ec) ? ec.GetString() : null;
+            data.Add(name, input, errorContains);
         }
 
         return data;
@@ -68,10 +69,14 @@ public partial class ConformanceTest
 
     [Theory]
     [MemberData(nameof(GetParseErrorTests))]
-    public void ParseErrorTests(string _name, string input)
+    public void ParseErrorTests(string _name, string input, string? errorContains)
     {
         _ = _name; // Used for test display
-        Assert.Throws<HronException>(() => Schedule.Parse(input));
+        var error = Assert.Throws<HronException>(() => Schedule.Parse(input));
+        if (errorContains is not null)
+        {
+            Assert.Contains(errorContains, error.Message);
+        }
     }
 
     public static TheoryData<string, string, string?, string?> GetEvalNextTests()
@@ -81,10 +86,9 @@ public partial class ConformanceTest
 
         foreach (var section in eval.EnumerateObject())
         {
-            if (section.Name == "description") continue;
-            if (!section.Value.TryGetProperty("tests", out var tests)) continue;
+            if (!IsNextStyleSection(section)) continue;
 
-            foreach (var tc in tests.EnumerateArray())
+            foreach (var tc in section.Value.GetProperty("tests").EnumerateArray())
             {
                 if (!tc.TryGetProperty("next", out var nextProp)) continue;
 
@@ -120,24 +124,23 @@ public partial class ConformanceTest
         }
     }
 
-    public static TheoryData<string, string, string?, string> GetEvalNextDateTests()
+    public static TheoryData<string, string, string?, string?> GetEvalNextDateTests()
     {
-        var data = new TheoryData<string, string, string?, string>();
+        var data = new TheoryData<string, string, string?, string?>();
         var eval = Spec.RootElement.GetProperty("eval");
 
         foreach (var section in eval.EnumerateObject())
         {
-            if (section.Name == "description") continue;
-            if (!section.Value.TryGetProperty("tests", out var tests)) continue;
+            if (!IsNextStyleSection(section)) continue;
 
-            foreach (var tc in tests.EnumerateArray())
+            foreach (var tc in section.Value.GetProperty("tests").EnumerateArray())
             {
                 if (!tc.TryGetProperty("next_date", out var nextDateProp)) continue;
 
                 var name = $"{section.Name}/{tc.GetProperty("name").GetString()}";
                 var expression = tc.GetProperty("expression").GetString()!;
                 var now = tc.TryGetProperty("now", out var nowProp) ? nowProp.GetString() : null;
-                var nextDate = nextDateProp.GetString()!;
+                var nextDate = nextDateProp.GetString();
                 data.Add(name, expression, now, nextDate);
             }
         }
@@ -147,13 +150,18 @@ public partial class ConformanceTest
 
     [Theory]
     [MemberData(nameof(GetEvalNextDateTests))]
-    public void EvalNextDateTests(string _name, string expression, string? nowStr, string expectedDate)
+    public void EvalNextDateTests(string _name, string expression, string? nowStr, string? expectedDate)
     {
         _ = _name; // Used for test display
         var s = Schedule.Parse(expression);
         var now = nowStr is not null ? ParseZonedDateTime(nowStr) : DefaultNow;
         var result = s.NextFrom(now);
 
+        if (expectedDate is null)
+        {
+            Assert.Null(result);
+            return;
+        }
         Assert.NotNull(result);
         var gotDate = result.Value.Date.ToString("yyyy-MM-dd");
         Assert.Equal(expectedDate, gotDate);
@@ -166,10 +174,9 @@ public partial class ConformanceTest
 
         foreach (var section in eval.EnumerateObject())
         {
-            if (section.Name == "description") continue;
-            if (!section.Value.TryGetProperty("tests", out var tests)) continue;
+            if (!IsNextStyleSection(section)) continue;
 
-            foreach (var tc in tests.EnumerateArray())
+            foreach (var tc in section.Value.GetProperty("tests").EnumerateArray())
             {
                 if (!tc.TryGetProperty("next_n", out var nextNProp)) continue;
 
@@ -210,10 +217,9 @@ public partial class ConformanceTest
 
         foreach (var section in eval.EnumerateObject())
         {
-            if (section.Name == "description") continue;
-            if (!section.Value.TryGetProperty("tests", out var tests)) continue;
+            if (!IsNextStyleSection(section)) continue;
 
-            foreach (var tc in tests.EnumerateArray())
+            foreach (var tc in section.Value.GetProperty("tests").EnumerateArray())
             {
                 if (!tc.TryGetProperty("next_n_length", out var lengthProp)) continue;
 
@@ -402,6 +408,10 @@ public partial class ConformanceTest
         {
             Assert.Equal(expectedCount.Value, results.Count);
         }
+        else
+        {
+            Assert.Fail("between case has neither expected nor expected_count");
+        }
     }
 
     public static TheoryData<string, string> GetEvalErrorTests()
@@ -425,9 +435,7 @@ public partial class ConformanceTest
     public void EvalErrorTests(string _name, string expression)
     {
         _ = _name; // Used for test display
-        // C# validates timezone at construction time (Schedule.Parse),
-        // so these should fail at parse time.
-        Assert.Throws<HronException>(() => Schedule.Parse(expression));
+        Assert.Throws<HronException>(() => Schedule.Parse(expression).NextFrom(DefaultNow));
     }
 
     public static TheoryData<string, string, string> GetToCronTests()
@@ -556,6 +564,252 @@ public partial class ConformanceTest
 
         Assert.Equal(cron, cron2);
     }
+
+    private static readonly string[] KnownTopLevel =
+        ["$schema", "version", "description", "now", "_eval_assertion_types", "_behavioral_notes",
+         "parse", "parse_errors", "eval", "cron", "eval_errors", "invariants"];
+
+    private sealed record CaseShape(string[] Fields, Func<JsonElement, bool> HasAssertion);
+
+    private static readonly CaseShape ParseShape = new(["input", "canonical"], tc => Has(tc, "input", "canonical"));
+
+    private static readonly CaseShape NextShape = new(
+        ["expression", "now", "next", "next_date", "next_n", "next_n_count", "next_n_length"],
+        tc => Has(tc, "expression") && (Has(tc, "next") || Has(tc, "next_date") || Has(tc, "next_n") || Has(tc, "next_n_length")));
+
+    // The fields this runner checks per section, as the spec's "Writing a runner" lists them;
+    // parse.* sections use ParseShape and eval sections not named here use NextShape.
+    private static readonly Dictionary<string, CaseShape> CaseShapes = new()
+    {
+        ["parse_errors"] = new(["input", "error_contains"], tc => Has(tc, "input")),
+        ["eval_errors"] = new(["expression"], tc => Has(tc, "expression")),
+        ["cron/to_cron"] = new(["hron", "cron"], tc => Has(tc, "hron", "cron")),
+        ["cron/to_cron_errors"] = new(["hron"], tc => Has(tc, "hron")),
+        ["cron/from_cron"] = new(["cron", "hron"], tc => Has(tc, "cron", "hron")),
+        ["cron/from_cron_errors"] = new(["cron"], tc => Has(tc, "cron")),
+        ["cron/roundtrip"] = new(["hron"], tc => Has(tc, "hron")),
+        ["eval/matches"] = new(["expression", "datetime", "expected"], tc => Has(tc, "expression", "datetime", "expected")),
+        ["eval/previous_from"] = new(["expression", "now", "expected"], tc => Has(tc, "expression", "now", "expected")),
+        ["eval/occurrences"] = new(["expression", "from", "take", "expected"], tc => Has(tc, "expression", "from", "take", "expected")),
+        ["eval/between"] = new(
+            ["expression", "from", "to", "expected", "expected_count"],
+            tc => Has(tc, "expression", "from", "to") && (Has(tc, "expected") || Has(tc, "expected_count"))),
+        ["invariants"] = new(["expression", "now"], tc => Has(tc, "expression", "now")),
+    };
+
+    private static readonly string[] Labels = ["name", "description"];
+
+    private static bool Has(JsonElement tc, params string[] fields) => fields.All(f => tc.TryGetProperty(f, out _));
+
+    private static bool IsNextStyleSection(JsonProperty section) =>
+        section.Name != "description" && !CaseShapes.ContainsKey($"eval/{section.Name}");
+
+    private static IEnumerable<(string Path, JsonElement Section)> CaseSections()
+    {
+        foreach (var top in new[] { "parse", "eval", "cron" })
+        {
+            foreach (var section in Spec.RootElement.GetProperty(top).EnumerateObject().Where(p => p.Name != "description"))
+            {
+                yield return ($"{top}/{section.Name}", section.Value);
+            }
+        }
+        foreach (var top in new[] { "parse_errors", "eval_errors", "invariants" })
+        {
+            yield return (top, Spec.RootElement.GetProperty(top));
+        }
+    }
+
+    private static CaseShape? ShapeOf(string path) =>
+        CaseShapes.TryGetValue(path, out var shape) ? shape
+        : path.StartsWith("parse/") ? ParseShape
+        : path.StartsWith("eval/") ? NextShape
+        : null;
+
+    [Fact]
+    public void EveryTopLevelSectionIsKnown()
+    {
+        var unknown = Spec.RootElement.EnumerateObject().Select(p => p.Name).Except(KnownTopLevel).ToList();
+        Assert.True(unknown.Count == 0, "unknown top-level sections: " + string.Join(", ", unknown));
+    }
+
+    [Fact]
+    public void EveryCaseIsFullyChecked()
+    {
+        var problems = new List<string>();
+        foreach (var (path, section) in CaseSections())
+        {
+            if (ShapeOf(path) is not { } shape)
+            {
+                problems.Add($"{path}: unknown section");
+                continue;
+            }
+            if (!section.TryGetProperty("tests", out var tests))
+            {
+                problems.Add($"{path}: no tests");
+                continue;
+            }
+            foreach (var tc in tests.EnumerateArray())
+            {
+                var label = $"{path}/{(tc.TryGetProperty("name", out var n) ? n.GetString() : "?")}";
+                if (!shape.HasAssertion(tc))
+                {
+                    problems.Add($"{label}: no assertion this runner checks");
+                }
+                var extra = tc.EnumerateObject().Select(f => f.Name).Except(shape.Fields).Except(Labels).ToList();
+                if (extra.Count > 0)
+                {
+                    problems.Add($"{label}: fields this runner does not check: {string.Join(", ", extra)}");
+                }
+            }
+        }
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    private static JsonElement Invariants => Spec.RootElement.GetProperty("invariants");
+
+    public static TheoryData<string, string, string> GetInvariantTests()
+    {
+        var data = new TheoryData<string, string, string>();
+        foreach (var tc in Invariants.GetProperty("tests").EnumerateArray())
+        {
+            var name = tc.GetProperty("name").GetString()!;
+            var expression = tc.GetProperty("expression").GetString()!;
+            var now = tc.GetProperty("now").GetString()!;
+            data.Add(name, expression, now);
+        }
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(GetInvariantTests))]
+    public void InvariantTests(string name, string expression, string nowStr)
+    {
+        var s = Schedule.Parse(expression);
+        var now = ParseZonedDateTime(nowStr);
+        var count = Invariants.GetProperty("count").GetInt32();
+
+        var violations = Invariants.GetProperty("rules").EnumerateObject()
+            .Select(rule => (rule.Name, Violation: InvariantRules.TryGetValue(rule.Name, out var check)
+                ? check(s, now, count)
+                : "rule is not implemented by this runner"))
+            .Where(v => v.Violation is not null)
+            .Select(v => $"{name} [{v.Name}]: {v.Violation}")
+            .ToList();
+
+        Assert.True(violations.Count == 0, $"'{expression}' from {nowStr}\n" + string.Join("\n", violations));
+    }
+
+    private static readonly Dictionary<string, Func<Schedule, DateTimeOffset, int, string?>> InvariantRules = new()
+    {
+        ["next_matches"] = (s, now, _) => NextMatches(s, now),
+        ["next_after_now"] = (s, now, _) => NextAfterNow(s, now),
+        ["next_n_chain"] = NextNChain,
+        ["occurrences_prefix"] = OccurrencesPrefix,
+        ["between_window"] = BetweenWindow,
+        ["prev_inverse"] = PrevInverse,
+        ["prev_before_now"] = (s, now, _) => PrevBeforeNow(s, now),
+        ["display_roundtrip"] = (s, _, _) => DisplayRoundtrip(s),
+    };
+
+    private static string? NextMatches(Schedule s, DateTimeOffset now)
+    {
+        var next = s.NextFrom(now);
+        return next is { } t && !s.Matches(t) ? $"matches({Show(t)}) is false" : null;
+    }
+
+    private static string? NextAfterNow(Schedule s, DateTimeOffset now)
+    {
+        var next = s.NextFrom(now);
+        return next is { } t && t <= now ? $"nextFrom(now) is {Show(t)}, not after now" : null;
+    }
+
+    private static string? NextNChain(Schedule s, DateTimeOffset now, int count)
+    {
+        var list = s.NextNFrom(now, count);
+        var first = s.NextFrom(now);
+        if (list.Count == 0)
+        {
+            return first is null ? null : $"empty but nextFrom(now) is {Show(first)}";
+        }
+        if (list[0] != first)
+        {
+            return $"starts with {Show(list[0])} but nextFrom(now) is {Show(first)}";
+        }
+        for (var i = 1; i < list.Count; i++)
+        {
+            if (list[i] <= list[i - 1])
+            {
+                return $"not strictly increasing at {i}: {Show(list[i - 1])} then {Show(list[i])}";
+            }
+            var next = s.NextFrom(list[i - 1]);
+            if (list[i] != next)
+            {
+                return $"element {i} is {Show(list[i])} but nextFrom({Show(list[i - 1])}) is {Show(next)}";
+            }
+        }
+        return null;
+    }
+
+    private static string? OccurrencesPrefix(Schedule s, DateTimeOffset now, int count)
+    {
+        var list = s.NextNFrom(now, count);
+        var taken = s.Occurrences(now).Take(count).ToList();
+        return taken.SequenceEqual(list) ? null : $"occurrences gives {Show(taken)} but nextNFrom gives {Show(list)}";
+    }
+
+    private static string? BetweenWindow(Schedule s, DateTimeOffset now, int count)
+    {
+        var list = s.NextNFrom(now, count);
+        if (list.Count == 0)
+        {
+            return null;
+        }
+        var between = s.Between(now, list[^1]).ToList();
+        return between.SequenceEqual(list) ? null : $"between gives {Show(between)} but nextNFrom gives {Show(list)}";
+    }
+
+    private static string? PrevInverse(Schedule s, DateTimeOffset now, int count)
+    {
+        var list = s.NextNFrom(now, count);
+        for (var i = 1; i < list.Count; i++)
+        {
+            var prev = s.PreviousFrom(list[i]);
+            if (prev != list[i - 1])
+            {
+                return $"previousFrom({Show(list[i])}) is {Show(prev)}, expected {Show(list[i - 1])}";
+            }
+        }
+        return null;
+    }
+
+    private static string? PrevBeforeNow(Schedule s, DateTimeOffset now)
+    {
+        if (s.PreviousFrom(now) is not { } p)
+        {
+            return null;
+        }
+        if (p >= now)
+        {
+            return $"previousFrom(now) is {Show(p)}, not before now";
+        }
+        if (!s.Matches(p))
+        {
+            return $"matches({Show(p)}) is false";
+        }
+        var next = s.NextFrom(p);
+        return next is { } n && n < now ? $"nextFrom({Show(p)}) is {Show(n)}, earlier than now" : null;
+    }
+
+    private static string? DisplayRoundtrip(Schedule s)
+    {
+        var display = s.ToString();
+        var again = Schedule.Parse(display).ToString();
+        return again == display ? null : $"'{display}' re-displays as '{again}'";
+    }
+
+    private static string Show(DateTimeOffset? t) => t?.ToString("o") ?? "null";
+
+    private static string Show(IEnumerable<DateTimeOffset> ts) => "[" + string.Join(", ", ts.Select(t => Show(t))) + "]";
 
     // Format: "2026-02-06T12:00:00+00:00[UTC]"
     [GeneratedRegex(@"^(.+?)\[([^\]]+)\]$")]

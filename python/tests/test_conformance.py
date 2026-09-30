@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from itertools import islice, pairwise
 from pathlib import Path
 from typing import Any
 
@@ -15,21 +17,96 @@ with open(_spec_path) as _f:
 _default_now = parse_zoned(_spec["now"])
 
 
-_PARSE_SECTIONS = [
+_KNOWN_TOP_LEVEL = {
+    "$schema",
+    "version",
+    "description",
+    "now",
+    "_eval_assertion_types",
+    "_behavioral_notes",
+    "parse",
+    "parse_errors",
+    "eval",
+    "cron",
+    "eval_errors",
+    "invariants",
+}
+_NEXT_EVAL_SECTIONS = [
     "day_repeat",
     "interval_repeat",
-    "week_repeat",
     "month_repeat",
+    "week_repeat",
     "single_date",
     "year_repeat",
-    "except_clause",
-    "until_clause",
-    "starting_clause",
-    "during_clause",
-    "timezone_clause",
-    "combined_clauses",
-    "case_insensitivity",
+    "except",
+    "until",
+    "except_and_until",
+    "n_occurrences",
+    "multi_time",
+    "during",
+    "day_ranges",
+    "leap_year",
+    "dst_spring_forward",
+    "dst_fall_back",
+    "timezone_default",
+    "contradictory",
+    "edge_cases",
 ]
+_KNOWN_EVAL = {"description", "matches", "occurrences", "between", "previous_from"}
+_KNOWN_EVAL.update(_NEXT_EVAL_SECTIONS)
+_KNOWN_CRON = {"to_cron", "to_cron_errors", "from_cron", "from_cron_errors", "roundtrip"}
+
+
+def test_spec_sections_are_known() -> None:
+    """A section this runner does not know would otherwise be skipped silently."""
+    assert set(_spec) <= _KNOWN_TOP_LEVEL, set(_spec) - _KNOWN_TOP_LEVEL
+    assert set(_spec["eval"]) <= _KNOWN_EVAL, set(_spec["eval"]) - _KNOWN_EVAL
+    assert set(_spec["cron"]) <= _KNOWN_CRON, set(_spec["cron"]) - _KNOWN_CRON
+
+
+_LABELS = {"name", "description"}
+_NEXT_FIELDS = {"expression", "now", "next", "next_date", "next_n", "next_n_count", "next_n_length"}
+
+
+def _checked_fields(section: str) -> set[str]:
+    """The case fields this runner reads or asserts, per section."""
+    if section.startswith("parse/"):
+        return {"input", "canonical"}
+    return {
+        "parse_errors": {"input", "error_contains"},
+        "eval_errors": {"expression"},
+        "eval/matches": {"expression", "datetime", "expected"},
+        "eval/previous_from": {"expression", "now", "expected"},
+        "eval/occurrences": {"expression", "from", "take", "expected"},
+        "eval/between": {"expression", "from", "to", "expected", "expected_count"},
+        "cron/to_cron": {"hron", "cron"},
+        "cron/to_cron_errors": {"hron"},
+        "cron/from_cron": {"cron", "hron"},
+        "cron/from_cron_errors": {"cron"},
+        "cron/roundtrip": {"hron"},
+        "invariants": {"expression", "now"},
+    }.get(section, _NEXT_FIELDS)
+
+
+def _all_cases() -> list[tuple[str, dict[str, Any]]]:
+    groups = {f"parse/{k}": v for k, v in _spec["parse"].items() if k != "description"}
+    groups |= {f"eval/{k}": v for k, v in _spec["eval"].items() if k != "description"}
+    groups |= {f"cron/{k}": v for k, v in _spec["cron"].items()}
+    groups |= {k: _spec[k] for k in ("parse_errors", "eval_errors", "invariants")}
+    return [(section, tc) for section, group in groups.items() for tc in group["tests"]]
+
+
+def test_spec_case_fields_are_checked() -> None:
+    """A case field this runner does not check would otherwise pass without being asserted."""
+    unchecked = [
+        f"{section}/{tc.get('name')}: {sorted(extra)}"
+        for section, tc in _all_cases()
+        if (extra := tc.keys() - _LABELS - _checked_fields(section))
+    ]
+    assert not unchecked, unchecked
+
+
+_PARSE_SECTIONS = [section for section in _spec["parse"] if section != "description"]
 
 
 def _collect_parse_tests() -> list[tuple[str, str, str]]:
@@ -55,25 +132,24 @@ def test_parse_roundtrip(name: str, input_text: str, canonical: str) -> None:
     assert str(s2) == canonical
 
 
-_PARSE_ERROR_TESTS = [
-    (tc.get("name", tc["input"]), tc["input"]) for tc in _spec["parse_errors"]["tests"]
-]
+_PARSE_ERROR_TESTS = [(tc.get("name", tc["input"]), tc) for tc in _spec["parse_errors"]["tests"]]
 _PARSE_ERROR_IDS = [t[0] for t in _PARSE_ERROR_TESTS]
 
 
-@pytest.mark.parametrize("name,input_text", _PARSE_ERROR_TESTS, ids=_PARSE_ERROR_IDS)
-def test_parse_errors(name: str, input_text: str) -> None:
-    with pytest.raises(HronError):
-        Schedule.parse(input_text)
+@pytest.mark.parametrize("name,tc", _PARSE_ERROR_TESTS, ids=_PARSE_ERROR_IDS)
+def test_parse_errors(name: str, tc: dict[str, Any]) -> None:
+    with pytest.raises(HronError) as error:
+        Schedule.parse(tc["input"])
+    if "error_contains" in tc:
+        assert tc["error_contains"] in str(error.value)
 
 
-_SKIP_EVAL_SECTIONS = {"description", "matches", "occurrences", "between", "previous_from"}
-_EVAL_SECTIONS = [s for s in _spec["eval"] if s not in _SKIP_EVAL_SECTIONS]
+_NEXT_ASSERTIONS = {"next", "next_date", "next_n", "next_n_length"}
 
 
 def _collect_eval_tests() -> list[tuple[str, dict[str, Any]]]:
     tests: list[tuple[str, dict[str, Any]]] = []
-    for section in _EVAL_SECTIONS:
+    for section in _NEXT_EVAL_SECTIONS:
         for tc in _spec["eval"][section]["tests"]:
             name = tc.get("name", tc["expression"])
             tests.append((f"{section}/{name}", tc))
@@ -86,6 +162,7 @@ _EVAL_IDS = [t[0] for t in _EVAL_TESTS]
 
 @pytest.mark.parametrize("name,tc", _EVAL_TESTS, ids=_EVAL_IDS)
 def test_eval(name: str, tc: dict[str, Any]) -> None:
+    assert _NEXT_ASSERTIONS & tc.keys(), f"{name}: no assertion field this runner understands"
     schedule = Schedule.parse(tc["expression"])
     now = parse_zoned(tc["now"]) if "now" in tc else _default_now
 
@@ -99,8 +176,11 @@ def test_eval(name: str, tc: dict[str, Any]) -> None:
 
     if "next_date" in tc:
         result = schedule.next_from(now)
-        assert result is not None
-        assert result.date().isoformat() == tc["next_date"]
+        if tc["next_date"] is None:
+            assert result is None
+        else:
+            assert result is not None
+            assert result.date().isoformat() == tc["next_date"]
 
     if "next_n" in tc:
         expected: list[str] = tc["next_n"]
@@ -176,6 +256,8 @@ def test_eval_between(name: str, tc: dict[str, Any]) -> None:
             assert format_zoned(r) == e, f"between[{j}] mismatch"
     elif "expected_count" in tc:
         assert len(results) == tc["expected_count"]
+    else:
+        pytest.fail(f"{name}: no assertion field this runner understands")
 
 
 _PREVIOUS_FROM_TESTS = [
@@ -279,3 +361,109 @@ def test_cron_roundtrip(name: str, hron: str) -> None:
     back = Schedule.from_cron(cron1)
     cron2 = back.to_cron()
     assert cron1 == cron2
+
+
+_INVARIANT_COUNT: int = _spec["invariants"]["count"]
+
+
+def _utc(dt: datetime) -> datetime:
+    """Datetimes sharing one ZoneInfo compare by wall clock, so compare instants in UTC."""
+    return dt.astimezone(UTC)
+
+
+def _utc_list(dts: list[datetime]) -> list[datetime]:
+    return [_utc(dt) for dt in dts]
+
+
+def _next_n(schedule: Schedule, now: datetime) -> list[datetime]:
+    return schedule.next_n_from(now, _INVARIANT_COUNT)
+
+
+def _rule_next_matches(name: str, schedule: Schedule, now: datetime) -> None:
+    t = schedule.next_from(now)
+    if t is not None:
+        assert schedule.matches(t), f"{name}: next_matches: matches({t}) is false"
+
+
+def _rule_next_after_now(name: str, schedule: Schedule, now: datetime) -> None:
+    t = schedule.next_from(now)
+    if t is not None:
+        assert _utc(t) > _utc(now), f"{name}: next_after_now: {t} is not after {now}"
+
+
+def _rule_next_n_chain(name: str, schedule: Schedule, now: datetime) -> None:
+    results = _next_n(schedule, now)
+    first = schedule.next_from(now)
+    if first is None:
+        assert results == [], f"{name}: next_n_chain: nextFrom is null but nextNFrom is not empty"
+        return
+    assert results, f"{name}: next_n_chain: nextNFrom is empty but nextFrom is {first}"
+    assert _utc(results[0]) == _utc(first), f"{name}: next_n_chain: first element is not nextFrom"
+    for a, b in pairwise(results):
+        assert _utc(a) < _utc(b), f"{name}: next_n_chain: {b} does not follow {a}"
+        after_a = schedule.next_from(a)
+        assert after_a is not None and _utc(after_a) == _utc(b), (
+            f"{name}: next_n_chain: nextFrom({a}) is {after_a}, not {b}"
+        )
+
+
+def _rule_occurrences_prefix(name: str, schedule: Schedule, now: datetime) -> None:
+    taken = list(islice(schedule.occurrences(now), _INVARIANT_COUNT))
+    assert _utc_list(taken) == _utc_list(_next_n(schedule, now)), f"{name}: occurrences_prefix"
+
+
+def _rule_between_window(name: str, schedule: Schedule, now: datetime) -> None:
+    results = _next_n(schedule, now)
+    if results:
+        window = list(schedule.between(now, results[-1]))
+        assert _utc_list(window) == _utc_list(results), f"{name}: between_window"
+
+
+def _rule_prev_inverse(name: str, schedule: Schedule, now: datetime) -> None:
+    for a, b in pairwise(_next_n(schedule, now)):
+        prev = schedule.previous_from(b)
+        assert prev is not None and _utc(prev) == _utc(a), (
+            f"{name}: prev_inverse: previousFrom({b}) is {prev}, not {a}"
+        )
+
+
+def _rule_prev_before_now(name: str, schedule: Schedule, now: datetime) -> None:
+    p = schedule.previous_from(now)
+    if p is None:
+        return
+    assert _utc(p) < _utc(now), f"{name}: prev_before_now: {p} is not before {now}"
+    assert schedule.matches(p), f"{name}: prev_before_now: matches({p}) is false"
+    after = schedule.next_from(p)
+    assert after is None or _utc(after) >= _utc(now), (
+        f"{name}: prev_before_now: nextFrom({p}) is {after}, earlier than {now}"
+    )
+
+
+def _rule_display_roundtrip(name: str, schedule: Schedule, now: datetime) -> None:
+    first = str(schedule)
+    assert str(Schedule.parse(first)) == first, f"{name}: display_roundtrip"
+
+
+_INVARIANT_RULES = {
+    "next_matches": _rule_next_matches,
+    "next_after_now": _rule_next_after_now,
+    "next_n_chain": _rule_next_n_chain,
+    "occurrences_prefix": _rule_occurrences_prefix,
+    "between_window": _rule_between_window,
+    "prev_inverse": _rule_prev_inverse,
+    "prev_before_now": _rule_prev_before_now,
+    "display_roundtrip": _rule_display_roundtrip,
+}
+_INVARIANT_TESTS = [
+    (rule, tc["name"], tc)
+    for rule in _spec["invariants"]["rules"]
+    for tc in _spec["invariants"]["tests"]
+]
+_INVARIANT_IDS = [f"{rule}/{name}" for rule, name, _ in _INVARIANT_TESTS]
+
+
+@pytest.mark.parametrize("rule,name,tc", _INVARIANT_TESTS, ids=_INVARIANT_IDS)
+def test_invariant(rule: str, name: str, tc: dict[str, Any]) -> None:
+    check = _INVARIANT_RULES.get(rule)
+    assert check is not None, f"invariant rule {rule!r} is not implemented by this runner"
+    check(name, Schedule.parse(tc["expression"]), parse_zoned(tc["now"]))

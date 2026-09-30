@@ -38,7 +38,7 @@ upcoming = schedule.next_n_from(now, 5)
 upcoming.each { |t| puts t }
 
 # Check if a time matches
-schedule.matches(Time.new(2026, 2, 9, 9, 0, 0))  # true
+schedule.matches(Time.new(2026, 2, 9, 9, 0, 0, "-05:00"))  # true: 09:00 in New York
 
 # Convert to/from cron
 simple = Hron::Schedule.parse("every day at 9:00")
@@ -90,8 +90,8 @@ The underlying schedule expression AST.
 
 ## Requirements
 
-- Ruby >= 3.2
-- TZInfo gem for timezone support
+- Ruby >= 4.0
+- TZInfo gem for timezone support. TZInfo generates DST rules only about 100 years ahead of the current year; past that it keeps the zone's last offset, which is summer time for a southern-hemisphere zone such as Australia/Sydney.
 
 ## License
 

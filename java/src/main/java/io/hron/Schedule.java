@@ -66,7 +66,7 @@ public final class Schedule {
    * Computes the next occurrence strictly after the given time.
    *
    * @param now the reference time
-   * @return the next occurrence, or empty if none exists
+   * @return the next occurrence, or empty if none exists or now is outside the supported range
    */
   public Optional<ZonedDateTime> nextFrom(ZonedDateTime now) {
     ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
@@ -89,7 +89,7 @@ public final class Schedule {
    * Computes the most recent occurrence strictly before the given time.
    *
    * @param now the reference time (exclusive upper bound)
-   * @return the previous occurrence, or empty if none exists
+   * @return the previous occurrence, or empty if none exists or now is outside the supported range
    */
   public Optional<ZonedDateTime> previousFrom(ZonedDateTime now) {
     ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
@@ -123,7 +123,7 @@ public final class Schedule {
    *
    * @param from the start time (exclusive)
    * @param to the end time (inclusive)
-   * @return a stream of occurrences in the range
+   * @return a stream of occurrences in the range, empty if to is outside the supported range
    */
   public Stream<ZonedDateTime> between(ZonedDateTime from, ZonedDateTime to) {
     ZonedDateTime fromInTz = from.withZoneSameInstant(zoneId);

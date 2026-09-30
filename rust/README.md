@@ -38,7 +38,7 @@ hron = { version = "0.1", default-features = false }
 
 ## Gotchas
 
-- Leap year resolution (e.g. "on feb 29") searches up to 8 years forward.
+- Searches span the 400-year Gregorian cycle (multiplied by the interval where they do not divide evenly), so sparse schedules such as `every 11 years on the fifth sunday of february` are found and contradictory ones return `None`.
 - `last` in yearly context is ambiguous: `last weekday of <month>` vs `last <day_name> of <month>`. Parser peeks at next token.
 - `from_cron` handles hour ranges like `9-17`, not just `*` or single numbers.
 

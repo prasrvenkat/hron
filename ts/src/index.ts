@@ -54,7 +54,7 @@ export class Schedule {
     return previousFrom(this.data, now);
   }
 
-  /** Check if a datetime matches this schedule. */
+  /** True when the minute containing `datetime` is an occurrence (seconds are ignored). */
   matches(datetime: Temporal.ZonedDateTime): boolean {
     return matches(this.data, datetime);
   }
