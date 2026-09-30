@@ -13,6 +13,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 
@@ -23,22 +24,18 @@ Homepage = "https://github.com/prasrvenkat/hron"
 Repository = "https://github.com/prasrvenkat/hron"
 
 [build-system]
-requires = ["uv_build>=0.10.2,<0.11"]
+requires = ["uv_build>=0.12.21,<0.13"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "mypy>=1.0", "ruff>=0.11"]
+dev = ["pytest>=9.1", "ruff>=0.16", "ty==0.0.84"]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.mypy]
-python_version = "3.11"
-strict = true

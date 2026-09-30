@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -83,8 +84,8 @@ _SKIP_EVAL_SECTIONS = {"description", "matches", "occurrences", "between", "prev
 _EVAL_SECTIONS = [s for s in _spec["eval"] if s not in _SKIP_EVAL_SECTIONS]
 
 
-def _collect_eval_tests() -> list[tuple[str, dict]]:  # type: ignore[type-arg]
-    tests: list[tuple[str, dict]] = []  # type: ignore[type-arg]
+def _collect_eval_tests() -> list[tuple[str, dict[str, Any]]]:
+    tests: list[tuple[str, dict[str, Any]]] = []
     for section in _EVAL_SECTIONS:
         for tc in _spec["eval"][section]["tests"]:
             name = tc.get("name", tc["expression"])
@@ -97,7 +98,7 @@ _EVAL_IDS = [t[0] for t in _EVAL_TESTS]
 
 
 @pytest.mark.parametrize("name,tc", _EVAL_TESTS, ids=_EVAL_IDS)
-def test_eval(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+def test_eval(name: str, tc: dict[str, Any]) -> None:
     schedule = Schedule.parse(tc["expression"])
     now = parse_zoned(tc["now"]) if "now" in tc else _default_now
 
@@ -144,7 +145,7 @@ _MATCHES_IDS = [t[0] for t in _MATCHES_TESTS]
 
 
 @pytest.mark.parametrize("name,tc", _MATCHES_TESTS, ids=_MATCHES_IDS)
-def test_eval_matches(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+def test_eval_matches(name: str, tc: dict[str, Any]) -> None:
     schedule = Schedule.parse(tc["expression"])
     dt = parse_zoned(tc["datetime"])
     result = schedule.matches(dt)
@@ -162,7 +163,7 @@ _OCCURRENCES_IDS = [t[0] for t in _OCCURRENCES_TESTS]
 
 
 @pytest.mark.parametrize("name,tc", _OCCURRENCES_TESTS, ids=_OCCURRENCES_IDS)
-def test_eval_occurrences(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+def test_eval_occurrences(name: str, tc: dict[str, Any]) -> None:
     schedule = Schedule.parse(tc["expression"])
     from_ = parse_zoned(tc["from"])
     take = tc["take"]
@@ -190,7 +191,7 @@ _BETWEEN_IDS = [t[0] for t in _BETWEEN_TESTS]
 
 
 @pytest.mark.parametrize("name,tc", _BETWEEN_TESTS, ids=_BETWEEN_IDS)
-def test_eval_between(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+def test_eval_between(name: str, tc: dict[str, Any]) -> None:
     schedule = Schedule.parse(tc["expression"])
     from_ = parse_zoned(tc["from"])
     to = parse_zoned(tc["to"])
@@ -217,7 +218,7 @@ _PREVIOUS_FROM_IDS = [t[0] for t in _PREVIOUS_FROM_TESTS]
 
 
 @pytest.mark.parametrize("name,tc", _PREVIOUS_FROM_TESTS, ids=_PREVIOUS_FROM_IDS)
-def test_eval_previous_from(name: str, tc: dict) -> None:  # type: ignore[type-arg]
+def test_eval_previous_from(name: str, tc: dict[str, Any]) -> None:
     schedule = Schedule.parse(tc["expression"])
     now = parse_zoned(tc["now"])
     result = schedule.previous_from(now)
