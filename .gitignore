@@ -30,6 +30,7 @@ ts/dist/
 # C# / .NET
 **/bin/
 **/obj/
+TestResults/
 *.nupkg
 
 # Dart

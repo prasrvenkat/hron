@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description = "hron (human-readable cron) is a scheduling expression language " \
                      "that is designed to be easy to read, write, and understand. It is a superset of cron, " \
                      "meaning any valid cron expression can be converted to and from hron."
-  spec.homepage = "https://github.com/prasrvenkat/hron"
+  spec.homepage = "https://hron.io"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0.0"
 
@@ -32,8 +32,4 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "tzinfo", "~> 2.0"
-
-  spec.add_development_dependency "minitest", "~> 5.20"
-  spec.add_development_dependency "rake", "~> 13.0"
-  spec.add_development_dependency "standard", "~> 1.43"
 end

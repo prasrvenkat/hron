@@ -29,7 +29,7 @@ test-java:
 
 # C# tests
 test-csharp:
-    dotnet test csharp/Hron.sln
+    cd csharp && dotnet test --solution Hron.sln
 
 # Ruby tests
 test-ruby:
@@ -194,6 +194,7 @@ stamp-versions:
     sed -i 's/<Version>[^<]*<\/Version>/<Version>{{version}}<\/Version>/' csharp/Hron/Hron.csproj
     # Ruby
     sed -i 's/VERSION = "[^"]*"/VERSION = "{{version}}"/' ruby/lib/hron/version.rb
+    cd ruby && bundle lock
     # Spec files
     sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' spec/api.json
     sed -i 's/"version": "[^"]*"/"version": "{{version}}"/' spec/tests.json

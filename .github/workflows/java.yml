@@ -39,3 +39,5 @@ jobs:
         run: just build-java
       - name: Test
         run: just test-java
+      - name: Build release artifacts (unsigned)
+        run: cd java && mvn -B -P release -Dgpg.skip -DskipTests verify

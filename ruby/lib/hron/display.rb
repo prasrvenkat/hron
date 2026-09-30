@@ -146,7 +146,7 @@ module Hron
     end
 
     def self.format_time_list(times)
-      times.map(&:to_s).join(", ")
+      times.join(", ")
     end
 
     def self.format_ordinal_day_specs(specs)

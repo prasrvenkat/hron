@@ -1,12 +1,12 @@
 rust   1.98.1
-golang 1.25.0
+golang 1.27.1
 java   lts
 maven  latest
-dotnet 10.0.103
+dotnet 10.0.400
 nodejs lts
 pnpm   12.8.1
-dart   3.11.0
+dart   3.13.5
 python 3.12.0
 uv     latest
-ruby   4.0.1
-just   1.46.0
+ruby   4.0.7
+just   1.58.0
