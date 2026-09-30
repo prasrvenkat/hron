@@ -7,6 +7,9 @@ on:
   pull_request:
     paths: ["ruby/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/ruby.yml"]
 
+env:
+  BUNDLE_FROZEN: "true"
+
 jobs:
   test:
     name: Test
@@ -18,6 +21,8 @@ jobs:
           install_args: ruby just
       - name: Test
         run: just test-ruby
+      - name: Build gem
+        run: cd ruby && gem build hron.gemspec
 
   lint:
     name: Lint

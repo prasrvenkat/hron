@@ -5,7 +5,7 @@ source "https://rubygems.org"
 gemspec
 
 group :development do
-  gem "minitest", "~> 5.20"
+  gem "minitest", "~> 6.0"
   gem "rake", "~> 13.0"
   gem "standard", "~> 1.43"
 end
