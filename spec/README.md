@@ -147,7 +147,7 @@ When a schedule fires at a time that occurs twice during a DST fall-back transit
 
 ### Search horizon
 
-Implementations must find any occurrence that exists. The (proleptic) Gregorian calendar repeats every 400 years, so a schedule with an interval of `n` years, months, weeks or days repeats after lcm(400 years, `n` of those units); searching that span from `now` in the given direction finds the occurrence if one exists, and the result is null otherwise. For example, `every 11 years on the fifth sunday of february` next fires 406 years ahead (2432-02-29). Each call restarts the search from its own `now`.
+Implementations must find any occurrence that exists. The (proleptic) Gregorian calendar repeats every 400 years, so a schedule with an interval of `n` years, months, weeks or days repeats after lcm(400 years, `n` of those units); searching that span in the given direction finds the occurrence if one exists, and the result is null otherwise. Going forward the span starts at the later of `now` and the `starting` date; going backward it starts at `now`. For example, `every 11 years on the fifth sunday of february` next fires 406 years ahead (2432-02-29). Each call restarts the search from its own `now`.
 
 ### Supported range
 
@@ -155,7 +155,7 @@ Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:
 
 ### Timezone data
 
-Historic offsets with seconds (local mean time, before 1972) are rounded to the minute by some platforms, and DST rules far in the future depend on each platform's tz data (`package:timezone` has no rules after 2037; `tzinfo` generates rules about 100 years ahead). The conformance suite therefore pins DST behaviour only before 2038 and only for transitions that are the same across tz data versions; after 2037 it uses dates in standard time.
+Behaviour with UTC offsets that are not whole minutes (local mean time before standard time was adopted) is outside this spec; some platforms round such offsets to the minute. DST rules far in the future depend on each platform's tz data: past the end of its data a platform keeps the zone's last offset (`package:timezone` has no rules after 2037, which leaves a southern-hemisphere zone on summer time), while `tzinfo` generates rules about 100 years ahead. The conformance suite therefore pins DST behaviour only before 2038 and only for transitions that are the same across tz data versions; after 2037 it uses only dates whose offset is the same under every platform's data, such as New York in winter.
 
 ### End-of-month day handling
 

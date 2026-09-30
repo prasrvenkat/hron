@@ -1515,6 +1515,13 @@
           "description": "winter date after 2037: 2040-12-31 09:00 EST",
           "now": "2040-12-30T15:00:00+00:00[UTC]",
           "next": "2040-12-31T09:00:00-05:00[America/New_York]"
+        },
+        {
+          "name": "starting_far_future",
+          "expression": "every day at 09:00 starting 2500-01-01 in UTC",
+          "description": "starting 474 years ahead: the first occurrence is on the starting date",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2500-01-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2261,6 +2268,20 @@
           "description": "a named date recurs yearly; the first one on or after starting is 2027-02-14",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2027-02-14T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_date_day_before_starting",
+          "expression": "on 2026-03-01 at 09:00 starting 2026-03-02 in UTC",
+          "description": "a single date one day before starting never fires",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "boa_vista_one_week_dst",
+          "expression": "on 2000-10-08 at 09:00 in America/Boa_Vista",
+          "description": "Boa Vista kept DST only from 2000-10-08 to 2000-10-15: 09:00 on Oct 8 is -03:00",
+          "now": "2000-10-01T00:00:00+00:00[UTC]",
+          "next": "2000-10-08T09:00:00-03:00[America/Boa_Vista]"
         }
       ]
     },
@@ -4137,6 +4158,27 @@
           "description": "2040-12-31T14:00Z is 09:00 EST",
           "datetime": "2040-12-31T14:00:00+00:00[UTC]",
           "expected": true
+        },
+        {
+          "name": "range_start_inclusive",
+          "expression": "every day at 00:00 in UTC",
+          "description": "0001-01-02T00:00Z is the first supported instant and an occurrence",
+          "datetime": "0001-01-02T00:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "range_before_start",
+          "expression": "every day at 09:00 in UTC",
+          "description": "0001-01-01T09:00Z is outside the supported range",
+          "datetime": "0001-01-01T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "st_johns_interval_overlap_first_pass",
+          "expression": "every 30 min from 00:00 to 00:30 in America/St_Johns",
+          "description": "00:00 -02:30 on 2010-11-07 is the first pass and an occurrence",
+          "datetime": "2010-11-07T00:00:00-02:30[America/St_Johns]",
+          "expected": true
         }
       ]
     },
@@ -4629,6 +4671,13 @@
             "1995-01-01T09:00:00+14:00[Pacific/Kiritimati]",
             "1995-12-01T09:00:00+14:00[Pacific/Kiritimati]"
           ]
+        },
+        {
+          "name": "apia_skipped_friday_interval",
+          "expression": "every 1 hour from 09:00 to 10:00 on friday in Pacific/Apia",
+          "description": "Friday 2011-12-30 does not exist in Apia, so its interval slots are skipped; next Friday is 2012-01-06",
+          "now": "2011-12-23T12:00:00-10:00[Pacific/Apia]",
+          "next": "2012-01-06T09:00:00+14:00[Pacific/Apia]"
         }
       ]
     },
@@ -4938,6 +4987,18 @@
           "description": "now 01:10 EST (second pass): 01:30 EDT is past and 01:30 EST is not a slot, so next is 02:15 EST",
           "now": "2026-11-01T01:10:00-05:00[America/New_York]",
           "next": "2026-11-01T02:15:00-05:00[America/New_York]"
+        },
+        {
+          "name": "st_johns_interval_overlap_crosses_midnight",
+          "expression": "every 30 min from 00:00 to 00:30 in America/St_Johns",
+          "description": "slots on 2010-11-07: 00:00 in the first pass (-02:30), 00:30 only after the fall-back (-03:30)",
+          "now": "2010-11-06T12:00:00-02:30[America/St_Johns]",
+          "next_n": [
+            "2010-11-07T00:00:00-02:30[America/St_Johns]",
+            "2010-11-07T00:30:00-03:30[America/St_Johns]",
+            "2010-11-08T00:00:00-03:30[America/St_Johns]",
+            "2010-11-08T00:30:00-03:30[America/St_Johns]"
+          ]
         }
       ]
     },
@@ -5768,6 +5829,14 @@
           "description": "a from outside the supported range gives an empty result",
           "from": "0001-01-01T00:00:00+00:00[UTC]",
           "to": "0001-01-03T00:00:00+00:00[UTC]",
+          "expected": []
+        },
+        {
+          "name": "range_to_at_end",
+          "expression": "every day at 00:00 in UTC",
+          "description": "to 9999-12-30T00:00Z is outside the supported range: empty",
+          "from": "9999-12-28T08:00:00+00:00[UTC]",
+          "to": "9999-12-30T00:00:00+00:00[UTC]",
           "expected": []
         }
       ]
@@ -6838,6 +6907,62 @@
           "description": "every 800000000 days: the only occurrence in the supported range is the anchor, 1970-01-01",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "expected": "1970-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "range_now_at_end",
+          "expression": "every day at 00:00 in UTC",
+          "description": "now 9999-12-30T00:00Z is outside the supported range: null",
+          "now": "9999-12-30T00:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "range_now_after_end_adjacent_occurrence",
+          "expression": "every day at 09:00 in UTC",
+          "description": "now 9999-12-30T12:00Z is outside; the in-range 9999-12-29T09:00Z is not returned",
+          "now": "9999-12-30T12:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "range_start_exact_occurrence",
+          "expression": "every month on the next nearest weekday to 31st at 12:00 in Etc/GMT+12",
+          "description": "target Dec 31 of year 0 (Sunday) moves to Monday 0001-01-01; 12:00 at -12:00 is 0001-01-02T00:00Z, exactly the range start",
+          "now": "0001-01-03T12:00:00+00:00[UTC]",
+          "expected": "0001-01-01T12:00:00-12:00[Etc/GMT+12]"
+        },
+        {
+          "name": "st_johns_interval_overlap_crosses_midnight",
+          "expression": "every 30 min from 00:00 to 00:30 in America/St_Johns",
+          "description": "00:00 on 2010-11-07 first occurs at 02:30Z (-02:30); 00:30 exists only after the fall-back (-03:30); from 03:00Z the previous is 00:00 -02:30",
+          "now": "2010-11-07T03:00:00+00:00[UTC]",
+          "expected": "2010-11-07T00:00:00-02:30[America/St_Johns]"
+        },
+        {
+          "name": "apia_skipped_friday_interval",
+          "expression": "every 1 hour from 09:00 to 10:00 on friday in Pacific/Apia",
+          "description": "from 2012-01-07 the previous slot is Friday 2012-01-06 10:00",
+          "now": "2012-01-07T00:00:00+14:00[Pacific/Apia]",
+          "expected": "2012-01-06T10:00:00+14:00[Pacific/Apia]"
+        },
+        {
+          "name": "santiago_interval_overlap_second_pass",
+          "expression": "every 30 min from 22:00 to 23:59 in America/Santiago",
+          "description": "now 23:10 -04:00 (second pass) on 2026-04-04; the previous slot is 23:30 -03:00 (02:30Z)",
+          "now": "2026-04-05T03:10:00+00:00[UTC]",
+          "expected": "2026-04-04T23:30:00-03:00[America/Santiago]"
+        },
+        {
+          "name": "monthly_until_mid_month",
+          "expression": "every month on the 1st at 09:00 until 2026-03-15 in UTC",
+          "description": "until 2026-03-15: the last monthly occurrence is Mar 1",
+          "now": "2026-06-01T00:00:00+00:00[UTC]",
+          "expected": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "weekly_until_after_last_friday",
+          "expression": "every week on friday at 09:00 until 2026-03-02 in UTC",
+          "description": "until 2026-03-02 (a Monday): the last Friday is Feb 27",
+          "now": "2026-04-01T00:00:00+00:00[UTC]",
+          "expected": "2026-02-27T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -7062,6 +7187,20 @@
           "expression": "every day at 00:30, 12:00 in Etc/GMT-9",
           "description": "now 0001-01-01T00:00Z is outside the supported range: null, even though occurrences follow",
           "now": "0001-01-01T00:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "range_end_exclusive",
+          "expression": "every day at 00:00 in UTC",
+          "description": "9999-12-30T00:00Z is outside the supported range (the end is exclusive): no next occurrence",
+          "now": "9999-12-29T12:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "range_now_just_before_start",
+          "expression": "every day at 00:00 in UTC",
+          "description": "now 0001-01-01T23:00Z is outside the supported range, so null even though 0001-01-02T00:00Z is in range",
+          "now": "0001-01-01T23:00:00+00:00[UTC]",
           "next": null
         }
       ]
