@@ -94,7 +94,7 @@ fmt-java:
 
 lint-rust:
     cd rust && cargo fmt --all --check
-    cd rust && cargo clippy --workspace --all-features -- -D warnings
+    cd rust && cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 lint-ts:
     cd ts && pnpm lint
