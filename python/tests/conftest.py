@@ -4,6 +4,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -35,12 +36,13 @@ def format_zoned(dt: datetime) -> str:
 
 
 @pytest.fixture(scope="session")
-def spec() -> dict:  # type: ignore[type-arg]
+def spec() -> dict[str, Any]:
     spec_path = Path(__file__).parent.parent.parent / "spec" / "tests.json"
     with open(spec_path) as f:
-        return json.load(f)
+        data: dict[str, Any] = json.load(f)
+    return data
 
 
 @pytest.fixture(scope="session")
-def default_now(spec: dict) -> datetime:  # type: ignore[type-arg]
+def default_now(spec: dict[str, Any]) -> datetime:
     return parse_zoned(spec["now"])

@@ -102,6 +102,7 @@ lint-ts:
 lint-python:
     cd python && uv run ruff check src/ tests/
     cd python && uv run ruff format --check src/ tests/
+    cd python && uv run ty check --error-on-warning src/ tests/
 
 lint-go:
     #!/usr/bin/env bash

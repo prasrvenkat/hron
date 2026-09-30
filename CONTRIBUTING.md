@@ -13,7 +13,7 @@ Thanks for your interest in contributing to hron! This document covers everythin
   - Java 25+ (Temurin LTS)
   - Node.js 24+ (LTS) with pnpm
   - Dart 3.11+
-  - Python 3.12+ with [uv](https://docs.astral.sh/uv/)
+  - Python 3.11+ with [uv](https://docs.astral.sh/uv/)
   - Ruby 4.0+
   - .NET 10.0+
 
@@ -90,7 +90,7 @@ Test cases in `spec/tests.json` are the source of truth. When adding tests:
 - **Rust**: `cargo fmt` + `cargo clippy -D warnings`
 - **TypeScript**: `tsc --noEmit` (strict mode)
 - **Dart**: `dart analyze` with `package:lints/recommended.yaml`
-- **Python**: `ruff check` + `ruff format` + `mypy --strict`
+- **Python**: `ruff check` + `ruff format` + `ty check`
 - **Go**: `gofmt -w .` + `go vet ./...`
 - **Java**: Google Java Format
 - **C#**: `dotnet format`

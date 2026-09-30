@@ -48,3 +48,6 @@ jobs:
 
       - name: Test
         run: just test-python
+
+      - name: Build
+        run: cd python && uv build
