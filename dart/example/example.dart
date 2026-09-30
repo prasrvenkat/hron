@@ -1,9 +1,9 @@
 import 'package:hron/hron.dart';
-import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart';
 
 void main() {
-  // Timezone data must be loaded once before any schedule is evaluated.
+  // Timezone data must be loaded before parsing a schedule with a timezone.
   tz.initializeTimeZones();
   final nyc = getLocation('America/New_York');
 

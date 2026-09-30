@@ -1,3 +1,4 @@
+import { Temporal } from "@js-temporal/polyfill";
 import type {
   DateSpec,
   DayFilter,
@@ -18,6 +19,25 @@ import type {
 import { newScheduleData, parseMonthName, parseWeekday } from "./ast.js";
 import { HronError, type Span } from "./error.js";
 import { type Token, type TokenKind, tokenize } from "./lexer.js";
+
+/**
+ * The IANA capitalization of `name`, or null unless it is `UTC` or a known
+ * Area/Location zone or link (spec/README.md, "Parse-time validation").
+ */
+function canonicalTimezone(name: string): string | null {
+  if (name.toLowerCase() === "utc") return "UTC";
+  // Temporal also accepts offsets and bracketed date-time strings as zones,
+  // and Intl knows legacy trees that are not IANA names.
+  if (!/^[A-Za-z0-9_+-]+(\/[A-Za-z0-9_+-]+)+$/.test(name)) return null;
+  if (/^(systemv|posix|right)\//i.test(name)) return null;
+  try {
+    // For an IANA name Temporal returns the IANA capitalization, and a link
+    // keeps its own name.
+    return new Temporal.ZonedDateTime(0n, name).timeZoneId;
+  } catch {
+    return null;
+  }
+}
 
 class Parser {
   private tokens: Token[];
@@ -106,9 +126,12 @@ class Parser {
       schedule.except = this.parseExceptionList();
     }
 
+    let untilSpan: Span | null = null;
     if (this.peekKind()?.type === "until") {
+      const start = this.currentSpan().start;
       this.advance();
       schedule.until = this.parseUntilSpec();
+      untilSpan = { start, end: this.tokens[this.pos - 1].span.end };
     }
 
     if (this.peekKind()?.type === "starting") {
@@ -127,6 +150,20 @@ class Parser {
       }
     }
 
+    if (
+      untilSpan !== null &&
+      schedule.until?.type === "named" &&
+      schedule.anchor === null
+    ) {
+      const { month, day } = schedule.until;
+      throw HronError.parse(
+        "a named until date has no year, so it needs a starting date (or use an ISO date such as 'until 2026-12-31')",
+        untilSpan,
+        this.input,
+        `until ${month} ${day} starting YYYY-MM-DD`,
+      );
+    }
+
     if (this.peekKind()?.type === "during") {
       this.advance();
       schedule.during = this.parseMonthList();
@@ -136,7 +173,15 @@ class Parser {
       this.advance();
       const k = this.peekKind();
       if (k?.type === "timezone") {
-        schedule.timezone = (k as { type: "timezone"; tz: string }).tz;
+        const name = (k as { type: "timezone"; tz: string }).tz;
+        const timezone = canonicalTimezone(name);
+        if (timezone === null) {
+          throw this.error(
+            `unknown timezone '${name}': use UTC or an IANA Area/Location name such as America/New_York`,
+            this.currentSpan(),
+          );
+        }
+        schedule.timezone = timezone;
         this.advance();
       } else {
         throw this.error("expected timezone after 'in'", this.currentSpan());
@@ -335,7 +380,14 @@ class Parser {
     this.consumeKind("'from'", (k) => k.type === "from");
     const from = this.parseTime();
     this.consumeKind("'to'", (k) => k.type === "to");
+    const toSpan = this.currentSpan();
     const to = this.parseTime();
+    if (to.hour * 60 + to.minute < from.hour * 60 + from.minute) {
+      throw this.error(
+        "invalid time range: 'from' is later than 'to', and a window cannot cross midnight",
+        toSpan,
+      );
+    }
 
     let dayFilter: DayFilter | null = null;
     if (this.peekKind()?.type === "on") {
@@ -625,7 +677,7 @@ class Parser {
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10);
     const day = parseInt(parts[2], 10);
-    if (month < 1 || month > 12 || day < 1) {
+    if (year < 1 || month < 1 || month > 12 || day < 1) {
       throw this.error(`invalid date: ${dateStr}`, this.currentSpan());
     }
     const daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];

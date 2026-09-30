@@ -90,7 +90,7 @@ pub enum Exception {
 pub enum UntilSpec {
     /// ISO date: `2026-12-31`.
     Iso(String),
-    /// Named date: `dec 31` — resolves to next occurrence from current year.
+    /// Named date: `dec 31` — the first such date on or after the `starting` date.
     Named { month: MonthName, day: u8 },
 }
 

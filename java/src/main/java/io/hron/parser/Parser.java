@@ -7,12 +7,30 @@ import io.hron.lexer.Lexer;
 import io.hron.lexer.Token;
 import io.hron.lexer.TokenKind;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /** Recursive descent parser for hron expressions. */
 public final class Parser {
+  // spec/README.md "Parse-time validation": UTC or an IANA Area/Location name, in any case, but
+  // not the SystemV/, posix/ and right/ build directories.
+  private static final Map<String, String> TIMEZONES =
+      ZoneId.getAvailableZoneIds().stream()
+          .filter(
+              id ->
+                  id.equals("UTC")
+                      || (id.contains("/")
+                          && !id.startsWith("SystemV/")
+                          && !id.startsWith("posix/")
+                          && !id.startsWith("right/")))
+          .collect(Collectors.toMap(id -> id.toLowerCase(Locale.ROOT), Function.identity()));
+
   private final String input;
   private final List<Token> tokens;
   private int pos;
@@ -48,6 +66,7 @@ public final class Parser {
 
     List<ExceptionSpec> except = List.of();
     UntilSpec until = null;
+    Span untilSpan = null;
     String anchor = null;
     List<MonthName> during = List.of();
     String timezone = null;
@@ -89,6 +108,7 @@ public final class Parser {
           }
           pos++;
           until = parseUntil();
+          untilSpan = new Span(tok.span().start(), tokens.get(pos - 1).span().end());
         }
         case STARTING -> {
           if (anchor != null) {
@@ -119,6 +139,14 @@ public final class Parser {
         }
         default -> throw parseError("unexpected token", tok.span());
       }
+    }
+
+    if (until != null && until.kind() == UntilSpec.Kind.NAMED && anchor == null) {
+      throw HronException.parse(
+          "named until date needs a starting date to know its year (or use an ISO until date)",
+          untilSpan,
+          input,
+          "until " + until.month() + " " + until.day() + " starting YYYY-MM-DD");
     }
 
     return new ScheduleData(expr, timezone, except, until, anchor, during);
@@ -256,7 +284,17 @@ public final class Parser {
     expect(TokenKind.FROM);
     TimeOfDay fromTime = parseTime();
     expect(TokenKind.TO);
+    Token toTok = peek();
     TimeOfDay toTime = parseTime();
+    if (fromTime.totalMinutes() > toTime.totalMinutes()) {
+      throw parseError(
+          "invalid time range: from "
+              + fromTime
+              + " is later than to "
+              + toTime
+              + "; a window cannot cross midnight",
+          toTok.span());
+    }
 
     DayFilter dayFilter = null;
     if (check(TokenKind.ON)) {
@@ -497,7 +535,9 @@ public final class Parser {
 
   private void validateIsoDate(String dateStr, Span span) throws HronException {
     try {
-      LocalDate.parse(dateStr);
+      if (LocalDate.parse(dateStr).getYear() < 1) {
+        throw parseError("invalid date: " + dateStr + " (year must be 0001-9999)", span);
+      }
     } catch (DateTimeParseException e) {
       throw parseError("invalid date: " + dateStr, span);
     }
@@ -627,7 +667,16 @@ public final class Parser {
       throw parseError("expected timezone after 'in'", tok != null ? tok.span() : endSpan());
     }
     pos++;
-    return tok.timezoneVal();
+    String name = tok.timezoneVal();
+    // Timezone names are ASCII; Unicode lowercasing would map a Kelvin sign to k.
+    boolean ascii = name.chars().allMatch(c -> c < 128);
+    String canonical = ascii ? TIMEZONES.get(name.toLowerCase(Locale.ROOT)) : null;
+    if (canonical == null) {
+      throw parseError(
+          "unknown timezone '" + name + "'; use UTC or an IANA name such as America/New_York",
+          tok.span());
+    }
+    return canonical;
   }
 
   private static final int[] MAX_DAYS = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};

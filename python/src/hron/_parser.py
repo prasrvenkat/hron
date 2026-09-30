@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime
+import functools
+import zoneinfo
 
 from ._ast import (
     DateSpec,
@@ -84,6 +86,19 @@ from ._lexer import (
     tokenize,
 )
 
+_MAX_INTERVAL = 2147483647
+
+
+@functools.cache
+def _timezones_by_lowercase_name() -> dict[str, str]:
+    """UTC and every IANA Area/Location name (zones and links), keyed in lowercase."""
+    names = {
+        name.lower(): name
+        for name in zoneinfo.available_timezones()
+        if "/" in name and not name.startswith(("SystemV/", "posix/", "right/"))
+    }
+    return names | {"utc": "UTC"}
+
 
 class _Parser:
     def __init__(self, tokens: list[Token], input_text: str) -> None:
@@ -159,9 +174,11 @@ class _Parser:
             self.advance()
             schedule.except_ = tuple(self._parse_exception_list())
 
+        until_span = self.current_span()
         if isinstance(self.peek_kind(), TUntil):
             self.advance()
             schedule.until = self._parse_until_spec()
+            until_span = Span(until_span.start, self._tokens[self._pos - 1].span.end)
 
         if isinstance(self.peek_kind(), TStarting):
             self.advance()
@@ -175,6 +192,16 @@ class _Parser:
                     "expected ISO date (YYYY-MM-DD) after 'starting'", self.current_span()
                 )
 
+        if isinstance(schedule.until, NamedUntil) and schedule.anchor is None:
+            until = schedule.until
+            raise HronError.parse(
+                f"'until {until.month.value} {until.day}' has no year: add a starting date,"
+                " or use an ISO date such as 'until YYYY-MM-DD'",
+                until_span,
+                self._input,
+                suggestion=f"until {until.month.value} {until.day} starting YYYY-MM-DD",
+            )
+
         if isinstance(self.peek_kind(), TDuring):
             self.advance()
             schedule.during = tuple(self._parse_month_list())
@@ -183,12 +210,22 @@ class _Parser:
             self.advance()
             k = self.peek_kind()
             if isinstance(k, TTimezone):
-                schedule.timezone = k.tz
+                schedule.timezone = self._canonical_timezone(k.tz)
                 self.advance()
             else:
                 raise self._error("expected timezone after 'in'", self.current_span())
 
         return schedule
+
+    def _canonical_timezone(self, name: str) -> str:
+        # Lowercasing non-ASCII can produce ASCII (the Kelvin sign becomes "k").
+        canonical = _timezones_by_lowercase_name().get(name.lower()) if name.isascii() else None
+        if canonical is None:
+            raise self._error(
+                f"unknown timezone '{name}': use UTC or an IANA name such as America/New_York",
+                self.current_span(),
+            )
+        return canonical
 
     def _parse_exception_list(self) -> list[ExceptionSpec]:
         exceptions: list[ExceptionSpec] = [self._parse_exception()]
@@ -325,6 +362,8 @@ class _Parser:
         num = k.value
         if num == 0:
             raise self._error("interval must be at least 1", span)
+        if num > _MAX_INTERVAL:
+            raise self._error(f"interval must be at most {_MAX_INTERVAL}", span)
         self.advance()
 
         nk = self.peek_kind()
@@ -358,7 +397,13 @@ class _Parser:
         self._consume("'from'", TFrom)
         from_time = self._parse_time()
         self._consume("'to'", TTo)
+        to_span = self.current_span()
         to_time = self._parse_time()
+        if (from_time.hour, from_time.minute) > (to_time.hour, to_time.minute):
+            raise self._error(
+                f"'from' {from_time} is later than 'to' {to_time}: a window cannot cross midnight",
+                to_span,
+            )
 
         day_filter: DayFilter | None = None
         if isinstance(self.peek_kind(), TOn):

@@ -261,22 +261,25 @@ impl ParsedExceptions {
     }
 }
 
-fn resolve_until(until: &UntilSpec, now: &Zoned) -> Result<Date, ScheduleError> {
+/// A named until date is the first such date on or after the starting date
+/// (spec/README.md, "Named `until`"). Parse requires `starting`; a schedule built
+/// without one resolves from the default anchor, the epoch. None when no such date
+/// exists before the calendar ends, so nothing bounds the schedule.
+fn resolve_until(until: &UntilSpec, starting: Option<Date>) -> Result<Option<Date>, ScheduleError> {
     match until {
         UntilSpec::Iso(s) => s
             .parse()
+            .map(Some)
             .map_err(|e| ScheduleError::eval(format!("invalid until date '{s}': {e}"))),
         UntilSpec::Named { month, day } => {
-            let year = now.date().year();
-            for y in [year, year + 1] {
-                if let Ok(d) = Date::new(y, month.number() as i8, *day as i8) {
-                    if d >= now.date() {
-                        return Ok(d);
-                    }
-                }
-            }
-            Date::new(year + 1, month.number() as i8, *day as i8)
-                .map_err(|e| ScheduleError::eval(format!("invalid until date: {e}")))
+            let from = starting.unwrap_or(*EPOCH_DATE);
+            // Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
+            Ok((0..=8)
+                .filter_map(|k| {
+                    let year = from.year().checked_add(k)?;
+                    Date::new(year, month.number() as i8, *day as i8).ok()
+                })
+                .find(|date| *date >= from))
         }
     }
 }
@@ -636,7 +639,7 @@ struct Search<'a> {
 }
 
 impl<'a> Search<'a> {
-    fn new(schedule: &'a Schedule, now: &Zoned) -> Result<Search<'a>, ScheduleError> {
+    fn new(schedule: &'a Schedule) -> Result<Search<'a>, ScheduleError> {
         Ok(Search {
             expr: &schedule.expr,
             tz: resolve_tz(&schedule.timezone)?,
@@ -644,7 +647,7 @@ impl<'a> Search<'a> {
             exceptions: ParsedExceptions::from_exceptions(&schedule.except),
             during: &schedule.during,
             until: match &schedule.until {
-                Some(until) => Some(resolve_until(until, now)?),
+                Some(until) => resolve_until(until, schedule.anchor)?,
                 None => None,
             },
             starting: schedule.anchor,
@@ -687,7 +690,7 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
 }
 
 fn search_next(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
-    let search = Search::new(schedule, now)?;
+    let search = Search::new(schedule)?;
     let cadence = &search.cadence;
     let earliest_date = search
         .local_date(now)
@@ -727,7 +730,7 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
     if !in_supported_range(now) {
         return Ok(None);
     }
-    let search = Search::new(schedule, now)?;
+    let search = Search::new(schedule)?;
     let cadence = &search.cadence;
     let now_date = search.local_date(now);
     // Nothing fires after `until`, so a search from far past it starts there.
@@ -894,7 +897,10 @@ mod tests {
 
     #[test]
     fn occurrences_end_after_an_error() {
-        let s = parse("every day at 09:00 in Invalid/Zone").unwrap();
+        // Parse rejects unknown zones; only the builder can set one.
+        let s = parse("every day at 09:00")
+            .unwrap()
+            .with_timezone("Invalid/Zone");
         let mut occurrences = Occurrences::new(&s, fixed_now());
         assert!(matches!(occurrences.next(), Some(Err(_))));
         assert!(occurrences.next().is_none());

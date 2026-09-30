@@ -385,6 +385,9 @@ class _Lexer:
                     raise HronError.lex("invalid time", Span(start, self._pos), self._input)
                 return Token(TTime(hour, minute), Span(start, self._pos))
 
+        # No field takes more than 10 digits; this also keeps int() within its digit limit.
+        if len(digits.lstrip("0")) > 10:
+            raise HronError.lex("number too large", Span(start, self._pos), self._input)
         num = int(digits)
 
         if self._pos + 1 < len(self._input):

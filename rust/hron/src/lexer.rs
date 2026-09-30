@@ -208,7 +208,7 @@ impl<'a> Lexer<'a> {
         }
 
         let num: u32 = digits.parse().map_err(|_| {
-            ScheduleError::lex("invalid number", Span::new(start, self.pos), self.input)
+            ScheduleError::lex("number too large", Span::new(start, self.pos), self.input)
         })?;
 
         // Compare bytes directly to avoid panicking on multi-byte UTF-8 chars

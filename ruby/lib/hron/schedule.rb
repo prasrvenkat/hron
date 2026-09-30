@@ -77,7 +77,7 @@ module Hron
       "Schedule(\"#{self}\")"
     end
 
-    # Returns the IANA timezone name, or nil if none was given.
+    # Returns the IANA timezone name with its canonical capitalization, or nil if none was given.
     def timezone
       @data.timezone
     end

@@ -21,7 +21,6 @@ const knownTopLevel = [
   "parse",
   "parse_errors",
   "eval",
-  "eval_errors",
   "cron",
   "invariants",
 ];
@@ -78,6 +77,7 @@ describe("parse errors", () => {
     const name = tc.name ?? tc.input;
     it(name, () => {
       checkFields(tc, ["input", "error_contains"], []);
+      expect(Schedule.validate(tc.input)).toBe(false);
       expect(() => Schedule.parse(tc.input)).toThrow(tc.error_contains ?? "");
     });
   }
@@ -207,25 +207,6 @@ describe("eval between", () => {
       } else {
         expect(results.length).toBe(tc.expected_count);
       }
-    });
-  }
-});
-
-describe("eval errors", () => {
-  const tests = spec.eval_errors.tests;
-  for (const tc of tests) {
-    const name = tc.name ?? tc.expression;
-    it(name, () => {
-      checkFields(tc, ["expression"], []);
-      // WASM validates timezone at parse time or eval time
-      // If parse throws, that's acceptable
-      let schedule: Schedule;
-      try {
-        schedule = Schedule.parse(tc.expression);
-      } catch {
-        return; // caught at parse — acceptable
-      }
-      expect(() => schedule.nextFrom(defaultNow)).toThrow();
     });
   }
 });

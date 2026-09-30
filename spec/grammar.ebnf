@@ -54,6 +54,7 @@ year_ordinal_target = ordinal , day_name , "of" , month_name
 time           = HH , ":" , MM ;
 time_list      = time , { "," , time } ;
 
+(* The from time must not be later than the to time (equal is one slot a day). *)
 time_range_clause = "from" , time , "to" , time , [ "on" , day_target ] ;
 
 (* --- Days --- *)
@@ -101,6 +102,8 @@ ordinal        = "first" | "second" | "third" | "fourth" | "fifth" | "last" ;
 except_clause  = "except" , exception , { "," , exception } ;
 exception      = named_date | iso_date ;
 
+(* A named until date has no year: it is valid only with a starting clause, and means the *)
+(* first such date on or after the starting date. Without starting it is a parse error. *)
 until_clause   = "until" , ( iso_date | named_date ) ;
 
 starting_clause = "starting" , iso_date ;
@@ -111,10 +114,15 @@ timezone_clause = "in" , iana_timezone ;
 
 (* --- Primitives --- *)
 
+(* An interval number is 1..2147483647; every number must fit its field, else a lex or parse error. *)
 number         = digit , { digit } ;
 digit          = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 HH             = digit , digit ;
 MM             = digit , digit ;
 DD             = digit , digit ;
-YYYY           = digit , digit , digit , digit ;
-iana_timezone  = (* valid IANA timezone string, e.g. "America/Vancouver", "UTC" *) ;
+YYYY           = digit , digit , digit , digit ;  (* 0001..9999 *)
+(* "UTC", or an Area/Location name from the IANA tz database ("America/Vancouver", *)
+(* "Etc/GMT+5"), matched in any case and displayed with the IANA capitalization. Anything *)
+(* else, including "EST", "Z", "+05:30" and unknown names, is a parse error. *)
+iana_timezone  = "UTC" | area_location ;
+area_location  = (* IANA zone or link name containing "/" *) ;

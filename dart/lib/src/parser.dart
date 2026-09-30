@@ -1,3 +1,5 @@
+import 'package:timezone/timezone.dart' show timeZoneDatabase;
+
 import 'ast.dart';
 import 'error.dart';
 import 'lexer.dart';
@@ -81,9 +83,12 @@ class _Parser {
       schedule.except = _parseExceptionList();
     }
 
+    Span? untilSpan;
     if (peekKind() is UntilToken) {
+      final start = currentSpan().start;
       advance();
       schedule.until = _parseUntilSpec();
+      untilSpan = Span(start, tokens[pos - 1].span.end);
     }
 
     if (peekKind() is StartingToken) {
@@ -110,14 +115,56 @@ class _Parser {
       advance();
       final k = peekKind();
       if (k is TimezoneToken) {
-        schedule.timezone = k.tz;
+        schedule.timezone = _canonicalTimezone(k.tz, currentSpan());
         advance();
       } else {
         throw error("expected timezone after 'in'", currentSpan());
       }
     }
 
+    if (schedule.until case NamedUntil(
+      :final month,
+      :final day,
+    ) when schedule.anchor == null) {
+      throw HronError.parse(
+        'a named until date has no year, so it needs a starting date',
+        untilSpan!,
+        input,
+        suggestion: 'until ${month.name} $day starting YYYY-MM-DD',
+      );
+    }
+
     return schedule;
+  }
+
+  /// The IANA capitalization of [name] from the loaded timezone database
+  /// (spec/README.md "Parse-time validation"). Links keep their own name.
+  String _canonicalTimezone(String name, Span span) {
+    final lower = name.toLowerCase();
+    if (lower == 'utc') return 'UTC';
+    if (!timeZoneDatabase.isInitialized && name.contains('/')) {
+      throw error(
+        "timezone '$name' needs timezone data: call initializeTimeZones() "
+        'from package:timezone/data/latest_all.dart before parsing',
+        span,
+      );
+    }
+    // Compared in ASCII only: toLowerCase maps the Kelvin sign to 'k'.
+    final isAscii = name.codeUnits.every((c) => c < 128);
+    final legacy = ['systemv/', 'posix/', 'right/'].any(lower.startsWith);
+    final match = isAscii && !legacy && name.contains('/')
+        ? timeZoneDatabase.locations.keys
+              .where((n) => n.toLowerCase() == lower)
+              .firstOrNull
+        : null;
+    if (match == null) {
+      throw error(
+        "unknown timezone '$name': use UTC or an IANA Area/Location name "
+        "such as 'America/New_York'",
+        span,
+      );
+    }
+    return match;
   }
 
   List<ExceptionSpec> _parseExceptionList() {
@@ -243,8 +290,14 @@ class _Parser {
     final numSpan = currentSpan();
     advance();
 
-    if (num == 0) {
+    if (num < 1) {
       throw error('interval must be at least 1', numSpan);
+    }
+    if (num > 2147483647) {
+      throw error(
+        'number too large: an interval is at most 2147483647',
+        numSpan,
+      );
     }
 
     final next = peekKind();
@@ -282,7 +335,15 @@ class _Parser {
     consumeKind("'from'", (k) => k is FromToken);
     final from = _parseTime();
     consumeKind("'to'", (k) => k is ToToken);
+    final toSpan = currentSpan();
     final to = _parseTime();
+    if (to.hour * 60 + to.minute < from.hour * 60 + from.minute) {
+      throw error(
+        "'to' time $to is earlier than 'from' time $from; a window cannot "
+        'cross midnight',
+        toSpan,
+      );
+    }
 
     DayFilter? dayFilter;
     if (peekKind() is OnToken) {
@@ -537,7 +598,9 @@ class _Parser {
     final parts = dateStr.split('-');
     final inputDay = int.parse(parts[2]);
     final inputMonth = int.parse(parts[1]);
-    if (parsed.day != inputDay || parsed.month != inputMonth) {
+    if (parsed.year < 1 ||
+        parsed.day != inputDay ||
+        parsed.month != inputMonth) {
       throw error('invalid date: $dateStr', currentSpan());
     }
   }

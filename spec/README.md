@@ -55,8 +55,7 @@ A conformance runner must fail any case it cannot check: a section it does not k
 The other sections:
 
 - **`parse.*`** - `input`; asserts that `toString(parse(input))` equals `canonical`, and that parsing `canonical` again gives `canonical`.
-- **`parse_errors`** - `input`; asserts that `parse(input)` fails, and when `error_contains` is present, that the error message contains it.
-- **`eval_errors`** - `expression`; asserts that evaluating the schedule fails (at parse time or at the first `nextFrom`).
+- **`parse_errors`** - `input`; asserts that `parse(input)` fails and that `validate(input)` is false, and when `error_contains` is present, that the error message contains it.
 - **`cron.to_cron`** - `hron`; asserts `toCron(parse(hron))` equals `cron`. **`cron.to_cron_errors`** - `hron`; asserts `toCron` fails.
 - **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`; asserts `fromCron` fails.
 - **`cron.roundtrip`** - `hron`; with `c = toCron(parse(hron))`, asserts `toCron(fromCron(c))` equals `c`.
@@ -85,7 +84,7 @@ Each error should include:
 2. **message**: Human-readable description
 3. **span** (lex/parse only): Start and end positions in input
 4. **input** (lex/parse only): The original input string
-5. **suggestion** (optional): Helpful hint for fixing the error
+5. **suggestion** (optional): a literal replacement for the underlined span, or absent; never prose
 
 ### Message Format Guidelines
 
@@ -93,6 +92,15 @@ Each error should include:
 - Include what was expected: "expected 'at', got 'in'"
 - Include position context: "at position 15"
 - Be specific: "invalid hour 25, must be 0-23"
+
+The message says what is wrong and names the offending value, with a short hint. The `suggestion`, when present, is text that can replace the underlined span as is:
+
+- Named `until` without `starting`: the suggestion is `until dec 31 starting YYYY-MM-DD`, echoing the input's month and day.
+- Unknown timezone: no suggestion; the hint is in the message.
+- Reversed time range: no suggestion; the message says that a window cannot cross midnight.
+- Oversized number: the message says "number too large" and does not echo the digit string.
+
+Every invalid expression fails in `parse` (and `validate` returns false) with a `lex` or `parse` error; evaluating a parsed schedule never fails. An out-of-range number is an error of this kind, never a raw overflow exception.
 
 ### Rich Display
 
@@ -104,6 +112,20 @@ Implementations should provide a `displayRich()` method that formats errors with
 ## Behavioral Semantics
 
 These rules govern evaluation behavior across all implementations. Third-party implementations must follow these semantics to pass the conformance suite.
+
+### Parse-time validation
+
+These are parse errors, not evaluation errors:
+
+- **Named `until` without `starting`**: `until dec 31` has no year, so it needs a `starting` date (or use an ISO date, `until 2026-12-31`); the error message says so and mentions `starting`.
+- **Reversed time range**: `from 17:00 to 09:00`. `from` equal to `to` is valid and gives one slot a day.
+- **Timezone names**: only `UTC` or an `Area/Location` name from the IANA database (`Etc/GMT+5` included). Abbreviations and offsets (`EST`, `GMT`, `Z`, `+05:30`) and unknown names are errors. Names match in any case and display with the IANA capitalization (`in utc` displays `in UTC`, `in america/new_york` displays `in America/New_York`); a link keeps its own name (`in us/eastern` displays `in US/Eastern`). Timezone names are ASCII, so non-ASCII input is rejected (a Kelvin sign is not a `k`), and names under `SystemV/`, `posix/` and `right/` are rejected.
+- **Numbers**: an interval is 1 to 2147483647. Every numeric field rejects values out of its range (including very long digit strings) with a hron error.
+- **ISO dates**: years 0001 to 9999.
+
+### Named `until`
+
+`until MON DAY` with `starting S` means the first such date on or after `S`, in the schedule's calendar: `until jan 15 starting 2026-06-01` ends on 2027-01-15, `until mar 1 starting 2026-03-01` on 2026-03-01 (inclusive), and `until feb 29 starting 2097-03-01` on 2104-02-29, the first real Feb 29. After that it behaves like the ISO date it resolves to. Display keeps the named form.
 
 ### Exception recurrence
 
@@ -155,7 +177,7 @@ Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:
 
 ### Timezone data
 
-Behaviour with UTC offsets that are not whole minutes (local mean time before standard time was adopted) is outside this spec; some platforms round such offsets to the minute. DST rules far in the future depend on each platform's tz data: past the end of its data a platform keeps the zone's last offset (`package:timezone` has no rules after 2037, which leaves a southern-hemisphere zone on summer time), while `tzinfo` generates rules about 100 years ahead. The conformance suite therefore pins DST behaviour only before 2038 and only for transitions that are the same across tz data versions; after 2037 it uses only dates whose offset is the same under every platform's data, such as New York in winter.
+Behaviour with UTC offsets that are not whole minutes (local mean time before standard time was adopted) is outside this spec; some platforms round such offsets to the minute. DST rules far in the future depend on each platform's tz data: past the end of its data a platform keeps the zone's last offset (`package:timezone` has no rules after 2037, which leaves a southern-hemisphere zone on summer time), while `tzinfo` generates rules about 100 years ahead. The conformance suite therefore pins DST behaviour only before 2038 and only for transitions that are the same across tz data versions; after 2037 it uses only dates whose offset is the same under every platform's data, such as New York in winter. Which timezone names are accepted also follows each platform's tz data version: a name removed from IANA may still be accepted where the platform keeps it.
 
 ### End-of-month day handling
 

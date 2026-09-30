@@ -134,7 +134,7 @@ public sealed class Schedule
     public string ToCron() => CronConverter.ToCron(_data);
 
     /// <summary>
-    /// Returns the IANA timezone name, or null if not specified.
+    /// Returns the IANA timezone name in its canonical capitalization, or null if not specified.
     /// </summary>
     public string? Timezone => string.IsNullOrEmpty(_data.Timezone) ? null : _data.Timezone;
 
@@ -153,18 +153,6 @@ public sealed class Schedule
     /// </summary>
     private static TimeZoneInfo ResolveTimezone(string? tzName)
     {
-        if (string.IsNullOrEmpty(tzName))
-        {
-            return TimeZoneInfo.Utc;
-        }
-
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(tzName);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            throw HronException.Parse($"unknown timezone: {tzName}", new Span(0, 0), tzName);
-        }
+        return string.IsNullOrEmpty(tzName) ? TimeZoneInfo.Utc : TimeZoneInfo.FindSystemTimeZoneById(tzName);
     }
 }

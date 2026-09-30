@@ -47,6 +47,7 @@ public sealed class Parser
         string? anchor = null;
         IReadOnlyList<MonthName> during = [];
         string? timezone = null;
+        var untilSpan = new Span(0, 0);
 
         while (_pos < _tokens.Count)
         {
@@ -79,6 +80,7 @@ public sealed class Parser
                         throw ParseError("wrong clause order: in before until", tok.Span);
                     _pos++;
                     until = ParseUntil();
+                    untilSpan = new Span(tok.Span.Start, _tokens[_pos - 1].Span.End);
                     break;
 
                 case TokenKind.Starting:
@@ -109,6 +111,15 @@ public sealed class Parser
                 default:
                     throw ParseError("unexpected token", tok.Span);
             }
+        }
+
+        if (until is { Kind: UntilSpecKind.Named } && anchor is null)
+        {
+            throw HronException.Parse(
+                "a named until date has no year, so it needs a starting date",
+                untilSpan,
+                _input,
+                $"until {until.Month!.Value.ToDisplayString()} {until.Day} starting YYYY-MM-DD");
         }
 
         return new ScheduleData(expr, timezone, except, until, anchor, during);
@@ -267,10 +278,14 @@ public sealed class Parser
         var unitTok = Expect(TokenKind.IntervalUnit);
         var unit = unitTok.UnitVal!.Value;
 
-        Expect(TokenKind.From);
+        var fromTok = Expect(TokenKind.From);
         var fromTime = ParseTime();
         Expect(TokenKind.To);
         var toTime = ParseTime();
+        if (fromTime.TotalMinutes > toTime.TotalMinutes)
+        {
+            throw ParseError($"time range is reversed: from {fromTime} is after to {toTime}, and a window cannot cross midnight", new Span(fromTok.Span.Start, _tokens[_pos - 1].Span.End));
+        }
 
         DayFilter? dayFilter = null;
         if (Check(TokenKind.On))
@@ -523,7 +538,7 @@ public sealed class Parser
 
     private void ValidateIsoDate(string dateStr, Span span)
     {
-        if (!DateOnly.TryParseExact(dateStr, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+        if (!IsoDate.TryParse(dateStr, out _))
         {
             throw ParseError($"invalid date: {dateStr}", span);
         }
@@ -673,7 +688,8 @@ public sealed class Parser
             throw ParseError("expected timezone after 'in'", tok?.Span ?? EndSpan());
         }
         _pos++;
-        return tok.TimezoneVal!;
+        return TimezoneNames.Canonical(tok.TimezoneVal!) ?? throw ParseError(
+            $"unknown timezone '{tok.TimezoneVal}': use UTC or an IANA Area/Location name such as America/New_York", tok.Span);
     }
 
     private static readonly int[] MaxDays = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];

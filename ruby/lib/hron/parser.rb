@@ -1,12 +1,18 @@
 # frozen_string_literal: true
 
 require "date"
+require "tzinfo"
 require_relative "ast"
 require_relative "error"
 require_relative "lexer"
 
 module Hron
   class Parser
+    # IANA zone and link names by lowercase name, since timezone names match in any case.
+    def self.iana_names
+      @iana_names ||= TZInfo::Timezone.all_identifiers.to_h { |id| [id.downcase, id] }
+    end
+
     def initialize(tokens, input)
       @tokens = tokens
       @pos = 0
@@ -40,8 +46,8 @@ module Hron
       end
     end
 
-    def error(message, span)
-      HronError.parse(message, span, @input)
+    def error(message, span, suggestion: nil)
+      HronError.parse(message, span, @input, suggestion: suggestion)
     end
 
     def error_at_end(message)
@@ -112,6 +118,7 @@ module Hron
       end
 
       if peek_kind == TokenKind::UNTIL
+        until_start = current_span.start
         advance
         schedule = ScheduleData.new(
           expr: schedule.expr,
@@ -121,6 +128,7 @@ module Hron
           anchor: schedule.anchor,
           during: schedule.during
         )
+        until_span = Span.new(until_start, @tokens[@pos - 1].span.end_pos)
       end
 
       if peek_kind == TokenKind::STARTING
@@ -159,7 +167,7 @@ module Hron
         k = peek_kind
         raise error("expected timezone after 'in'", current_span) unless k.is_a?(TTimezone)
 
-        tz = k.tz
+        tz = canonical_timezone(k.tz, current_span)
         advance
         schedule = ScheduleData.new(
           expr: schedule.expr,
@@ -172,7 +180,32 @@ module Hron
 
       end
 
+      require_starting_for_named_until(schedule, until_span)
       schedule
+    end
+
+    # A named until date has no year; spec/README.md "Named until" resolves it from starting.
+    def require_starting_for_named_until(schedule, span)
+      named = schedule.until
+      return unless named.is_a?(NamedUntil) && schedule.anchor.nil?
+
+      raise error(
+        "until #{named.month} #{named.day} has no year: add a starting date or use an ISO until date",
+        span,
+        suggestion: "until #{named.month} #{named.day} starting YYYY-MM-DD"
+      )
+    end
+
+    def canonical_timezone(name, span)
+      return "UTC" if name.casecmp?("UTC")
+
+      # Only ASCII names can match, so a Kelvin sign never lowercases into a "k".
+      if name.ascii_only? && name.include?("/") && !name.downcase.start_with?("systemv/", "posix/", "right/")
+        canonical = Parser.iana_names[name.downcase]
+        return canonical if canonical
+      end
+
+      raise error("unknown timezone '#{name}': use UTC or an IANA Area/Location name such as America/New_York", span)
     end
 
     def parse_exception_list
@@ -185,7 +218,8 @@ module Hron
     end
 
     def validate_iso_date(date_str)
-      Date.iso8601(date_str)
+      year = Date.iso8601(date_str).year
+      raise error("invalid date: #{date_str} (year must be 0001 to 9999)", current_span) if year < 1
     rescue Date::Error
       raise error("invalid date: #{date_str}", current_span)
     end
@@ -345,9 +379,13 @@ module Hron
       advance
 
       consume_keyword("'from'", TokenKind::FROM)
+      range_start = current_span.start
       from_time = parse_time
       consume_keyword("'to'", TokenKind::TO)
       to_time = parse_time
+      if (to_time.hour * 60) + to_time.minute < (from_time.hour * 60) + from_time.minute
+        raise error("invalid time range: from must not be later than to (a window cannot cross midnight)", Span.new(range_start, @tokens[@pos - 1].span.end_pos))
+      end
 
       day_filter = nil
       if peek_kind == TokenKind::ON

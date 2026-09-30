@@ -28,7 +28,6 @@ _KNOWN_TOP_LEVEL = {
     "parse_errors",
     "eval",
     "cron",
-    "eval_errors",
     "invariants",
 }
 _NEXT_EVAL_SECTIONS = [
@@ -74,7 +73,6 @@ def _checked_fields(section: str) -> set[str]:
         return {"input", "canonical"}
     return {
         "parse_errors": {"input", "error_contains"},
-        "eval_errors": {"expression"},
         "eval/matches": {"expression", "datetime", "expected"},
         "eval/previous_from": {"expression", "now", "expected"},
         "eval/occurrences": {"expression", "from", "take", "expected"},
@@ -92,7 +90,7 @@ def _all_cases() -> list[tuple[str, dict[str, Any]]]:
     groups = {f"parse/{k}": v for k, v in _spec["parse"].items() if k != "description"}
     groups |= {f"eval/{k}": v for k, v in _spec["eval"].items() if k != "description"}
     groups |= {f"cron/{k}": v for k, v in _spec["cron"].items()}
-    groups |= {k: _spec[k] for k in ("parse_errors", "eval_errors", "invariants")}
+    groups |= {k: _spec[k] for k in ("parse_errors", "invariants")}
     return [(section, tc) for section, group in groups.items() for tc in group["tests"]]
 
 
@@ -140,6 +138,7 @@ _PARSE_ERROR_IDS = [t[0] for t in _PARSE_ERROR_TESTS]
 def test_parse_errors(name: str, tc: dict[str, Any]) -> None:
     with pytest.raises(HronError) as error:
         Schedule.parse(tc["input"])
+    assert not Schedule.validate(tc["input"])
     if "error_contains" in tc:
         assert tc["error_contains"] in str(error.value)
 
@@ -277,25 +276,6 @@ def test_eval_previous_from(name: str, tc: dict[str, Any]) -> None:
     else:
         assert result is not None
         assert format_zoned(result) == tc["expected"]
-
-
-_EVAL_ERROR_TESTS = [
-    (tc.get("name", tc["expression"]), tc["expression"]) for tc in _spec["eval_errors"]["tests"]
-]
-_EVAL_ERROR_IDS = [t[0] for t in _EVAL_ERROR_TESTS]
-
-
-@pytest.mark.parametrize("name,expression", _EVAL_ERROR_TESTS, ids=_EVAL_ERROR_IDS)
-def test_eval_errors(name: str, expression: str) -> None:
-    # Python validates timezone at eval time, so parse may succeed
-    # but next_from should raise. If parse raises, that's also acceptable.
-    # The error may be HronError or ZoneInfoNotFoundError (a KeyError subclass).
-    try:
-        schedule = Schedule.parse(expression)
-    except (HronError, KeyError):
-        return  # caught at parse — acceptable
-    with pytest.raises((HronError, KeyError)):
-        schedule.next_from(_default_now)
 
 
 _TO_CRON_TESTS = [

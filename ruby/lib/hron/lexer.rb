@@ -124,6 +124,9 @@ module Hron
   }.freeze
 
   class Lexer
+    # Every number must fit a 32-bit signed integer, which is also the largest interval.
+    MAX_NUMBER = 2_147_483_647
+
     def initialize(input)
       @input = input
       @pos = 0
@@ -186,6 +189,7 @@ module Hron
       start = @pos
       @pos += 1 while @pos < @input.length && @input[@pos].match?(/\d/)
       digits = @input[start...@pos]
+      raise HronError.lex("number too large (maximum #{MAX_NUMBER})", Span.new(start, @pos), @input) if digits.to_i > MAX_NUMBER
 
       if digits.length == 4 && @pos < @input.length && @input[@pos] == "-"
         remaining = @input[start..]

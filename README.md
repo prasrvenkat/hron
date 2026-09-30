@@ -154,7 +154,7 @@ Trailing clauses can be combined in this order: `except`, `until`, `starting`, `
 every weekday at 9:00 except dec 25, jan 1
 every weekday at 9:00 except 2026-07-04
 every day at 09:00 until 2026-12-31
-every day at 09:00 until dec 31
+every day at 09:00 until dec 31 starting 2026-01-01
 every 2 weeks on monday at 9:00 starting 2026-01-05
 every weekday at 9:00 in America/New_York
 every day at 9:00 during jan, jun
@@ -162,10 +162,10 @@ every weekday at 9:00 except dec 25 until 2027-12-31 during jan, dec in UTC
 ```
 
 - **`except`** — skip specific dates. Named dates (`dec 25`) recur every year. ISO dates (`2026-07-04`) are one-off.
-- **`until`** — stop producing occurrences after this date.
-- **`starting`** — anchor date for multi-week intervals.
+- **`until`** — stop producing occurrences after this date. A named date (`dec 31`) has no year, so it needs `starting` and means the first such date on or after it.
+- **`starting`** — first date that can fire; also the anchor for intervals (`every 3 days`, `every 2 weeks`). Required by a named `until`.
 - **`during`** — only fire during specific months.
-- **`in`** — IANA timezone. Must be last.
+- **`in`** — `UTC` or an IANA `Area/Location` name, any case. Must be last.
 
 ## Cron Compatibility
 

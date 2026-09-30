@@ -129,7 +129,7 @@ public final class Evaluator {
     if (!isSupported(now)) {
       return Optional.empty();
     }
-    Clauses clauses = Clauses.of(data, now.toLocalDate());
+    Clauses clauses = Clauses.of(data);
     LocalDate searchFrom = now.toLocalDate();
     if (clauses.until() != null) {
       searchFrom = min(searchFrom, clauses.until());
@@ -164,7 +164,7 @@ public final class Evaluator {
 
   private static Optional<ZonedDateTime> next(
       ScheduleData data, ZonedDateTime now, ZoneId location) {
-    Clauses clauses = Clauses.of(data, now.toLocalDate());
+    Clauses clauses = Clauses.of(data);
     LocalDate searchFrom = now.toLocalDate();
     if (clauses.starting() != null) {
       searchFrom = max(searchFrom, clauses.starting());
@@ -212,7 +212,7 @@ public final class Evaluator {
       Set<Integer> duringMonths,
       Set<LocalDate> exceptDates,
       Set<MonthDay> exceptDays) {
-    static Clauses of(ScheduleData data, LocalDate now) {
+    static Clauses of(ScheduleData data) {
       Set<LocalDate> exceptDates = new HashSet<>();
       Set<MonthDay> exceptDays = new HashSet<>();
       for (ExceptionSpec exc : data.except()) {
@@ -221,9 +221,10 @@ public final class Evaluator {
           case NAMED -> exceptDays.add(MonthDay.of(exc.month().number(), exc.day()));
         }
       }
+      LocalDate starting = data.anchor() != null ? LocalDate.parse(data.anchor()) : null;
       return new Clauses(
-          data.anchor() != null ? LocalDate.parse(data.anchor()) : null,
-          data.until() != null ? resolveUntil(data.until(), now) : null,
+          starting,
+          data.until() != null ? resolveUntil(data.until(), starting) : null,
           data.expr() instanceof MonthRepeat
               ? Set.of()
               : data.during().stream().map(MonthName::number).collect(Collectors.toSet()),
@@ -610,16 +611,20 @@ public final class Evaluator {
     return during.isEmpty() || during.stream().anyMatch(m -> m.number() == month.getMonthValue());
   }
 
-  private static LocalDate resolveUntil(UntilSpec until, LocalDate now) {
+  /**
+   * A named until date means the first such date on or after starting, which the parser requires
+   * with it; a Feb 29 waits for the first real one.
+   */
+  private static LocalDate resolveUntil(UntilSpec until, LocalDate starting) {
     return switch (until.kind()) {
       case ISO -> LocalDate.parse(until.date());
       case NAMED -> {
-        int year = now.getYear();
-        LocalDate d = LocalDate.of(year, until.month().number(), until.day());
-        if (d.isBefore(now)) {
-          d = LocalDate.of(year + 1, until.month().number(), until.day());
+        for (int year = starting.getYear(); ; year++) {
+          LocalDate d = tryCreateDate(year, until.month().number(), until.day());
+          if (d != null && !d.isBefore(starting)) {
+            yield d;
+          }
         }
-        yield d;
       }
     };
   }

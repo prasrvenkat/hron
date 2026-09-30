@@ -1,3 +1,4 @@
+using System.Globalization;
 using Hron.Ast;
 
 namespace Hron.Lexer;
@@ -134,8 +135,8 @@ public sealed class Lexer
             var minDigits = _input[minStart.._pos];
             if (minDigits.Length == 2)
             {
-                var hour = int.Parse(digits);
-                var minute = int.Parse(minDigits);
+                var hour = ParseNumber(digits, start);
+                var minute = ParseNumber(minDigits, minStart);
                 if (hour > 23 || minute > 59)
                 {
                     throw HronException.Lex("invalid time", new Span(start, _pos), _input);
@@ -144,7 +145,7 @@ public sealed class Lexer
             }
         }
 
-        var num = int.Parse(digits);
+        var num = ParseNumber(digits, start);
 
         if (_pos + 1 < _input.Length)
         {
@@ -189,6 +190,15 @@ public sealed class Lexer
         }
 
         return result;
+    }
+
+    private int ParseNumber(string digits, int start)
+    {
+        if (!int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+        {
+            throw HronException.Lex("number too large", new Span(start, start + digits.Length), _input);
+        }
+        return number;
     }
 
     private static bool IsDigit(char c) => c is >= '0' and <= '9';

@@ -21,13 +21,15 @@ func (s *Schedule) String() string {
 // NewSchedule creates a Schedule from parsed data. It returns an error if the
 // timezone cannot be resolved.
 func NewSchedule(data *ScheduleData) (*Schedule, error) {
-	loc, err := resolveTimezone(data.Timezone)
+	loc, tzName, err := resolveTimezone(data.Timezone)
 	if err != nil {
 		return nil, err
 	}
+	canonical := *data
+	canonical.Timezone = tzName
 	return &Schedule{
-		data:     data,
-		tzName:   data.Timezone,
+		data:     &canonical,
+		tzName:   tzName,
 		location: loc,
 	}, nil
 }
@@ -115,7 +117,8 @@ func (s *Schedule) ToCron() (string, error) {
 	return ToCron(s.data)
 }
 
-// Timezone returns the IANA timezone name, or empty string if not specified.
+// Timezone returns the IANA timezone name with its canonical capitalization,
+// or empty string if not specified.
 func (s *Schedule) Timezone() string {
 	return s.tzName
 }

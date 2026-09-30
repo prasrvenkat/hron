@@ -134,7 +134,12 @@ public final class Lexer {
       }
     }
 
-    int num = Integer.parseInt(digits);
+    int num;
+    try {
+      num = Integer.parseInt(digits);
+    } catch (NumberFormatException e) {
+      throw HronException.lex("number too large", new Span(start, pos), input);
+    }
 
     if (pos + 1 < input.length()) {
       String suffix = input.substring(pos, pos + 2).toLowerCase();

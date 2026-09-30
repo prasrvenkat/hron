@@ -164,19 +164,23 @@ module Hron
       during.any? { |mn| MonthName.number(mn) == d.month }
     end
 
-    def self.resolve_until(until_spec, now)
+    # A named until is the first such date on or after starting (spec/README.md "Named until").
+    # Parse requires starting and a real month day; a hand-built schedule falls back to the epoch
+    # anchor, and a day that never occurs gives nil (no bound).
+    def self.resolve_until(until_spec, starting)
       case until_spec
       when IsoUntil
         parse_date(until_spec.date)
       when NamedUntil
-        year = now.year
-        [year, year + 1].each do |y|
-          d = date(y, MonthName.number(until_spec.month), until_spec.day)
-          return d if d >= now.to_date
-        rescue ArgumentError
-          next
+        starting ||= EPOCH_DATE.gregorian
+        month = MonthName.number(until_spec.month)
+        (starting.year..starting.year + 8).each do |year|
+          next unless Date.valid_date?(year, month, until_spec.day, Date::GREGORIAN)
+
+          day = date(year, month, until_spec.day)
+          return day if day >= starting
         end
-        date(year + 1, MonthName.number(until_spec.month), until_spec.day)
+        nil
       end
     end
   end
@@ -261,8 +265,8 @@ module Hron
     def self.search(schedule, now, dir)
       expr = schedule.expr
       tz = TzResolver.resolve(schedule.timezone)
-      until_date = schedule.until && EvalHelpers.resolve_until(schedule.until, now)
       starting = schedule.anchor && EvalHelpers.parse_date(schedule.anchor)
+      until_date = schedule.until && EvalHelpers.resolve_until(schedule.until, starting)
       from = tz.utc_to_local(now.utc).to_date.gregorian
       # A spring-forward shift can carry the previous date's fixed time past now, and a fall-back
       # overlap that crosses midnight can put the next date's first pass before now.

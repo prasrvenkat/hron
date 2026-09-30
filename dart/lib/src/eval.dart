@@ -392,19 +392,18 @@ class _ParsedExceptions {
 bool _matchesDuring(int month, List<MonthName> during) =>
     during.isEmpty || during.any((mn) => mn.number == month);
 
-DateTime _resolveUntil(UntilSpec until, TZDateTime now) {
-  if (until is IsoUntil) {
-    return _parseIsoDateUtc(until.date);
+/// The first date on or after [starting] that [until] names (spec/README.md
+/// "Named until"); the parser guarantees a named until has a starting date.
+DateTime _resolveUntil(UntilSpec until, DateTime? starting) {
+  switch (until) {
+    case IsoUntil(:final date):
+      return _parseIsoDateUtc(date);
+    case NamedUntil(:final month, :final day):
+      for (var year = starting!.year; ; year++) {
+        final date = _validDate(year, month.number, day);
+        if (date != null && !date.isBefore(starting)) return date;
+      }
   }
-  final named = until as NamedUntil;
-  final year = now.year;
-  for (final y in [year, year + 1]) {
-    final d = _validDate(y, named.month.number, named.day);
-    if (d != null && !d.isBefore(DateTime.utc(now.year, now.month, now.day))) {
-      return d;
-    }
-  }
-  return DateTime.utc(year + 1, named.month.number, named.day);
 }
 
 // spec/README.md "Supported range".
@@ -439,7 +438,7 @@ TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
       anchor ?? unit.of(unit == _Unit.week ? _epochMonday : _epochDate);
   final until = schedule.until == null
       ? null
-      : _resolveUntil(schedule.until!, now);
+      : _resolveUntil(schedule.until!, starting);
   final exceptions = _ParsedExceptions.from(schedule.except);
 
   var start = _dateOf(TZDateTime.from(now, loc));

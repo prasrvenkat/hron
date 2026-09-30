@@ -83,7 +83,7 @@ Convert to a 5-field cron expression. Raises `Hron::HronError` if the schedule c
 Render as the canonical string form (roundtrip-safe).
 
 ### `schedule.timezone -> String | nil`
-The timezone, if specified.
+The IANA timezone name with its canonical capitalization (`in utc` gives `"UTC"`), if specified.
 
 ### `schedule.expression -> ScheduleExpr`
 The underlying schedule expression AST.

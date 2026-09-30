@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
-import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart';
 
 import 'package:hron/hron.dart';
@@ -59,7 +59,6 @@ const knownTopLevelKeys = {
   'parse_errors',
   'eval',
   'cron',
-  'eval_errors',
   'invariants',
 };
 
@@ -349,6 +348,7 @@ void main() {
       test(name, () {
         checkFields(tc as Map<String, dynamic>, {'input', 'error_contains'});
         final errorText = tc['error_contains'] as String?;
+        expect(Schedule.validate(tc['input'] as String), isFalse);
         expect(
           () => Schedule.parse(tc['input'] as String),
           throwsA(
@@ -376,27 +376,6 @@ void main() {
             () => check(testCase),
           );
         }
-      });
-    }
-  });
-
-  group('eval errors', () {
-    final evalErrors = spec['eval_errors'] as Map<String, dynamic>;
-    final tests = evalErrors['tests'] as List<dynamic>;
-    for (final tc in tests) {
-      final name = (tc['name'] ?? tc['expression']) as String;
-      test(name, () {
-        checkFields(tc as Map<String, dynamic>, {'expression'});
-        // Dart validates timezone at eval time, so parse may succeed
-        // but nextFrom should throw. If parse throws, that's also acceptable.
-        // The error may be HronError or a native timezone error.
-        Schedule schedule;
-        try {
-          schedule = Schedule.parse(tc['expression'] as String);
-        } catch (_) {
-          return; // caught at parse — acceptable
-        }
-        expect(() => schedule.nextFrom(defaultNow), throwsException);
       });
     }
   });

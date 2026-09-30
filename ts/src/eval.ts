@@ -86,10 +86,6 @@ function weekdayOf(day: number): number {
   return mod(day + 3, 7) + 1;
 }
 
-function dayOf(date: { year: number; month: number; day: number }): number {
-  return epochDay(date.year, date.month, date.day);
-}
-
 function isoDay(iso: string): number {
   const [year, month, day] = iso.split("-").map(Number);
   return epochDay(year, month, day);
@@ -499,15 +495,14 @@ class Evaluation {
   private readonly isoExceptions: number[];
   private readonly days = new Map<number, number[]>();
 
-  constructor(
-    private readonly schedule: ScheduleData,
-    now: ZDT,
-  ) {
+  constructor(private readonly schedule: ScheduleData) {
     this.zone = new Zone(schedule.timezone ?? "UTC");
     this.plan = planFor(schedule);
-    this.until =
-      schedule.until === null ? null : resolveUntil(schedule.until, now);
     this.starting = schedule.anchor === null ? null : isoDay(schedule.anchor);
+    this.until =
+      schedule.until === null
+        ? null
+        : resolveUntil(schedule.until, this.starting ?? FIRST_DAY);
     this.named = [];
     this.isoExceptions = [];
     for (const exc of schedule.except) {
@@ -601,27 +596,26 @@ class Evaluation {
   }
 }
 
-function resolveUntil(until: UntilSpec, now: ZDT): number {
+/**
+ * spec/README.md, "Named `until`": the first such date on or after
+ * `starting`, which the parser requires for a named date.
+ */
+function resolveUntil(until: UntilSpec, starting: number): number {
   if (until.type === "iso") return isoDay(until.date);
-  const today = dayOf(now.toPlainDate());
   const month = monthNumber(until.month);
-  const { year } = civil(today);
-  for (const y of [year, year + 1]) {
-    if (until.day <= daysInMonth(y, month)) {
-      const day = epochDay(y, month, until.day);
-      if (day >= today) return day;
+  for (let year = civil(starting).year; ; year++) {
+    if (until.day <= daysInMonth(year, month)) {
+      const day = epochDay(year, month, until.day);
+      if (day >= starting) return day;
     }
   }
-  throw new RangeError(
-    `no ${until.month} ${until.day} in ${year} or ${year + 1}`,
-  );
 }
 
 // spec/README.md, "Supported range": a `now` outside it has no occurrences.
 
 export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   if (!inRange(now)) return null;
-  const evaluation = new Evaluation(schedule, now);
+  const evaluation = new Evaluation(schedule);
   const next = evaluation.next(floorMs(now));
   return next === null ? null : evaluation.zone.zoned(next.ms);
 }
@@ -629,7 +623,7 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
 /** The most recent occurrence strictly before `now`, or null if there is none. */
 export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   if (!inRange(now)) return null;
-  const evaluation = new Evaluation(schedule, now);
+  const evaluation = new Evaluation(schedule);
   const previous = evaluation.previous(ceilMs(now));
   return previous === null ? null : evaluation.zone.zoned(previous.ms);
 }
@@ -637,7 +631,7 @@ export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
 /** True when the minute containing `datetime` is an occurrence. */
 export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
   if (!inRange(datetime)) return false;
-  const evaluation = new Evaluation(schedule, datetime);
+  const evaluation = new Evaluation(schedule);
   const ms = floorMs(datetime);
   const offset = evaluation.zone.offsetAt(ms);
   const minuteMs = Math.floor((ms + offset) / MINUTE_MS) * MINUTE_MS - offset;
@@ -654,7 +648,7 @@ export function* occurrences(
   from: ZDT,
 ): Generator<ZDT, void, unknown> {
   if (!inRange(from)) return;
-  const evaluation = new Evaluation(schedule, from);
+  const evaluation = new Evaluation(schedule);
   let next = evaluation.next(floorMs(from));
   while (next !== null) {
     yield evaluation.zone.zoned(next.ms);

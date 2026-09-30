@@ -25,7 +25,6 @@ const topLevelKeys = [
   "parse_errors",
   "eval",
   "cron",
-  "eval_errors",
   "invariants",
 ];
 const nextSections = [
@@ -218,6 +217,7 @@ describe("parse errors", () => {
     it(name, () => {
       checkFields(tc, ["input", "error_contains"]);
       const error = hronError(() => Schedule.parse(tc.input));
+      expect(Schedule.validate(tc.input), "validate").toBe(false);
       if ("error_contains" in tc) {
         expect(error.message).toContain(tc.error_contains);
       }
@@ -233,25 +233,6 @@ describe("eval", () => {
       for (const tc of spec.eval[section].tests) {
         it(tc.name ?? tc.expression, () => check(tc));
       }
-    });
-  }
-});
-
-describe("eval errors", () => {
-  const tests = spec.eval_errors.tests;
-  for (const tc of tests) {
-    const name = tc.name ?? tc.expression;
-    it(name, () => {
-      checkFields(tc, ["expression"]);
-      // TS validates timezone at eval time, so parse may succeed
-      // but nextFrom should throw. If parse throws, that's also acceptable.
-      let schedule: Schedule;
-      try {
-        schedule = Schedule.parse(tc.expression);
-      } catch {
-        return; // caught at parse — acceptable
-      }
-      expect(() => schedule.nextFrom(defaultNow)).toThrow();
     });
   }
 });
