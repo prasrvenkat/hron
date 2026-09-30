@@ -1474,6 +1474,13 @@
             "2026-02-14T09:00:00+00:00[UTC]",
             "2026-02-16T09:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "every_7_days_before_epoch",
+          "expression": "every 7 days at 09:00 in UTC",
+          "description": "1969-06-05 is 210 days before 1970-01-01 (210 mod 7 = 0), so it is aligned",
+          "now": "1969-06-01T00:00:00+00:00[UTC]",
+          "next": "1969-06-05T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -1539,6 +1546,42 @@
           "description": "near window end, 17:00 is last valid occurrence",
           "now": "2026-02-06T16:59:00+00:00[UTC]",
           "next": "2026-02-06T17:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_minute_window",
+          "expression": "every 1 min from 09:00 to 09:03 in UTC",
+          "description": "1-minute interval returns every minute of the window, then the next day",
+          "now": "2026-02-06T08:59:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-06T09:00:00+00:00[UTC]",
+            "2026-02-06T09:01:00+00:00[UTC]",
+            "2026-02-06T09:02:00+00:00[UTC]",
+            "2026-02-06T09:03:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_minute_window_from_inside",
+          "expression": "every 1 min from 09:00 to 09:03 in UTC",
+          "description": "from inside the window each remaining minute is returned",
+          "now": "2026-02-06T09:01:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-06T09:02:00+00:00[UTC]",
+            "2026-02-06T09:03:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_minute_window_before_midnight",
+          "expression": "every 1 min from 23:57 to 23:59 in UTC",
+          "description": "1-minute window ending at 23:59 keeps every minute",
+          "now": "2026-02-06T23:57:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-06T23:58:00+00:00[UTC]",
+            "2026-02-06T23:59:00+00:00[UTC]",
+            "2026-02-07T23:57:00+00:00[UTC]",
+            "2026-02-07T23:58:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -1834,6 +1877,39 @@
             "2026-07-31T17:00:00+00:00[UTC]",
             "2026-10-30T17:00:00+00:00[UTC]",
             "2027-01-29T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "previous_nearest_1st_cross_month_no_during",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 in UTC",
+          "description": "Mar 1, 2026 is Sunday: previous nearest weekday is Fri Feb 27, which is next from Feb 20",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "next": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "previous_nearest_1st_sequence",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 in UTC",
+          "description": "targets Mar 1 (Sun) -> Feb 27, Apr 1 (Wed), May 1 (Fri): March itself has no firing day",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-27T09:00:00+00:00[UTC]",
+            "2026-04-01T09:00:00+00:00[UTC]",
+            "2026-05-01T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_2_months_previous_nearest_1st_aligns_on_target_month",
+          "expression": "every 2 months on the previous nearest weekday to 1st at 09:00 in UTC",
+          "description": "Interval alignment uses the target month: March is aligned, so its target (Sun Mar 1) fires on Fri Feb 27",
+          "next": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "previous_nearest_1st_until_applies_to_landing_date",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 until 2026-02-28 in UTC",
+          "description": "until applies to the date the occurrence lands on: Feb 27 (target Mar 1) is before the until date, Apr 1 is after it",
+          "next_n_count": 3,
+          "next_n": [
+            "2026-02-27T09:00:00+00:00[UTC]"
           ]
         }
       ]
@@ -2209,6 +2285,26 @@
             "2028-12-31T23:59:00+00:00[UTC]",
             "2029-12-31T23:59:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "fifth_friday_february",
+          "expression": "every year on the fifth friday of february at 09:00 in UTC",
+          "description": "a fifth Friday in February needs a leap year starting on Friday: next is 2036-02-29",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2036-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "fifth_monday_february",
+          "expression": "every year on the fifth monday of february at 09:00 in UTC",
+          "description": "a fifth Monday in February: next is 2044-02-29, 18 years away",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2044-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_11_years_fifth_sunday_february_beyond_400_years",
+          "expression": "every 11 years on the fifth sunday of february at 09:00 in UTC",
+          "description": "Year interval 11 repeats every lcm(400, 11) years; the next occurrence is 406 years ahead",
+          "next": "2432-02-29T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2706,6 +2802,41 @@
             "2026-03-02T17:00:00+00:00[UTC]",
             "2026-03-03T09:00:00+00:00[UTC]",
             "2026-03-03T17:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "adjacent_minutes",
+          "expression": "every day at 09:00, 09:01 in UTC",
+          "description": "times one minute apart: every occurrence is returned, including 09:01",
+          "now": "2026-02-06T08:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-06T09:00:00+00:00[UTC]",
+            "2026-02-06T09:01:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-07T09:01:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "adjacent_minutes_now_on_first",
+          "expression": "every day at 09:00, 09:01 in UTC",
+          "description": "now exactly on 09:00: strict > skips it, 09:01 the same day is next and each day keeps both times",
+          "now": "2026-02-06T09:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-06T09:01:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-07T09:01:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "unsorted_times_adjacent_across_midnight",
+          "expression": "every day at 00:00, 23:59, 12:00 in UTC",
+          "description": "23:59 and next day's 00:00 are one minute apart across midnight; both are returned",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-06T23:59:00+00:00[UTC]",
+            "2026-02-07T00:00:00+00:00[UTC]",
+            "2026-02-07T12:00:00+00:00[UTC]",
+            "2026-02-07T23:59:00+00:00[UTC]"
           ]
         }
       ]
@@ -3384,6 +3515,279 @@
           "datetime": "2026-03-08T03:00:00-04:00[America/New_York]",
           "expected": false,
           "description": "DST spring-forward: 3:00 AM should not match schedule for 4:00 AM"
+        },
+        {
+          "name": "dst_fall_back_new_york_first_pass",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "new_york: the first pass of the repeated wall time is the occurrence",
+          "datetime": "2026-11-01T01:30:00-04:00[America/New_York]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_new_york_second_pass",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "new_york: the second pass of the repeated wall time is not an occurrence",
+          "datetime": "2026-11-01T01:30:00-05:00[America/New_York]",
+          "expected": false
+        },
+        {
+          "name": "dst_fall_back_london_first_pass",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "london: the first pass of the repeated wall time is the occurrence",
+          "datetime": "2026-10-25T01:30:00+01:00[Europe/London]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_london_second_pass",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "london: the second pass of the repeated wall time is not an occurrence",
+          "datetime": "2026-10-25T01:30:00+00:00[Europe/London]",
+          "expected": false
+        },
+        {
+          "name": "dst_fall_back_berlin_first_pass",
+          "expression": "every day at 02:30 in Europe/Berlin",
+          "description": "berlin: the first pass of the repeated wall time is the occurrence",
+          "datetime": "2026-10-25T02:30:00+02:00[Europe/Berlin]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_berlin_second_pass",
+          "expression": "every day at 02:30 in Europe/Berlin",
+          "description": "berlin: the second pass of the repeated wall time is not an occurrence",
+          "datetime": "2026-10-25T02:30:00+01:00[Europe/Berlin]",
+          "expected": false
+        },
+        {
+          "name": "dst_fall_back_sydney_first_pass",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "sydney: the first pass of the repeated wall time is the occurrence",
+          "datetime": "2026-04-05T02:30:00+11:00[Australia/Sydney]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_sydney_second_pass",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "sydney: the second pass of the repeated wall time is not an occurrence",
+          "datetime": "2026-04-05T02:30:00+10:00[Australia/Sydney]",
+          "expected": false
+        },
+        {
+          "name": "dst_fall_back_lord_howe_first_pass",
+          "expression": "every day at 01:45 in Australia/Lord_Howe",
+          "description": "lord_howe: the first pass of the repeated wall time is the occurrence",
+          "datetime": "2026-04-05T01:45:00+11:00[Australia/Lord_Howe]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_lord_howe_second_pass",
+          "expression": "every day at 01:45 in Australia/Lord_Howe",
+          "description": "lord_howe: the second pass of the repeated wall time is not an occurrence",
+          "datetime": "2026-04-05T01:45:00+10:30[Australia/Lord_Howe]",
+          "expected": false
+        },
+        {
+          "name": "dst_gap_sydney_shifted_time",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Sydney: the shifted 03:30 AEDT is the occurrence of 02:30",
+          "datetime": "2026-10-04T03:30:00+11:00[Australia/Sydney]",
+          "expected": true
+        },
+        {
+          "name": "dst_gap_sydney_gap_end_no_match",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Sydney: 03:00 AEDT is not an occurrence of 02:30",
+          "datetime": "2026-10-04T03:00:00+11:00[Australia/Sydney]",
+          "expected": false
+        },
+        {
+          "name": "dst_gap_lord_howe_shifted_time",
+          "expression": "every day at 02:15 in Australia/Lord_Howe",
+          "description": "Lord Howe: the shifted 02:45 +11:00 is the occurrence of 02:15",
+          "datetime": "2026-10-04T02:45:00+11:00[Australia/Lord_Howe]",
+          "expected": true
+        },
+        {
+          "name": "dst_gap_london_shifted_time",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "London: the shifted 02:30 BST is the occurrence of 01:30",
+          "datetime": "2026-03-29T02:30:00+01:00[Europe/London]",
+          "expected": true
+        },
+        {
+          "name": "nearest_previous_cross_month",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 in UTC",
+          "description": "Feb 27 is the previous nearest weekday to Mar 1",
+          "datetime": "2026-02-27T09:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "nearest_previous_cross_month_during",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 during mar in UTC",
+          "description": "during mar filters the target month: Feb 27 (target Mar 1) matches",
+          "datetime": "2026-02-27T09:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "nearest_previous_not_a_target",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 in UTC",
+          "description": "Mon Mar 2 is not the firing day of any target",
+          "datetime": "2026-03-02T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "nearest_next_cross_month",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 in UTC",
+          "description": "Mon Feb 2 is the next nearest weekday to Sat Jan 31",
+          "datetime": "2026-02-02T09:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "nearest_next_cross_month_during",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 during may in UTC",
+          "description": "during may: Jun 1 (target May 31) matches",
+          "datetime": "2026-06-01T09:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "nearest_next_during_weekday_before_target",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 during may in UTC",
+          "description": "Fri May 29 is not an occurrence: next nearest moves forward from Sun May 31",
+          "datetime": "2026-05-29T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "nearest_31st_missing_day_no_match",
+          "expression": "every month on the nearest weekday to 31st at 09:00 in UTC",
+          "description": "February has no 31st, so there is no target and Fri Feb 27 does not match",
+          "datetime": "2026-02-27T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "interval_fall_back_after_overlap",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "45-min slots on the NY fall-back day: 02:15 EST is an occurrence",
+          "datetime": "2026-11-01T02:15:00-05:00[America/New_York]",
+          "expected": true
+        },
+        {
+          "name": "interval_fall_back_second_pass",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "45-min slots: 01:30 EST (second pass) is not an occurrence; 01:30 EDT is",
+          "datetime": "2026-11-01T01:30:00-05:00[America/New_York]",
+          "expected": false
+        },
+        {
+          "name": "interval_spring_forward_regular_slot",
+          "expression": "every 30 min from 00:00 to 03:00 in Europe/London",
+          "description": "30-min slots on the London spring-forward day: 02:30 BST is an occurrence",
+          "datetime": "2026-03-29T02:30:00+01:00[Europe/London]",
+          "expected": true
+        },
+        {
+          "name": "interval_spring_forward_slot_after_gap",
+          "expression": "every 45 min from 01:00 to 04:00 in Australia/Sydney",
+          "description": "45-min slots on the Sydney spring-forward day: 03:15 AEDT is an occurrence",
+          "datetime": "2026-10-04T03:15:00+11:00[Australia/Sydney]",
+          "expected": true
+        },
+        {
+          "name": "seconds_day_repeat",
+          "expression": "every day at 09:00 in UTC",
+          "description": "matches compares the minute containing the datetime: 30 seconds past an occurrence matches",
+          "datetime": "2026-02-09T09:00:30+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "seconds_interval",
+          "expression": "every 30 min from 09:00 to 17:00 in UTC",
+          "description": "matches compares the minute containing the datetime: 30 seconds past an occurrence matches",
+          "datetime": "2026-02-09T10:30:30+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "seconds_week_repeat",
+          "expression": "every 2 weeks on monday at 09:00 in UTC",
+          "description": "matches compares the minute containing the datetime: 30 seconds past an occurrence matches",
+          "datetime": "2026-02-16T09:00:30+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "seconds_month_repeat",
+          "expression": "every month on the 1st at 09:00 in UTC",
+          "description": "matches compares the minute containing the datetime: 30 seconds past an occurrence matches",
+          "datetime": "2026-03-01T09:00:30+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "seconds_ordinal",
+          "expression": "every month on the first monday at 10:00 in UTC",
+          "description": "matches compares the minute containing the datetime: 30 seconds past an occurrence matches",
+          "datetime": "2026-03-02T10:00:30+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "seconds_year_repeat",
+          "expression": "every year on dec 25 at 00:00 in UTC",
+          "description": "matches compares the minute containing the datetime: 30 seconds past an occurrence matches",
+          "datetime": "2026-12-25T00:00:30+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "seconds_single_date",
+          "expression": "on 2026-03-15 at 14:30 in UTC",
+          "description": "matches compares the minute containing the datetime: 30 seconds past an occurrence matches",
+          "datetime": "2026-03-15T14:30:30+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "seconds_do_not_rescue_non_occurrence",
+          "expression": "every day at 09:00 in UTC",
+          "description": "the minute containing 09:01:30 is 09:01, which is not an occurrence",
+          "datetime": "2026-02-09T09:01:30+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "seconds_fall_back_second_pass",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "seconds are dropped first, then instants compared: 01:30:30 EST is in the minute 01:30 EST, not an occurrence",
+          "datetime": "2026-11-01T01:30:30-05:00[America/New_York]",
+          "expected": false
+        },
+        {
+          "name": "interval_gap_slot_not_shifted",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "03:15 EDT would be the shifted 02:15 slot; skipped slots are not occurrences",
+          "datetime": "2026-03-08T03:15:00-04:00[America/New_York]",
+          "expected": false
+        },
+        {
+          "name": "lord_howe_interval_gap_slot_not_shifted",
+          "expression": "every 1 hour from 01:00 to 03:00 in Australia/Lord_Howe",
+          "description": "02:30 +11:00 would be the shifted 02:00 slot; it is not an occurrence",
+          "datetime": "2026-10-04T02:30:00+11:00[Australia/Lord_Howe]",
+          "expected": false
+        },
+        {
+          "name": "day_interval_before_epoch_aligned",
+          "expression": "every 7 days at 09:00 in UTC",
+          "description": "1969-06-05 is aligned (offset -210, divisible by 7)",
+          "datetime": "1969-06-05T09:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "day_interval_before_epoch_not_aligned",
+          "expression": "every 7 days at 09:00 in UTC",
+          "description": "1969-06-04 is not aligned (offset -211)",
+          "datetime": "1969-06-04T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "year_interval_before_epoch_aligned",
+          "expression": "every 2 years on jan 1 at 09:00 in UTC",
+          "description": "1968 is aligned with the 1970 epoch for every 2 years",
+          "datetime": "1968-01-01T09:00:00+00:00[UTC]",
+          "expected": true
         }
       ]
     },
@@ -3458,7 +3862,7 @@
       ]
     },
     "dst_spring_forward": {
-      "description": "Spring forward: March 8, 2026 at 2:00 AM America/New_York. Clocks jump to 3:00 AM. Times 2:00-2:59 do not exist.",
+      "description": "Spring forward: times that do not exist because clocks jump ahead. Covers America/New_York (Mar 8 2026, 02:00 -> 03:00), Europe/London, Australia/Sydney and Australia/Lord_Howe (30-minute gap).",
       "tests": [
         {
           "name": "nonexistent_time_pushed_forward",
@@ -3551,11 +3955,121 @@
             "2026-03-11T02:30:00-04:00[America/New_York]",
             "2026-03-12T02:30:00-04:00[America/New_York]"
           ]
+        },
+        {
+          "name": "sydney_gap_shifted",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Sydney springs forward 02:00 -> 03:00 on Oct 4 (16:00 UTC the previous day); 02:30 shifts to 03:30 AEDT",
+          "now": "2026-10-03T23:00:00+10:00[Australia/Sydney]",
+          "next_n": [
+            "2026-10-04T03:30:00+11:00[Australia/Sydney]",
+            "2026-10-05T02:30:00+11:00[Australia/Sydney]"
+          ]
+        },
+        {
+          "name": "sydney_gap_shifted_next",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Sydney: next from the evening before the gap is the shifted 03:30",
+          "now": "2026-10-03T23:00:00+10:00[Australia/Sydney]",
+          "next": "2026-10-04T03:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "sydney_single_date_in_gap",
+          "expression": "on 2026-10-04 at 02:30 in Australia/Sydney",
+          "description": "single date inside the Sydney gap shifts forward by the gap length",
+          "now": "2026-10-03T23:00:00+10:00[Australia/Sydney]",
+          "next": "2026-10-04T03:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "sydney_monthly_in_gap",
+          "expression": "every month on the 4th at 02:30 in Australia/Sydney",
+          "description": "monthly schedule inside the Sydney gap shifts to 03:30",
+          "now": "2026-10-03T23:00:00+10:00[Australia/Sydney]",
+          "next": "2026-10-04T03:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "lord_howe_gap_shifted",
+          "expression": "every day at 02:15 in Australia/Lord_Howe",
+          "description": "Lord Howe springs forward 30 minutes (02:00 -> 02:30); 02:15 shifts to 02:45 +11:00",
+          "now": "2026-10-03T23:00:00+10:30[Australia/Lord_Howe]",
+          "next_n": [
+            "2026-10-04T02:45:00+11:00[Australia/Lord_Howe]",
+            "2026-10-05T02:15:00+11:00[Australia/Lord_Howe]"
+          ]
+        },
+        {
+          "name": "lord_howe_single_date_in_gap",
+          "expression": "on 2026-10-04 at 02:15 in Australia/Lord_Howe",
+          "description": "single date inside the Lord Howe gap shifts forward 30 minutes",
+          "now": "2026-10-03T23:00:00+10:30[Australia/Lord_Howe]",
+          "next": "2026-10-04T02:45:00+11:00[Australia/Lord_Howe]"
+        },
+        {
+          "name": "lord_howe_gap_end_exists",
+          "expression": "every day at 02:30 in Australia/Lord_Howe",
+          "description": "02:30 is the first wall time after the Lord Howe gap and is not shifted",
+          "now": "2026-10-03T23:00:00+10:30[Australia/Lord_Howe]",
+          "next": "2026-10-04T02:30:00+11:00[Australia/Lord_Howe]"
+        },
+        {
+          "name": "london_gap_shifted",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "London springs forward 01:00 -> 02:00 on Mar 29; 01:30 shifts to 02:30 BST",
+          "now": "2026-03-28T23:00:00+00:00[Europe/London]",
+          "next_n": [
+            "2026-03-29T02:30:00+01:00[Europe/London]",
+            "2026-03-30T01:30:00+01:00[Europe/London]"
+          ]
+        },
+        {
+          "name": "london_single_date_in_gap",
+          "expression": "on 2026-03-29 at 01:30 in Europe/London",
+          "description": "single date inside the London gap shifts to 02:30 BST",
+          "now": "2026-03-28T23:00:00+00:00[Europe/London]",
+          "next": "2026-03-29T02:30:00+01:00[Europe/London]"
+        },
+        {
+          "name": "interval_skips_gap_slot_45_min",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "45-min slots on the NY gap day: 02:15 does not exist and is skipped (not shifted), so 03:00 follows 01:30",
+          "now": "2026-03-07T23:00:00-05:00[America/New_York]",
+          "next_n": [
+            "2026-03-08T00:00:00-05:00[America/New_York]",
+            "2026-03-08T00:45:00-05:00[America/New_York]",
+            "2026-03-08T01:30:00-05:00[America/New_York]",
+            "2026-03-08T03:00:00-04:00[America/New_York]",
+            "2026-03-08T03:45:00-04:00[America/New_York]",
+            "2026-03-09T00:00:00-04:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "lord_howe_interval_skips_gap_slot",
+          "expression": "every 1 hour from 01:00 to 03:00 in Australia/Lord_Howe",
+          "description": "hourly slots on the Lord Howe gap day: 02:00 falls in the 30-minute gap and is skipped",
+          "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]",
+          "next_n": [
+            "2026-10-04T01:00:00+10:30[Australia/Lord_Howe]",
+            "2026-10-04T03:00:00+11:00[Australia/Lord_Howe]",
+            "2026-10-05T01:00:00+11:00[Australia/Lord_Howe]"
+          ]
+        },
+        {
+          "name": "sydney_interval_skips_gap_slot",
+          "expression": "every 45 min from 01:00 to 04:00 in Australia/Sydney",
+          "description": "45-min slots on the Sydney gap day: 02:30 is skipped, the real 03:15 slot is kept",
+          "now": "2026-10-03T23:00:00+10:00[Australia/Sydney]",
+          "next_n": [
+            "2026-10-04T01:00:00+10:00[Australia/Sydney]",
+            "2026-10-04T01:45:00+10:00[Australia/Sydney]",
+            "2026-10-04T03:15:00+11:00[Australia/Sydney]",
+            "2026-10-04T04:00:00+11:00[Australia/Sydney]",
+            "2026-10-05T01:00:00+11:00[Australia/Sydney]"
+          ]
         }
       ]
     },
     "dst_fall_back": {
-      "description": "Fall back: November 1, 2026 at 2:00 AM America/New_York. Clocks fall back to 1:00 AM. Times 1:00-1:59 occur twice.",
+      "description": "Fall back: times that occur twice because clocks go back. Covers America/New_York (Nov 1 2026, 02:00 -> 01:00), Europe/London, Europe/Berlin, Australia/Sydney and Australia/Lord_Howe (30-minute shift).",
       "tests": [
         {
           "name": "ambiguous_time_first_occurrence",
@@ -3650,6 +4164,154 @@
             "2026-11-16T09:00:00-05:00[America/New_York]",
             "2026-11-23T09:00:00-05:00[America/New_York]"
           ]
+        },
+        {
+          "name": "london_first_occurrence",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "Europe/London falls back 02:00 BST -> 01:00 GMT on Oct 25; 01:30 resolves to the first pass (BST)",
+          "now": "2026-10-24T23:00:00+01:00[Europe/London]",
+          "next": "2026-10-25T01:30:00+01:00[Europe/London]"
+        },
+        {
+          "name": "london_offset_changes",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "London: first pass on the fall-back day, GMT afterwards",
+          "now": "2026-10-24T23:00:00+01:00[Europe/London]",
+          "next_n": [
+            "2026-10-25T01:30:00+01:00[Europe/London]",
+            "2026-10-26T01:30:00+00:00[Europe/London]",
+            "2026-10-27T01:30:00+00:00[Europe/London]"
+          ]
+        },
+        {
+          "name": "london_single_date",
+          "expression": "on 2026-10-25 at 01:30 in Europe/London",
+          "description": "single date inside the London overlap resolves to the first pass",
+          "now": "2026-10-24T23:00:00+01:00[Europe/London]",
+          "next": "2026-10-25T01:30:00+01:00[Europe/London]"
+        },
+        {
+          "name": "london_monthly",
+          "expression": "every month on the 25th at 01:30 in Europe/London",
+          "description": "monthly schedule on the London fall-back day resolves to the first pass",
+          "now": "2026-10-24T23:00:00+01:00[Europe/London]",
+          "next": "2026-10-25T01:30:00+01:00[Europe/London]"
+        },
+        {
+          "name": "london_interval_across_overlap",
+          "expression": "every 30 min from 00:00 to 03:00 in Europe/London",
+          "description": "30-min interval over the London overlap: 01:00 and 01:30 in BST (first pass), 02:00 onwards in GMT",
+          "now": "2026-10-24T23:00:00+01:00[Europe/London]",
+          "next_n": [
+            "2026-10-25T00:00:00+01:00[Europe/London]",
+            "2026-10-25T00:30:00+01:00[Europe/London]",
+            "2026-10-25T01:00:00+01:00[Europe/London]",
+            "2026-10-25T01:30:00+01:00[Europe/London]",
+            "2026-10-25T02:00:00+00:00[Europe/London]",
+            "2026-10-25T02:30:00+00:00[Europe/London]",
+            "2026-10-25T03:00:00+00:00[Europe/London]",
+            "2026-10-26T00:00:00+00:00[Europe/London]"
+          ]
+        },
+        {
+          "name": "berlin_first_occurrence",
+          "expression": "every day at 02:30 in Europe/Berlin",
+          "description": "Europe/Berlin falls back 03:00 CEST -> 02:00 CET on Oct 25; 02:30 resolves to CEST",
+          "now": "2026-10-24T23:00:00+02:00[Europe/Berlin]",
+          "next": "2026-10-25T02:30:00+02:00[Europe/Berlin]"
+        },
+        {
+          "name": "sydney_first_occurrence",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Australia/Sydney falls back 03:00 AEDT -> 02:00 AEST on Apr 5; 02:30 resolves to AEDT",
+          "now": "2026-04-04T23:00:00+11:00[Australia/Sydney]",
+          "next": "2026-04-05T02:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "sydney_offset_changes",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Sydney: first pass (+11:00) on the fall-back day, +10:00 afterwards",
+          "now": "2026-04-04T23:00:00+11:00[Australia/Sydney]",
+          "next_n": [
+            "2026-04-05T02:30:00+11:00[Australia/Sydney]",
+            "2026-04-06T02:30:00+10:00[Australia/Sydney]",
+            "2026-04-07T02:30:00+10:00[Australia/Sydney]"
+          ]
+        },
+        {
+          "name": "sydney_interval_across_overlap",
+          "expression": "every 30 min from 01:00 to 04:00 in Australia/Sydney",
+          "description": "30-min interval over the Sydney overlap: 02:00 and 02:30 in AEDT (first pass), 03:00 onwards in AEST",
+          "now": "2026-04-04T23:00:00+11:00[Australia/Sydney]",
+          "next_n": [
+            "2026-04-05T01:00:00+11:00[Australia/Sydney]",
+            "2026-04-05T01:30:00+11:00[Australia/Sydney]",
+            "2026-04-05T02:00:00+11:00[Australia/Sydney]",
+            "2026-04-05T02:30:00+11:00[Australia/Sydney]",
+            "2026-04-05T03:00:00+10:00[Australia/Sydney]",
+            "2026-04-05T03:30:00+10:00[Australia/Sydney]",
+            "2026-04-05T04:00:00+10:00[Australia/Sydney]",
+            "2026-04-06T01:00:00+10:00[Australia/Sydney]"
+          ]
+        },
+        {
+          "name": "lord_howe_first_occurrence",
+          "expression": "every day at 01:45 in Australia/Lord_Howe",
+          "description": "Australia/Lord_Howe falls back 30 minutes (02:00 +11:00 -> 01:30 +10:30) on Apr 5; 01:45 resolves to +11:00",
+          "now": "2026-04-04T23:00:00+11:00[Australia/Lord_Howe]",
+          "next": "2026-04-05T01:45:00+11:00[Australia/Lord_Howe]"
+        },
+        {
+          "name": "lord_howe_interval_across_overlap",
+          "expression": "every 15 min from 01:00 to 03:00 in Australia/Lord_Howe",
+          "description": "15-min interval over the 30-minute Lord Howe overlap: 01:30 and 01:45 in +11:00, 02:00 onwards in +10:30",
+          "now": "2026-04-04T23:00:00+11:00[Australia/Lord_Howe]",
+          "next_n": [
+            "2026-04-05T01:00:00+11:00[Australia/Lord_Howe]",
+            "2026-04-05T01:15:00+11:00[Australia/Lord_Howe]",
+            "2026-04-05T01:30:00+11:00[Australia/Lord_Howe]",
+            "2026-04-05T01:45:00+11:00[Australia/Lord_Howe]",
+            "2026-04-05T02:00:00+10:30[Australia/Lord_Howe]",
+            "2026-04-05T02:15:00+10:30[Australia/Lord_Howe]",
+            "2026-04-05T02:30:00+10:30[Australia/Lord_Howe]",
+            "2026-04-05T02:45:00+10:30[Australia/Lord_Howe]",
+            "2026-04-05T03:00:00+10:30[Australia/Lord_Howe]"
+          ]
+        },
+        {
+          "name": "now_in_second_pass",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "now is 01:10 EST (second pass); 01:30 EDT already happened, next is tomorrow",
+          "now": "2026-11-01T01:10:00-05:00[America/New_York]",
+          "next": "2026-11-02T01:30:00-05:00[America/New_York]"
+        },
+        {
+          "name": "now_in_first_pass",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "now is 01:10 EDT (first pass); 01:30 EDT is still ahead",
+          "now": "2026-11-01T01:10:00-04:00[America/New_York]",
+          "next": "2026-11-01T01:30:00-04:00[America/New_York]"
+        },
+        {
+          "name": "now_in_second_pass_multi_time",
+          "expression": "every day at 01:00, 01:30, 01:59 in America/New_York",
+          "description": "now is 01:10 EST: all of 01:00, 01:30, 01:59 EDT are in the past",
+          "now": "2026-11-01T01:10:00-05:00[America/New_York]",
+          "next": "2026-11-02T01:00:00-05:00[America/New_York]"
+        },
+        {
+          "name": "london_now_in_second_pass",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "London now 01:10 GMT (second pass): 01:30 BST already happened",
+          "now": "2026-10-25T01:10:00+00:00[Europe/London]",
+          "next": "2026-10-26T01:30:00+00:00[Europe/London]"
+        },
+        {
+          "name": "lord_howe_now_in_second_pass",
+          "expression": "every day at 01:45 in Australia/Lord_Howe",
+          "description": "Lord Howe now 01:40 +10:30 (second pass): 01:45 +11:00 already happened",
+          "now": "2026-04-05T01:40:00+10:30[Australia/Lord_Howe]",
+          "next": "2026-04-06T01:45:00+10:30[Australia/Lord_Howe]"
         }
       ]
     },
@@ -3872,6 +4534,46 @@
           "take": 1,
           "expected": [
             "2026-02-07T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "adjacent_minutes",
+          "expression": "every day at 09:00, 09:01 in UTC",
+          "description": "iterator returns 09:01 right after 09:00",
+          "from": "2026-02-06T08:00:00+00:00[UTC]",
+          "take": 4,
+          "expected": [
+            "2026-02-06T09:00:00+00:00[UTC]",
+            "2026-02-06T09:01:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-07T09:01:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_minute_window",
+          "expression": "every 1 min from 09:00 to 09:03 in UTC",
+          "description": "iterator returns every minute of a 1-minute interval",
+          "from": "2026-02-06T08:59:00+00:00[UTC]",
+          "take": 5,
+          "expected": [
+            "2026-02-06T09:00:00+00:00[UTC]",
+            "2026-02-06T09:01:00+00:00[UTC]",
+            "2026-02-06T09:02:00+00:00[UTC]",
+            "2026-02-06T09:03:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "unsorted_times_adjacent_across_midnight",
+          "expression": "every day at 00:00, 23:59, 12:00 in UTC",
+          "description": "iterator returns 00:00 one minute after 23:59",
+          "from": "2026-02-06T12:00:00+00:00[UTC]",
+          "take": 4,
+          "expected": [
+            "2026-02-06T23:59:00+00:00[UTC]",
+            "2026-02-07T00:00:00+00:00[UTC]",
+            "2026-02-07T12:00:00+00:00[UTC]",
+            "2026-02-07T23:59:00+00:00[UTC]"
           ]
         }
       ]
@@ -4313,6 +5015,72 @@
             "2026-02-06T09:00:00+09:00[Asia/Tokyo]",
             "2026-02-07T09:00:00+09:00[Asia/Tokyo]",
             "2026-02-08T09:00:00+09:00[Asia/Tokyo]"
+          ]
+        },
+        {
+          "name": "adjacent_minutes_bounds_on_occurrences",
+          "expression": "every day at 09:00, 09:01 in UTC",
+          "description": "from and to both on occurrences: from excluded, to included, 09:01 after 09:00 kept",
+          "from": "2026-02-06T09:00:00+00:00[UTC]",
+          "to": "2026-02-07T09:01:00+00:00[UTC]",
+          "expected": [
+            "2026-02-06T09:01:00+00:00[UTC]",
+            "2026-02-07T09:00:00+00:00[UTC]",
+            "2026-02-07T09:01:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "every_minute_window_bounds_on_occurrences",
+          "expression": "every 1 min from 09:00 to 09:03 in UTC",
+          "description": "from=09:00 excluded, 09:01..09:03 included",
+          "from": "2026-02-06T09:00:00+00:00[UTC]",
+          "to": "2026-02-06T09:03:00+00:00[UTC]",
+          "expected": [
+            "2026-02-06T09:01:00+00:00[UTC]",
+            "2026-02-06T09:02:00+00:00[UTC]",
+            "2026-02-06T09:03:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "adjacent_across_midnight",
+          "expression": "every day at 00:00, 23:59, 12:00 in UTC",
+          "description": "from on 23:59: next day's 00:00 (one minute later) and 12:00 are returned",
+          "from": "2026-02-06T23:59:00+00:00[UTC]",
+          "to": "2026-02-07T12:00:00+00:00[UTC]",
+          "expected": [
+            "2026-02-07T00:00:00+00:00[UTC]",
+            "2026-02-07T12:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "dst_fall_back_london",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "London overlap: 01:30 occurs once, in BST",
+          "from": "2026-10-25T00:00:00+01:00[Europe/London]",
+          "to": "2026-10-25T05:00:00+00:00[Europe/London]",
+          "expected": [
+            "2026-10-25T01:30:00+01:00[Europe/London]"
+          ]
+        },
+        {
+          "name": "interval_spring_forward_slot_after_gap",
+          "expression": "every 45 min from 01:00 to 04:00 in Australia/Sydney",
+          "description": "45-min slots on the Sydney spring-forward day: 03:15 AEDT is returned",
+          "from": "2026-10-04T03:00:00+11:00[Australia/Sydney]",
+          "to": "2026-10-04T03:20:00+11:00[Australia/Sydney]",
+          "expected": [
+            "2026-10-04T03:15:00+11:00[Australia/Sydney]"
+          ]
+        },
+        {
+          "name": "interval_gap_slot_skipped",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "NY gap day: between 01:30 EST and 03:45 EDT only 03:00 and 03:45 occur",
+          "from": "2026-03-08T01:30:00-05:00[America/New_York]",
+          "to": "2026-03-08T03:45:00-04:00[America/New_York]",
+          "expected": [
+            "2026-03-08T03:00:00-04:00[America/New_York]",
+            "2026-03-08T03:45:00-04:00[America/New_York]"
           ]
         }
       ]
@@ -4767,6 +5535,391 @@
           "now": "2026-02-10T12:00:00+00:00[UTC]",
           "expected": "2026-02-02T09:00:00+00:00[UTC]",
           "description": "Directional nearest weekday (next) on 1st: Feb 1 is Sunday, next weekday is Monday 2nd"
+        },
+        {
+          "name": "dst_fall_back_london",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "London fall-back day: previous is the first pass of 01:30 (BST)",
+          "now": "2026-10-25T12:00:00+00:00[Europe/London]",
+          "expected": "2026-10-25T01:30:00+01:00[Europe/London]"
+        },
+        {
+          "name": "dst_fall_back_berlin",
+          "expression": "every day at 02:30 in Europe/Berlin",
+          "description": "Berlin fall-back day: previous is the first pass of 02:30 (CEST)",
+          "now": "2026-10-25T12:00:00+01:00[Europe/Berlin]",
+          "expected": "2026-10-25T02:30:00+02:00[Europe/Berlin]"
+        },
+        {
+          "name": "dst_fall_back_sydney",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Sydney fall-back day: previous is the first pass of 02:30 (AEDT)",
+          "now": "2026-04-05T12:00:00+10:00[Australia/Sydney]",
+          "expected": "2026-04-05T02:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "dst_fall_back_lord_howe",
+          "expression": "every day at 01:45 in Australia/Lord_Howe",
+          "description": "Lord Howe fall-back day: previous is the first pass of 01:45 (+11:00)",
+          "now": "2026-04-05T12:00:00+10:30[Australia/Lord_Howe]",
+          "expected": "2026-04-05T01:45:00+11:00[Australia/Lord_Howe]"
+        },
+        {
+          "name": "dst_spring_forward_sydney",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "after the Sydney gap: previous is the shifted 03:30 AEDT",
+          "now": "2026-10-04T03:40:00+11:00[Australia/Sydney]",
+          "expected": "2026-10-04T03:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "dst_spring_forward_sydney_single_date",
+          "expression": "on 2026-10-04 at 02:30 in Australia/Sydney",
+          "description": "single date in the Sydney gap: previous is the shifted time",
+          "now": "2026-10-05T12:00:00+11:00[Australia/Sydney]",
+          "expected": "2026-10-04T03:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "dst_spring_forward_lord_howe",
+          "expression": "every day at 02:15 in Australia/Lord_Howe",
+          "description": "after the Lord Howe gap: previous is the shifted 02:45 +11:00",
+          "now": "2026-10-04T02:55:00+11:00[Australia/Lord_Howe]",
+          "expected": "2026-10-04T02:45:00+11:00[Australia/Lord_Howe]"
+        },
+        {
+          "name": "dst_spring_forward_london",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "after the London gap: previous is the shifted 02:30 BST",
+          "now": "2026-03-29T02:40:00+01:00[Europe/London]",
+          "expected": "2026-03-29T02:30:00+01:00[Europe/London]"
+        },
+        {
+          "name": "dst_fall_back_now_in_second_pass",
+          "expression": "every day at 01:30 in America/New_York",
+          "description": "now is 01:10 EST: 01:30 EDT earlier that night is the previous",
+          "now": "2026-11-01T01:10:00-05:00[America/New_York]",
+          "expected": "2026-11-01T01:30:00-04:00[America/New_York]"
+        },
+        {
+          "name": "dst_fall_back_now_in_second_pass_multi_time",
+          "expression": "every day at 01:00, 01:30, 01:59 in America/New_York",
+          "description": "now is 01:10 EST: the latest earlier occurrence is 01:59 EDT",
+          "now": "2026-11-01T01:10:00-05:00[America/New_York]",
+          "expected": "2026-11-01T01:59:00-04:00[America/New_York]"
+        },
+        {
+          "name": "dst_fall_back_london_now_in_second_pass",
+          "expression": "every day at 01:30 in Europe/London",
+          "description": "London now 01:10 GMT: previous is 01:30 BST the same night",
+          "now": "2026-10-25T01:10:00+00:00[Europe/London]",
+          "expected": "2026-10-25T01:30:00+01:00[Europe/London]"
+        },
+        {
+          "name": "dst_fall_back_london_now_in_first_pass",
+          "expression": "every day at 01:00, 01:30 in Europe/London",
+          "description": "London now 01:10 BST: previous is 01:00 BST a few minutes earlier",
+          "now": "2026-10-25T01:10:00+01:00[Europe/London]",
+          "expected": "2026-10-25T01:00:00+01:00[Europe/London]"
+        },
+        {
+          "name": "dst_fall_back_sydney_now_in_second_pass",
+          "expression": "every day at 02:30 in Australia/Sydney",
+          "description": "Sydney now 02:10 AEST: previous is 02:30 AEDT the same night",
+          "now": "2026-04-05T02:10:00+10:00[Australia/Sydney]",
+          "expected": "2026-04-05T02:30:00+11:00[Australia/Sydney]"
+        },
+        {
+          "name": "dst_fall_back_lord_howe_now_in_second_pass",
+          "expression": "every day at 01:45 in Australia/Lord_Howe",
+          "description": "Lord Howe now 01:40 +10:30: previous is 01:45 +11:00 the same night",
+          "now": "2026-04-05T01:40:00+10:30[Australia/Lord_Howe]",
+          "expected": "2026-04-05T01:45:00+11:00[Australia/Lord_Howe]"
+        },
+        {
+          "name": "dst_fall_back_interval_now_in_second_pass",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "45-min slots, now 01:10 EST: the 01:30 EDT slot earlier that night is the previous, not 00:45 EDT",
+          "now": "2026-11-01T01:10:00-05:00[America/New_York]",
+          "expected": "2026-11-01T01:30:00-04:00[America/New_York]"
+        },
+        {
+          "name": "named_feb_29_non_leap_year",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "on feb 29 recurs yearly on real leap days; most recent real Feb 29 is 2024",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "2024-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_feb_29_day_before_leap_day",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "on feb 29 recurs yearly on real leap days; the day before the 2028 leap day: previous is 2024",
+          "now": "2028-02-28T12:00:00+00:00[UTC]",
+          "expected": "2024-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_feb_29_leap_day_before_time",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "on feb 29 recurs yearly on real leap days; on 2028-02-29 before 09:00: previous is 2024",
+          "now": "2028-02-29T08:00:00+00:00[UTC]",
+          "expected": "2024-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_feb_29_leap_day_after_time",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "on feb 29 recurs yearly on real leap days; on 2028-02-29 after 09:00: previous is that morning",
+          "now": "2028-02-29T12:00:00+00:00[UTC]",
+          "expected": "2028-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "named_feb_29_after_leap_day",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "on feb 29 recurs yearly on real leap days; just after the 2028 leap day: previous is 2028-02-29",
+          "now": "2028-03-01T00:00:00+00:00[UTC]",
+          "expected": "2028-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "monthly_31st_from_30_day_month",
+          "expression": "every month on the 31st at 09:00 in UTC",
+          "description": "April has no 31st: previous is March 31, not April 30",
+          "now": "2026-04-30T12:00:00+00:00[UTC]",
+          "expected": "2026-03-31T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "monthly_29th_non_leap_february",
+          "expression": "every month on the 29th at 09:00 in UTC",
+          "description": "Feb 2026 has no 29th: previous is Jan 29, not Feb 28",
+          "now": "2026-03-01T00:00:00+00:00[UTC]",
+          "expected": "2026-01-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "monthly_29th_leap_february",
+          "expression": "every month on the 29th at 09:00 in UTC",
+          "description": "Feb 2028 has a 29th: previous is Feb 29",
+          "now": "2028-03-01T00:00:00+00:00[UTC]",
+          "expected": "2028-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "monthly_30th_february",
+          "expression": "every month on the 30th at 09:00 in UTC",
+          "description": "February has no 30th: previous is Jan 30",
+          "now": "2026-03-01T00:00:00+00:00[UTC]",
+          "expected": "2026-01-30T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "yearly_feb_29_non_leap",
+          "expression": "every year on feb 29 at 09:00 in UTC",
+          "description": "every year on feb 29 skips non-leap years: previous is 2024-02-29, not 2026-02-28",
+          "now": "2026-03-01T00:00:00+00:00[UTC]",
+          "expected": "2024-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "biweekly_off_week_epoch_anchor",
+          "expression": "every 2 weeks on monday at 09:00 in UTC",
+          "description": "week of Feb 9 is off (epoch Monday anchor): previous is Mon Feb 2",
+          "now": "2026-02-11T12:00:00+00:00[UTC]",
+          "expected": "2026-02-02T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "biweekly_on_week_epoch_anchor",
+          "expression": "every 2 weeks on monday at 09:00 in UTC",
+          "description": "week of Feb 16 is on: previous is Mon Feb 16",
+          "now": "2026-02-18T12:00:00+00:00[UTC]",
+          "expected": "2026-02-16T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "biweekly_two_days_off_week",
+          "expression": "every 2 weeks on monday, friday at 09:00 in UTC",
+          "description": "week of Feb 23 is off: previous is Fri Feb 20",
+          "now": "2026-02-28T12:00:00+00:00[UTC]",
+          "expected": "2026-02-20T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "biweekly_during_after_month",
+          "expression": "every 2 weeks on monday at 09:00 during mar in UTC",
+          "description": "during mar: on-week Mondays in March 2026 are 2, 16, 30; previous from December is Mar 30",
+          "now": "2026-12-31T23:00:00+00:00[UTC]",
+          "expected": "2026-03-30T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "biweekly_during_off_week",
+          "expression": "every 2 weeks on monday at 09:00 during mar in UTC",
+          "description": "during mar, now in the off week of Mar 23: previous is Mar 16",
+          "now": "2026-03-25T12:00:00+00:00[UTC]",
+          "expected": "2026-03-16T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "bimonthly_15th_off_month",
+          "expression": "every 2 months on the 15th at 09:00 in UTC",
+          "description": "every 2 months (epoch anchor): Feb 2026 is off, previous is Jan 15",
+          "now": "2026-02-20T12:00:00+00:00[UTC]",
+          "expected": "2026-01-15T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "bimonthly_31st_off_month",
+          "expression": "every 2 months on the 31st at 09:00 in UTC",
+          "description": "every 2 months on the 31st: Feb is off, previous is Jan 31",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "2026-01-31T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "bimonthly_31st_from_30_day_month",
+          "expression": "every 2 months on the 31st at 09:00 in UTC",
+          "description": "every 2 months on the 31st from Apr 30: previous is Mar 31",
+          "now": "2026-04-30T12:00:00+00:00[UTC]",
+          "expected": "2026-03-31T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "bimonthly_31st_skips_short_aligned_months",
+          "expression": "every 2 months on the 31st at 09:00 in UTC",
+          "description": "aligned Sep and Nov have no 31st: previous from Dec 15 is Jul 31",
+          "now": "2026-12-15T12:00:00+00:00[UTC]",
+          "expected": "2026-07-31T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "quarterly_15th_off_month",
+          "expression": "every 3 months on the 15th at 09:00 in UTC",
+          "description": "every 3 months (epoch anchor): aligned months are Jan/Apr/Jul/Oct; previous from Mar 1 is Jan 15",
+          "now": "2026-03-01T00:00:00+00:00[UTC]",
+          "expected": "2026-01-15T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_previous_1st_cross_month",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 in UTC",
+          "description": "the Feb 27 firing belongs to target Mar 1 and is the previous from Mar 15",
+          "now": "2026-03-15T12:00:00+00:00[UTC]",
+          "expected": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_previous_1st_during_target_month",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 during mar in UTC",
+          "description": "during mar filters the target month: Mar 1 -> Feb 27 is the previous from Mar 15",
+          "now": "2026-03-15T12:00:00+00:00[UTC]",
+          "expected": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_previous_1st_during_result_outside_month",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 during mar in UTC",
+          "description": "during mar: from Feb 28 the previous is Feb 27 (target Mar 1), although February is not in the during list",
+          "now": "2026-02-28T12:00:00+00:00[UTC]",
+          "expected": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_next_31st_cross_month",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 in UTC",
+          "description": "Jan 31, 2026 is Saturday: next nearest weekday is Mon Feb 2",
+          "now": "2026-02-26T12:00:00+00:00[UTC]",
+          "expected": "2026-02-02T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_next_31st_during_target_month",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 during may in UTC",
+          "description": "during may: target May 31 (Sun) fires Mon Jun 1",
+          "now": "2026-07-01T12:00:00+00:00[UTC]",
+          "expected": "2026-06-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_next_31st_during_30_day_month",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 during jun in UTC",
+          "description": "during jun: June has no 31st, so there is never a target",
+          "now": "2026-12-31T12:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "nearest_previous_31st_during_target_month",
+          "expression": "every month on the previous nearest weekday to 31st at 09:00 during may in UTC",
+          "description": "during may: target May 31, 2025 (Sat) fires Fri May 30, 2025",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "2025-05-30T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_plain_1st_during_stays_in_month",
+          "expression": "every month on the nearest weekday to 1st at 09:00 during aug in UTC",
+          "description": "plain nearest never crosses months: Aug 1, 2026 (Sat) fires Mon Aug 3",
+          "now": "2026-12-01T12:00:00+00:00[UTC]",
+          "expected": "2026-08-03T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "yearly_fifth_friday_february",
+          "expression": "every year on the fifth friday of february at 09:00 in UTC",
+          "description": "previous fifth Friday in February is 2008-02-29, 18 years back",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "2008-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_4_years_feb_29_epoch_anchor",
+          "expression": "every 4 years on feb 29 at 09:00 in UTC",
+          "description": "epoch-aligned years are never leap years: no previous occurrence",
+          "now": "2026-03-01T00:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "dst_spring_forward_interval_gap_slot_skipped",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "now 03:20 EDT: the skipped 02:15 slot is not shifted to 03:15, so the previous is 03:00",
+          "now": "2026-03-08T03:20:00-04:00[America/New_York]",
+          "expected": "2026-03-08T03:00:00-04:00[America/New_York]"
+        },
+        {
+          "name": "dst_spring_forward_lord_howe_interval_gap_slot_skipped",
+          "expression": "every 1 hour from 01:00 to 03:00 in Australia/Lord_Howe",
+          "description": "now 02:45 +11:00: the skipped 02:00 slot is not shifted to 02:30, so the previous is 01:00 +10:30",
+          "now": "2026-10-04T02:45:00+11:00[Australia/Lord_Howe]",
+          "expected": "2026-10-04T01:00:00+10:30[Australia/Lord_Howe]"
+        },
+        {
+          "name": "interval_now_has_seconds",
+          "expression": "every 30 min from 09:00 to 17:00 in UTC",
+          "description": "now is 09:00:30: the 09:00 slot is strictly before now",
+          "now": "2026-02-06T09:00:30+00:00[UTC]",
+          "expected": "2026-02-06T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "daily_now_has_seconds",
+          "expression": "every day at 09:00 in UTC",
+          "description": "now is 09:00:30: today's 09:00 is strictly before now",
+          "now": "2026-02-06T09:00:30+00:00[UTC]",
+          "expected": "2026-02-06T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "gap_shifted_time_equals_now",
+          "expression": "every day at 02:00 in America/New_York",
+          "description": "02:00 on the NY gap day shifts to 03:00 EDT, which equals now: previous is the day before",
+          "now": "2026-03-08T03:00:00-04:00[America/New_York]",
+          "expected": "2026-03-07T02:00:00-05:00[America/New_York]"
+        },
+        {
+          "name": "gap_shifted_time_after_now",
+          "expression": "every day at 02:30 in America/New_York",
+          "description": "02:30 on the NY gap day shifts to 03:30 EDT, after now: previous is the day before",
+          "now": "2026-03-08T03:00:00-04:00[America/New_York]",
+          "expected": "2026-03-07T02:30:00-05:00[America/New_York]"
+        },
+        {
+          "name": "every_7_days_before_epoch",
+          "expression": "every 7 days at 09:00 in UTC",
+          "description": "aligned day before the epoch: 1969-06-05",
+          "now": "1969-06-10T00:00:00+00:00[UTC]",
+          "expected": "1969-06-05T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_2_years_before_epoch",
+          "expression": "every 2 years on jan 1 at 09:00 in UTC",
+          "description": "1968 is aligned with the 1970 epoch (offset -2): previous from mid-1969 is 1968-01-01",
+          "now": "1969-06-01T00:00:00+00:00[UTC]",
+          "expected": "1968-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "contradictory_ordinal_during_other_month",
+          "expression": "every year on the first monday of march at 09:00 during feb in UTC",
+          "description": "first monday of march can never fall in february: no previous occurrence",
+          "now": "2026-12-31T23:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "every_7_years_fifth_friday_february_far_past",
+          "expression": "every 7 years on the fifth friday of february at 09:00 in UTC",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "1788-02-29T09:00:00+00:00[UTC]",
+          "description": "Aligned years with a Friday Feb 29 are rare; the previous one is 238 years back (proleptic Gregorian)"
         }
       ]
     },
@@ -4826,6 +5979,20 @@
           "name": "expired_schedule_next_null",
           "expression": "every day at 09:00 until 2020-01-01 in UTC",
           "description": "expired schedule returns null for next occurrence",
+          "next": null
+        },
+        {
+          "name": "nearest_next_31st_during_30_day_month",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 during jun in UTC",
+          "description": "during jun: June has no 31st, so the directional nearest weekday never fires",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "every_4_years_feb_29_epoch_anchor",
+          "expression": "every 4 years on feb 29 at 09:00 in UTC",
+          "description": "epoch-aligned years (1970 + 4k) are never leap years, so Feb 29 never fires",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": null
         }
       ]
@@ -5760,6 +6927,1496 @@
         "name": "invalid_timezone_misspelled",
         "expression": "every day at 12:00 in Amercia/New_York",
         "description": "misspelled timezone name"
+      }
+    ]
+  },
+  "invariants": {
+    "description": "Self-consistency checks with no expected values. For each test, parse the expression, evaluate it at 'now', and check that the library's answers agree with each other under every rule; timestamps are equal when they are the same instant.",
+    "count": 5,
+    "rules": {
+      "next_matches": "If nextFrom(now) returns t, then matches(t) is true.",
+      "next_n_chain": "nextNFrom(now, count) is strictly increasing, is empty exactly when nextFrom(now) is null, starts with nextFrom(now), and each later element equals nextFrom(the element before it).",
+      "occurrences_prefix": "Taking count elements from occurrences(now) gives exactly nextNFrom(now, count).",
+      "between_window": "If nextNFrom(now, count) is non-empty and its last element is L, then between(now, L) equals nextNFrom(now, count).",
+      "prev_inverse": "For consecutive elements a, b of nextNFrom(now, count), previousFrom(b) equals a.",
+      "prev_before_now": "If previousFrom(now) returns p, then p is strictly before now, matches(p) is true, and nextFrom(p) is null or not earlier than now.",
+      "display_roundtrip": "toString(parse(toString(parse(expression)))) equals toString(parse(expression))."
+    },
+    "tests": [
+      {
+        "name": "day",
+        "expression": "every day at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_except",
+        "expression": "every day at 09:00 except feb 9",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_until",
+        "expression": "every day at 09:00 until 2026-02-10",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_during",
+        "expression": "every day at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "weekday",
+        "expression": "every weekday at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "weekday_except",
+        "expression": "every weekday at 09:00 except 2026-02-09",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "weekday_until",
+        "expression": "every weekday at 09:00 until 2026-02-12",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "weekday_during",
+        "expression": "every weekday at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_list",
+        "expression": "every monday, wednesday, friday at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_list_except",
+        "expression": "every monday, wednesday, friday at 09:00 except 2026-02-09",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_list_until",
+        "expression": "every monday, wednesday, friday at 09:00 until 2026-02-20",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_list_during",
+        "expression": "every monday, wednesday, friday at 09:00 during apr",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_interval",
+        "expression": "every 3 days at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_interval_except",
+        "expression": "every 3 days at 09:00 except 2026-02-09",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_interval_until",
+        "expression": "every 3 days at 09:00 until 2026-02-20",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "day_interval_during",
+        "expression": "every 3 days at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_minutes",
+        "expression": "every 30 min from 09:00 to 17:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_minutes_except",
+        "expression": "every 30 min from 09:00 to 17:00 except 2026-02-06",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_minutes_until",
+        "expression": "every 30 min from 09:00 to 17:00 until 2026-02-07",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_minutes_during",
+        "expression": "every 30 min from 09:00 to 17:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_hours_on_weekdays",
+        "expression": "every 2 hours from 09:00 to 17:00 on weekday",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_hours_on_weekdays_except",
+        "expression": "every 2 hours from 09:00 to 17:00 on weekday except 2026-02-09",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_hours_on_weekdays_until",
+        "expression": "every 2 hours from 09:00 to 17:00 on weekday until 2026-02-10",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_hours_on_weekdays_during",
+        "expression": "every 2 hours from 09:00 to 17:00 on weekday during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week",
+        "expression": "every week on monday at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_except",
+        "expression": "every week on monday at 09:00 except 2026-02-09",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_until",
+        "expression": "every week on monday at 09:00 until 2026-03-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_during",
+        "expression": "every week on monday at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval",
+        "expression": "every 2 weeks on monday at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval_except",
+        "expression": "every 2 weeks on monday at 09:00 except 2026-02-16",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval_until",
+        "expression": "every 2 weeks on monday at 09:00 until 2026-03-20",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval_during",
+        "expression": "every 2 weeks on monday at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval_two_days",
+        "expression": "every 2 weeks on monday, friday at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval_two_days_except",
+        "expression": "every 2 weeks on monday, friday at 09:00 except 2026-02-20",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval_two_days_until",
+        "expression": "every 2 weeks on monday, friday at 09:00 until 2026-03-20",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "week_interval_two_days_during",
+        "expression": "every 2 weeks on monday, friday at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day",
+        "expression": "every month on the 15th at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day_except",
+        "expression": "every month on the 15th at 09:00 except mar 15",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day_until",
+        "expression": "every month on the 15th at 09:00 until 2026-05-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day_during",
+        "expression": "every month on the 15th at 09:00 during jun",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day_range",
+        "expression": "every month on the 1st to 3rd at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day_range_except",
+        "expression": "every month on the 1st to 3rd at 09:00 except 2026-03-02",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day_range_until",
+        "expression": "every month on the 1st to 3rd at 09:00 until 2026-04-02",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_day_range_during",
+        "expression": "every month on the 1st to 3rd at 09:00 during jun",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_31st",
+        "expression": "every month on the 31st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_31st_except",
+        "expression": "every month on the 31st at 09:00 except 2026-03-31",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_31st_until",
+        "expression": "every month on the 31st at 09:00 until 2026-08-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_31st_during",
+        "expression": "every month on the 31st at 09:00 during apr, may",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_29th",
+        "expression": "every month on the 29th at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_29th_except",
+        "expression": "every month on the 29th at 09:00 except 2026-03-29",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_29th_until",
+        "expression": "every month on the 29th at 09:00 until 2026-06-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_29th_during",
+        "expression": "every month on the 29th at 09:00 during feb, mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_day",
+        "expression": "every month on the last day at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_day_except",
+        "expression": "every month on the last day at 09:00 except 2026-02-28",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_day_until",
+        "expression": "every month on the last day at 09:00 until 2026-05-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_day_during",
+        "expression": "every month on the last day at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_weekday",
+        "expression": "every month on the last weekday at 17:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_weekday_except",
+        "expression": "every month on the last weekday at 17:00 except 2026-02-27",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_weekday_until",
+        "expression": "every month on the last weekday at 17:00 until 2026-05-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_weekday_during",
+        "expression": "every month on the last weekday at 17:00 during may",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_first_monday",
+        "expression": "every month on the first monday at 10:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_first_monday_except",
+        "expression": "every month on the first monday at 10:00 except 2026-03-02",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_first_monday_until",
+        "expression": "every month on the first monday at 10:00 until 2026-06-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_first_monday_during",
+        "expression": "every month on the first monday at 10:00 during jun",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_fifth_friday",
+        "expression": "every month on the fifth friday at 16:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_fifth_friday_except",
+        "expression": "every month on the fifth friday at 16:00 except 2026-05-29",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_fifth_friday_until",
+        "expression": "every month on the fifth friday at 16:00 until 2027-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_fifth_friday_during",
+        "expression": "every month on the fifth friday at 16:00 during may",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_31st",
+        "expression": "every 2 months on the 31st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_31st_except",
+        "expression": "every 2 months on the 31st at 09:00 except 2026-03-31",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_31st_until",
+        "expression": "every 2 months on the 31st at 09:00 until 2026-12-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_31st_during",
+        "expression": "every 2 months on the 31st at 09:00 during jul",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_15th",
+        "expression": "every 3 months on the 15th at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_15th_except",
+        "expression": "every 3 months on the 15th at 09:00 except 2026-04-15",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_15th_until",
+        "expression": "every 3 months on the 15th at 09:00 until 2027-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_interval_15th_during",
+        "expression": "every 3 months on the 15th at 09:00 during oct",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_15th",
+        "expression": "every month on the nearest weekday to 15th at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_15th_except",
+        "expression": "every month on the nearest weekday to 15th at 09:00 except 2026-02-16",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_15th_until",
+        "expression": "every month on the nearest weekday to 15th at 09:00 until 2026-06-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_15th_during",
+        "expression": "every month on the nearest weekday to 15th at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_1st",
+        "expression": "every month on the nearest weekday to 1st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_1st_except",
+        "expression": "every month on the nearest weekday to 1st at 09:00 except 2026-03-02",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_1st_until",
+        "expression": "every month on the nearest weekday to 1st at 09:00 until 2026-06-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_1st_during",
+        "expression": "every month on the nearest weekday to 1st at 09:00 during aug",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_31st",
+        "expression": "every month on the nearest weekday to 31st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_31st_except",
+        "expression": "every month on the nearest weekday to 31st at 09:00 except 2026-03-31",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_31st_until",
+        "expression": "every month on the nearest weekday to 31st at 09:00 until 2026-08-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_nearest_31st_during",
+        "expression": "every month on the nearest weekday to 31st at 09:00 during may",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_31st",
+        "expression": "every month on the next nearest weekday to 31st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_31st_except",
+        "expression": "every month on the next nearest weekday to 31st at 09:00 except 2026-02-02",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_31st_until",
+        "expression": "every month on the next nearest weekday to 31st at 09:00 until 2026-08-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_31st_during",
+        "expression": "every month on the next nearest weekday to 31st at 09:00 during may",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_1st",
+        "expression": "every month on the next nearest weekday to 1st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_1st_except",
+        "expression": "every month on the next nearest weekday to 1st at 09:00 except 2026-03-02",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_1st_until",
+        "expression": "every month on the next nearest weekday to 1st at 09:00 until 2026-08-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_next_nearest_1st_during",
+        "expression": "every month on the next nearest weekday to 1st at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_1st",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_1st_except",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00 except 2026-02-27",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_1st_until",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00 until 2026-08-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_1st_during",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_31st",
+        "expression": "every month on the previous nearest weekday to 31st at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_31st_except",
+        "expression": "every month on the previous nearest weekday to 31st at 09:00 except 2026-05-29",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_31st_until",
+        "expression": "every month on the previous nearest weekday to 31st at 09:00 until 2026-08-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_previous_nearest_31st_during",
+        "expression": "every month on the previous nearest weekday to 31st at 09:00 during may",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_date",
+        "expression": "every year on dec 25 at 00:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_date_except",
+        "expression": "every year on dec 25 at 00:00 except 2026-12-25",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_date_until",
+        "expression": "every year on dec 25 at 00:00 until 2028-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_date_during",
+        "expression": "every year on dec 25 at 00:00 during dec",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_leap_day",
+        "expression": "every year on feb 29 at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_leap_day_except",
+        "expression": "every year on feb 29 at 09:00 except 2028-02-29",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_leap_day_until",
+        "expression": "every year on feb 29 at 09:00 until 2033-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_leap_day_during",
+        "expression": "every year on feb 29 at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_ordinal",
+        "expression": "every year on the first monday of march at 10:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_ordinal_except",
+        "expression": "every year on the first monday of march at 10:00 except 2027-03-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_ordinal_until",
+        "expression": "every year on the first monday of march at 10:00 until 2029-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_ordinal_during",
+        "expression": "every year on the first monday of march at 10:00 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_last_weekday",
+        "expression": "every year on the last weekday of december at 17:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_last_weekday_except",
+        "expression": "every year on the last weekday of december at 17:00 except 2026-12-31",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_last_weekday_until",
+        "expression": "every year on the last weekday of december at 17:00 until 2029-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_last_weekday_during",
+        "expression": "every year on the last weekday of december at 17:00 during dec",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_interval",
+        "expression": "every 2 years on dec 25 at 00:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_interval_except",
+        "expression": "every 2 years on dec 25 at 00:00 except 2026-12-25",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_interval_until",
+        "expression": "every 2 years on dec 25 at 00:00 until 2031-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_interval_during",
+        "expression": "every 2 years on dec 25 at 00:00 during dec",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_future",
+        "expression": "on 2026-03-15 at 14:30",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_future_except",
+        "expression": "on 2026-03-15 at 14:30 except 2026-03-15",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_future_until",
+        "expression": "on 2026-03-15 at 14:30 until 2026-03-15",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_future_during",
+        "expression": "on 2026-03-15 at 14:30 during mar",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named",
+        "expression": "on feb 14 at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_except",
+        "expression": "on feb 14 at 09:00 except 2026-02-14",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_until",
+        "expression": "on feb 14 at 09:00 until 2027-03-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_during",
+        "expression": "on feb 14 at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_leap_day",
+        "expression": "on feb 29 at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_leap_day_except",
+        "expression": "on feb 29 at 09:00 except 2028-02-29",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_leap_day_until",
+        "expression": "on feb 29 at 09:00 until 2033-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_leap_day_during",
+        "expression": "on feb 29 at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "all_clauses",
+        "expression": "every weekday at 09:00 except feb 10 until 2026-02-13 during feb in UTC",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "except_and_until_after_until",
+        "expression": "every day at 09:00 except 2026-02-09 until 2026-02-10",
+        "now": "2026-02-11T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "until_now_on_last_occurrence",
+        "expression": "every day at 09:00 until 2026-02-10",
+        "now": "2026-02-10T09:00:00+00:00[UTC]"
+      },
+      {
+        "name": "until_now_after_until",
+        "expression": "every month on the 1st at 09:00 until 2026-06-01",
+        "now": "2026-06-01T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "now_exactly_on_occurrence",
+        "expression": "every day at 09:00",
+        "now": "2026-02-06T09:00:00+00:00[UTC]"
+      },
+      {
+        "name": "now_with_seconds",
+        "expression": "every day at 09:00",
+        "now": "2026-02-06T09:00:30+00:00[UTC]"
+      },
+      {
+        "name": "now_with_seconds_interval",
+        "expression": "every 30 min from 09:00 to 17:00",
+        "now": "2026-02-06T09:00:30+00:00[UTC]"
+      },
+      {
+        "name": "now_one_second_before",
+        "expression": "every day at 09:00",
+        "now": "2026-02-06T08:59:59+00:00[UTC]"
+      },
+      {
+        "name": "now_at_midnight",
+        "expression": "every day at 00:00",
+        "now": "2026-02-06T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "now_in_other_zone",
+        "expression": "every day at 09:00 in Asia/Tokyo",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "now_before_1970",
+        "expression": "every 7 days at 09:00",
+        "now": "1969-06-01T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "now_before_1970_years",
+        "expression": "every 2 years on jan 1 at 09:00",
+        "now": "1969-06-01T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "now_before_1970_weeks",
+        "expression": "every 2 weeks on monday at 09:00",
+        "now": "1969-12-20T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "now_before_1970_months",
+        "expression": "every 2 months on the 1st at 09:00",
+        "now": "1969-11-15T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "large_day_interval",
+        "expression": "every 1000 days at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "times_one_minute_apart",
+        "expression": "every day at 09:00, 09:01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "times_one_minute_apart_now_between",
+        "expression": "every day at 09:00, 09:01",
+        "now": "2026-02-06T09:00:30+00:00[UTC]"
+      },
+      {
+        "name": "times_unsorted_across_midnight",
+        "expression": "every day at 00:00, 23:59, 12:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "times_across_midnight_now_2359",
+        "expression": "every day at 23:59, 00:00",
+        "now": "2026-02-06T23:59:00+00:00[UTC]"
+      },
+      {
+        "name": "times_weekday_one_minute_apart",
+        "expression": "every weekday at 09:00, 09:01",
+        "now": "2026-02-06T09:00:00+00:00[UTC]"
+      },
+      {
+        "name": "times_monthly_first_and_last_minute",
+        "expression": "every month on the 1st at 00:00, 23:59",
+        "now": "2026-01-31T23:59:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_every_minute",
+        "expression": "every 1 min from 09:00 to 09:03",
+        "now": "2026-02-06T08:59:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_every_minute_before_midnight",
+        "expression": "every 1 min from 23:57 to 23:59",
+        "now": "2026-02-06T23:57:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_every_minute_two_slots",
+        "expression": "every 1 min from 23:58 to 23:59",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_whole_day",
+        "expression": "every 1 hour from 00:00 to 23:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_step_not_dividing_window",
+        "expression": "every 45 min from 09:00 to 10:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "interval_single_slot",
+        "expression": "every 1 hour from 09:00 to 09:30",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "times_multi_with_except_until",
+        "expression": "every day at 09:00, 09:01 except 2026-02-07 until 2026-02-09",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_29th_from_non_leap_february",
+        "expression": "every month on the 29th at 09:00",
+        "now": "2026-02-28T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_29th_from_leap_february",
+        "expression": "every month on the 29th at 09:00",
+        "now": "2028-02-28T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_30th_from_february",
+        "expression": "every month on the 30th at 09:00",
+        "now": "2026-03-01T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_31st_from_30_day_month",
+        "expression": "every month on the 31st at 09:00",
+        "now": "2026-04-30T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_day_leap_february",
+        "expression": "every month on the last day at 09:00",
+        "now": "2028-02-28T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_last_weekday_month_ends_sunday",
+        "expression": "every month on the last weekday at 17:00",
+        "now": "2026-05-30T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "month_range_to_31st",
+        "expression": "every month on the 29th to 31st at 09:00",
+        "now": "2026-02-27T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "leap_day_named_from_leap_day_morning",
+        "expression": "on feb 29 at 09:00",
+        "now": "2028-02-29T08:00:00+00:00[UTC]"
+      },
+      {
+        "name": "leap_day_named_from_leap_day_evening",
+        "expression": "on feb 29 at 09:00",
+        "now": "2028-02-29T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "leap_day_yearly_from_non_leap_march",
+        "expression": "every year on feb 29 at 09:00",
+        "now": "2026-03-01T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "leap_day_every_2_years",
+        "expression": "every 2 years on feb 29 at 09:00",
+        "now": "2026-02-28T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "leap_day_except_named",
+        "expression": "every day at 09:00 except feb 29",
+        "now": "2028-02-28T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_fifth_friday_february",
+        "expression": "every year on the fifth friday of february at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "year_fifth_monday_february",
+        "expression": "every year on the fifth monday of february at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_previous_1st_now_before_cross",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00",
+        "now": "2026-02-20T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_previous_1st_now_after_cross",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00",
+        "now": "2026-02-28T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_previous_1st_during_now_after_cross",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00 during mar",
+        "now": "2026-02-28T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_previous_1st_during_two_months",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00 during jan, mar",
+        "now": "2026-02-26T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_next_31st_now_before_cross",
+        "expression": "every month on the next nearest weekday to 31st at 09:00",
+        "now": "2026-01-30T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_next_31st_now_after_cross",
+        "expression": "every month on the next nearest weekday to 31st at 09:00",
+        "now": "2026-02-03T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_next_31st_during_now_after_cross",
+        "expression": "every month on the next nearest weekday to 31st at 09:00 during may",
+        "now": "2026-06-02T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_next_31st_during_two_months",
+        "expression": "every month on the next nearest weekday to 31st at 09:00 during jan, mar",
+        "now": "2026-05-29T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_plain_31st_month_ends_sunday",
+        "expression": "every month on the nearest weekday to 31st at 09:00 during may",
+        "now": "2026-05-01T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_plain_1st_month_starts_saturday",
+        "expression": "every month on the nearest weekday to 1st at 09:00 during aug",
+        "now": "2026-07-15T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "nearest_every_2_months",
+        "expression": "every 2 months on the previous nearest weekday to 1st at 09:00",
+        "now": "2026-02-20T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_past",
+        "expression": "on 2026-01-01 at 00:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_now_on_it",
+        "expression": "on 2026-03-15 at 14:30",
+        "now": "2026-03-15T14:30:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_multi_time",
+        "expression": "on 2026-03-15 at 09:00, 09:01",
+        "now": "2026-03-15T08:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_passed_this_year",
+        "expression": "on jan 1 at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_named_with_iso_except",
+        "expression": "on mar 15 at 09:00 except 2026-03-15",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "single_iso_other_zone",
+        "expression": "on 2026-03-15 at 09:00 in America/New_York",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "gap_shift_collides_new_york",
+        "expression": "every day at 02:00, 03:00 in America/New_York",
+        "now": "2026-03-07T22:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "gap_shift_collides_lord_howe",
+        "expression": "every day at 02:00, 02:30 in Australia/Lord_Howe",
+        "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "contradictory_31st_during_feb",
+        "expression": "every month on the 31st at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "contradictory_30th_during_feb",
+        "expression": "every month on the 30th at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "contradictory_until_in_past",
+        "expression": "every day at 09:00 until 2020-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "contradictory_every_4_years_leap_day",
+        "expression": "every 4 years on feb 29 at 09:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "contradictory_ordinal_during_other_month",
+        "expression": "every year on the first monday of march at 09:00 during feb",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "contradictory_next_nearest_31st_during_june",
+        "expression": "every month on the next nearest weekday to 31st at 09:00 during jun",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "contradictory_except_only_date",
+        "expression": "on 2026-03-15 at 09:00 except 2026-03-15",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "contradictory_single_past_date",
+        "expression": "on 2020-01-01 at 00:00",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "new_york_gap_time_from_evening_before",
+        "expression": "every day at 02:30 in America/New_York",
+        "now": "2026-03-07T22:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_time_now_before_gap",
+        "expression": "every day at 02:30 in America/New_York",
+        "now": "2026-03-08T01:59:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_time_now_after_gap",
+        "expression": "every day at 02:30 in America/New_York",
+        "now": "2026-03-08T03:00:00-04:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_single_date",
+        "expression": "on 2026-03-08 at 02:30 in America/New_York",
+        "now": "2026-03-07T22:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_interval_30",
+        "expression": "every 30 min from 00:00 to 04:00 in America/New_York",
+        "now": "2026-03-07T22:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_interval_45",
+        "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+        "now": "2026-03-07T22:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_interval_45_now_after_gap",
+        "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+        "now": "2026-03-08T03:00:00-04:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_time_and_gap_end",
+        "expression": "every day at 02:30, 03:00 in America/New_York",
+        "now": "2026-03-07T22:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_gap_monthly",
+        "expression": "every month on the 8th at 02:30 in America/New_York",
+        "now": "2026-03-07T22:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_time_from_evening_before",
+        "expression": "every day at 01:30 in America/New_York",
+        "now": "2026-10-31T22:00:00-04:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_time_now_before_overlap",
+        "expression": "every day at 01:30 in America/New_York",
+        "now": "2026-11-01T00:59:00-04:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_time_now_first_pass",
+        "expression": "every day at 01:30 in America/New_York",
+        "now": "2026-11-01T01:10:00-04:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_time_now_second_pass",
+        "expression": "every day at 01:30 in America/New_York",
+        "now": "2026-11-01T01:10:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_time_now_after_overlap",
+        "expression": "every day at 01:30 in America/New_York",
+        "now": "2026-11-01T02:00:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_single_date",
+        "expression": "on 2026-11-01 at 01:30 in America/New_York",
+        "now": "2026-10-31T22:00:00-04:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_interval_30",
+        "expression": "every 30 min from 00:00 to 04:00 in America/New_York",
+        "now": "2026-10-31T22:00:00-04:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_interval_45_now_second_pass",
+        "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+        "now": "2026-11-01T01:10:00-05:00[America/New_York]"
+      },
+      {
+        "name": "new_york_overlap_times_around_overlap",
+        "expression": "every day at 00:00, 01:30, 02:00 in America/New_York",
+        "now": "2026-11-01T01:10:00-05:00[America/New_York]"
+      },
+      {
+        "name": "london_gap_time_from_evening_before",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-03-28T22:00:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_time_now_before_gap",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-03-29T00:59:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_time_now_after_gap",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-03-29T02:00:00+01:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_single_date",
+        "expression": "on 2026-03-29 at 01:30 in Europe/London",
+        "now": "2026-03-28T22:00:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_interval_30",
+        "expression": "every 30 min from 00:00 to 03:00 in Europe/London",
+        "now": "2026-03-28T22:00:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_interval_45",
+        "expression": "every 45 min from 00:00 to 03:00 in Europe/London",
+        "now": "2026-03-28T22:00:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_interval_45_now_after_gap",
+        "expression": "every 45 min from 00:00 to 03:00 in Europe/London",
+        "now": "2026-03-29T02:00:00+01:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_time_and_gap_end",
+        "expression": "every day at 01:30, 02:00 in Europe/London",
+        "now": "2026-03-28T22:00:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_gap_monthly",
+        "expression": "every month on the 29th at 01:30 in Europe/London",
+        "now": "2026-03-28T22:00:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_time_from_evening_before",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-10-24T22:00:00+01:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_time_now_before_overlap",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-10-25T00:59:00+01:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_time_now_first_pass",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-10-25T01:10:00+01:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_time_now_second_pass",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-10-25T01:10:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_time_now_after_overlap",
+        "expression": "every day at 01:30 in Europe/London",
+        "now": "2026-10-25T02:00:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_single_date",
+        "expression": "on 2026-10-25 at 01:30 in Europe/London",
+        "now": "2026-10-24T22:00:00+01:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_interval_30",
+        "expression": "every 30 min from 00:00 to 03:00 in Europe/London",
+        "now": "2026-10-24T22:00:00+01:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_interval_45_now_second_pass",
+        "expression": "every 45 min from 00:00 to 03:00 in Europe/London",
+        "now": "2026-10-25T01:10:00+00:00[Europe/London]"
+      },
+      {
+        "name": "london_overlap_times_around_overlap",
+        "expression": "every day at 00:00, 01:30, 02:00 in Europe/London",
+        "now": "2026-10-25T01:10:00+00:00[Europe/London]"
+      },
+      {
+        "name": "berlin_gap_time_from_evening_before",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-03-28T22:00:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_time_now_before_gap",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-03-29T01:59:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_time_now_after_gap",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-03-29T03:00:00+02:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_single_date",
+        "expression": "on 2026-03-29 at 02:30 in Europe/Berlin",
+        "now": "2026-03-28T22:00:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_interval_30",
+        "expression": "every 30 min from 01:00 to 04:00 in Europe/Berlin",
+        "now": "2026-03-28T22:00:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_interval_45",
+        "expression": "every 45 min from 01:00 to 04:00 in Europe/Berlin",
+        "now": "2026-03-28T22:00:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_interval_45_now_after_gap",
+        "expression": "every 45 min from 01:00 to 04:00 in Europe/Berlin",
+        "now": "2026-03-29T03:00:00+02:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_time_and_gap_end",
+        "expression": "every day at 02:30, 03:00 in Europe/Berlin",
+        "now": "2026-03-28T22:00:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_gap_monthly",
+        "expression": "every month on the 29th at 02:30 in Europe/Berlin",
+        "now": "2026-03-28T22:00:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_time_from_evening_before",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-10-24T22:00:00+02:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_time_now_before_overlap",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-10-25T01:59:00+02:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_time_now_first_pass",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-10-25T02:10:00+02:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_time_now_second_pass",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-10-25T02:10:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_time_now_after_overlap",
+        "expression": "every day at 02:30 in Europe/Berlin",
+        "now": "2026-10-25T03:00:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_single_date",
+        "expression": "on 2026-10-25 at 02:30 in Europe/Berlin",
+        "now": "2026-10-24T22:00:00+02:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_interval_30",
+        "expression": "every 30 min from 01:00 to 04:00 in Europe/Berlin",
+        "now": "2026-10-24T22:00:00+02:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_interval_45_now_second_pass",
+        "expression": "every 45 min from 01:00 to 04:00 in Europe/Berlin",
+        "now": "2026-10-25T02:10:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "berlin_overlap_times_around_overlap",
+        "expression": "every day at 01:00, 02:30, 03:00 in Europe/Berlin",
+        "now": "2026-10-25T02:10:00+01:00[Europe/Berlin]"
+      },
+      {
+        "name": "sydney_gap_time_from_evening_before",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-10-03T22:00:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_time_now_before_gap",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-10-04T01:59:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_time_now_after_gap",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-10-04T03:00:00+11:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_single_date",
+        "expression": "on 2026-10-04 at 02:30 in Australia/Sydney",
+        "now": "2026-10-03T22:00:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_interval_30",
+        "expression": "every 30 min from 01:00 to 04:00 in Australia/Sydney",
+        "now": "2026-10-03T22:00:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_interval_45",
+        "expression": "every 45 min from 01:00 to 04:00 in Australia/Sydney",
+        "now": "2026-10-03T22:00:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_interval_45_now_after_gap",
+        "expression": "every 45 min from 01:00 to 04:00 in Australia/Sydney",
+        "now": "2026-10-04T03:00:00+11:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_time_and_gap_end",
+        "expression": "every day at 02:30, 03:00 in Australia/Sydney",
+        "now": "2026-10-03T22:00:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_gap_monthly",
+        "expression": "every month on the 4th at 02:30 in Australia/Sydney",
+        "now": "2026-10-03T22:00:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_time_from_evening_before",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-04-04T22:00:00+11:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_time_now_before_overlap",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-04-05T01:59:00+11:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_time_now_first_pass",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-04-05T02:10:00+11:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_time_now_second_pass",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-04-05T02:10:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_time_now_after_overlap",
+        "expression": "every day at 02:30 in Australia/Sydney",
+        "now": "2026-04-05T03:00:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_single_date",
+        "expression": "on 2026-04-05 at 02:30 in Australia/Sydney",
+        "now": "2026-04-04T22:00:00+11:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_interval_30",
+        "expression": "every 30 min from 01:00 to 04:00 in Australia/Sydney",
+        "now": "2026-04-04T22:00:00+11:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_interval_45_now_second_pass",
+        "expression": "every 45 min from 01:00 to 04:00 in Australia/Sydney",
+        "now": "2026-04-05T02:10:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "sydney_overlap_times_around_overlap",
+        "expression": "every day at 01:00, 02:30, 03:00 in Australia/Sydney",
+        "now": "2026-04-05T02:10:00+10:00[Australia/Sydney]"
+      },
+      {
+        "name": "lord_howe_gap_time_from_evening_before",
+        "expression": "every day at 02:15 in Australia/Lord_Howe",
+        "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_time_now_before_gap",
+        "expression": "every day at 02:15 in Australia/Lord_Howe",
+        "now": "2026-10-04T01:59:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_time_now_after_gap",
+        "expression": "every day at 02:15 in Australia/Lord_Howe",
+        "now": "2026-10-04T02:30:00+11:00[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_single_date",
+        "expression": "on 2026-10-04 at 02:15 in Australia/Lord_Howe",
+        "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_interval_30",
+        "expression": "every 30 min from 01:00 to 03:00 in Australia/Lord_Howe",
+        "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_interval_45",
+        "expression": "every 45 min from 01:00 to 03:00 in Australia/Lord_Howe",
+        "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_interval_45_now_after_gap",
+        "expression": "every 45 min from 01:00 to 03:00 in Australia/Lord_Howe",
+        "now": "2026-10-04T02:30:00+11:00[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_time_and_gap_end",
+        "expression": "every day at 02:15, 02:30 in Australia/Lord_Howe",
+        "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_gap_monthly",
+        "expression": "every month on the 4th at 02:15 in Australia/Lord_Howe",
+        "now": "2026-10-03T22:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_time_from_evening_before",
+        "expression": "every day at 01:45 in Australia/Lord_Howe",
+        "now": "2026-04-04T22:00:00+11:00[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_time_now_before_overlap",
+        "expression": "every day at 01:45 in Australia/Lord_Howe",
+        "now": "2026-04-05T01:29:00+11:00[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_time_now_first_pass",
+        "expression": "every day at 01:45 in Australia/Lord_Howe",
+        "now": "2026-04-05T01:40:00+11:00[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_time_now_second_pass",
+        "expression": "every day at 01:45 in Australia/Lord_Howe",
+        "now": "2026-04-05T01:40:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_time_now_after_overlap",
+        "expression": "every day at 01:45 in Australia/Lord_Howe",
+        "now": "2026-04-05T02:00:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_single_date",
+        "expression": "on 2026-04-05 at 01:45 in Australia/Lord_Howe",
+        "now": "2026-04-04T22:00:00+11:00[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_interval_30",
+        "expression": "every 30 min from 01:00 to 03:00 in Australia/Lord_Howe",
+        "now": "2026-04-04T22:00:00+11:00[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_interval_45_now_second_pass",
+        "expression": "every 45 min from 01:00 to 03:00 in Australia/Lord_Howe",
+        "now": "2026-04-05T01:40:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "lord_howe_overlap_times_around_overlap",
+        "expression": "every day at 01:00, 01:45, 02:00 in Australia/Lord_Howe",
+        "now": "2026-04-05T01:40:00+10:30[Australia/Lord_Howe]"
       }
     ]
   }
