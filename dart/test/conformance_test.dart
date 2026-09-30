@@ -12,10 +12,6 @@ late Map<String, dynamic> spec;
 late TZDateTime defaultNow;
 
 TZDateTime parseZoned(String s) {
-  // Format: 2026-02-06T12:00:00+00:00[UTC]
-  // Or: 2026-02-06T09:00:00-05:00[America/New_York]
-  // Or: 2026-03-08T03:00:00-04:00[America/New_York] (DST spring forward)
-
   final bracketIdx = s.indexOf('[');
   String tzName;
   String isoStr;
@@ -55,19 +51,13 @@ String formatZoned(TZDateTime dt) {
 void main() {
   tz.initializeTimeZones();
 
-  // Find spec/tests.json relative to the dart/ directory
   var dir = Directory.current.path;
-  // If we're inside dart/, go up one level
   if (p.basename(dir) == 'dart') {
     dir = p.dirname(dir);
   }
   final specPath = p.join(dir, 'spec', 'tests.json');
   spec = jsonDecode(File(specPath).readAsStringSync()) as Map<String, dynamic>;
   defaultNow = parseZoned(spec['now'] as String);
-
-  // =========================================================================
-  // Parse conformance
-  // =========================================================================
 
   group('parse roundtrip', () {
     const parseSections = [
@@ -123,12 +113,7 @@ void main() {
     }
   });
 
-  // =========================================================================
-  // Eval conformance
-  // =========================================================================
-
   group('eval', () {
-    // Dynamically discover eval sections (skip non-test entries)
     const skipSections = {
       'description',
       'matches',
@@ -155,7 +140,6 @@ void main() {
                 ? parseZoned(tc['now'] as String)
                 : defaultNow;
 
-            // next (full timestamp)
             if (tc.containsKey('next')) {
               final result = schedule.nextFrom(now);
               if (tc['next'] == null) {
@@ -166,7 +150,6 @@ void main() {
               }
             }
 
-            // next_date (date-only check)
             if (tc.containsKey('next_date')) {
               final result = schedule.nextFrom(now);
               expect(result, isNotNull);
@@ -175,7 +158,6 @@ void main() {
               expect(dateStr, equals(tc['next_date']));
             }
 
-            // next_n (list of timestamps)
             if (tc.containsKey('next_n')) {
               final expected = (tc['next_n'] as List<dynamic>).cast<String>();
               final nCount = (tc['next_n_count'] ?? expected.length) as int;
@@ -186,7 +168,6 @@ void main() {
               }
             }
 
-            // next_n_length (just check count)
             if (tc.containsKey('next_n_length')) {
               final expectedLen = tc['next_n_length'] as int;
               final nCount = tc['next_n_count'] as int;
@@ -233,10 +214,6 @@ void main() {
     }
   });
 
-  // =========================================================================
-  // Occurrences conformance
-  // =========================================================================
-
   group('occurrences', () {
     final evalMap = spec['eval'] as Map<String, dynamic>;
     final occurrencesData = evalMap['occurrences'] as Map<String, dynamic>;
@@ -262,10 +239,6 @@ void main() {
       });
     }
   });
-
-  // =========================================================================
-  // Between conformance
-  // =========================================================================
 
   group('between', () {
     final evalMap = spec['eval'] as Map<String, dynamic>;
@@ -297,10 +270,6 @@ void main() {
     }
   });
 
-  // =========================================================================
-  // Eval errors conformance
-  // =========================================================================
-
   group('eval errors', () {
     final evalErrors = spec['eval_errors'] as Map<String, dynamic>;
     final tests = evalErrors['tests'] as List<dynamic>;
@@ -320,10 +289,6 @@ void main() {
       });
     }
   });
-
-  // =========================================================================
-  // Cron conformance
-  // =========================================================================
 
   group('cron', () {
     final cronMap = spec['cron'] as Map<String, dynamic>;

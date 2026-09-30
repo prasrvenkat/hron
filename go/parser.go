@@ -5,14 +5,13 @@ import (
 	"time"
 )
 
-// parser is the internal parser state.
 type parser struct {
 	tokens []Token
 	pos    int
 	input  string
 }
 
-// Parse parses an hron expression string into a ScheduleData.
+// Parse parses an hron expression into ScheduleData, or returns a *HronError.
 func Parse(input string) (*ScheduleData, error) {
 	tokens, err := Tokenize(input)
 	if err != nil {
@@ -97,8 +96,6 @@ func (p *parser) consume(expected string, kind TokenKind) (*Token, error) {
 	return nil, p.errorAtEnd(fmt.Sprintf("expected %s", expected))
 }
 
-// --- Grammar productions ---
-
 func (p *parser) parseExpression() (*ScheduleData, error) {
 	span := p.currentSpan()
 	kind := p.peekKind()
@@ -127,7 +124,6 @@ func (p *parser) parseExpression() (*ScheduleData, error) {
 func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) {
 	schedule := NewScheduleData(expr)
 
-	// except
 	if p.peekKind() == TokenExcept {
 		p.advance()
 		exceptions, err := p.parseExceptionList()
@@ -137,7 +133,6 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 		schedule.Except = exceptions
 	}
 
-	// until
 	if p.peekKind() == TokenUntil {
 		p.advance()
 		until, err := p.parseUntilSpec()
@@ -147,7 +142,6 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 		schedule.Until = &until
 	}
 
-	// starting
 	if p.peekKind() == TokenStarting {
 		p.advance()
 		if p.peekKind() == TokenISODate {
@@ -161,7 +155,6 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 		}
 	}
 
-	// during
 	if p.peekKind() == TokenDuring {
 		p.advance()
 		months, err := p.parseMonthList()
@@ -171,7 +164,6 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 		schedule.During = months
 	}
 
-	// in <timezone>
 	if p.peekKind() == TokenIn {
 		p.advance()
 		if p.peekKind() == TokenTimezone {
@@ -308,7 +300,6 @@ func (p *parser) parseDayNumber(errorMsg string) (int, error) {
 	}
 }
 
-// After "every": dispatch
 func (p *parser) parseEvery() (ScheduleExpr, error) {
 	if p.peek() == nil {
 		return ScheduleExpr{}, p.errorAtEnd("expected repeater")
@@ -467,7 +458,6 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 			p.advance()
 			target = NewLastWeekdayTarget()
 		case TokenDayName:
-			// "last monday" etc.
 			tok := p.peek()
 			weekday := tok.DayNameVal
 			p.advance()
@@ -476,7 +466,6 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 			return ScheduleExpr{}, p.error("expected 'day', 'weekday', or day name after 'last'", p.currentSpan())
 		}
 	case TokenOrdinal:
-		// "first monday", "second tuesday", etc.
 		ordinal, err := p.parseOrdinalPosition()
 		if err != nil {
 			return ScheduleExpr{}, err
@@ -518,7 +507,6 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 }
 
 func (p *parser) parseNearestWeekdayTarget() (MonthTarget, error) {
-	// Optional direction: "next" or "previous"
 	direction := NearestNone
 	switch p.peekKind() {
 	case TokenNext:

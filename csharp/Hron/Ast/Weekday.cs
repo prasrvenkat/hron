@@ -54,9 +54,6 @@ public static class WeekdayExtensions
         _ => throw new ArgumentOutOfRangeException(nameof(weekday))
     };
 
-    /// <summary>
-    /// Returns the lowercase display name.
-    /// </summary>
     public static string ToDisplayString(this Weekday weekday) => weekday.ToString().ToLowerInvariant();
 
     /// <summary>
@@ -71,9 +68,6 @@ public static class WeekdayExtensions
     public static Weekday? FromNumber(int n)
         => n is >= 1 and <= 7 ? (Weekday)n : null;
 
-    /// <summary>
-    /// Returns a Weekday from a DayOfWeek.
-    /// </summary>
     public static Weekday FromDayOfWeek(DayOfWeek dow) => dow switch
     {
         DayOfWeek.Monday => Weekday.Monday,
@@ -86,9 +80,6 @@ public static class WeekdayExtensions
         _ => throw new ArgumentOutOfRangeException(nameof(dow))
     };
 
-    /// <summary>
-    /// Converts this Weekday to a DayOfWeek.
-    /// </summary>
     public static DayOfWeek ToDayOfWeek(this Weekday weekday) => weekday switch
     {
         Weekday.Monday => DayOfWeek.Monday,

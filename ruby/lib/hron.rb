@@ -12,7 +12,7 @@ require_relative "hron/schedule"
 
 module Hron
   class << self
-    # Parse a hron expression and return a Schedule
+    # Parses a hron expression into a Schedule. Raises HronError if it is invalid.
     def parse_schedule(input)
       Schedule.parse(input)
     end
@@ -22,7 +22,7 @@ module Hron
       Schedule.validate(input)
     end
 
-    # Parse from a cron expression
+    # Parses a 5-field cron expression into a Schedule. Raises HronError if it is invalid.
     def from_cron(cron_expr)
       Schedule.from_cron(cron_expr)
     end

@@ -136,8 +136,6 @@ class _Parser:
             raise self._error(f"expected {expected}, got {type(tok.kind).__name__}", span)
         raise self._error_at_end(f"expected {expected}")
 
-    # --- Grammar productions ---
-
     def parse_expression(self) -> ScheduleData:
         span = self.current_span()
         kind = self.peek_kind()
@@ -157,17 +155,14 @@ class _Parser:
     def _parse_trailing_clauses(self, expr: ScheduleExpr) -> ScheduleData:
         schedule = new_schedule_data(expr)
 
-        # except
         if isinstance(self.peek_kind(), TExcept):
             self.advance()
             schedule.except_ = tuple(self._parse_exception_list())
 
-        # until
         if isinstance(self.peek_kind(), TUntil):
             self.advance()
             schedule.until = self._parse_until_spec()
 
-        # starting
         if isinstance(self.peek_kind(), TStarting):
             self.advance()
             k = self.peek_kind()
@@ -180,12 +175,10 @@ class _Parser:
                     "expected ISO date (YYYY-MM-DD) after 'starting'", self.current_span()
                 )
 
-        # during
         if isinstance(self.peek_kind(), TDuring):
             self.advance()
             schedule.during = tuple(self._parse_month_list())
 
-        # in <timezone>
         if isinstance(self.peek_kind(), TIn):
             self.advance()
             k = self.peek_kind()
@@ -282,7 +275,6 @@ class _Parser:
             return k.value
         raise self._error(error_msg, self.current_span())
 
-    # After "every": dispatch
     def _parse_every(self) -> ScheduleExpr:
         if not self.peek():
             raise self._error_at_end("expected repeater")
@@ -431,7 +423,6 @@ class _Parser:
         return MonthRepeat(interval, target, tuple(times))
 
     def _parse_nearest_weekday_target(self) -> NearestWeekdayTarget:
-        """Parse [next|previous] nearest weekday to <day>."""
         k = self.peek_kind()
         direction: NearestDirection | None = None
 

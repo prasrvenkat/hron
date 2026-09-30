@@ -58,7 +58,6 @@ module Hron
     end
   end
 
-  # Month name enumeration
   module MonthName
     JAN = :jan
     FEB = :feb
@@ -114,7 +113,6 @@ module Hron
     end
   end
 
-  # Interval unit (minutes or hours)
   module IntervalUnit
     MIN = :min
     HOURS = :hours
@@ -124,7 +122,6 @@ module Hron
     end
   end
 
-  # Ordinal position (first, second, etc.)
   module OrdinalPosition
     FIRST = :first
     SECOND = :second
@@ -146,33 +143,24 @@ module Hron
     end
   end
 
-  # Time of day (hour and minute)
   TimeOfDay = Data.define(:hour, :minute) do
     def to_s
       format("%02d:%02d", hour, minute)
     end
   end
 
-  # --- Day filter variants ---
-
   DayFilterEvery = Data.define
   DayFilterWeekday = Data.define
   DayFilterWeekend = Data.define
   DayFilterDays = Data.define(:days) # days: Array<Weekday>
 
-  # --- Day of month spec ---
-
   SingleDay = Data.define(:day)
   DayRange = Data.define(:start, :end_day) # end_day to avoid Ruby keyword
-
-  # --- Direction for nearest weekday ---
 
   module NearestDirection
     NEXT = :next
     PREVIOUS = :previous
   end
-
-  # --- Month target variants ---
 
   DaysTarget = Data.define(:specs) # specs: Array<DayOfMonthSpec>
   LastDayTarget = Data.define
@@ -180,29 +168,19 @@ module Hron
   NearestWeekdayTarget = Data.define(:day, :direction) # day: 1-31, direction: nil or NearestDirection
   OrdinalWeekdayTarget = Data.define(:ordinal, :weekday)
 
-  # --- Year target variants ---
-
   YearDateTarget = Data.define(:month, :day)
   YearOrdinalWeekdayTarget = Data.define(:ordinal, :weekday, :month)
   YearDayOfMonthTarget = Data.define(:day, :month)
   YearLastWeekdayTarget = Data.define(:month)
 
-  # --- Date spec variants ---
-
   NamedDate = Data.define(:month, :day)
   IsoDate = Data.define(:date) # date: String (YYYY-MM-DD)
-
-  # --- Exception spec variants ---
 
   NamedException = Data.define(:month, :day)
   IsoException = Data.define(:date)
 
-  # --- Until spec variants ---
-
   IsoUntil = Data.define(:date)
   NamedUntil = Data.define(:month, :day)
-
-  # --- Schedule expression variants ---
 
   IntervalRepeat = Data.define(:interval, :unit, :from_time, :to_time, :day_filter)
   DayRepeat = Data.define(:interval, :days, :times)
@@ -211,15 +189,11 @@ module Hron
   SingleDateExpr = Data.define(:date, :times)
   YearRepeat = Data.define(:interval, :target, :times)
 
-  # --- Schedule data (top-level) ---
-
   ScheduleData = Data.define(:expr, :timezone, :except, :until, :anchor, :during) do
     def initialize(expr:, timezone: nil, except: [], until: nil, anchor: nil, during: [])
       super
     end
   end
-
-  # --- Helper functions ---
 
   def self.expand_day_spec(spec)
     case spec

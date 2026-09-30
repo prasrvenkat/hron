@@ -1,5 +1,5 @@
-/// Build script: generates individual `#[test]` functions from spec/tests.json
-/// so each conformance case appears separately in `cargo test` output.
+//! Generates one `#[test]` per case in spec/tests.json, so each conformance case
+//! appears separately in `cargo test` output.
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -16,7 +16,6 @@ fn main() {
     let dest = Path::new(&out_dir).join("conformance_tests.rs");
     let mut f = fs::File::create(&dest).unwrap();
 
-    // --- Parse roundtrip ---
     let parse = &spec["parse"];
     for section in [
         "day_repeat",
@@ -45,14 +44,12 @@ fn main() {
         }
     }
 
-    // --- Parse errors ---
     for (i, case) in iter_tests(&spec["parse_errors"]).enumerate() {
         let name = test_name(case, i);
         emit_flat(&mut f, &format!("parse_error_{name}"), "run_parse_error", i);
     }
 
-    // --- Eval ---
-    // Dynamically discover eval sections (skip non-test entries like "description")
+    // `description` holds no tests; the other skipped sections have their own runners below.
     let eval = &spec["eval"];
     let skip_eval_sections = [
         "description",
@@ -80,7 +77,6 @@ fn main() {
         }
     }
 
-    // --- Eval matches ---
     for (i, case) in iter_tests(&eval["matches"]).enumerate() {
         let name = test_name(case, i);
         emit_flat(
@@ -91,7 +87,6 @@ fn main() {
         );
     }
 
-    // --- Eval occurrences ---
     for (i, case) in iter_tests(&eval["occurrences"]).enumerate() {
         let name = test_name(case, i);
         emit_flat(
@@ -102,7 +97,6 @@ fn main() {
         );
     }
 
-    // --- Eval between ---
     for (i, case) in iter_tests(&eval["between"]).enumerate() {
         let name = test_name(case, i);
         emit_flat(
@@ -113,7 +107,6 @@ fn main() {
         );
     }
 
-    // --- Eval previous_from ---
     for (i, case) in iter_tests(&eval["previous_from"]).enumerate() {
         let name = test_name(case, i);
         emit_flat(
@@ -124,7 +117,6 @@ fn main() {
         );
     }
 
-    // --- Eval errors ---
     if let Some(eval_errors) = spec.get("eval_errors") {
         for (i, case) in iter_tests(eval_errors).enumerate() {
             let name = test_name(case, i);
@@ -132,7 +124,6 @@ fn main() {
         }
     }
 
-    // --- Cron ---
     let cron = &spec["cron"];
     for (i, case) in iter_tests(&cron["to_cron"]).enumerate() {
         let name = test_name(case, i);
@@ -207,7 +198,6 @@ fn sanitize(name: &str) -> String {
             }
         })
         .collect();
-    // collapse consecutive underscores, trim trailing
     let mut result = String::new();
     let mut prev_underscore = false;
     for c in s.chars() {

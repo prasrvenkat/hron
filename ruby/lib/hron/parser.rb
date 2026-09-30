@@ -6,7 +6,6 @@ require_relative "error"
 require_relative "lexer"
 
 module Hron
-  # Parser for hron expressions
   class Parser
     def initialize(tokens, input)
       @tokens = tokens
@@ -79,8 +78,6 @@ module Hron
       raise error_at_end("expected #{expected}")
     end
 
-    # --- Grammar productions ---
-
     def parse_expression
       span = current_span
       kind = peek_kind
@@ -102,7 +99,6 @@ module Hron
     def parse_trailing_clauses(expr)
       schedule = ScheduleData.new(expr: expr)
 
-      # except
       if peek_kind == TokenKind::EXCEPT
         advance
         schedule = ScheduleData.new(
@@ -115,7 +111,6 @@ module Hron
         )
       end
 
-      # until
       if peek_kind == TokenKind::UNTIL
         advance
         schedule = ScheduleData.new(
@@ -128,7 +123,6 @@ module Hron
         )
       end
 
-      # starting
       if peek_kind == TokenKind::STARTING
         advance
         k = peek_kind
@@ -148,7 +142,6 @@ module Hron
 
       end
 
-      # during
       if peek_kind == TokenKind::DURING
         advance
         schedule = ScheduleData.new(
@@ -161,7 +154,6 @@ module Hron
         )
       end
 
-      # in <timezone>
       if peek_kind == TokenKind::IN
         advance
         k = peek_kind
@@ -273,7 +265,6 @@ module Hron
       raise error(error_msg, current_span)
     end
 
-    # After "every": dispatch
     def parse_every
       raise error_at_end("expected repeater") unless peek
 
@@ -611,7 +602,6 @@ module Hron
     def parse_nearest_weekday_target
       k = peek_kind
 
-      # Optional direction: "next" or "previous"
       direction = nil
       if k == TokenKind::NEXT
         advance
@@ -625,7 +615,6 @@ module Hron
       consume_keyword("'weekday'", TokenKind::WEEKDAY_KW)
       consume_keyword("'to'", TokenKind::TO)
 
-      # Parse the day number (ordinal like 15th)
       k = peek_kind
       if k.is_a?(TOrdinalNumber)
         day = k.value

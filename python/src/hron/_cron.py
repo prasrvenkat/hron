@@ -75,7 +75,6 @@ def to_cron(schedule: ScheduleData) -> str:
                         f"not expressible as cron (*/{interval} breaks at hour boundaries)"
                     )
                 return f"*/{interval} * * * *"
-            # hours
             return f"0 */{interval} * * *"
 
         case WeekRepeat():
@@ -146,16 +145,13 @@ def _day_filter_to_cron_dow(f: DayFilter) -> str:
             return ",".join(str(n) for n in nums)
 
 
-# ============================================================================
-# from_cron: Parse 5-field cron expressions (and @ shortcuts)
-# ============================================================================
-
-
 def from_cron(cron: str) -> ScheduleData:
-    """Parse a 5-field cron expression into a ScheduleData."""
+    """Parse a 5-field cron expression, or an @ shortcut such as @daily, into ScheduleData.
+
+    Raises HronError if the expression is invalid.
+    """
     trimmed = cron.strip()
 
-    # Handle @ shortcuts first
     if trimmed.startswith("@"):
         return _parse_cron_shortcut(trimmed)
 
@@ -169,22 +165,18 @@ def from_cron(cron: str) -> ScheduleData:
     dom_field = "*" if dom_field_raw == "?" else dom_field_raw
     dow_field = "*" if dow_field_raw == "?" else dow_field_raw
 
-    # Parse month field into during clause
     during = _parse_month_field(month_field)
 
-    # Check for special DOW patterns: nth weekday (#), last weekday (5L)
     nth_weekday_result = _try_parse_nth_weekday(
         minute_field, hour_field, dom_field, dow_field, during
     )
     if nth_weekday_result is not None:
         return nth_weekday_result
 
-    # Check for L (last day) or LW (last weekday) in DOM
     last_day_result = _try_parse_last_day(minute_field, hour_field, dom_field, dow_field, during)
     if last_day_result is not None:
         return last_day_result
 
-    # Check for W (nearest weekday): e.g., 15W, 1W
     if dom_field.endswith("W") and dom_field != "LW":
         nearest_weekday_result = _try_parse_nearest_weekday(
             minute_field, hour_field, dom_field, dow_field, during
@@ -192,24 +184,20 @@ def from_cron(cron: str) -> ScheduleData:
         if nearest_weekday_result is not None:
             return nearest_weekday_result
 
-    # Check for interval patterns: */N or range/N
     interval_result = _try_parse_interval(minute_field, hour_field, dom_field, dow_field, during)
     if interval_result is not None:
         return interval_result
 
-    # Standard time-based cron
     minute = _parse_single_value(minute_field, "minute", 0, 59)
     hour = _parse_single_value(hour_field, "hour", 0, 23)
     time = TimeOfDay(hour, minute)
 
-    # DOM-based (monthly) - when DOM is specified and DOW is *
     if dom_field != "*" and dow_field == "*":
         target = _parse_dom_field(dom_field)
         schedule = new_schedule_data(MonthRepeat(interval=1, target=target, times=(time,)))
         schedule.during = during
         return schedule
 
-    # DOW-based (day repeat)
     days = _parse_cron_dow(dow_field)
     schedule = new_schedule_data(DayRepeat(interval=1, days=days, times=(time,)))
     schedule.during = during
@@ -217,7 +205,6 @@ def from_cron(cron: str) -> ScheduleData:
 
 
 def _parse_cron_shortcut(cron: str) -> ScheduleData:
-    """Parse @ shortcuts like @daily, @hourly, etc."""
     lower = cron.lower()
     match lower:
         case "@yearly" | "@annually":
@@ -267,7 +254,6 @@ def _parse_cron_shortcut(cron: str) -> ScheduleData:
 
 
 def _parse_month_field(field: str) -> tuple[MonthName, ...]:
-    """Parse month field into a tuple of MonthName for the `during` clause."""
     if field == "*":
         return ()
 
@@ -298,7 +284,6 @@ def _parse_month_field(field: str) -> tuple[MonthName, ...]:
                 months.append(_month_from_number(n))
                 n += step
         elif "-" in part:
-            # Range like 1-3 or JAN-MAR
             start_str, end_str = part.split("-", 1)
             start_month = _parse_month_value(start_str)
             end_month = _parse_month_value(end_str)
@@ -311,21 +296,17 @@ def _parse_month_field(field: str) -> tuple[MonthName, ...]:
             for n in range(start_num, end_num + 1):
                 months.append(_month_from_number(n))
         else:
-            # Single month
             months.append(_parse_month_value(part))
 
     return tuple(months)
 
 
 def _parse_month_value(s: str) -> MonthName:
-    """Parse a single month value (number 1-12 or name JAN-DEC)."""
-    # Try as number first
     try:
         n = int(s)
         return _month_from_number(n)
     except ValueError:
         pass
-    # Try as name
     result = MonthName.try_parse(s)
     if result is None:
         raise HronError.cron(f"invalid month: {s}")
@@ -333,7 +314,6 @@ def _parse_month_value(s: str) -> MonthName:
 
 
 def _month_from_number(n: int) -> MonthName:
-    """Convert month number (1-12) to MonthName."""
     match n:
         case 1:
             return MonthName.JAN
@@ -371,7 +351,6 @@ def _try_parse_nth_weekday(
     during: tuple[MonthName, ...],
 ) -> ScheduleData | None:
     """Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday)."""
-    # Check for # pattern (nth weekday of month)
     if "#" in dow_field:
         dow_str, nth_str = dow_field.split("#", 1)
         dow_num = _parse_dow_value(dow_str)
@@ -510,8 +489,6 @@ def _try_parse_interval(
     dow_field: str,
     during: tuple[MonthName, ...],
 ) -> ScheduleData | None:
-    """Try to parse interval patterns: */N, range/N in minute or hour fields."""
-    # Minute interval: */N or range/N
     if "/" in minute_field:
         range_part, step_str = minute_field.split("/", 1)
 
@@ -541,7 +518,6 @@ def _try_parse_interval(
                 raise HronError.cron("invalid minute value") from None
             to_minute = 59
 
-        # Determine the hour window
         if hour_field == "*":
             from_hour, to_hour = 0, 23
         elif "-" in hour_field and "/" not in hour_field:
@@ -552,7 +528,6 @@ def _try_parse_interval(
             except ValueError:
                 raise HronError.cron("invalid hour range") from None
         elif "/" in hour_field:
-            # Hour also has step - complex, skip
             return None
         else:
             try:
@@ -565,12 +540,10 @@ def _try_parse_interval(
         day_filter = None if dow_field == "*" else _parse_cron_dow(dow_field)
 
         if dom_field == "*" or dom_field == "?":
-            # Determine end minute based on context
             if from_minute == 0 and to_minute == 59 and to_hour == 23:
-                # Full day: 00:00 to 23:59
                 end_minute = 59
             elif from_minute == 0 and to_minute == 59:
-                # Partial day with full minutes range: use :00 for cleaner output
+                # `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
                 end_minute = 0
             else:
                 end_minute = to_minute
@@ -587,7 +560,6 @@ def _try_parse_interval(
             schedule.during = during
             return schedule
 
-    # Hour interval: 0 */N or 0 range/N
     if "/" in hour_field and minute_field in ("0", "00"):
         range_part, step_str = hour_field.split("/", 1)
 
@@ -617,7 +589,6 @@ def _try_parse_interval(
             to_hour = 23
 
         if (dom_field == "*" or dom_field == "?") and (dow_field == "*" or dow_field == "?"):
-            # Use :59 only for full day (00:00 to 23:59), otherwise use :00
             end_minute = 59 if from_hour == 0 and to_hour == 23 else 0
 
             schedule = new_schedule_data(
@@ -636,12 +607,10 @@ def _try_parse_interval(
 
 
 def _parse_dom_field(field: str) -> DaysTarget:
-    """Parse a DOM field into a DaysTarget."""
     specs: list[SingleDay | DayRange] = []
 
     for part in field.split(","):
         if "/" in part:
-            # Step value: 1-31/2 or */5
             range_part, step_str = part.split("/", 1)
 
             if range_part == "*":
@@ -680,7 +649,6 @@ def _parse_dom_field(field: str) -> DaysTarget:
                 specs.append(SingleDay(d))
                 d += step
         elif "-" in part:
-            # Range: 1-5
             start_str, end_str = part.split("-", 1)
             try:
                 start = int(start_str)
@@ -696,7 +664,6 @@ def _parse_dom_field(field: str) -> DaysTarget:
             _validate_dom(end)
             specs.append(DayRange(start, end))
         else:
-            # Single: 15
             try:
                 day = int(part)
             except ValueError:
@@ -708,13 +675,11 @@ def _parse_dom_field(field: str) -> DaysTarget:
 
 
 def _validate_dom(day: int) -> None:
-    """Validate day of month is in valid range."""
     if day < 1 or day > 31:
         raise HronError.cron(f"DOM must be 1-31, got {day}")
 
 
 def _parse_cron_dow(field: str) -> DayFilter:
-    """Parse a DOW field into a DayFilter."""
     if field == "*":
         return DayFilterEvery()
 
@@ -722,7 +687,6 @@ def _parse_cron_dow(field: str) -> DayFilter:
 
     for part in field.split(","):
         if "/" in part:
-            # Step value: 0-6/2 or */2
             range_part, step_str = part.split("/", 1)
 
             if range_part == "*":
@@ -750,22 +714,19 @@ def _parse_cron_dow(field: str) -> DayFilter:
                 days.append(_cron_dow_to_weekday(normalized))
                 d += step
         elif "-" in part:
-            # Range: 1-5 or MON-FRI (parse without normalizing 7 for range checking)
+            # Parse without normalizing 7 to 0 for range purposes
             start_str, end_str = part.split("-", 1)
             start = _parse_dow_value_raw(start_str)
             end = _parse_dow_value_raw(end_str)
             if start > end:
                 raise HronError.cron(f"range start must be <= end: {start_str}-{end_str}")
             for d in range(start, end + 1):
-                # Normalize 7 to 0 (Sunday) when converting to weekday
                 normalized = 0 if d == 7 else d
                 days.append(_cron_dow_to_weekday(normalized))
         else:
-            # Single: 1 or MON
             dow = _parse_dow_value(part)
             days.append(_cron_dow_to_weekday(dow))
 
-    # Check for special patterns
     if len(days) == 5:
         sorted_days = sorted(days, key=lambda d: d.number)
         sorted_weekdays = sorted(ALL_WEEKDAYS, key=lambda d: d.number)
@@ -782,15 +743,12 @@ def _parse_cron_dow(field: str) -> DayFilter:
 
 
 def _parse_dow_value(s: str) -> int:
-    """Parse a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0."""
     raw = _parse_dow_value_raw(s)
     # Normalize 7 to 0 (both mean Sunday)
     return 0 if raw == 7 else raw
 
 
 def _parse_dow_value_raw(s: str) -> int:
-    """Parse a DOW value without normalizing 7 to 0 (for range checking)."""
-    # Try as number first
     try:
         n = int(s)
         if n > 7:
@@ -798,7 +756,6 @@ def _parse_dow_value_raw(s: str) -> int:
         return n
     except ValueError:
         pass
-    # Try as name
     dow_map = {
         "SUN": 0,
         "MON": 1,
@@ -827,7 +784,6 @@ _CRON_DOW_MAP: dict[int, Weekday] = {
 
 
 def _cron_dow_to_weekday(n: int) -> Weekday:
-    """Convert cron DOW number (0-7) to Weekday."""
     result = _CRON_DOW_MAP.get(n)
     if result is None:
         raise HronError.cron(f"invalid DOW number: {n}")
@@ -835,7 +791,6 @@ def _cron_dow_to_weekday(n: int) -> Weekday:
 
 
 def _parse_single_value(field: str, name: str, min_val: int, max_val: int) -> int:
-    """Parse a single numeric value with validation."""
     try:
         value = int(field)
     except ValueError:

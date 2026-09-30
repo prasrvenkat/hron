@@ -4,7 +4,6 @@ require_relative "ast"
 require_relative "error"
 
 module Hron
-  # Token kinds (using symbols and Data classes)
   module TokenKind
     EVERY = :every
     ON = :on
@@ -31,7 +30,6 @@ module Hron
     COMMA = :comma
   end
 
-  # Token types with values
   TDayName = Data.define(:name)
   TMonthName = Data.define(:name)
   TOrdinal = Data.define(:position)
@@ -42,10 +40,8 @@ module Hron
   TIsoDate = Data.define(:date)
   TTimezone = Data.define(:tz)
 
-  # Token with kind and span
   Token = Data.define(:kind, :span)
 
-  # Keyword mapping
   KEYWORD_MAP = {
     "every" => TokenKind::EVERY,
     "on" => TokenKind::ON,
@@ -75,7 +71,6 @@ module Hron
     "week" => TokenKind::WEEKS,
     "month" => TokenKind::MONTH,
     "months" => TokenKind::MONTH,
-    # Day names
     "monday" => TDayName.new(Weekday::MONDAY),
     "mon" => TDayName.new(Weekday::MONDAY),
     "tuesday" => TDayName.new(Weekday::TUESDAY),
@@ -90,7 +85,6 @@ module Hron
     "sat" => TDayName.new(Weekday::SATURDAY),
     "sunday" => TDayName.new(Weekday::SUNDAY),
     "sun" => TDayName.new(Weekday::SUNDAY),
-    # Month names
     "january" => TMonthName.new(MonthName::JAN),
     "jan" => TMonthName.new(MonthName::JAN),
     "february" => TMonthName.new(MonthName::FEB),
@@ -114,13 +108,11 @@ module Hron
     "nov" => TMonthName.new(MonthName::NOV),
     "december" => TMonthName.new(MonthName::DEC),
     "dec" => TMonthName.new(MonthName::DEC),
-    # Ordinals
     "first" => TOrdinal.new(OrdinalPosition::FIRST),
     "second" => TOrdinal.new(OrdinalPosition::SECOND),
     "third" => TOrdinal.new(OrdinalPosition::THIRD),
     "fourth" => TOrdinal.new(OrdinalPosition::FOURTH),
     "fifth" => TOrdinal.new(OrdinalPosition::FIFTH),
-    # Interval units
     "min" => TIntervalUnit.new(IntervalUnit::MIN),
     "mins" => TIntervalUnit.new(IntervalUnit::MIN),
     "minute" => TIntervalUnit.new(IntervalUnit::MIN),
@@ -131,7 +123,6 @@ module Hron
     "hrs" => TIntervalUnit.new(IntervalUnit::HOURS)
   }.freeze
 
-  # Lexer class
   class Lexer
     def initialize(input)
       @input = input
@@ -196,7 +187,6 @@ module Hron
       @pos += 1 while @pos < @input.length && @input[@pos].match?(/\d/)
       digits = @input[start...@pos]
 
-      # Check for ISO date: YYYY-MM-DD
       if digits.length == 4 && @pos < @input.length && @input[@pos] == "-"
         remaining = @input[start..]
         if remaining.length >= 10 &&
@@ -209,7 +199,6 @@ module Hron
         end
       end
 
-      # Check for time: HH:MM
       if digits.length.between?(1, 2) && @pos < @input.length && @input[@pos] == ":"
         @pos += 1 # skip ':'
         min_start = @pos
@@ -226,7 +215,6 @@ module Hron
 
       num = digits.to_i
 
-      # Check for ordinal suffix: st, nd, rd, th
       if @pos + 1 < @input.length
         suffix = @input[@pos, 2].downcase
         if %w[st nd rd th].include?(suffix)

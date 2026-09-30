@@ -1,5 +1,3 @@
-// Behavioral conformance test — drives spec/tests.json through WASM.
-//
 // WASM methods accept/return ISO 8601 strings (not Temporal objects),
 // so we compare strings directly.
 
@@ -11,10 +9,6 @@ import { Schedule, fromCron } from "../pkg/hron_wasm.js";
 const specPath = resolve(__dirname, "../../../spec/tests.json");
 const spec = JSON.parse(readFileSync(specPath, "utf-8"));
 const defaultNow: string = spec.now;
-
-// ===========================================================================
-// Parse conformance
-// ===========================================================================
 
 describe("parse roundtrip", () => {
   const parseSections = [
@@ -63,12 +57,7 @@ describe("parse errors", () => {
   }
 });
 
-// ===========================================================================
-// Eval conformance
-// ===========================================================================
-
 describe("eval", () => {
-  // Dynamically discover eval sections (skip non-test entries)
   const skipSections = new Set([
     "description",
     "matches",
@@ -89,7 +78,6 @@ describe("eval", () => {
           const schedule = Schedule.parse(tc.expression);
           const now = tc.now ?? defaultNow;
 
-          // next (full timestamp)
           // Note: WASM returns undefined (not null) for Rust Option::None
           if ("next" in tc) {
             const result = schedule.nextFrom(now);
@@ -101,16 +89,13 @@ describe("eval", () => {
             }
           }
 
-          // next_date (date-only check)
           if ("next_date" in tc) {
             const result = schedule.nextFrom(now);
             expect(result).toBeDefined();
-            // Extract date portion from ISO string (YYYY-MM-DD)
             const datePart = result!.slice(0, 10);
             expect(datePart).toBe(tc.next_date);
           }
 
-          // next_n (list of timestamps)
           if ("next_n" in tc) {
             const expected: string[] = tc.next_n;
             const nCount = tc.next_n_count ?? expected.length;
@@ -121,7 +106,6 @@ describe("eval", () => {
             }
           }
 
-          // next_n_length (just check count)
           if ("next_n_length" in tc) {
             const expectedLen: number = tc.next_n_length;
             const nCount: number = tc.next_n_count;
@@ -162,10 +146,6 @@ describe("eval previous_from", () => {
   }
 });
 
-// ===========================================================================
-// Eval errors conformance
-// ===========================================================================
-
 describe("eval errors", () => {
   const tests = spec.eval_errors.tests;
   for (const tc of tests) {
@@ -183,10 +163,6 @@ describe("eval errors", () => {
     });
   }
 });
-
-// ===========================================================================
-// Cron conformance
-// ===========================================================================
 
 describe("cron", () => {
   describe("to_cron", () => {

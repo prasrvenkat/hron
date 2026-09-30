@@ -2,9 +2,7 @@ package io.hron.ast;
 
 /** Represents the unit of an interval (minutes or hours). */
 public enum IntervalUnit {
-  /** Minutes unit. */
   MINUTES("min"),
-  /** Hours unit. */
   HOURS("hours");
 
   private final String displayName;
@@ -19,7 +17,7 @@ public enum IntervalUnit {
   }
 
   /**
-   * Returns the display string based on interval value.
+   * Returns the unit as displayed after {@code interval}, singular when it is 1.
    *
    * @param interval the interval value
    * @return the display string

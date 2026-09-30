@@ -3,38 +3,30 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart';
 
 void main() {
-  // Initialize timezone data (required once at startup)
+  // Timezone data must be loaded once before any schedule is evaluated.
   tz.initializeTimeZones();
   final nyc = getLocation('America/New_York');
 
-  // Parse a human-readable schedule
-  final schedule = Schedule.parse('every weekday at 9am, 5pm');
+  final schedule = Schedule.parse(
+    'every weekday at 09:00, 17:00 in America/New_York',
+  );
   print('Schedule: $schedule');
 
-  // Find next occurrence
   final now = TZDateTime.now(nyc);
-  final next = schedule.nextFrom(now);
-  print('Next occurrence: $next');
+  print('Next occurrence: ${schedule.nextFrom(now)}');
 
-  // Find next 5 occurrences
-  final nextFive = schedule.nextNFrom(now, 5);
   print('Next 5 occurrences:');
-  for (final dt in nextFive) {
+  for (final dt in schedule.nextNFrom(now, 5)) {
     print('  $dt');
   }
 
-  // Check if a datetime matches
-  final testTime = TZDateTime(nyc, 2025, 1, 6, 9, 0); // Monday 9am
-  print('Monday 9am matches: ${schedule.matches(testTime)}');
+  final monday9am = TZDateTime(nyc, 2025, 1, 6, 9, 0);
+  print('Monday 09:00 matches: ${schedule.matches(monday9am)}');
 
-  // Convert to cron (if expressible)
-  print('As cron: ${schedule.toCron()}');
-
-  // Parse from cron
   final fromCron = Schedule.fromCron('0 9 * * 1-5');
   print('From cron "0 9 * * 1-5": $fromCron');
+  print('Back to cron: ${fromCron.toCron()}');
 
-  // Validate without throwing
-  print('Valid expression: ${Schedule.validate("every day at noon")}');
-  print('Invalid expression: ${Schedule.validate("every xyz")}');
+  print('Valid expression: ${Schedule.validate('every day at 12:00')}');
+  print('Invalid expression: ${Schedule.validate('every day at noon')}');
 }

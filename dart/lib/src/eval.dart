@@ -2,65 +2,7 @@ import 'package:timezone/timezone.dart';
 
 import 'ast.dart';
 
-// =============================================================================
-// Iteration Safety Limits
-// =============================================================================
-// MAX_ITERATIONS (1000): Maximum iterations for nextFrom/previousFrom loops.
-// Prevents infinite loops when searching for valid occurrences.
-//
-// Expression-specific limits:
-// - Day repeat: 8 days (covers one week + margin)
-// - Week repeat: 54 weeks (covers one year + margin)
-// - Month repeat: 24 * interval months (covers 2 years scaled by interval)
-// - Year repeat: 8 * interval years (covers reasonable future horizon)
-//
-// These limits are generous safety bounds. In practice, valid schedules
-// find occurrences within the first few iterations.
-// =============================================================================
-
-// =============================================================================
-// DST (Daylight Saving Time) Handling
-// =============================================================================
-// When resolving a wall-clock time to an instant:
-//
-// 1. DST Gap (Spring Forward):
-//    - Time doesn't exist (e.g., 2:30 AM during spring forward)
-//    - Solution: Push forward to the next valid time after the gap
-//    - Example: 2:30 AM -> 3:00 AM (or 3:30 AM depending on gap size)
-//
-// 2. DST Fold (Fall Back):
-//    - Time is ambiguous (e.g., 1:30 AM occurs twice)
-//    - Solution: Use first occurrence (fold=0 / pre-transition time)
-//    - This matches user expectation for scheduling
-//
-// All implementations use the same algorithm for cross-language consistency.
-// =============================================================================
-
-// =============================================================================
-// Interval Alignment (Anchor Date)
-// =============================================================================
-// For schedules with interval > 1 (e.g., "every 3 days"), we need to
-// determine which dates are valid based on alignment with an anchor.
-//
-// Formula: (date_offset - anchor_offset) mod interval == 0
-//
-// Where:
-//   - date_offset: days/weeks/months from epoch to candidate date
-//   - anchor_offset: days/weeks/months from epoch to anchor date
-//   - interval: the repeat interval (e.g., 3 for "every 3 days")
-//
-// Default anchor: Epoch (1970-01-01)
-// Custom anchor: Set via "starting YYYY-MM-DD" clause
-//
-// For week repeats, we use epoch Monday (1970-01-05) as the reference
-// point to align week boundaries correctly.
-// =============================================================================
-
-// --- Date parsing helper ---
-
-/// Parse an ISO date string (YYYY-MM-DD) into a UTC DateTime.
 DateTime _parseIsoDateUtc(String s) {
-  // YYYY-MM-DD format
   final parts = s.split('-');
   return DateTime.utc(
     int.parse(parts[0]),
@@ -69,18 +11,16 @@ DateTime _parseIsoDateUtc(String s) {
   );
 }
 
-// --- Timezone resolution ---
-
 String _resolveTz(String? tz) => tz ?? 'UTC';
 
 // The timezone package names its UTC location 'Etc/UTC' since 0.11.1, and
-// 'UTC' is not in its database; the spec requires results in '[UTC]'.
+// 'UTC' is not in its database; spec/tests.json expects results in '[UTC]'.
 final Location _utc = Location('UTC', [minTime], [0], [TimeZone.UTC]);
 
 Location _getLocation(String tz) => tz == 'UTC' ? _utc : getLocation(tz);
 
-// --- Helpers ---
-
+// TZDateTime shifts a time in a spring-forward gap forward by the gap length
+// (02:30 -> 03:30), as spec/README.md "DST spring-forward (gaps)" requires.
 TZDateTime _atTimeOnDate(DateTime date, int hour, int minute, Location loc) {
   return TZDateTime(loc, date.year, date.month, date.day, hour, minute);
 }
@@ -138,11 +78,8 @@ DateTime _lastWeekdayInMonth(int year, int month, Weekday weekday) {
   return d;
 }
 
-/// Get the nearest weekday to a given day in a month.
-/// - direction=null: standard cron W behavior (never crosses month boundary)
-/// - direction=next: always prefer following weekday (can cross to next month)
-/// - direction=previous: always prefer preceding weekday (can cross to prev month)
-/// Returns null if the target_day doesn't exist in the month (e.g., day 31 in February).
+/// Returns null if [targetDay] doesn't exist in the month (e.g. day 31 in
+/// February). A null [direction] is cron `W`: the result stays in the month.
 DateTime? _nearestWeekday(
   int year,
   int month,
@@ -152,7 +89,6 @@ DateTime? _nearestWeekday(
   final last = _lastDayOfMonth(year, month);
   final lastDay = last.day;
 
-  // If target day doesn't exist in this month, return null (skip this month)
   if (targetDay > lastDay) {
     return null;
   }
@@ -160,12 +96,10 @@ DateTime? _nearestWeekday(
   final date = DateTime.utc(year, month, targetDay);
   final dow = date.weekday; // 1=Monday ... 7=Sunday
 
-  // Already a weekday
   if (dow >= 1 && dow <= 5) {
     return date;
   }
 
-  // Saturday (dow == 6)
   if (dow == 6) {
     return switch (direction) {
       NearestDirection.next =>
@@ -182,7 +116,6 @@ DateTime? _nearestWeekday(
     };
   }
 
-  // Sunday (dow == 7)
   return switch (direction) {
     NearestDirection.next =>
       // Always next Monday (can cross to next month)
@@ -280,7 +213,6 @@ DateTime _nextDuringMonth(DateTime date, List<MonthName> during) {
       return DateTime.utc(date.year, m, 1);
     }
   }
-  // Wrap to first month of next year
   return DateTime.utc(date.year + 1, months[0], 1);
 }
 
@@ -293,7 +225,7 @@ DateTime _resolveUntil(UntilSpec until, TZDateTime now) {
   for (final y in [year, year + 1]) {
     try {
       final d = DateTime.utc(y, named.month.number, named.day);
-      // Verify the date is valid (not overflow)
+      // DateTime.utc rolls an invalid day over into the next month.
       if (d.month == named.month.number && d.day == named.day) {
         if (!d.isBefore(DateTime.utc(now.year, now.month, now.day))) {
           return d;
@@ -352,14 +284,11 @@ DateTime? _prevDuringMonth(DateTime date, List<MonthName> during) {
       return _lastDayOfMonth(date.year, m);
     }
   }
-  // Wrap to last month of previous year
   if (months.isNotEmpty) {
     return _lastDayOfMonth(date.year - 1, months[0]);
   }
   return null;
 }
-
-// --- Public API ---
 
 TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
   final tzName = _resolveTz(schedule.timezone);
@@ -394,24 +323,19 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
 
     if (candidate == null) return null;
 
-    // Convert to target tz once for all filter checks
     DateTime? cDate;
     if (needsTzConversion) {
       final cInTz = TZDateTime.from(candidate, loc);
       cDate = DateTime.utc(cInTz.year, cInTz.month, cInTz.day);
     }
 
-    // Apply until filter
     if (untilDate != null) {
       if (cDate!.isAfter(untilDate)) return null;
     }
 
-    // Apply during filter
-    // Skip this check for expressions that handle during internally (NearestWeekday with direction)
     if (hasDuring &&
         !handlesDuringInternally &&
         !_matchesDuring(cDate!, schedule.during)) {
-      // Skip ahead to 1st of next valid during month
       final skipTo = _nextDuringMonth(cDate, schedule.during);
       current = TZDateTime(
         loc,
@@ -422,7 +346,6 @@ TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) {
       continue;
     }
 
-    // Apply except filter
     if (hasExceptions && parsedExceptions.isExcepted(cDate!)) {
       final nextDay = cDate.add(const Duration(days: 1));
       current = TZDateTime(
@@ -518,7 +441,6 @@ TZDateTime? previousFrom(ScheduleData schedule, TZDateTime now) {
   final hasExceptions = schedule.except.isNotEmpty;
   final hasDuring = schedule.during.isNotEmpty;
 
-  // Handle until clause - if now is after until, search from end of until date
   var searchFrom = now;
   if (schedule.until != null) {
     final untilDate = _resolveUntil(schedule.until!, now);
@@ -539,16 +461,13 @@ TZDateTime? previousFrom(ScheduleData schedule, TZDateTime now) {
 
     if (candidate == null) return null;
 
-    // Convert to target tz for filter checks
     final cInTz = TZDateTime.from(candidate, loc);
     final cDate = DateTime.utc(cInTz.year, cInTz.month, cInTz.day);
 
-    // Check if before anchor
     if (anchorDate != null && cDate.isBefore(anchorDate)) {
       return null;
     }
 
-    // Check until date - should not return occurrences after until
     if (schedule.until != null) {
       final untilDate = _resolveUntil(schedule.until!, now);
       if (cDate.isAfter(untilDate)) {
@@ -557,13 +476,11 @@ TZDateTime? previousFrom(ScheduleData schedule, TZDateTime now) {
       }
     }
 
-    // Apply except filter
     if (hasExceptions && parsedExceptions.isExcepted(cDate)) {
       searchFrom = candidate;
       continue;
     }
 
-    // Apply during filter
     if (hasDuring && !_matchesDuring(cDate, schedule.during)) {
       final prevMonth = _prevDuringMonth(cDate, schedule.during);
       if (prevMonth == null) return null;
@@ -684,13 +601,11 @@ TZDateTime? _prevIntervalRepeat(
       continue;
     }
 
-    // Build list of times in window
     final windowTimes = <int>[];
     for (var m = fromMinutes; m <= toMinutes; m += stepMinutes) {
       windowTimes.add(m);
     }
 
-    // Search backwards through window
     for (var j = windowTimes.length - 1; j >= 0; j--) {
       final m = windowTimes[j];
       final h = m ~/ 60;
@@ -721,10 +636,8 @@ TZDateTime? _prevWeekRepeat(
 
   final date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
-  // Sort target DOWs in descending order for backwards search
   final sortedDays = [...days]..sort((a, b) => b.number.compareTo(a.number));
 
-  // Find Monday of current week and Monday of anchor week
   final dowOffset = date.weekday - 1;
   var currentMonday = date.subtract(Duration(days: dowOffset));
 
@@ -818,7 +731,6 @@ TZDateTime? _prevMonthRepeat(
       dateCandidates.add(_lastWeekdayOfMonth(year, month));
     }
 
-    // Sort in descending order for backwards search
     dateCandidates.sort((a, b) => b.compareTo(a));
 
     for (final date in dateCandidates) {
@@ -1139,8 +1051,6 @@ bool _matchesYearTarget(YearTarget target, DateTime date) {
   }
 }
 
-// --- Per-variant next functions ---
-
 TZDateTime? _nextDayRepeat(
   int interval,
   DayFilter days,
@@ -1153,7 +1063,6 @@ TZDateTime? _nextDayRepeat(
   var date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
   if (interval <= 1) {
-    // Original behavior for interval=1
     if (_matchesDayFilter(date, days)) {
       final candidate = _earliestFutureAtTimes(date, times, loc, now);
       if (candidate != null) return candidate;
@@ -1170,10 +1079,9 @@ TZDateTime? _nextDayRepeat(
     return null;
   }
 
-  // Interval > 1: day intervals only apply to DayFilter::Every
+  // The parser builds interval > 1 only with EveryDay, so [days] is unused.
   final anchorDate = anchor != null ? _parseIsoDateUtc(anchor) : _epochDate;
 
-  // Find the next aligned day >= today
   final offset = _daysBetween(anchorDate, date);
   final alignedRemainder = _euclideanMod(offset, interval);
   var cur = alignedRemainder == 0
@@ -1253,17 +1161,14 @@ TZDateTime? _nextWeekRepeat(
 
   final date = DateTime.utc(nowInTz.year, nowInTz.month, nowInTz.day);
 
-  // Sort target DOWs by number for earliest-first matching
   final sortedDays = [...days]..sort((a, b) => a.number.compareTo(b.number));
 
-  // Find Monday of current week and Monday of anchor week
   final dowOffset = date.weekday - 1;
   var currentMonday = date.subtract(Duration(days: dowOffset));
 
   final anchorDowOffset = anchorDate.weekday - 1;
   final anchorMonday = anchorDate.subtract(Duration(days: anchorDowOffset));
 
-  // Loop up to 54 iterations (covers >1 year for any interval)
   for (var i = 0; i < 54; i++) {
     final weeks = _weeksBetween(anchorMonday, currentMonday);
 
@@ -1274,7 +1179,6 @@ TZDateTime? _nextWeekRepeat(
     }
 
     if (weeks % interval == 0) {
-      // Aligned week — try each target DOW
       for (final wd in sortedDays) {
         final dayOffset = wd.number - 1;
         final targetDate = currentMonday.add(Duration(days: dayOffset));
@@ -1283,7 +1187,6 @@ TZDateTime? _nextWeekRepeat(
       }
     }
 
-    // Skip to next aligned week
     final remainder = weeks % interval;
     final skipWeeks = remainder == 0 ? interval : interval - remainder;
     currentMonday = currentMonday.add(Duration(days: skipWeeks * 7));
@@ -1316,7 +1219,6 @@ TZDateTime? _nextMonthRepeat(
       target.direction != null;
 
   for (var i = 0; i < maxIter; i++) {
-    // Check during filter for NearestWeekday with direction
     if (applyDuringFilter && !during.any((mn) => mn.number == month)) {
       month++;
       if (month > 12) {
@@ -1326,7 +1228,6 @@ TZDateTime? _nextMonthRepeat(
       continue;
     }
 
-    // Check interval alignment
     if (interval > 1) {
       final cur = DateTime.utc(year, month, 1);
       final monthOffset = _monthsBetweenYM(anchorDate, cur);
@@ -1414,7 +1315,7 @@ TZDateTime? _nextSingleDate(
       final year = startYear + y;
       try {
         final date = DateTime.utc(year, dateSpec.month.number, dateSpec.day);
-        // Verify date is valid (no overflow)
+        // DateTime.utc rolls an invalid day over into the next month.
         if (date.month == dateSpec.month.number && date.day == dateSpec.day) {
           final candidate = _earliestFutureAtTimes(date, times, loc, now);
           if (candidate != null) return candidate;
@@ -1448,7 +1349,6 @@ TZDateTime? _nextYearRepeat(
   for (var y = 0; y < maxIter; y++) {
     final year = startYear + y;
 
-    // Check interval alignment
     if (interval > 1) {
       final yearOffset = year - anchorYear;
       if (yearOffset < 0 || _euclideanMod(yearOffset, interval) != 0) {
@@ -1509,24 +1409,16 @@ TZDateTime? _nextYearRepeat(
   return null;
 }
 
-// --- Iterator functions ---
-
-/// Returns a lazy iterable of occurrences starting after [from].
-/// The iterator is unbounded for repeating schedules (will iterate forever unless limited),
-/// but respects the `until` clause if specified in the schedule.
 Iterable<TZDateTime> occurrences(ScheduleData schedule, TZDateTime from) sync* {
   var current = from;
   while (true) {
     final next = nextFrom(schedule, current);
     if (next == null) return;
-    // Advance cursor by 1 minute to avoid returning same occurrence
     current = next.add(const Duration(minutes: 1));
     yield next;
   }
 }
 
-/// Returns a bounded iterable of occurrences where `from < occurrence <= to`.
-/// The iterator yields occurrences strictly after [from] and up to and including [to].
 Iterable<TZDateTime> between(
   ScheduleData schedule,
   TZDateTime from,

@@ -8,7 +8,7 @@ namespace Hron;
 public readonly record struct Span(int Start, int End)
 {
     /// <summary>
-    /// Returns the length of this span.
+    /// <c>End - Start</c>, but at least 1 so an empty span still gets one caret.
     /// </summary>
     public int Length => Math.Max(1, End - Start);
 }

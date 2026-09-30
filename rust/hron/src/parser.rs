@@ -1,11 +1,9 @@
-// Hand-rolled recursive descent parser for hron expressions.
-// Follows the grammar defined in /spec/grammar.ebnf (repo root).
+// Recursive descent parser for spec/grammar.ebnf.
 
 use crate::ast::*;
 use crate::error::{ScheduleError, Span};
 use crate::lexer::{Token, TokenKind};
 
-/// Parser state: consumes a slice of tokens.
 struct Parser<'a> {
     tokens: &'a [Token],
     pos: usize,
@@ -63,7 +61,6 @@ impl<'a> Parser<'a> {
         ScheduleError::parse(message, span, self.input, None)
     }
 
-    /// Validate a day number is in range 1-31, returning u8.
     fn validate_day_number(&self, n: u32) -> Result<u8, ScheduleError> {
         if !(1..=31).contains(&n) {
             return Err(self.error(
@@ -74,7 +71,6 @@ impl<'a> Parser<'a> {
         Ok(n as u8)
     }
 
-    /// Validate a named date (month + day) has a valid day for that month.
     fn validate_named_date(
         &self,
         month: MonthName,
@@ -104,7 +100,6 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    /// Parse a day number (Number or OrdinalNumber token), validating it's 1-31.
     fn parse_day_number(&mut self, context: &str) -> Result<(u8, Span), ScheduleError> {
         let span = self.current_span();
         match self.peek().map(|t| &t.kind) {
@@ -139,9 +134,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // --- Grammar productions ---
-
-    // expression = every_expr | on_expr
     fn parse_expression(&mut self) -> Result<Schedule, ScheduleError> {
         let span = self.current_span();
         let expr = match self.peek().map(|t| &t.kind) {
@@ -158,28 +150,22 @@ impl<'a> Parser<'a> {
             }
         };
 
-        // Parse trailing clauses: except, until, starting, timezone
         self.parse_trailing_clauses(expr)
     }
 
-    /// Parse trailing clauses in order: except → until → starting → timezone.
-    /// Each is optional, but `in` must be last.
     fn parse_trailing_clauses(&mut self, expr: ScheduleExpr) -> Result<Schedule, ScheduleError> {
         let mut schedule = Schedule::new(expr);
 
-        // except <date>, ...
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Except)) {
             self.advance();
             schedule.except = self.parse_exception_list()?;
         }
 
-        // until <date>
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Until)) {
             self.advance();
             schedule.until = Some(self.parse_until_spec()?);
         }
 
-        // starting <iso-date>
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Starting)) {
             self.advance();
             match self.peek().map(|t| &t.kind) {
@@ -200,13 +186,11 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // during <month_list>
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::During)) {
             self.advance();
             schedule.during = self.parse_month_list()?;
         }
 
-        // in <timezone>
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::In)) {
             self.advance();
             match self.peek().map(|t| &t.kind) {
@@ -286,44 +270,35 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // After "every": dispatch on next token
     fn parse_every(&mut self) -> Result<ScheduleExpr, ScheduleError> {
         self.expect("repeater")?;
 
         match self.peek().map(|t| &t.kind) {
-            // "every year on ..."
             Some(TokenKind::Year) => {
                 self.advance();
                 self.parse_year_repeat(1)
             }
-            // "every day at ..."
             Some(TokenKind::Day) => self.parse_day_repeat(1, DayFilter::Every),
-            // "every weekday at ..."
             Some(TokenKind::Weekday) => {
                 self.advance();
                 self.parse_day_repeat(1, DayFilter::Weekday)
             }
-            // "every weekend at ..."
             Some(TokenKind::Weekend) => {
                 self.advance();
                 self.parse_day_repeat(1, DayFilter::Weekend)
             }
-            // "every monday ..." or "every monday, wednesday, friday at ..."
             Some(TokenKind::DayName(_)) => {
                 let days = self.parse_day_list()?;
                 self.parse_day_repeat(1, DayFilter::Days(days))
             }
-            // "every week on ..."
             Some(TokenKind::Weeks) => {
                 self.advance();
                 self.parse_week_repeat(1)
             }
-            // "every month on ..."
             Some(TokenKind::Month) => {
                 self.advance();
                 self.parse_month_repeat(1)
             }
-            // "every N ..." — could be interval or week repeat
             Some(TokenKind::Number(_)) => self.parse_number_repeat(),
             _ => {
                 let span = self.current_span();
@@ -342,7 +317,6 @@ impl<'a> Parser<'a> {
         interval: u32,
         days: DayFilter,
     ) -> Result<ScheduleExpr, ScheduleError> {
-        // If days is Every, consume the "day" token
         if days == DayFilter::Every {
             self.consume_kind("'day'", |k| matches!(k, TokenKind::Day))?;
         }
@@ -355,7 +329,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // After "every N": dispatch to interval_repeat, week_repeat, day_repeat, month_repeat, or year_repeat
     fn parse_number_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
         let num = match &self.peek().unwrap().kind {
             TokenKind::Number(n) => *n,
@@ -368,21 +341,16 @@ impl<'a> Parser<'a> {
         self.advance();
 
         match self.peek().map(|t| &t.kind) {
-            // "every N weeks on ..."
             Some(TokenKind::Weeks) => {
                 self.advance();
                 self.parse_week_repeat(num)
             }
-            // "every N min/hours from ..."
             Some(TokenKind::IntervalUnit(_)) => self.parse_interval_repeat(num),
-            // "every N days at ..." / "every N day at ..."
             Some(TokenKind::Day) => self.parse_day_repeat(num, DayFilter::Every),
-            // "every N months on ..." / "every N month on ..."
             Some(TokenKind::Month) => {
                 self.advance();
                 self.parse_month_repeat(num)
             }
-            // "every N years on ..." / "every N year on ..."
             Some(TokenKind::Year) => {
                 self.advance();
                 self.parse_year_repeat(num)
@@ -397,7 +365,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // interval_repeat: "every [N] unit from HH:MM to HH:MM [on day_target]"
     fn parse_interval_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         let unit_str = match &self.peek().unwrap().kind {
             TokenKind::IntervalUnit(u) => u.clone(),
@@ -416,7 +383,6 @@ impl<'a> Parser<'a> {
         self.consume_kind("'to'", |k| matches!(k, TokenKind::To))?;
         let to = self.parse_time()?;
 
-        // Optional "on day_target"
         let day_filter = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::On)) {
             self.advance();
             Some(self.parse_day_target()?)
@@ -433,7 +399,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // week_repeat: "every N weeks on day_list at HH:MM[, HH:MM]"
     fn parse_week_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
         let days = self.parse_day_list()?;
@@ -447,7 +412,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // month_repeat: "[N] month[s] on the (ordinal_days | last day | last weekday | [direction] nearest weekday to day) at HH:MM"
     fn parse_month_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
         self.consume_kind("'the'", |k| matches!(k, TokenKind::The))?;
@@ -502,7 +466,6 @@ impl<'a> Parser<'a> {
                 let days = self.parse_ordinal_day_list()?;
                 MonthTarget::Days(days)
             }
-            // [next|previous] nearest weekday to <day>
             Some(TokenKind::Next) | Some(TokenKind::Previous) | Some(TokenKind::Nearest) => {
                 self.parse_nearest_weekday_target()?
             }
@@ -525,9 +488,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // [next|previous] nearest weekday to <day>
     fn parse_nearest_weekday_target(&mut self) -> Result<MonthTarget, ScheduleError> {
-        // Optional direction: "next" or "previous"
         let direction = match self.peek().map(|t| &t.kind) {
             Some(TokenKind::Next) => {
                 self.advance();
@@ -563,17 +524,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // year_repeat: "every [N] year[s] on <year_target> at HH:MM"
     fn parse_year_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
         self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
 
         let target = match self.peek().map(|t| &t.kind) {
-            // "on the ..." — ordinal weekday, day of month, or last weekday
             Some(TokenKind::The) => {
                 self.advance();
                 self.parse_year_target_after_the()?
             }
-            // "on dec 25" — direct month+day
             Some(TokenKind::MonthName(m)) => {
                 let month = parse_month_name(m).unwrap();
                 self.advance();
@@ -600,10 +558,8 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // After "every year on the": parse ordinal weekday, day of month, or last weekday
     fn parse_year_target_after_the(&mut self) -> Result<YearTarget, ScheduleError> {
         match self.peek().map(|t| &t.kind) {
-            // "the last weekday of <month>" or "the last friday of <month>"
             Some(TokenKind::Last) => {
                 self.advance();
                 match self.peek().map(|t| &t.kind) {
@@ -634,10 +590,8 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            // "the first monday of march" or "the 15th of march"
             Some(TokenKind::Ordinal(_)) => {
                 let ordinal = self.parse_ordinal_position()?;
-                // Next must be a day name
                 match self.peek().map(|t| &t.kind) {
                     Some(TokenKind::DayName(name)) => {
                         let weekday = parse_weekday(name).unwrap();
@@ -719,7 +673,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // on_expr: "on date_target at HH:MM[, HH:MM]"
     fn parse_on(&mut self) -> Result<ScheduleExpr, ScheduleError> {
         let date = self.parse_date_target()?;
         self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
@@ -833,7 +786,6 @@ impl<'a> Parser<'a> {
             }
         };
 
-        // Check for range: "1st to 15th"
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::To)) {
             self.advance(); // skip "to"
             let end = match self.peek().map(|t| &t.kind) {
@@ -897,7 +849,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// Parse an hron expression string into a Schedule AST.
 pub fn parse(input: &str) -> Result<Schedule, ScheduleError> {
     let mut lexer = crate::lexer::Lexer::new(input);
     let tokens = lexer.tokenize()?;
@@ -914,7 +865,6 @@ pub fn parse(input: &str) -> Result<Schedule, ScheduleError> {
     let mut parser = Parser::new(&tokens, input);
     let schedule = parser.parse_expression()?;
 
-    // Ensure all tokens consumed
     if parser.peek().is_some() {
         let span = parser.current_span();
         return Err(ScheduleError::parse(

@@ -13,31 +13,15 @@ import java.util.List;
  */
 public record DayOfMonthSpec(Kind kind, int day, int start, int end) {
 
-  /** The type of day-of-month specification. */
   public enum Kind {
-    /** A single day. */
     SINGLE,
-    /** A range of days. */
     RANGE
   }
 
-  /**
-   * Creates a single day specification.
-   *
-   * @param day the day number
-   * @return a new single day specification
-   */
   public static DayOfMonthSpec single(int day) {
     return new DayOfMonthSpec(Kind.SINGLE, day, 0, 0);
   }
 
-  /**
-   * Creates a day range specification.
-   *
-   * @param start the start day
-   * @param end the end day
-   * @return a new day range specification
-   */
   public static DayOfMonthSpec range(int start, int end) {
     return new DayOfMonthSpec(Kind.RANGE, 0, start, end);
   }

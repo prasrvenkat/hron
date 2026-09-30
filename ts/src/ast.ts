@@ -1,5 +1,3 @@
-// AST types for hron — TypeScript discriminated unions mirroring Rust enums.
-
 export type Weekday =
   | "monday"
   | "tuesday"
@@ -38,25 +36,17 @@ export interface TimeOfDay {
   minute: number;
 }
 
-// --- Day filter ---
-
 export type DayFilter =
   | { type: "every" }
   | { type: "weekday" }
   | { type: "weekend" }
   | { type: "days"; days: Weekday[] };
 
-// --- Day of month spec ---
-
 export type DayOfMonthSpec =
   | { type: "single"; day: number }
   | { type: "range"; start: number; end: number };
 
-// --- Nearest direction ---
-
 export type NearestDirection = "next" | "previous";
-
-// --- Month target ---
 
 export type MonthTarget =
   | { type: "days"; specs: DayOfMonthSpec[] }
@@ -64,8 +54,6 @@ export type MonthTarget =
   | { type: "lastWeekday" }
   | { type: "nearestWeekday"; day: number; direction: NearestDirection | null }
   | { type: "ordinalWeekday"; ordinal: OrdinalPosition; weekday: Weekday };
-
-// --- Year target ---
 
 export type YearTarget =
   | { type: "date"; month: MonthName; day: number }
@@ -78,25 +66,17 @@ export type YearTarget =
   | { type: "dayOfMonth"; day: number; month: MonthName }
   | { type: "lastWeekday"; month: MonthName };
 
-// --- Date spec ---
-
 export type DateSpec =
   | { type: "named"; month: MonthName; day: number }
   | { type: "iso"; date: string };
-
-// --- Exception ---
 
 export type Exception =
   | { type: "named"; month: MonthName; day: number }
   | { type: "iso"; date: string };
 
-// --- Until spec ---
-
 export type UntilSpec =
   | { type: "iso"; date: string }
   | { type: "named"; month: MonthName; day: number };
-
-// --- Schedule expression ---
 
 export type ScheduleExpr =
   | {
@@ -128,8 +108,6 @@ export type ScheduleExpr =
       times: TimeOfDay[];
     };
 
-// --- Schedule (top-level) ---
-
 export interface ScheduleData {
   expr: ScheduleExpr;
   timezone: string | null;
@@ -138,8 +116,6 @@ export interface ScheduleData {
   anchor: string | null; // ISO date string (YYYY-MM-DD)
   during: MonthName[];
 }
-
-// --- Helper functions ---
 
 /** ISO 8601 day number: Monday=1, Sunday=7. */
 export function weekdayNumber(day: Weekday): number {

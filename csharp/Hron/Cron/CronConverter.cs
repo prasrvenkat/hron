@@ -79,7 +79,6 @@ public static class CronConverter
             return $"*/{ir.Interval} * * * *";
         }
 
-        // Hours
         return $"0 */{ir.Interval} * * *";
     }
 
@@ -131,7 +130,6 @@ public static class CronConverter
     {
         cron = cron.Trim();
 
-        // Handle @ shortcuts first
         if (cron.StartsWith('@'))
         {
             return ParseCronShortcut(cron);
@@ -153,24 +151,20 @@ public static class CronConverter
         if (domField == "?") domField = "*";
         if (dowField == "?") dowField = "*";
 
-        // Parse month field into during clause
         var during = ParseMonthField(monthField);
 
-        // Check for special DOW patterns: nth weekday (#), last weekday (5L)
         var nthWeekday = TryParseNthWeekday(minuteField, hourField, domField, dowField, during);
         if (nthWeekday is not null)
         {
             return nthWeekday;
         }
 
-        // Check for L (last day) or LW (last weekday) in DOM
         var lastDay = TryParseLastDay(minuteField, hourField, domField, dowField, during);
         if (lastDay is not null)
         {
             return lastDay;
         }
 
-        // Check for W (nearest weekday): 15W, 1W, etc.
         if (domField.EndsWith('W') && domField != "LW")
         {
             var nearestWeekday = TryParseNearestWeekday(minuteField, hourField, domField, dowField, during);
@@ -180,33 +174,26 @@ public static class CronConverter
             }
         }
 
-        // Check for interval patterns: */N or range/N
         var interval = TryParseInterval(minuteField, hourField, domField, dowField, during);
         if (interval is not null)
         {
             return interval;
         }
 
-        // Standard time-based cron
         var minute = ParseSingleValue(minuteField, "minute", 0, 59);
         var hour = ParseSingleValue(hourField, "hour", 0, 23);
         var time = new TimeOfDay(hour, minute);
 
-        // DOM-based (monthly) - when DOM is specified and DOW is *
         if (domField != "*" && dowField == "*")
         {
             var target = ParseDomField(domField);
             return ScheduleData.Of(new MonthRepeat(1, target, [time])).WithDuring(during);
         }
 
-        // DOW-based (day repeat)
         var days = ParseCronDOW(dowField);
         return ScheduleData.Of(new DayRepeat(1, days, [time])).WithDuring(during);
     }
 
-    /// <summary>
-    /// Parse @ shortcuts like @daily, @hourly, etc.
-    /// </summary>
     private static ScheduleData ParseCronShortcut(string cron)
     {
         return cron.ToLowerInvariant() switch
@@ -237,9 +224,6 @@ public static class CronConverter
         };
     }
 
-    /// <summary>
-    /// Parse month field into a list of MonthName for the `during` clause.
-    /// </summary>
     private static List<MonthName> ParseMonthField(string field)
     {
         if (field == "*")
@@ -250,7 +234,7 @@ public static class CronConverter
         var months = new List<MonthName>();
         foreach (var part in field.Split(','))
         {
-            // Check for step values FIRST (e.g., 1-12/3 or */3)
+            // Before the range check: a step such as 1-12/3 also contains '-'.
             if (part.Contains('/'))
             {
                 var slashIdx = part.IndexOf('/');
@@ -288,7 +272,6 @@ public static class CronConverter
             }
             else if (part.Contains('-'))
             {
-                // Range like 1-3 or JAN-MAR
                 var dashIdx = part.IndexOf('-');
                 var startMonth = ParseMonthValue(part[..dashIdx]);
                 var endMonth = ParseMonthValue(part[(dashIdx + 1)..]);
@@ -307,7 +290,6 @@ public static class CronConverter
             }
             else
             {
-                // Single month
                 months.Add(ParseMonthValue(part));
             }
         }
@@ -315,17 +297,12 @@ public static class CronConverter
         return months;
     }
 
-    /// <summary>
-    /// Parse a single month value (number 1-12 or name JAN-DEC).
-    /// </summary>
     private static MonthName ParseMonthValue(string s)
     {
-        // Try as number first
         if (int.TryParse(s, out var n))
         {
             return MonthFromNumber(n);
         }
-        // Try as name
         var month = MonthNameExtensions.Parse(s);
         if (month is null)
         {
@@ -354,7 +331,6 @@ public static class CronConverter
         string dowField,
         List<MonthName> during)
     {
-        // Check for # pattern (nth weekday of month)
         if (dowField.Contains('#'))
         {
             var hashIdx = dowField.IndexOf('#');
@@ -391,7 +367,6 @@ public static class CronConverter
                 .WithDuring(during);
         }
 
-        // Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
         if (dowField.EndsWith('L') && dowField.Length > 1)
         {
             var dowStr = dowField[..^1];
@@ -442,9 +417,6 @@ public static class CronConverter
             .WithDuring(during);
     }
 
-    /// <summary>
-    /// Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
-    /// </summary>
     private static ScheduleData? TryParseNearestWeekday(
         string minuteField,
         string hourField,
@@ -482,9 +454,6 @@ public static class CronConverter
             .WithDuring(during);
     }
 
-    /// <summary>
-    /// Try to parse interval patterns: */N, range/N in minute or hour fields.
-    /// </summary>
     private static ScheduleData? TryParseInterval(
         string minuteField,
         string hourField,
@@ -492,7 +461,6 @@ public static class CronConverter
         string dowField,
         List<MonthName> during)
     {
-        // Minute interval: */N or range/N
         if (minuteField.Contains('/'))
         {
             var slashIdx = minuteField.IndexOf('/');
@@ -533,7 +501,6 @@ public static class CronConverter
                 toMinute = 59;
             }
 
-            // Determine the hour window
             int fromHour, toHour;
             if (hourField == "*")
             {
@@ -551,7 +518,6 @@ public static class CronConverter
             }
             else if (hourField.Contains('/'))
             {
-                // Hour also has step - this is complex, handle as hour interval
                 return null;
             }
             else
@@ -563,7 +529,6 @@ public static class CronConverter
                 toHour = fromHour;
             }
 
-            // Check if this should be a day filter
             DayFilter? dayFilter = null;
             if (dowField != "*")
             {
@@ -572,16 +537,14 @@ public static class CronConverter
 
             if (domField == "*" || domField == "?")
             {
-                // Determine the end minute based on context
                 int endMinute;
                 if (fromMinute == 0 && toMinute == 59 && toHour == 23)
                 {
-                    // Full day: 00:00 to 23:59
                     endMinute = 59;
                 }
                 else if (fromMinute == 0 && toMinute == 59)
                 {
-                    // Partial day with full minutes range: use :00 for cleaner output
+                    // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
                     endMinute = 0;
                 }
                 else
@@ -598,7 +561,6 @@ public static class CronConverter
             }
         }
 
-        // Hour interval: 0 */N or 0 range/N
         if (hourField.Contains('/') && (minuteField == "0" || minuteField == "00"))
         {
             var slashIdx = hourField.IndexOf('/');
@@ -655,9 +617,6 @@ public static class CronConverter
         return null;
     }
 
-    /// <summary>
-    /// Parse a DOM field into a MonthTarget.
-    /// </summary>
     private static MonthTarget ParseDomField(string field)
     {
         var specs = new List<DayOfMonthSpec>();
@@ -666,7 +625,6 @@ public static class CronConverter
         {
             if (part.Contains('/'))
             {
-                // Step value: 1-31/2 or */5
                 var slashIdx = part.IndexOf('/');
                 var rangePart = part[..slashIdx];
                 var stepStr = part[(slashIdx + 1)..];
@@ -717,7 +675,6 @@ public static class CronConverter
             }
             else if (part.Contains('-'))
             {
-                // Range: 1-5
                 var dashIdx = part.IndexOf('-');
                 if (!int.TryParse(part[..dashIdx], out var start))
                 {
@@ -737,7 +694,6 @@ public static class CronConverter
             }
             else
             {
-                // Single: 15
                 if (!int.TryParse(part, out var day))
                 {
                     throw HronException.Cron($"invalid DOM value: {part}");
@@ -758,9 +714,6 @@ public static class CronConverter
         }
     }
 
-    /// <summary>
-    /// Parse a DOW field into a DayFilter.
-    /// </summary>
     private static DayFilter ParseCronDOW(string field)
     {
         if (field == "*")
@@ -774,7 +727,6 @@ public static class CronConverter
         {
             if (part.Contains('/'))
             {
-                // Step value: 0-6/2 or */2
                 var slashIdx = part.IndexOf('/');
                 var rangePart = part[..slashIdx];
                 var stepStr = part[(slashIdx + 1)..];
@@ -813,9 +765,8 @@ public static class CronConverter
             }
             else if (part.Contains('-'))
             {
-                // Range: 1-5 or MON-FRI
                 var dashIdx = part.IndexOf('-');
-                // Parse without normalizing 7 to 0 for range purposes
+                // Keep 7 as Sunday here so that a range such as 5-7 stays ascending.
                 var start = ParseDowValueRaw(part[..dashIdx]);
                 var end = ParseDowValueRaw(part[(dashIdx + 1)..]);
                 if (start > end)
@@ -824,20 +775,17 @@ public static class CronConverter
                 }
                 for (var d = start; d <= end; d++)
                 {
-                    // Normalize 7 to 0 (Sunday) when converting to weekday
                     var normalized = d == 7 ? 0 : d;
                     days.Add(CronDOWToWeekday(normalized));
                 }
             }
             else
             {
-                // Single: 1 or MON
                 var dow = ParseDowValue(part);
                 days.Add(CronDOWToWeekday(dow));
             }
         }
 
-        // Check for special patterns
         if (days.Count == 5)
         {
             var sorted = days.OrderBy(d => d.Number()).ToList();
@@ -864,9 +812,6 @@ public static class CronConverter
         return DayFilter.SpecificDays(days);
     }
 
-    /// <summary>
-    /// Parse a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0.
-    /// </summary>
     private static int ParseDowValue(string s)
     {
         var raw = ParseDowValueRaw(s);
@@ -879,7 +824,6 @@ public static class CronConverter
     /// </summary>
     private static int ParseDowValueRaw(string s)
     {
-        // Try as number first
         if (int.TryParse(s, out var n))
         {
             if (n > 7)
@@ -888,7 +832,6 @@ public static class CronConverter
             }
             return n;
         }
-        // Try as name
         return s.ToUpperInvariant() switch
         {
             "SUN" => 0,
@@ -914,9 +857,6 @@ public static class CronConverter
         _ => throw HronException.Cron($"invalid DOW number: {n}")
     };
 
-    /// <summary>
-    /// Parse a single numeric value with validation.
-    /// </summary>
     private static int ParseSingleValue(string field, string name, int min, int max)
     {
         if (!int.TryParse(field, out var value))

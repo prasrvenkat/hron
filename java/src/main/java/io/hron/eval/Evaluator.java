@@ -14,69 +14,22 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 /**
- * Evaluates schedule expressions to compute next occurrences.
+ * Evaluates schedule expressions to compute occurrences.
  *
- * <h2>Iteration Safety Limits</h2>
- *
- * <p>MAX_ITERATIONS (1000): Maximum iterations for nextFrom/previousFrom loops. Prevents infinite
- * loops when searching for valid occurrences.
- *
- * <p>Expression-specific limits:
- *
- * <ul>
- *   <li>Day repeat: 8 days (covers one week + margin)
- *   <li>Week repeat: 54 weeks (covers one year + margin)
- *   <li>Month repeat: 24 * interval months (covers 2 years scaled by interval)
- *   <li>Year repeat: 8 * interval years (covers reasonable future horizon)
- * </ul>
- *
- * <p>These limits are generous safety bounds. In practice, valid schedules find occurrences within
- * the first few iterations.
- *
- * <h2>DST (Daylight Saving Time) Handling</h2>
- *
- * <p>When resolving a wall-clock time to an instant:
- *
- * <ol>
- *   <li><b>DST Gap (Spring Forward):</b> Time doesn't exist (e.g., 2:30 AM during spring forward).
- *       Solution: Push forward to the next valid time after the gap.
- *   <li><b>DST Fold (Fall Back):</b> Time is ambiguous (e.g., 1:30 AM occurs twice). Solution: Use
- *       first occurrence (pre-transition time).
- * </ol>
- *
- * <p>All implementations use the same algorithm for cross-language consistency.
- *
- * <h2>Interval Alignment (Anchor Date)</h2>
- *
- * <p>For schedules with interval &gt; 1 (e.g., "every 3 days"), we determine which dates are valid
- * based on alignment with an anchor.
- *
- * <p>Formula: (date_offset - anchor_offset) mod interval == 0
- *
- * <ul>
- *   <li>date_offset: days/weeks/months from epoch to candidate date
- *   <li>anchor_offset: days/weeks/months from epoch to anchor date
- *   <li>interval: the repeat interval (e.g., 3 for "every 3 days")
- * </ul>
- *
- * <p>Default anchor: Epoch (1970-01-01). Custom anchor: Set via "starting YYYY-MM-DD" clause.
- *
- * <p>For week repeats, we use epoch Monday (1970-01-05) as the reference point.
+ * <p>A wall-clock time that falls in a DST gap shifts forward by the length of the gap (02:30
+ * becomes 03:30). A time that occurs twice at fall-back resolves to the first occurrence.
  */
 public final class Evaluator {
-  /** Maximum iterations to prevent infinite loops. */
   private static final int MAX_ITERATIONS = 1000;
 
-  /** Epoch date for day/month/year alignment. */
   private static final LocalDate EPOCH_DATE = LocalDate.of(1970, 1, 1);
 
-  /** Epoch Monday for week alignment. */
   private static final LocalDate EPOCH_MONDAY = LocalDate.of(1970, 1, 5);
 
   private Evaluator() {}
 
   /**
-   * Computes the next occurrence after the given time.
+   * Computes the next occurrence strictly after the given time.
    *
    * @param data the schedule data
    * @param now the reference time
@@ -85,8 +38,8 @@ public final class Evaluator {
    */
   public static Optional<ZonedDateTime> nextFrom(
       ScheduleData data, ZonedDateTime now, ZoneId location) {
-    // Check if expression is NearestWeekday with direction (can cross month boundaries)
-    // For these expressions, during filter is handled inside nextMonthRepeat
+    // A directional nearest weekday can land in a neighbouring month, so nextMonthRepeat applies
+    // the during clause to the month it was computed from instead.
     boolean handlesDuringInternally = false;
     if (data.expr() instanceof MonthRepeat mr
         && mr.target().kind() == MonthTarget.Kind.NEAREST_WEEKDAY
@@ -103,14 +56,11 @@ public final class Evaluator {
 
       ZonedDateTime t = candidate.get();
 
-      // Apply modifiers
-      // Check exception list
       if (isExcepted(t.toLocalDate(), data.except())) {
         now = t;
         continue;
       }
 
-      // Check until date
       if (data.until() != null) {
         LocalDate untilDate = resolveUntil(data.until(), now.toLocalDate());
         if (t.toLocalDate().isAfter(untilDate)) {
@@ -118,9 +68,7 @@ public final class Evaluator {
         }
       }
 
-      // Check during clause (skip for expressions that handle during internally)
       if (!handlesDuringInternally && !matchesDuring(t.toLocalDate(), data.during())) {
-        // Skip to next month that matches
         LocalDate nextMonth = nextDuringMonth(t.toLocalDate(), data.during());
         now = ZonedDateTime.of(nextMonth, LocalTime.MIDNIGHT, location).minusNanos(1);
         continue;
@@ -133,7 +81,7 @@ public final class Evaluator {
   }
 
   /**
-   * Computes the next n occurrences after the given time.
+   * Computes the next n occurrences strictly after the given time.
    *
    * @param data the schedule data
    * @param now the reference time
@@ -159,7 +107,7 @@ public final class Evaluator {
   }
 
   /**
-   * Returns a lazy stream of occurrences starting after the given time.
+   * Returns a lazy stream of occurrences strictly after the given time.
    *
    * @param data the schedule data
    * @param from the reference time (exclusive)
@@ -237,17 +185,14 @@ public final class Evaluator {
     ZonedDateTime zdt = dt.withZoneSameInstant(location);
     LocalDate date = zdt.toLocalDate();
 
-    // Check during filter
     if (!matchesDuring(date, data.during())) {
       return false;
     }
 
-    // Check exceptions
     if (isExcepted(date, data.except())) {
       return false;
     }
 
-    // Check until
     if (data.until() != null) {
       LocalDate untilDate = resolveUntil(data.until(), date);
       if (date.isAfter(untilDate)) {
@@ -343,16 +288,14 @@ public final class Evaluator {
     };
   }
 
-  /** Checks if a time matches any of the scheduled times, accounting for DST gaps. */
   private static boolean timeMatchesWithDst(
       LocalDate date, List<TimeOfDay> times, ZoneId location, ZonedDateTime dt) {
     for (TimeOfDay tod : times) {
-      // Direct wall-clock match
       if (dt.withZoneSameInstant(location).getHour() == tod.hour()
           && dt.withZoneSameInstant(location).getMinute() == tod.minute()) {
         return true;
       }
-      // DST gap check: resolve the scheduled time and compare instants
+      // A time in a DST gap fires at a shifted wall-clock time, so compare instants.
       ZonedDateTime resolved = atTimeOnDate(date, tod, location);
       if (resolved.toInstant().equals(dt.toInstant())) {
         return true;
@@ -361,7 +304,6 @@ public final class Evaluator {
     return false;
   }
 
-  /** Checks if a date matches a month target. */
   private static boolean matchesMonthTarget(LocalDate date, MonthTarget target) {
     return switch (target.kind()) {
       case DAYS -> target.expandDays().contains(date.getDayOfMonth());
@@ -384,7 +326,6 @@ public final class Evaluator {
     };
   }
 
-  /** Checks if a date matches a year target. */
   private static boolean matchesYearTarget(LocalDate date, YearTarget target) {
     return switch (target.kind()) {
       case DATE ->
@@ -418,14 +359,11 @@ public final class Evaluator {
    */
   public static Optional<ZonedDateTime> previousFrom(
       ScheduleData data, ZonedDateTime now, ZoneId location) {
-    // Get anchor date for starting bound
     LocalDate anchorDate = data.anchor() != null ? LocalDate.parse(data.anchor()) : null;
 
-    // Handle until clause - if now is after until, search from end of until date
     ZonedDateTime searchFrom = now;
     if (data.until() != null) {
       LocalDate untilDate = resolveUntil(data.until(), now.toLocalDate());
-      // If now is after the until date, search from end of until date
       if (now.toLocalDate().isAfter(untilDate)) {
         searchFrom = ZonedDateTime.of(untilDate.plusDays(1), LocalTime.MIDNIGHT, location);
       }
@@ -440,12 +378,10 @@ public final class Evaluator {
 
       ZonedDateTime t = candidate.get();
 
-      // Check if before anchor
       if (anchorDate != null && t.toLocalDate().isBefore(anchorDate)) {
         return Optional.empty();
       }
 
-      // Check until date - should not return occurrences after until
       if (data.until() != null) {
         LocalDate untilDate = resolveUntil(data.until(), now.toLocalDate());
         if (t.toLocalDate().isAfter(untilDate)) {
@@ -454,15 +390,12 @@ public final class Evaluator {
         }
       }
 
-      // Check exception list
       if (isExcepted(t.toLocalDate(), data.except())) {
         searchFrom = t;
         continue;
       }
 
-      // Check during clause
       if (!matchesDuring(t.toLocalDate(), data.during())) {
-        // Skip to previous month that matches
         LocalDate prevMonth = prevDuringMonth(t.toLocalDate(), data.during());
         if (prevMonth == null) {
           return Optional.empty();
@@ -518,7 +451,6 @@ public final class Evaluator {
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
       if (dr.interval() > 1) {
-        // Check alignment
         long daysFromAnchor = ChronoUnit.DAYS.between(anchorDate, day);
         long mod = daysFromAnchor % dr.interval();
         if (mod < 0) mod += dr.interval();
@@ -554,10 +486,8 @@ public final class Evaluator {
       int fromMinutes = ir.fromTime().totalMinutes();
       int toMinutes = ir.toTime().totalMinutes();
 
-      // Find starting point in the window
       int nowMinutes = now.toLocalDate().equals(day) ? now.getHour() * 60 + now.getMinute() : -1;
 
-      // Iterate through the window
       for (int m = fromMinutes;
           m <= toMinutes;
           m += ir.interval() * (ir.unit() == IntervalUnit.MINUTES ? 1 : 60)) {
@@ -579,14 +509,11 @@ public final class Evaluator {
   private static Optional<ZonedDateTime> nextWeekRepeat(
       WeekRepeat wr, ZonedDateTime now, ZoneId location, String anchor) {
     LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_MONDAY;
-    // Find Monday of anchor date
     LocalDate anchorMonday = anchorDate.minusDays(anchorDate.getDayOfWeek().getValue() - 1);
 
     LocalDate day = now.toLocalDate();
-    // Find Monday of current week
     LocalDate currentMonday = day.minusDays(day.getDayOfWeek().getValue() - 1);
 
-    // Sort target weekdays for earliest-first matching
     List<Weekday> sortedDays = new ArrayList<>(wr.weekDays());
     sortedDays.sort((a, b) -> Integer.compare(a.number(), b.number()));
 
@@ -594,16 +521,12 @@ public final class Evaluator {
       long daysBetween = ChronoUnit.DAYS.between(anchorMonday, currentMonday);
       long weeks = daysBetween / 7;
 
-      // Skip weeks before anchor
-      // When weeks_since_anchor < 0, anchorMonday is in the future
-      // Use anchorMonday directly as the first aligned week
       if (weeks < 0) {
         currentMonday = anchorMonday;
         continue;
       }
 
       if (weeks % wr.interval() == 0) {
-        // Aligned week — try each target weekday
         for (Weekday wd : sortedDays) {
           int dayOffset = wd.number() - 1; // Monday=1, so offset = 0 for Monday
           LocalDate targetDate = currentMonday.plusDays(dayOffset);
@@ -614,7 +537,6 @@ public final class Evaluator {
         }
       }
 
-      // Skip to next aligned week
       long remainder = weeks % wr.interval();
       long skipWeeks = wr.interval();
       if (remainder != 0) {
@@ -631,21 +553,18 @@ public final class Evaluator {
     LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
     LocalDate day = now.toLocalDate();
 
-    // For NearestWeekday with direction, apply during filter here (on source month)
     boolean applyDuringFilter =
         !during.isEmpty()
             && mr.target().kind() == MonthTarget.Kind.NEAREST_WEEKDAY
             && mr.target().nearestDirection() != null;
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
-      // Check during filter for NearestWeekday with direction
       if (applyDuringFilter && !matchesDuring(day.withDayOfMonth(1), during)) {
         LocalDate nextMonth = nextDuringMonth(day, during);
         day = nextMonth;
         continue;
       }
 
-      // Check month alignment
       if (mr.interval() > 1) {
         long monthsFromAnchor =
             ChronoUnit.MONTHS.between(anchorDate.withDayOfMonth(1), day.withDayOfMonth(1));
@@ -657,12 +576,10 @@ public final class Evaluator {
         }
       }
 
-      // Get target days for this month
       List<LocalDate> targetDays = getTargetDaysInMonth(day.getYear(), day.getMonth(), mr.target());
 
-      // For directional NearestWeekday, the result can be in a different month
-      // (e.g., "previous nearest weekday to 1st" in March -> Feb 27)
-      // Don't skip based on `day` for these - earliestFutureTime handles the now check
+      // A directional nearest weekday can fall in the previous month, so don't compare it with
+      // day; earliestFutureTime still rejects past times.
       boolean canCrossMonth =
           mr.target().kind() == MonthTarget.Kind.NEAREST_WEEKDAY
               && mr.target().nearestDirection() != null;
@@ -676,7 +593,6 @@ public final class Evaluator {
         }
       }
 
-      // Move to next month
       day = day.withDayOfMonth(1).plusMonths(mr.interval() > 1 ? mr.interval() : 1);
     }
 
@@ -696,7 +612,6 @@ public final class Evaluator {
         for (int y = 0; y < 8; y++) {
           int year = startYear + y;
           LocalDate d = tryCreateDate(year, sd.dateSpec().month().number(), sd.dateSpec().day());
-          // Skip invalid dates (e.g., Feb 30)
           if (d == null) {
             continue;
           }
@@ -718,7 +633,6 @@ public final class Evaluator {
     int year = now.getYear();
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
-      // Check year alignment
       if (yr.interval() > 1) {
         long yearsFromAnchor = year - anchorDate.getYear();
         long mod = yearsFromAnchor % yr.interval();
@@ -747,8 +661,6 @@ public final class Evaluator {
     return Optional.empty();
   }
 
-  // Previous occurrence methods
-
   private static Optional<ZonedDateTime> prevDayRepeat(
       DayRepeat dr, ZonedDateTime now, ZoneId location, String anchor) {
     LocalDate anchorDate = anchor != null ? LocalDate.parse(anchor) : EPOCH_DATE;
@@ -756,12 +668,10 @@ public final class Evaluator {
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
       if (dr.interval() > 1) {
-        // Check alignment
         long daysFromAnchor = ChronoUnit.DAYS.between(anchorDate, day);
         long mod = daysFromAnchor % dr.interval();
         if (mod < 0) mod += dr.interval();
         if (mod != 0) {
-          // Go back to previous aligned day
           day = day.minusDays(mod);
           continue;
         }
@@ -794,13 +704,11 @@ public final class Evaluator {
       int toMinutes = ir.toTime().totalMinutes();
       int step = ir.interval() * (ir.unit() == IntervalUnit.MINUTES ? 1 : 60);
 
-      // Build list of times in window
       List<Integer> windowTimes = new ArrayList<>();
       for (int m = fromMinutes; m <= toMinutes; m += step) {
         windowTimes.add(m);
       }
 
-      // Search backwards through window
       int nowMinutes =
           now.toLocalDate().equals(day) ? now.getHour() * 60 + now.getMinute() : Integer.MAX_VALUE;
 
@@ -829,7 +737,6 @@ public final class Evaluator {
     LocalDate day = now.toLocalDate();
     LocalDate currentMonday = day.minusDays(day.getDayOfWeek().getValue() - 1);
 
-    // Sort target weekdays in descending order for backwards search
     List<Weekday> sortedDays = new ArrayList<>(wr.weekDays());
     sortedDays.sort((a, b) -> Integer.compare(b.number(), a.number()));
 
@@ -837,13 +744,11 @@ public final class Evaluator {
       long daysBetween = ChronoUnit.DAYS.between(anchorMonday, currentMonday);
       long weeks = daysBetween / 7;
 
-      // Skip weeks before anchor
       if (weeks < 0) {
         return Optional.empty();
       }
 
       if (weeks % wr.interval() == 0) {
-        // Aligned week — try each target weekday in reverse order
         for (Weekday wd : sortedDays) {
           int dayOffset = wd.number() - 1;
           LocalDate targetDate = currentMonday.plusDays(dayOffset);
@@ -854,7 +759,6 @@ public final class Evaluator {
         }
       }
 
-      // Go back to previous aligned week
       long remainder = weeks % wr.interval();
       long skipWeeks = remainder == 0 ? wr.interval() : remainder;
       currentMonday = currentMonday.minusWeeks(skipWeeks);
@@ -869,23 +773,19 @@ public final class Evaluator {
     LocalDate day = now.toLocalDate();
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
-      // Check month alignment
       if (mr.interval() > 1) {
         long monthsFromAnchor =
             ChronoUnit.MONTHS.between(anchorDate.withDayOfMonth(1), day.withDayOfMonth(1));
         long mod = monthsFromAnchor % mr.interval();
         if (mod < 0) mod += mr.interval();
         if (mod != 0) {
-          // Go back to previous aligned month
           day = day.withDayOfMonth(1).minusMonths(mod);
           continue;
         }
       }
 
-      // Get target days for this month
       List<LocalDate> targetDays = getTargetDaysInMonth(day.getYear(), day.getMonth(), mr.target());
 
-      // Sort in reverse order for backwards search
       targetDays = new ArrayList<>(targetDays);
       targetDays.sort((a, b) -> b.compareTo(a));
 
@@ -897,9 +797,7 @@ public final class Evaluator {
         }
       }
 
-      // Move to previous month
       day = day.withDayOfMonth(1).minusMonths(mr.interval() > 1 ? mr.interval() : 1);
-      // Set to last day of that month
       day = day.plusMonths(1).minusDays(1);
     }
 
@@ -940,7 +838,6 @@ public final class Evaluator {
     int year = now.getYear();
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
-      // Check year alignment
       if (yr.interval() > 1) {
         long yearsFromAnchor = year - anchorDate.getYear();
         long mod = yearsFromAnchor % yr.interval();
@@ -968,8 +865,6 @@ public final class Evaluator {
 
     return Optional.empty();
   }
-
-  // Helper methods
 
   private static boolean matchesDayFilter(LocalDate d, DayFilter f) {
     DayOfWeek dow = d.getDayOfWeek();
@@ -1012,29 +907,20 @@ public final class Evaluator {
     return Optional.ofNullable(best);
   }
 
-  /**
-   * Creates a ZonedDateTime at the given date and time in the given timezone. Handles DST: spring
-   * forward pushes non-existent times forward.
-   */
   private static ZonedDateTime atTimeOnDate(LocalDate date, TimeOfDay tod, ZoneId location) {
     LocalDateTime ldt = LocalDateTime.of(date, LocalTime.of(tod.hour(), tod.minute()));
 
-    // Java's ZonedDateTime.of handles DST gaps by pushing forward
-    // But the default is to use the EARLIER offset for fall-back
-    // We need to match the Go behavior of using the first occurrence
+    // ZonedDateTime.of shifts a time in a DST gap forward by the gap length and resolves a
+    // fall-back overlap to the earlier offset, as spec/README.md "DST spring-forward (gaps)"
+    // and "DST fall-back (ambiguous times)" require.
     ZonedDateTime zdt = ZonedDateTime.of(ldt, location);
 
-    // Check if we're in a gap (spring forward)
-    // The ZonedDateTime will have adjusted the time - we want to check if adjustment happened
     if (zdt.getHour() != tod.hour() || zdt.getMinute() != tod.minute()) {
-      // We're in a DST gap, find the correct time after the gap
-      // This is the behavior from Go's implementation
       int requestedMinutes = tod.hour() * 60 + tod.minute();
       int gotMinutes = zdt.getHour() * 60 + zdt.getMinute();
       int gapMinutes = requestedMinutes - gotMinutes;
 
       if (gapMinutes > 0) {
-        // Push forward past the gap
         zdt = zdt.plusMinutes(gapMinutes);
       }
     }
@@ -1072,26 +958,14 @@ public final class Evaluator {
   }
 
   /**
-   * Computes the nearest weekday to a given day in a month.
-   *
-   * <ul>
-   *   <li>direction=null: standard cron W behavior (never crosses month boundary)
-   *   <li>direction=NEXT: always prefer following weekday (can cross to next month)
-   *   <li>direction=PREVIOUS: always prefer preceding weekday (can cross to prev month)
-   * </ul>
-   *
-   * @param year the year
-   * @param month the month
-   * @param targetDay the target day of month (1-31)
-   * @param direction the direction, or null for standard behavior
-   * @return the nearest weekday date, or empty if target day doesn't exist in the month
+   * Returns the weekday nearest to targetDay, or empty if the month has no such day. A null
+   * direction never leaves the month (cron W); NEXT and PREVIOUS may.
    */
   private static Optional<LocalDate> nearestWeekday(
       int year, Month month, int targetDay, NearestDirection direction) {
     LocalDate last = lastDayOfMonth(year, month);
     int lastDayNum = last.getDayOfMonth();
 
-    // If target day doesn't exist in this month, return empty (skip this month)
     if (targetDay > lastDayNum) {
       return Optional.empty();
     }
@@ -1099,44 +973,32 @@ public final class Evaluator {
     LocalDate date = LocalDate.of(year, month, targetDay);
     DayOfWeek dow = date.getDayOfWeek();
 
-    // Already a weekday
     if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY) {
       return Optional.of(date);
     }
 
     if (dow == DayOfWeek.SATURDAY) {
       if (direction == null) {
-        // Standard: prefer Friday, but if at month start, use Monday
         if (targetDay == 1) {
-          // Can't go to previous month, use Monday (day 3)
           return Optional.of(date.plusDays(2));
         } else {
-          // Friday
           return Optional.of(date.minusDays(1));
         }
       } else if (direction == NearestDirection.NEXT) {
-        // Always Monday (may cross month)
         return Optional.of(date.plusDays(2));
       } else {
-        // PREVIOUS: Always Friday (may cross month if day==1)
         return Optional.of(date.minusDays(1));
       }
     } else {
-      // Sunday
       if (direction == null) {
-        // Standard: prefer Monday, but if at month end, use Friday
         if (targetDay >= lastDayNum) {
-          // Can't go to next month, use Friday (day - 2)
           return Optional.of(date.minusDays(2));
         } else {
-          // Monday
           return Optional.of(date.plusDays(1));
         }
       } else if (direction == NearestDirection.NEXT) {
-        // Always Monday (may cross month)
         return Optional.of(date.plusDays(1));
       } else {
-        // PREVIOUS: Always Friday (go back 2 days, may cross month)
         return Optional.of(date.minusDays(2));
       }
     }
@@ -1212,10 +1074,8 @@ public final class Evaluator {
     return switch (spec.kind()) {
       case ISO -> LocalDate.parse(spec.date());
       case NAMED -> {
-        // Try current year first, handling invalid dates (e.g., Feb 29 in non-leap year)
         LocalDate d = tryCreateDate(now.getYear(), spec.month().number(), spec.day());
         if (d == null || d.isBefore(now)) {
-          // Try next year
           d = tryCreateDate(now.getYear() + 1, spec.month().number(), spec.day());
         }
         yield d;
@@ -1266,36 +1126,29 @@ public final class Evaluator {
   private static LocalDate nextDuringMonth(LocalDate d, List<MonthName> during) {
     int currentMonth = d.getMonthValue();
 
-    // Sort months
     List<Integer> months = during.stream().map(MonthName::number).sorted().toList();
 
-    // Find next month after current
     for (int m : months) {
       if (m > currentMonth) {
         return LocalDate.of(d.getYear(), m, 1);
       }
     }
 
-    // Wrap to first month of next year
     return LocalDate.of(d.getYear() + 1, months.getFirst(), 1);
   }
 
   private static LocalDate prevDuringMonth(LocalDate d, List<MonthName> during) {
     int currentMonth = d.getMonthValue();
 
-    // Sort months in descending order
     List<Integer> months = during.stream().map(MonthName::number).sorted((a, b) -> b - a).toList();
 
-    // Find previous month before current
     for (int m : months) {
       if (m < currentMonth) {
-        // Return last day of that month
         LocalDate firstOfMonth = LocalDate.of(d.getYear(), m, 1);
         return firstOfMonth.plusMonths(1).minusDays(1);
       }
     }
 
-    // Wrap to last month of previous year
     if (!months.isEmpty()) {
       LocalDate firstOfMonth = LocalDate.of(d.getYear() - 1, months.getFirst(), 1);
       return firstOfMonth.plusMonths(1).minusDays(1);

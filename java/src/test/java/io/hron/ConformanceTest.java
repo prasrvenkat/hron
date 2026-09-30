@@ -34,8 +34,6 @@ public class ConformanceTest {
     DEFAULT_NOW = parseZonedDateTime(SPEC.get("now").asText());
   }
 
-  // Parse tests
-
   @TestFactory
   Stream<DynamicTest> parseTests() {
     List<DynamicTest> tests = new ArrayList<>();
@@ -61,7 +59,6 @@ public class ConformanceTest {
                           Schedule s = Schedule.parse(input);
                           assertEquals(canonical, s.toString(), "parse(" + input + ").toString()");
 
-                          // Roundtrip test
                           Schedule s2 = Schedule.parse(canonical);
                           assertEquals(
                               canonical,
@@ -95,8 +92,6 @@ public class ConformanceTest {
     return tests.stream();
   }
 
-  // Eval tests
-
   @TestFactory
   Stream<DynamicTest> evalTests() {
     List<DynamicTest> tests = new ArrayList<>();
@@ -113,11 +108,9 @@ public class ConformanceTest {
                 String name = section + "/" + tc.get("name").asText();
                 String expression = tc.get("expression").asText();
 
-                // Use test-specific now or default
                 ZonedDateTime now =
                     tc.has("now") ? parseZonedDateTime(tc.get("now").asText()) : DEFAULT_NOW;
 
-                // Test next
                 if (tc.has("next")) {
                   tests.add(
                       DynamicTest.dynamicTest(
@@ -140,7 +133,6 @@ public class ConformanceTest {
                           }));
                 }
 
-                // Test next_date
                 if (tc.has("next_date")) {
                   tests.add(
                       DynamicTest.dynamicTest(
@@ -157,7 +149,6 @@ public class ConformanceTest {
                           }));
                 }
 
-                // Test next_n
                 if (tc.has("next_n")) {
                   tests.add(
                       DynamicTest.dynamicTest(
@@ -187,7 +178,6 @@ public class ConformanceTest {
                           }));
                 }
 
-                // Test next_n_length
                 if (tc.has("next_n_length")) {
                   tests.add(
                       DynamicTest.dynamicTest(
@@ -206,8 +196,6 @@ public class ConformanceTest {
             });
     return tests.stream();
   }
-
-  // PreviousFrom tests
 
   @TestFactory
   Stream<DynamicTest> previousFromTests() {
@@ -245,8 +233,6 @@ public class ConformanceTest {
     return tests.stream();
   }
 
-  // Matches tests
-
   @TestFactory
   Stream<DynamicTest> matchesTests() {
     List<DynamicTest> tests = new ArrayList<>();
@@ -275,8 +261,6 @@ public class ConformanceTest {
     }
     return tests.stream();
   }
-
-  // Occurrences tests
 
   @TestFactory
   Stream<DynamicTest> occurrencesTests() {
@@ -317,8 +301,6 @@ public class ConformanceTest {
     }
     return tests.stream();
   }
-
-  // Between tests
 
   @TestFactory
   Stream<DynamicTest> betweenTests() {
@@ -367,8 +349,6 @@ public class ConformanceTest {
     return tests.stream();
   }
 
-  // Eval error tests
-
   @TestFactory
   Stream<DynamicTest> evalErrorTests() {
     List<DynamicTest> tests = new ArrayList<>();
@@ -397,8 +377,6 @@ public class ConformanceTest {
     }
     return tests.stream();
   }
-
-  // Cron tests
 
   @TestFactory
   Stream<DynamicTest> toCronTests() {
@@ -511,14 +489,12 @@ public class ConformanceTest {
     return tests.stream();
   }
 
-  // Helper: parse zoned datetime with timezone in brackets
   // Format: "2026-02-06T12:00:00+00:00[UTC]"
   private static final Pattern ZDT_PATTERN = Pattern.compile("^(.+?)\\[([^\\]]+)\\]$");
 
   private static ZonedDateTime parseZonedDateTime(String s) {
     Matcher m = ZDT_PATTERN.matcher(s);
     if (!m.matches()) {
-      // Try parsing without brackets
       return ZonedDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 

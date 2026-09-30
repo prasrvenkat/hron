@@ -1,8 +1,6 @@
 import 'ast.dart';
 import 'error.dart';
 
-// --- Token kinds ---
-
 sealed class TokenKind {}
 
 class EveryToken extends TokenKind {}
@@ -97,15 +95,11 @@ class TimezoneToken extends TokenKind {
   TimezoneToken(this.tz);
 }
 
-// --- Token ---
-
 class Token {
   final TokenKind kind;
   final Span span;
   Token(this.kind, this.span);
 }
-
-// --- Tokenizer ---
 
 List<Token> tokenize(String input) => _Lexer(input).tokenize();
 
@@ -187,7 +181,6 @@ class _Lexer {
     }
     final digits = input.substring(numStart, pos);
 
-    // ISO date: YYYY-MM-DD
     if (digits.length == 4 && pos < input.length && input[pos] == '-') {
       final remaining = input.substring(start);
       if (remaining.length >= 10 &&
@@ -205,7 +198,6 @@ class _Lexer {
       }
     }
 
-    // Time: HH:MM
     if ((digits.length == 1 || digits.length == 2) &&
         pos < input.length &&
         input[pos] == ':') {
@@ -230,7 +222,6 @@ class _Lexer {
       throw HronError.lex('invalid number', Span(start, pos), input);
     }
 
-    // Ordinal suffix: st, nd, rd, th
     if (pos + 1 < input.length) {
       final suffix = input.substring(pos, pos + 2).toLowerCase();
       if (suffix == 'st' ||

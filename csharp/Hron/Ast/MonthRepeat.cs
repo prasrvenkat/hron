@@ -1,7 +1,7 @@
 namespace Hron.Ast;
 
 /// <summary>
-/// A month-based repeat expression like "every month on the 1st at 9:00".
+/// An expression that fires on certain days of the month, every month or every N months.
 /// </summary>
 /// <param name="Interval">The number of months between occurrences (1 for every month)</param>
 /// <param name="Target">The day(s) within the month to fire</param>

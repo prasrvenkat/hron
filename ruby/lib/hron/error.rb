@@ -8,7 +8,6 @@ module Hron
     end
   end
 
-  # Error kinds
   module ErrorKind
     LEX = :lex
     PARSE = :parse

@@ -12,7 +12,7 @@ public enum IntervalUnit
 public static class IntervalUnitExtensions
 {
     /// <summary>
-    /// Returns the display string based on interval value.
+    /// Returns the unit as displayed after <paramref name="interval"/>, singular when it is 1.
     /// </summary>
     public static string Display(this IntervalUnit unit, int interval) => unit switch
     {

@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-// =============================================================================
-// Laziness Tests
-// =============================================================================
-
 func TestOccurrencesIsLazy(t *testing.T) {
 	// An unbounded schedule should not hang or OOM when creating the iterator
 	s, err := ParseSchedule("every day at 09:00 in UTC")
@@ -19,10 +15,8 @@ func TestOccurrencesIsLazy(t *testing.T) {
 
 	from, _ := time.Parse(time.RFC3339, "2026-02-01T00:00:00Z")
 
-	// Creating the iterator should be instant (lazy)
 	iter := s.Occurrences(from)
 
-	// Taking just 1 should work without evaluating the rest
 	count := 0
 	for range iter {
 		count++
@@ -45,10 +39,8 @@ func TestBetweenIsLazy(t *testing.T) {
 	from, _ := time.Parse(time.RFC3339, "2026-02-01T00:00:00Z")
 	to, _ := time.Parse(time.RFC3339, "2026-12-31T23:59:00Z")
 
-	// Creating the iterator should be instant
 	iter := s.Between(from, to)
 
-	// Taking just 3 should not evaluate all ~330 days
 	count := 0
 	for range iter {
 		count++
@@ -61,10 +53,6 @@ func TestBetweenIsLazy(t *testing.T) {
 		t.Errorf("expected 3 occurrences, got %d", count)
 	}
 }
-
-// =============================================================================
-// Early Termination Tests
-// =============================================================================
 
 func TestOccurrencesEarlyTerminationWithBreak(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00 in UTC")
@@ -118,7 +106,6 @@ func TestOccurrencesFindSaturday(t *testing.T) {
 
 	from, _ := time.Parse(time.RFC3339, "2026-02-01T00:00:00Z")
 
-	// Find the first Saturday occurrence
 	var saturday time.Time
 	for dt := range s.Occurrences(from) {
 		if dt.Weekday() == time.Saturday {
@@ -133,10 +120,6 @@ func TestOccurrencesFindSaturday(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Range-over-func Patterns
-// =============================================================================
-
 func TestRangeOverFuncWithIndex(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00 in UTC")
 	if err != nil {
@@ -145,7 +128,6 @@ func TestRangeOverFuncWithIndex(t *testing.T) {
 
 	from, _ := time.Parse(time.RFC3339, "2026-02-01T00:00:00Z")
 
-	// Using index manually in range-over-func
 	idx := 0
 	for dt := range s.Occurrences(from) {
 		if idx >= 3 {
@@ -200,10 +182,6 @@ func TestBetweenForLoop(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// slices.Collect Integration
-// =============================================================================
-
 func TestOccurrencesCollectWithSlices(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00 until 2026-02-05 in UTC")
 	if err != nil {
@@ -234,10 +212,6 @@ func TestBetweenCollectWithSlices(t *testing.T) {
 		t.Errorf("expected 7 occurrences, got %d", len(results))
 	}
 }
-
-// =============================================================================
-// Edge Cases
-// =============================================================================
 
 func TestOccurrencesEmptyWhenPastUntil(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00 until 2026-01-01 in UTC")
@@ -297,10 +271,6 @@ func TestOccurrencesSingleDateTerminates(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Timezone Handling
-// =============================================================================
-
 func TestOccurrencesPreservesTimezone(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00 in America/New_York")
 	if err != nil {
@@ -312,7 +282,6 @@ func TestOccurrencesPreservesTimezone(t *testing.T) {
 
 	count := 0
 	for dt := range s.Occurrences(from) {
-		// Check timezone is preserved
 		zoneName, _ := dt.Zone()
 		if zoneName != "EST" && zoneName != "EDT" {
 			t.Errorf("expected EST or EDT, got %s", zoneName)
@@ -353,10 +322,6 @@ func TestBetweenHandlesDSTTransition(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Multiple Times Per Day
-// =============================================================================
-
 func TestOccurrencesMultipleTimesPerDay(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00, 12:00, 17:00 in UTC")
 	if err != nil {
@@ -376,7 +341,6 @@ func TestOccurrencesMultipleTimesPerDay(t *testing.T) {
 	if len(results) != 9 {
 		t.Errorf("expected 9 occurrences, got %d", len(results))
 	}
-	// First day: 09:00, 12:00, 17:00
 	if results[0].Hour() != 9 {
 		t.Errorf("expected hour 9, got %d", results[0].Hour())
 	}
@@ -388,10 +352,6 @@ func TestOccurrencesMultipleTimesPerDay(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Complex Iteration Patterns
-// =============================================================================
-
 func TestComplexIterationChain(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00 in UTC")
 	if err != nil {
@@ -400,7 +360,6 @@ func TestComplexIterationChain(t *testing.T) {
 
 	from, _ := time.Parse(time.RFC3339, "2026-02-01T00:00:00Z")
 
-	// Complex chain: skip weekends, take first 5 weekdays, get their day numbers
 	var weekdayDays []int
 	count := 0
 	for dt := range s.Occurrences(from) {
@@ -425,10 +384,6 @@ func TestComplexIterationChain(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Filter-like Patterns
-// =============================================================================
-
 func TestFilterWeekends(t *testing.T) {
 	s, err := ParseSchedule("every day at 09:00 in UTC")
 	if err != nil {
@@ -437,7 +392,6 @@ func TestFilterWeekends(t *testing.T) {
 
 	from, _ := time.Parse(time.RFC3339, "2026-02-01T00:00:00Z")
 
-	// Filter to only weekends from first 14 days
 	var weekends []time.Time
 	count := 0
 	for dt := range s.Occurrences(from) {
@@ -466,7 +420,6 @@ func TestMapToDays(t *testing.T) {
 
 	from, _ := time.Parse(time.RFC3339, "2026-02-01T00:00:00Z")
 
-	// Map to just the day number
 	var days []int
 	count := 0
 	for dt := range s.Occurrences(from) {

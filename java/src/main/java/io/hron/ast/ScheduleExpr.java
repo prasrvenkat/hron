@@ -1,18 +1,5 @@
 package io.hron.ast;
 
-/**
- * Sealed interface for schedule expressions.
- *
- * <p>There are 6 types of schedule expressions:
- *
- * <ul>
- *   <li>{@link DayRepeat} - "every day at 9:00"
- *   <li>{@link IntervalRepeat} - "every 30 min from 9:00 to 17:00"
- *   <li>{@link WeekRepeat} - "every 2 weeks on monday"
- *   <li>{@link MonthRepeat} - "every month on the 1st" or "every month on the first monday"
- *   <li>{@link SingleDate} - "on feb 14 at 9:00"
- *   <li>{@link YearRepeat} - "every year on dec 25"
- * </ul>
- */
+/** The expression part of a schedule, before any trailing clauses. */
 public sealed interface ScheduleExpr
     permits DayRepeat, IntervalRepeat, WeekRepeat, MonthRepeat, SingleDate, YearRepeat {}

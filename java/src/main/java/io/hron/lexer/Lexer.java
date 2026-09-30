@@ -95,14 +95,12 @@ public final class Lexer {
   private Token lexNumberOrTimeOrDate() throws HronException {
     int start = pos;
 
-    // Read digits
     int numStart = pos;
     while (pos < input.length() && isDigit(input.charAt(pos))) {
       pos++;
     }
     String digits = input.substring(numStart, pos);
 
-    // Check for ISO date: YYYY-MM-DD
     if (digits.length() == 4 && pos < input.length() && input.charAt(pos) == '-') {
       String remaining = input.substring(start);
       if (remaining.length() >= 10
@@ -117,7 +115,6 @@ public final class Lexer {
       }
     }
 
-    // Check for time: HH:MM or H:MM
     if ((digits.length() == 1 || digits.length() == 2)
         && pos < input.length()
         && input.charAt(pos) == ':') {
@@ -139,7 +136,6 @@ public final class Lexer {
 
     int num = Integer.parseInt(digits);
 
-    // Check for ordinal suffix: st, nd, rd, th
     if (pos + 1 < input.length()) {
       String suffix = input.substring(pos, pos + 2).toLowerCase();
       if (suffix.equals("st")
@@ -168,7 +164,6 @@ public final class Lexer {
       throw HronException.lex("unknown keyword '" + word + "'", span, input);
     }
 
-    // Create a new token with the actual span
     Token result =
         switch (tok.kind()) {
           case DAY_NAME -> Token.dayName(tok.dayNameVal(), span);
@@ -201,14 +196,13 @@ public final class Lexer {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
   }
 
-  // Keyword map - values have dummy spans, actual spans are set when returning
+  // Values carry DUMMY_SPAN; lexWord rebuilds each token with its real span.
   private static final Map<String, Token> KEYWORD_MAP;
   private static final Span DUMMY_SPAN = new Span(0, 0);
 
   static {
     KEYWORD_MAP =
         Map.ofEntries(
-            // Keywords
             Map.entry("every", Token.keyword(TokenKind.EVERY, DUMMY_SPAN)),
             Map.entry("on", Token.keyword(TokenKind.ON, DUMMY_SPAN)),
             Map.entry("at", Token.keyword(TokenKind.AT, DUMMY_SPAN)),
@@ -237,8 +231,6 @@ public final class Lexer {
             Map.entry("nearest", Token.keyword(TokenKind.NEAREST, DUMMY_SPAN)),
             Map.entry("next", Token.keyword(TokenKind.NEXT, DUMMY_SPAN)),
             Map.entry("previous", Token.keyword(TokenKind.PREVIOUS, DUMMY_SPAN)),
-
-            // Day names
             Map.entry("monday", Token.dayName(Weekday.MONDAY, DUMMY_SPAN)),
             Map.entry("mon", Token.dayName(Weekday.MONDAY, DUMMY_SPAN)),
             Map.entry("tuesday", Token.dayName(Weekday.TUESDAY, DUMMY_SPAN)),
@@ -253,8 +245,6 @@ public final class Lexer {
             Map.entry("sat", Token.dayName(Weekday.SATURDAY, DUMMY_SPAN)),
             Map.entry("sunday", Token.dayName(Weekday.SUNDAY, DUMMY_SPAN)),
             Map.entry("sun", Token.dayName(Weekday.SUNDAY, DUMMY_SPAN)),
-
-            // Month names
             Map.entry("january", Token.monthName(MonthName.JANUARY, DUMMY_SPAN)),
             Map.entry("jan", Token.monthName(MonthName.JANUARY, DUMMY_SPAN)),
             Map.entry("february", Token.monthName(MonthName.FEBRUARY, DUMMY_SPAN)),
@@ -278,15 +268,11 @@ public final class Lexer {
             Map.entry("nov", Token.monthName(MonthName.NOVEMBER, DUMMY_SPAN)),
             Map.entry("december", Token.monthName(MonthName.DECEMBER, DUMMY_SPAN)),
             Map.entry("dec", Token.monthName(MonthName.DECEMBER, DUMMY_SPAN)),
-
-            // Ordinals
             Map.entry("first", Token.ordinal(OrdinalPosition.FIRST, DUMMY_SPAN)),
             Map.entry("second", Token.ordinal(OrdinalPosition.SECOND, DUMMY_SPAN)),
             Map.entry("third", Token.ordinal(OrdinalPosition.THIRD, DUMMY_SPAN)),
             Map.entry("fourth", Token.ordinal(OrdinalPosition.FOURTH, DUMMY_SPAN)),
             Map.entry("fifth", Token.ordinal(OrdinalPosition.FIFTH, DUMMY_SPAN)),
-
-            // Interval units
             Map.entry("min", Token.intervalUnit(IntervalUnit.MINUTES, DUMMY_SPAN)),
             Map.entry("mins", Token.intervalUnit(IntervalUnit.MINUTES, DUMMY_SPAN)),
             Map.entry("minute", Token.intervalUnit(IntervalUnit.MINUTES, DUMMY_SPAN)),

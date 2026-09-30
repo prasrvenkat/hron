@@ -5,63 +5,8 @@ import (
 	"time"
 )
 
-// =============================================================================
-// Iteration Safety Limits
-// =============================================================================
-// maxIterations (1000): Maximum iterations for nextFrom/previousFrom loops.
-// Prevents infinite loops when searching for valid occurrences.
-//
-// Expression-specific limits:
-// - Day repeat: 8 days (covers one week + margin)
-// - Week repeat: 54 weeks (covers one year + margin)
-// - Month repeat: 24 * interval months (covers 2 years scaled by interval)
-// - Year repeat: 8 * interval years (covers reasonable future horizon)
-//
-// These limits are generous safety bounds. In practice, valid schedules
-// find occurrences within the first few iterations.
-// =============================================================================
-
-// =============================================================================
-// DST (Daylight Saving Time) Handling
-// =============================================================================
-// When resolving a wall-clock time to an instant:
-//
-// 1. DST Gap (Spring Forward):
-//    - Time doesn't exist (e.g., 2:30 AM during spring forward)
-//    - Solution: Push forward to the next valid time after the gap
-//    - Example: 2:30 AM -> 3:00 AM (or 3:30 AM depending on gap size)
-//
-// 2. DST Fold (Fall Back):
-//    - Time is ambiguous (e.g., 1:30 AM occurs twice)
-//    - Solution: Use first occurrence (fold=0 / pre-transition time)
-//    - This matches user expectation for scheduling
-//
-// All implementations use the same algorithm for cross-language consistency.
-// =============================================================================
-
-// =============================================================================
-// Interval Alignment (Anchor Date)
-// =============================================================================
-// For schedules with interval > 1 (e.g., "every 3 days"), we need to
-// determine which dates are valid based on alignment with an anchor.
-//
-// Formula: (date_offset - anchor_offset) mod interval == 0
-//
-// Where:
-//   - date_offset: days/weeks/months from epoch to candidate date
-//   - anchor_offset: days/weeks/months from epoch to anchor date
-//   - interval: the repeat interval (e.g., 3 for "every 3 days")
-//
-// Default anchor: Epoch (1970-01-01)
-// Custom anchor: Set via "starting YYYY-MM-DD" clause
-//
-// For week repeats, we use epoch Monday (1970-01-05) as the reference
-// point to align week boundaries correctly.
-// =============================================================================
-
 const maxIterations = 1000
 
-// nextFrom computes the next occurrence after now.
 func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.Time {
 	var untilDate *time.Time
 	if schedule.Until != nil {
@@ -72,7 +17,7 @@ func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.T
 	hasExceptions := len(schedule.Except) > 0
 	hasDuring := len(schedule.During) > 0
 
-	// Check if expression is NearestWeekday with direction (can cross month boundaries)
+	// NearestWeekday with a direction can land in another month, so it applies the during filter itself.
 	handlesDuringInternally := schedule.Expr.Kind == ScheduleExprKindMonth &&
 		schedule.Expr.MonthTarget.Kind == MonthTargetKindNearestWeekday &&
 		schedule.Expr.MonthTarget.Direction != NearestNone
@@ -92,13 +37,10 @@ func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.T
 
 		cDate := candidate.In(loc)
 
-		// Apply until filter
 		if untilDate != nil && dateOnly(cDate).After(dateOnly(*untilDate)) {
 			return nil
 		}
 
-		// Apply during filter
-		// Skip this check for expressions that handle during internally (NearestWeekday with direction)
 		if hasDuring && !handlesDuringInternally && !matchesDuring(cDate, schedule.During) {
 			skipTo := nextDuringMonth(cDate, schedule.During)
 			midnight := atTimeOnDate(skipTo, TimeOfDay{0, 0}, loc)
@@ -106,7 +48,6 @@ func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.T
 			continue
 		}
 
-		// Apply except filter
 		if hasExceptions && isExcepted(cDate, schedule.Except) {
 			nextDay := cDate.AddDate(0, 0, 1)
 			midnight := atTimeOnDate(nextDay, TimeOfDay{0, 0}, loc)
@@ -120,12 +61,10 @@ func nextFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.T
 	return nil
 }
 
-// nextExpr dispatches to the appropriate next function based on expression type.
 func nextExpr(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time) *time.Time {
 	return nextExprWithDuring(expr, loc, anchor, now, nil)
 }
 
-// nextExprWithDuring dispatches to the appropriate next function, passing during filter for special handling.
 func nextExprWithDuring(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time, during []MonthName) *time.Time {
 	switch expr.Kind {
 	case ScheduleExprKindDay:
@@ -145,7 +84,6 @@ func nextExprWithDuring(expr ScheduleExpr, loc *time.Location, anchor string, no
 	}
 }
 
-// nextNFrom computes the next n occurrences after now.
 func nextNFrom(schedule *ScheduleData, loc *time.Location, now time.Time, n int) []time.Time {
 	var results []time.Time
 	current := now
@@ -162,7 +100,6 @@ func nextNFrom(schedule *ScheduleData, loc *time.Location, now time.Time, n int)
 	return results
 }
 
-// matches checks if a datetime matches this schedule.
 func matches(schedule *ScheduleData, loc *time.Location, dt time.Time) bool {
 	zdt := dt.In(loc)
 	d := dateOnly(zdt)
@@ -186,7 +123,7 @@ func matches(schedule *ScheduleData, loc *time.Location, dt time.Time) bool {
 			if zdt.Hour() == tod.Hour && zdt.Minute() == tod.Minute {
 				return true
 			}
-			// DST gap check
+			// A time in a DST gap fires at its shifted instant, not at its wall-clock time.
 			resolved := atTimeOnDate(d, tod, loc)
 			if resolved.Unix() == dt.Unix() {
 				return true
@@ -337,7 +274,6 @@ func matches(schedule *ScheduleData, loc *time.Location, dt time.Time) bool {
 	return false
 }
 
-// matchesYearTarget checks if a date matches a year target.
 func matchesYearTarget(target YearTarget, d time.Time) bool {
 	switch target.Kind {
 	case YearTargetKindDate:
@@ -370,14 +306,11 @@ func matchesYearTarget(target YearTarget, d time.Time) bool {
 	return false
 }
 
-// --- Per-variant next functions ---
-
 func nextDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Location, anchor string, now time.Time) *time.Time {
 	nowInTz := now.In(loc)
 	d := dateOnly(nowInTz)
 
 	if interval <= 1 {
-		// Original behavior for interval=1
 		if matchesDayFilter(d, days) {
 			candidate := earliestFutureAtTimes(d, times, loc, now)
 			if candidate != nil {
@@ -404,7 +337,6 @@ func nextDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 		anchorDate, _ = parseISODate(anchor)
 	}
 
-	// Find the next aligned day >= today
 	offset := daysBetween(dateOnly(anchorDate), d)
 	remainder := offset % interval
 	if remainder < 0 {
@@ -481,10 +413,8 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 
 	d := dateOnly(nowInTz)
 
-	// Sort target DOWs for earliest-first matching
 	sortedDays := make([]Weekday, len(days))
 	copy(sortedDays, days)
-	// Simple bubble sort
 	for i := 0; i < len(sortedDays)-1; i++ {
 		for j := i + 1; j < len(sortedDays); j++ {
 			if sortedDays[i].Number() > sortedDays[j].Number() {
@@ -493,7 +423,6 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 		}
 	}
 
-	// Find Monday of current week and Monday of anchor week
 	dowOffset := (isoWeekday(d) - 1)
 	currentMonday := d.AddDate(0, 0, -dowOffset)
 
@@ -510,7 +439,6 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 		}
 
 		if weeks%interval == 0 {
-			// Aligned week — try each target DOW
 			for _, wd := range sortedDays {
 				dayOffset := wd.Number() - 1
 				targetDate := currentMonday.AddDate(0, 0, dayOffset)
@@ -521,7 +449,6 @@ func nextWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 			}
 		}
 
-		// Skip to next aligned week
 		remainder := weeks % interval
 		skipWeeks := interval
 		if remainder != 0 {
@@ -558,7 +485,6 @@ func nextMonthRepeatWithDuring(interval int, target MonthTarget, times []TimeOfD
 		target.Direction != NearestNone
 
 	for i := 0; i < maxIter; i++ {
-		// Check during filter for NearestWeekday with direction
 		if applyDuringFilter {
 			found := false
 			for _, mn := range during {
@@ -577,7 +503,6 @@ func nextMonthRepeatWithDuring(interval int, target MonthTarget, times []TimeOfD
 			}
 		}
 
-		// Check interval alignment
 		if interval > 1 {
 			cur := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 			monthOffset := monthsBetweenYM(dateOnly(anchorDate), cur)
@@ -653,7 +578,6 @@ func nextSingleDate(dateSpec DateSpec, times []TimeOfDay, loc *time.Location, no
 		for y := 0; y < 8; y++ {
 			year := startYear + y
 			d := time.Date(year, time.Month(dateSpec.Month.Number()), dateSpec.Day, 0, 0, 0, 0, time.UTC)
-			// Validate date is valid
 			if d.Month() != time.Month(dateSpec.Month.Number()) {
 				continue // Invalid date (e.g., Feb 30)
 			}
@@ -685,7 +609,6 @@ func nextYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *tim
 	for y := 0; y < maxIter; y++ {
 		year := startYear + y
 
-		// Check interval alignment
 		if interval > 1 {
 			yearOffset := year - anchorYear
 			if yearOffset < 0 || yearOffset%interval != 0 {
@@ -699,7 +622,6 @@ func nextYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *tim
 		switch target.Kind {
 		case YearTargetKindDate:
 			targetDate = time.Date(year, time.Month(target.Month.Number()), target.Day, 0, 0, 0, 0, time.UTC)
-			// Validate the date
 			valid = targetDate.Month() == time.Month(target.Month.Number()) && targetDate.Day() == target.Day
 		case YearTargetKindOrdinalWeekday:
 			if target.Ordinal == Last {
@@ -727,11 +649,8 @@ func nextYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *tim
 	return nil
 }
 
-// --- Iterator functions ---
-
-// Occurrences returns a lazy iterator of occurrences starting after `from`.
-// The iterator is unbounded for repeating schedules (will iterate forever unless limited),
-// but respects the `until` clause if specified in the schedule.
+// Occurrences returns a lazy iterator of occurrences strictly after from.
+// Unbounded for repeating schedules unless an until clause ends them.
 func Occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
 	return func(yield func(time.Time) bool) {
 		current := from
@@ -750,7 +669,6 @@ func Occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
 }
 
 // Between returns a bounded iterator of occurrences where `from < occurrence <= to`.
-// The iterator yields occurrences strictly after `from` and up to and including `to`.
 func Between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
 	return func(yield func(time.Time) bool) {
 		for dt := range Occurrences(schedule, from) {
@@ -764,9 +682,6 @@ func Between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
 	}
 }
 
-// --- Previous From ---
-
-// previousFrom computes the most recent occurrence strictly before now.
 func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *time.Time {
 	hasExceptions := len(schedule.Except) > 0
 	hasDuring := len(schedule.During) > 0
@@ -781,7 +696,6 @@ func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *ti
 
 		cDate := candidate.In(loc)
 
-		// Check starting anchor - if before anchor, no previous occurrence
 		if schedule.Anchor != "" {
 			anchorDate, _ := parseISODate(schedule.Anchor)
 			if dateOnly(cDate).Before(dateOnly(anchorDate)) {
@@ -789,8 +703,6 @@ func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *ti
 			}
 		}
 
-		// Apply until filter for previousFrom:
-		// If candidate is after until, search earlier
 		if schedule.Until != nil {
 			untilDate := resolveUntil(*schedule.Until, now)
 			if dateOnly(cDate).After(dateOnly(untilDate)) {
@@ -800,14 +712,12 @@ func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *ti
 			}
 		}
 
-		// Apply during filter
 		if hasDuring && !matchesDuring(cDate, schedule.During) {
 			skipTo := prevDuringMonth(cDate, schedule.During)
 			current = atTimeOnDate(skipTo, TimeOfDay{23, 59}, loc).Add(time.Second)
 			continue
 		}
 
-		// Apply except filter
 		if hasExceptions && isExcepted(cDate, schedule.Except) {
 			prevDay := dateOnly(cDate).AddDate(0, 0, -1)
 			current = atTimeOnDate(prevDay, TimeOfDay{23, 59}, loc).Add(time.Second)
@@ -820,7 +730,6 @@ func previousFrom(schedule *ScheduleData, loc *time.Location, now time.Time) *ti
 	return nil
 }
 
-// prevExpr dispatches to the appropriate prev function based on expression type.
 func prevExpr(expr ScheduleExpr, loc *time.Location, anchor string, now time.Time) *time.Time {
 	switch expr.Kind {
 	case ScheduleExprKindDay:
@@ -870,7 +779,6 @@ func prevDuringMonth(d time.Time, during []MonthName) time.Time {
 
 // latestPastAtTimes finds the latest time on date d that is strictly before now.
 func latestPastAtTimes(d time.Time, times []TimeOfDay, loc *time.Location, now time.Time) *time.Time {
-	// Sort times in descending order
 	sortedTimes := make([]TimeOfDay, len(times))
 	copy(sortedTimes, times)
 	for i := 0; i < len(sortedTimes)-1; i++ {
@@ -890,13 +798,11 @@ func latestPastAtTimes(d time.Time, times []TimeOfDay, loc *time.Location, now t
 	return nil
 }
 
-// latestAtTimes finds the latest time on date d.
 func latestAtTimes(d time.Time, times []TimeOfDay, loc *time.Location) *time.Time {
 	if len(times) == 0 {
 		return nil
 	}
 
-	// Find the latest time
 	latest := times[0]
 	for _, tod := range times[1:] {
 		if tod.TotalMinutes() > latest.TotalMinutes() {
@@ -913,7 +819,6 @@ func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 	d := dateOnly(nowInTz)
 
 	if interval <= 1 {
-		// Check today for times that have passed
 		if matchesDayFilter(d, days) {
 			candidate := latestPastAtTimes(d, times, loc, now)
 			if candidate != nil {
@@ -921,7 +826,6 @@ func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 			}
 		}
 
-		// Go back day by day
 		for i := 0; i < 8; i++ {
 			d = d.AddDate(0, 0, -1)
 			if matchesDayFilter(d, days) {
@@ -935,7 +839,6 @@ func prevDayRepeat(interval int, days DayFilter, times []TimeOfDay, loc *time.Lo
 		return nil
 	}
 
-	// Interval > 1
 	anchorDate := epochDate
 	if anchor != "" {
 		anchorDate, _ = parseISODate(anchor)
@@ -1022,7 +925,6 @@ func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 		anchorDate, _ = parseISODate(anchor)
 	}
 
-	// Sort target DOWs in reverse order for latest-first matching
 	sortedDays := make([]Weekday, len(days))
 	copy(sortedDays, days)
 	for i := 0; i < len(sortedDays)-1; i++ {
@@ -1033,7 +935,6 @@ func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 		}
 	}
 
-	// Find Monday of current week and Monday of anchor week
 	dowOffset := isoWeekday(d) - 1
 	currentMonday := d.AddDate(0, 0, -dowOffset)
 
@@ -1048,7 +949,6 @@ func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 		}
 
 		if weeks%interval == 0 {
-			// Aligned week — try each target DOW in reverse order
 			for _, wd := range sortedDays {
 				dayOff := wd.Number() - 1
 				targetDate := currentMonday.AddDate(0, 0, dayOff)
@@ -1069,7 +969,6 @@ func prevWeekRepeat(interval int, days []Weekday, times []TimeOfDay, loc *time.L
 			}
 		}
 
-		// Go back to previous aligned week
 		remainder := weeks % interval
 		skipWeeks := interval
 		if remainder != 0 {
@@ -1097,7 +996,6 @@ func prevMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *t
 	}
 
 	for i := 0; i < maxIter; i++ {
-		// Check interval alignment
 		if interval > 1 {
 			cur := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 			monthOffset := monthsBetweenYM(dateOnly(anchorDate), cur)
@@ -1140,7 +1038,6 @@ func prevMonthRepeat(interval int, target MonthTarget, times []TimeOfDay, loc *t
 			}
 		}
 
-		// Sort in reverse order for latest first
 		for k := 0; k < len(dateCandidates)-1; k++ {
 			for j := k + 1; j < len(dateCandidates); j++ {
 				if dateCandidates[k].Before(dateCandidates[j]) {
@@ -1191,11 +1088,9 @@ func prevSingleDate(dateSpec DateSpec, times []TimeOfDay, loc *time.Location, no
 		}
 		return latestAtTimes(targetDate, times, loc)
 	case DateSpecKindNamed:
-		// Find most recent occurrence
 		thisYear := time.Date(nowDate.Year(), time.Month(dateSpec.Month.Number()), dateSpec.Day, 0, 0, 0, 0, time.UTC)
 		lastYear := time.Date(nowDate.Year()-1, time.Month(dateSpec.Month.Number()), dateSpec.Day, 0, 0, 0, 0, time.UTC)
 
-		// Validate dates
 		thisYearValid := thisYear.Month() == time.Month(dateSpec.Month.Number()) && thisYear.Day() == dateSpec.Day
 		lastYearValid := lastYear.Month() == time.Month(dateSpec.Month.Number()) && lastYear.Day() == dateSpec.Day
 
@@ -1239,7 +1134,6 @@ func prevYearRepeat(interval int, target YearTarget, times []TimeOfDay, loc *tim
 	for y := 0; y < maxIter; y++ {
 		year := startYear - y
 
-		// Check interval alignment
 		if interval > 1 {
 			yearOffset := year - anchorYear
 			if yearOffset < 0 || yearOffset%interval != 0 {

@@ -98,6 +98,8 @@ Test cases in `spec/tests.json` are the source of truth. When adding tests:
 
 CI enforces all of these. Run them locally before pushing.
 
+Comments follow the rule in [AGENTS.md](AGENTS.md#comments).
+
 ## Pull Requests
 
 - Create a branch from `main`

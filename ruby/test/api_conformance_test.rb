@@ -6,7 +6,6 @@ class ApiConformanceTest < Minitest::Test
   API_SPEC = TestHelper.load_api_spec
   SCHEDULE_SPEC = API_SPEC["schedule"]
 
-  # Map camelCase spec names to Ruby equivalents
   STATIC_METHOD_MAP = {
     "parse" => "parse",
     "fromCron" => "from_cron",
@@ -28,10 +27,6 @@ class ApiConformanceTest < Minitest::Test
     "timezone" => "timezone"
   }.freeze
 
-  # ===========================================================================
-  # Static methods
-  # ===========================================================================
-
   def test_parse
     schedule = Hron::Schedule.parse("every day at 09:00")
     assert_instance_of Hron::Schedule, schedule
@@ -46,10 +41,6 @@ class ApiConformanceTest < Minitest::Test
     assert_equal true, Hron::Schedule.validate("every day at 09:00")
     assert_equal false, Hron::Schedule.validate("not a schedule")
   end
-
-  # ===========================================================================
-  # Instance methods
-  # ===========================================================================
 
   def setup
     @schedule = Hron::Schedule.parse("every day at 09:00")
@@ -94,10 +85,6 @@ class ApiConformanceTest < Minitest::Test
     assert_equal "every day at 09:00", display
   end
 
-  # ===========================================================================
-  # Getters
-  # ===========================================================================
-
   def test_timezone_none
     schedule = Hron::Schedule.parse("every day at 09:00")
     assert_nil schedule.timezone
@@ -107,10 +94,6 @@ class ApiConformanceTest < Minitest::Test
     schedule = Hron::Schedule.parse("every day at 09:00 in America/New_York")
     assert_equal "America/New_York", schedule.timezone
   end
-
-  # ===========================================================================
-  # Spec coverage
-  # ===========================================================================
 
   def test_all_static_methods_exist
     SCHEDULE_SPEC["staticMethods"].each do |method|

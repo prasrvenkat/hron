@@ -5,7 +5,6 @@ namespace Hron.Lexer;
 /// </summary>
 public enum TokenKind
 {
-    // Keywords
     Every,
     On,
     At,
@@ -29,7 +28,6 @@ public enum TokenKind
     Next,
     Previous,
 
-    // Value-carrying tokens
     DayName,
     MonthName,
     Ordinal,

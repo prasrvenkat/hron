@@ -350,7 +350,6 @@ pub enum MonthTarget {
 }
 
 impl MonthTarget {
-    /// Expand all day specs into individual day numbers.
     pub(crate) fn expand_days(&self) -> Vec<u8> {
         match self {
             MonthTarget::Days(specs) => specs.iter().flat_map(|s| s.expand()).collect(),

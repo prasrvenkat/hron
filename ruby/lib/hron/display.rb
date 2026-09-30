@@ -3,7 +3,6 @@
 require_relative "ast"
 
 module Hron
-  # Display module for converting schedules to canonical string representation
   module Display
     def self.display(schedule)
       out = display_expr(schedule.expr)

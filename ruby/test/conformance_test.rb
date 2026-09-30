@@ -22,13 +22,8 @@ class ConformanceTest < Minitest::Test
     case_insensitivity
   ].freeze
 
-  # Dynamically discover eval sections (skip non-test entries)
   SKIP_EVAL_SECTIONS = %w[description matches occurrences between previous_from].freeze
   EVAL_SECTIONS = SPEC["eval"].keys.reject { |s| SKIP_EVAL_SECTIONS.include?(s) }.freeze
-
-  # ===========================================================================
-  # Parse conformance tests
-  # ===========================================================================
 
   PARSE_SECTIONS.each do |section|
     SPEC["parse"][section]["tests"].each do |tc|
@@ -41,14 +36,12 @@ class ConformanceTest < Minitest::Test
         display = schedule.to_s
         assert_equal canonical, display, "Parse roundtrip failed for: #{input}"
 
-        # Idempotency check
         s2 = Hron::Schedule.parse(canonical)
         assert_equal canonical, s2.to_s, "Idempotency failed for: #{canonical}"
       end
     end
   end
 
-  # Parse error tests
   SPEC["parse_errors"]["tests"].each do |tc|
     test_name = tc["name"] || tc["input"]
     define_method("test_parse_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
@@ -59,10 +52,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # ===========================================================================
-  # Eval conformance tests
-  # ===========================================================================
-
   EVAL_SECTIONS.each do |section|
     SPEC["eval"][section]["tests"].each do |tc|
       test_name = tc["name"] || tc["expression"]
@@ -70,30 +59,25 @@ class ConformanceTest < Minitest::Test
         schedule = Hron::Schedule.parse(tc["expression"])
         now = tc["now"] ? TestHelper.parse_zoned(tc["now"]) : DEFAULT_NOW
 
-        # next (full timestamp)
         if tc["next"]
           result = schedule.next_from(now)
           if tc["next"].nil?
             assert_nil result
           else
             refute_nil result, "Expected next occurrence but got nil"
-            # For comparison, we need to handle timezone formatting
             expected = tc["next"]
-            # Extract timezone from expected
             match = expected.match(/\[(.+)\]$/)
             tz_name = match ? match[1] : "UTC"
             assert_equal expected, TestHelper.format_zoned(result, tz_name)
           end
         end
 
-        # next_date (date-only check)
         if tc["next_date"]
           result = schedule.next_from(now)
           refute_nil result, "Expected next occurrence but got nil"
           assert_equal tc["next_date"], result.to_date.iso8601
         end
 
-        # next_n (list of timestamps)
         if tc["next_n"]
           expected = tc["next_n"]
           n_count = tc["next_n_count"] || expected.length
@@ -107,7 +91,6 @@ class ConformanceTest < Minitest::Test
           end
         end
 
-        # next_n_length (just check count)
         next unless tc["next_n_length"]
 
         expected_len = tc["next_n_length"]
@@ -117,10 +100,6 @@ class ConformanceTest < Minitest::Test
       end
     end
   end
-
-  # ===========================================================================
-  # Eval previous_from conformance tests
-  # ===========================================================================
 
   SPEC["eval"]["previous_from"]["tests"].each do |tc|
     test_name = tc["name"] || tc["expression"]
@@ -141,10 +120,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # ===========================================================================
-  # Eval matches conformance tests
-  # ===========================================================================
-
   SPEC["eval"]["matches"]["tests"].each do |tc|
     test_name = tc["name"] || tc["expression"]
     define_method("test_matches_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
@@ -154,10 +129,6 @@ class ConformanceTest < Minitest::Test
       assert_equal tc["expected"], result
     end
   end
-
-  # ===========================================================================
-  # Occurrences conformance tests
-  # ===========================================================================
 
   SPEC["eval"]["occurrences"]["tests"].each do |tc|
     test_name = tc["name"] || tc["expression"]
@@ -177,10 +148,6 @@ class ConformanceTest < Minitest::Test
       end
     end
   end
-
-  # ===========================================================================
-  # Between conformance tests
-  # ===========================================================================
 
   SPEC["eval"]["between"]["tests"].each do |tc|
     test_name = tc["name"] || tc["expression"]
@@ -205,10 +172,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # ===========================================================================
-  # Eval error conformance tests
-  # ===========================================================================
-
   SPEC["eval_errors"]["tests"].each do |tc|
     test_name = tc["name"] || tc["expression"]
     define_method("test_eval_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
@@ -226,11 +189,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # ===========================================================================
-  # Cron conformance tests
-  # ===========================================================================
-
-  # to_cron tests
   SPEC["cron"]["to_cron"]["tests"].each do |tc|
     test_name = tc["name"] || tc["hron"]
     define_method("test_to_cron_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
@@ -239,7 +197,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # to_cron error tests
   SPEC["cron"]["to_cron_errors"]["tests"].each do |tc|
     test_name = tc["name"] || tc["hron"]
     define_method("test_to_cron_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
@@ -250,7 +207,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # from_cron tests
   SPEC["cron"]["from_cron"]["tests"].each do |tc|
     test_name = tc["name"] || tc["cron"]
     define_method("test_from_cron_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
@@ -259,7 +215,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # from_cron error tests
   SPEC["cron"]["from_cron_errors"]["tests"].each do |tc|
     test_name = tc["name"] || tc["cron"]
     define_method("test_from_cron_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do
@@ -269,7 +224,6 @@ class ConformanceTest < Minitest::Test
     end
   end
 
-  # roundtrip tests
   SPEC["cron"]["roundtrip"]["tests"].each do |tc|
     test_name = tc["name"] || tc["hron"]
     define_method("test_cron_roundtrip_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}") do

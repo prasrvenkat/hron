@@ -122,7 +122,6 @@ fn main() {
         }
     }
 
-    // Handle --from/--to range query
     if let Some(ref from_str) = cli.from {
         let from: Zoned = match from_str.parse() {
             Ok(z) => z,
@@ -133,7 +132,6 @@ fn main() {
         };
 
         let results: Vec<Zoned> = if let Some(ref to_str) = cli.to {
-            // between() query
             let to: Zoned = match to_str.parse() {
                 Ok(z) => z,
                 Err(e) => {
@@ -150,7 +148,6 @@ fn main() {
                 }
             }
         } else {
-            // occurrences() with default limit
             let limit = 100;
             match schedule
                 .occurrences(&from)
@@ -181,7 +178,6 @@ fn main() {
         process::exit(0);
     }
 
-    // Default: compute next N occurrences
     let mut n = cli.n;
     if n > 1000 {
         eprintln!("warning: capped at 1000 occurrences");

@@ -1,13 +1,3 @@
-"""Iterator-specific tests for `occurrences()` and `between()` methods.
-
-These tests verify Python-specific iterator behavior beyond conformance tests:
-- Laziness (generators don't evaluate eagerly)
-- Early termination
-- Generator protocol (__iter__ and __next__)
-- Integration with itertools
-- Memory efficiency patterns
-"""
-
 from __future__ import annotations
 
 import itertools
@@ -20,7 +10,6 @@ from hron import Schedule
 
 
 def parse_zoned(s: str) -> datetime:
-    """Parse '2026-02-06T12:00:00+00:00[UTC]' into a timezone-aware datetime."""
     import re
 
     m = re.match(r"^(.+)\[(.+)\]$", s)
@@ -32,21 +21,14 @@ def parse_zoned(s: str) -> datetime:
     return dt.astimezone(tz)
 
 
-# =============================================================================
-# Laziness Tests
-# =============================================================================
-
-
 class TestLaziness:
     def test_occurrences_is_lazy(self) -> None:
         """An unbounded schedule should not hang or OOM when creating the iterator."""
         schedule = Schedule.parse("every day at 09:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
-        # Creating the iterator should be instant (lazy)
         it = schedule.occurrences(from_dt)
 
-        # Taking just 1 should work without evaluating the rest
         first = list(itertools.islice(it, 1))
         assert len(first) == 1
 
@@ -55,17 +37,10 @@ class TestLaziness:
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
         to_dt = parse_zoned("2026-12-31T23:59:00+00:00[UTC]")
 
-        # Creating the iterator should be instant
         it = schedule.between(from_dt, to_dt)
 
-        # Taking just 3 should not evaluate all ~330 days
         first_three = list(itertools.islice(it, 3))
         assert len(first_three) == 3
-
-
-# =============================================================================
-# Early Termination Tests
-# =============================================================================
 
 
 class TestEarlyTermination:
@@ -103,7 +78,6 @@ class TestEarlyTermination:
         schedule = Schedule.parse("every day at 09:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
-        # Find the first Saturday occurrence
         saturday = next(
             (dt for dt in schedule.occurrences(from_dt) if dt.weekday() == 5),
             None,
@@ -114,11 +88,6 @@ class TestEarlyTermination:
         assert saturday.day == 7
 
 
-# =============================================================================
-# Iterator Protocol Tests
-# =============================================================================
-
-
 class TestIteratorProtocol:
     def test_occurrences_is_iterator(self) -> None:
         schedule = Schedule.parse("every day at 09:00 in UTC")
@@ -126,7 +95,6 @@ class TestIteratorProtocol:
 
         it = schedule.occurrences(from_dt)
 
-        # Check it's an iterator
         assert hasattr(it, "__iter__")
         assert hasattr(it, "__next__")
 
@@ -161,18 +129,11 @@ class TestIteratorProtocol:
 
         it = schedule.occurrences(from_dt)
 
-        # Should yield one occurrence
         first = next(it)
         assert first.day == 14
 
-        # Then raise StopIteration
         with pytest.raises(StopIteration):
             next(it)
-
-
-# =============================================================================
-# Itertools Integration Tests
-# =============================================================================
 
 
 class TestItertoolsIntegration:
@@ -180,7 +141,6 @@ class TestItertoolsIntegration:
         schedule = Schedule.parse("every day at 09:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
-        # Filter to only weekends
         two_weeks = itertools.islice(schedule.occurrences(from_dt), 14)
         weekends = filter(lambda dt: dt.weekday() >= 5, two_weeks)
         results = list(weekends)
@@ -192,7 +152,6 @@ class TestItertoolsIntegration:
         schedule = Schedule.parse("every day at 09:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
-        # Map to just the day number
         days = list(map(lambda dt: dt.day, itertools.islice(schedule.occurrences(from_dt), 5)))
 
         assert days == [1, 2, 3, 4, 5]
@@ -212,7 +171,6 @@ class TestItertoolsIntegration:
         schedule = Schedule.parse("every day at 09:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
-        # Skip until Feb 5, then take 3
         after_feb5 = itertools.dropwhile(lambda dt: dt.day < 5, schedule.occurrences(from_dt))
         results = list(itertools.islice(after_feb5, 3))
 
@@ -220,11 +178,6 @@ class TestItertoolsIntegration:
         assert results[0].day == 5
         assert results[1].day == 6
         assert results[2].day == 7
-
-
-# =============================================================================
-# Collect Patterns
-# =============================================================================
 
 
 class TestCollectPatterns:
@@ -250,16 +203,10 @@ class TestCollectPatterns:
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
         to_dt = parse_zoned("2026-02-10T23:59:00+00:00[UTC]")
 
-        # Count occurrences in range
         count = len(list(schedule.between(from_dt, to_dt)))
 
         # Feb 1-10 inclusive = 10 days
         assert count == 10
-
-
-# =============================================================================
-# For Loop Patterns
-# =============================================================================
 
 
 class TestForLoopPatterns:
@@ -285,11 +232,6 @@ class TestForLoopPatterns:
             days.append(dt.day)
 
         assert days == [1, 2, 3]
-
-
-# =============================================================================
-# Edge Cases
-# =============================================================================
 
 
 class TestEdgeCases:
@@ -319,11 +261,6 @@ class TestEdgeCases:
         assert len(results) == 1
 
 
-# =============================================================================
-# Timezone Handling
-# =============================================================================
-
-
 class TestTimezoneHandling:
     def test_occurrences_preserves_timezone(self) -> None:
         schedule = Schedule.parse("every day at 09:00 in America/New_York")
@@ -333,7 +270,6 @@ class TestTimezoneHandling:
 
         for dt in results:
             assert dt.tzinfo is not None
-            # Check the IANA key
             assert hasattr(dt.tzinfo, "key")
             assert dt.tzinfo.key == "America/New_York"
 
@@ -353,11 +289,6 @@ class TestTimezoneHandling:
         assert results[2].hour == 2  # Mar 9 02:30
 
 
-# =============================================================================
-# Multiple Times Per Day
-# =============================================================================
-
-
 class TestMultipleTimesPerDay:
     def test_occurrences_multiple_times_per_day(self) -> None:
         schedule = Schedule.parse("every day at 09:00, 12:00, 17:00 in UTC")
@@ -366,15 +297,9 @@ class TestMultipleTimesPerDay:
         results = list(itertools.islice(schedule.occurrences(from_dt), 9))  # 3 days worth
 
         assert len(results) == 9
-        # First day: 09:00, 12:00, 17:00
         assert results[0].hour == 9
         assert results[1].hour == 12
         assert results[2].hour == 17
-
-
-# =============================================================================
-# Complex Iterator Chains
-# =============================================================================
 
 
 class TestComplexIteratorChains:
@@ -382,7 +307,6 @@ class TestComplexIteratorChains:
         schedule = Schedule.parse("every day at 09:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
-        # Complex chain: skip weekends, take first 5 weekdays, get their day numbers
         two_weeks = itertools.islice(schedule.occurrences(from_dt), 14)
         weekdays = filter(lambda dt: dt.weekday() < 5, two_weeks)
         first_5 = itertools.islice(weekdays, 5)

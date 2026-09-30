@@ -13,16 +13,12 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * Iterator-specific tests for {@code occurrences()} and {@code between()} methods.
- *
- * <p>These tests verify Java-specific Stream behavior beyond conformance tests: - Laziness (streams
- * don't evaluate eagerly) - Early termination - Integration with Stream methods (map, filter,
- * collect) - forEach patterns
+ * Stream behaviour of {@code occurrences()} and {@code between()} that the conformance suite cannot
+ * check: laziness, early termination and composition with Stream operations.
  */
 class IteratorTest {
 
   private static ZonedDateTime parseZoned(String s) {
-    // Parse '2026-02-06T12:00:00+00:00[UTC]' format
     int bracketIdx = s.indexOf('[');
     String isoStr = s.substring(0, bracketIdx);
     String tzName = s.substring(bracketIdx + 1, s.length() - 1);
@@ -31,20 +27,14 @@ class IteratorTest {
         .withZoneSameInstant(zone);
   }
 
-  // =========================================================================
-  // Laziness Tests
-  // =========================================================================
-
   @Test
   void occurrencesIsLazy() throws HronException {
     // An unbounded schedule should not hang or OOM when creating the stream
     Schedule schedule = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Creating the stream should be instant (lazy)
     Stream<ZonedDateTime> stream = schedule.occurrences(from);
 
-    // Taking just 1 should work without evaluating the rest
     List<ZonedDateTime> results = stream.limit(1).collect(Collectors.toList());
     assertEquals(1, results.size());
   }
@@ -55,17 +45,12 @@ class IteratorTest {
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
     ZonedDateTime to = parseZoned("2026-12-31T23:59:00+00:00[UTC]");
 
-    // Creating the stream should be instant
     Stream<ZonedDateTime> stream = schedule.between(from, to);
 
     // Taking just 3 should not evaluate all ~330 days
     List<ZonedDateTime> results = stream.limit(3).collect(Collectors.toList());
     assertEquals(3, results.size());
   }
-
-  // =========================================================================
-  // Early Termination Tests
-  // =========================================================================
 
   @Test
   void occurrencesEarlyTerminationWithLimit() throws HronException {
@@ -98,7 +83,6 @@ class IteratorTest {
     Schedule schedule = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Find the first Saturday occurrence
     Optional<ZonedDateTime> saturday =
         schedule
             .occurrences(from)
@@ -110,16 +94,11 @@ class IteratorTest {
     assertEquals(7, saturday.get().getDayOfMonth());
   }
 
-  // =========================================================================
-  // Stream Methods Tests
-  // =========================================================================
-
   @Test
   void worksWithFilter() throws HronException {
     Schedule schedule = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Filter to only weekends from first 14 days
     List<ZonedDateTime> weekends =
         schedule
             .occurrences(from)
@@ -140,7 +119,6 @@ class IteratorTest {
     Schedule schedule = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Map to just the day number
     List<Integer> days =
         schedule
             .occurrences(from)
@@ -156,7 +134,6 @@ class IteratorTest {
     Schedule schedule = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Skip first 5, take next 3
     List<ZonedDateTime> results =
         schedule.occurrences(from).skip(5).limit(3).collect(Collectors.toList());
 
@@ -173,7 +150,6 @@ class IteratorTest {
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
     ZonedDateTime to = parseZoned("2026-02-10T23:59:00+00:00[UTC]");
 
-    // Count occurrences in range
     long count = schedule.between(from, to).count();
 
     // Feb 1-10 inclusive = 10 days
@@ -186,16 +162,11 @@ class IteratorTest {
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
     ZonedDateTime to = parseZoned("2026-02-10T23:59:00+00:00[UTC]");
 
-    // Find the last occurrence using reduce
     Optional<ZonedDateTime> last = schedule.between(from, to).reduce((first, second) -> second);
 
     assertTrue(last.isPresent());
     assertEquals(10, last.get().getDayOfMonth());
   }
-
-  // =========================================================================
-  // Collect Patterns
-  // =========================================================================
 
   @Test
   void occurrencesCollectToList() throws HronException {
@@ -217,10 +188,6 @@ class IteratorTest {
 
     assertEquals(7, results.size());
   }
-
-  // =========================================================================
-  // forEach Patterns
-  // =========================================================================
 
   @Test
   void occurrencesForEachWithCounter() throws HronException {
@@ -244,10 +211,6 @@ class IteratorTest {
 
     assertEquals(List.of(1, 2, 3), days);
   }
-
-  // =========================================================================
-  // Edge Cases
-  // =========================================================================
 
   @Test
   void occurrencesEmptyWhenPastUntil() throws HronException {
@@ -282,10 +245,6 @@ class IteratorTest {
     assertEquals(1, results.size());
   }
 
-  // =========================================================================
-  // Timezone Handling
-  // =========================================================================
-
   @Test
   void occurrencesPreservesTimezone() throws HronException {
     Schedule schedule = Schedule.parse("every day at 09:00 in America/New_York");
@@ -315,10 +274,6 @@ class IteratorTest {
     assertEquals(2, results.get(2).getHour()); // Mar 9 02:30
   }
 
-  // =========================================================================
-  // Multiple Times Per Day
-  // =========================================================================
-
   @Test
   void occurrencesMultipleTimesPerDay() throws HronException {
     Schedule schedule = Schedule.parse("every day at 09:00, 12:00, 17:00 in UTC");
@@ -337,16 +292,11 @@ class IteratorTest {
     assertEquals(17, results.get(2).getHour());
   }
 
-  // =========================================================================
-  // Complex Stream Chains
-  // =========================================================================
-
   @Test
   void complexStreamChain() throws HronException {
     Schedule schedule = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Complex chain: skip weekends, take first 5 weekdays, get their day numbers
     List<Integer> weekdayDays =
         schedule
             .occurrences(from)
@@ -363,10 +313,6 @@ class IteratorTest {
     // Feb 2026: 2,3,4,5,6 are Mon-Fri
     assertEquals(List.of(2, 3, 4, 5, 6), weekdayDays);
   }
-
-  // =========================================================================
-  // Stream Properties
-  // =========================================================================
 
   @Test
   void occurrencesReturnsStream() throws HronException {

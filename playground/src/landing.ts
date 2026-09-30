@@ -1,12 +1,8 @@
-// ── Version ──
-
 declare const __HRON_VERSION__: string;
 const versionEl = document.getElementById("version");
 if (versionEl) {
   versionEl.textContent = `v${__HRON_VERSION__}`;
 }
-
-// ── Theme ──
 
 const themeToggle = document.getElementById("theme-toggle");
 
@@ -31,8 +27,6 @@ themeToggle?.addEventListener("click", () => {
     document.documentElement.getAttribute("data-theme") ?? getSystemTheme();
   applyTheme(current === "dark" ? "light" : "dark");
 });
-
-// ── Translator: cron → hron, typed out and cycled ──
 
 interface Pair {
   cron: string;
@@ -103,8 +97,6 @@ if (cronEl && hronEl) {
   }
 }
 
-// ── Install tabs ──
-
 const tabs = document.getElementById("install-tabs");
 const cmdText = document.getElementById("install-cmd-text");
 
@@ -115,8 +107,6 @@ tabs?.addEventListener("click", (e) => {
   btn.classList.add("active");
   cmdText.textContent = btn.dataset.cmd ?? "";
 });
-
-// ── Copy install command ──
 
 const copyBtn = document.getElementById("copy-btn");
 copyBtn?.addEventListener("click", () => {

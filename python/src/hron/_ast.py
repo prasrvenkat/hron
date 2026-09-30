@@ -194,9 +194,6 @@ class TimeOfDay:
         return f"{self.hour:02d}:{self.minute:02d}"
 
 
-# --- Day filter ---
-
-
 @dataclass(frozen=True, slots=True)
 class DayFilterEvery:
     pass
@@ -220,9 +217,6 @@ class DayFilterDays:
 DayFilter = DayFilterEvery | DayFilterWeekday | DayFilterWeekend | DayFilterDays
 
 
-# --- Day of month spec ---
-
-
 @dataclass(frozen=True, slots=True)
 class SingleDay:
     day: int
@@ -235,9 +229,6 @@ class DayRange:
 
 
 DayOfMonthSpec = SingleDay | DayRange
-
-
-# --- Month target ---
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,8 +250,7 @@ class LastWeekdayTarget:
 class NearestWeekdayTarget:
     """Nearest weekday to a given day of month.
 
-    Standard (direction=None): never crosses month boundary (cron W compatibility).
-    Directional (direction=Some): can cross month boundary.
+    direction=None never crosses the month boundary (cron W); a direction can.
     """
 
     day: int
@@ -276,9 +266,6 @@ class OrdinalWeekdayTarget:
 MonthTarget = (
     DaysTarget | LastDayTarget | LastWeekdayTarget | NearestWeekdayTarget | OrdinalWeekdayTarget
 )
-
-
-# --- Year target ---
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,9 +297,6 @@ YearTarget = (
 )
 
 
-# --- Date spec ---
-
-
 @dataclass(frozen=True, slots=True)
 class NamedDate:
     month: MonthName
@@ -325,9 +309,6 @@ class IsoDate:
 
 
 DateSpec = NamedDate | IsoDate
-
-
-# --- Exception ---
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,9 +325,6 @@ class IsoException:
 ExceptionSpec = NamedException | IsoException
 
 
-# --- Until spec ---
-
-
 @dataclass(frozen=True, slots=True)
 class IsoUntil:
     date: str
@@ -359,9 +337,6 @@ class NamedUntil:
 
 
 UntilSpec = IsoUntil | NamedUntil
-
-
-# --- Schedule expressions ---
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,9 +385,6 @@ class YearRepeat:
 ScheduleExpr = IntervalRepeat | DayRepeat | WeekRepeat | MonthRepeat | SingleDateExpr | YearRepeat
 
 
-# --- Schedule data (top-level) ---
-
-
 @dataclass(slots=True)
 class ScheduleData:
     expr: ScheduleExpr
@@ -425,9 +397,6 @@ class ScheduleData:
 
 def new_schedule_data(expr: ScheduleExpr) -> ScheduleData:
     return ScheduleData(expr=expr)
-
-
-# --- Helper functions ---
 
 
 ALL_WEEKDAYS: tuple[Weekday, ...] = (

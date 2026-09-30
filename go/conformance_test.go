@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// Test spec structure
 type TestSpec struct {
 	Now         string                     `json:"now"`
 	Parse       map[string]json.RawMessage `json:"parse"`
@@ -174,35 +173,26 @@ func loadSpec(t *testing.T) *TestSpec {
 	return &spec
 }
 
-// parseZonedDateTime parses a datetime string in the format used by the spec.
-// Supports: "2026-02-06T12:00:00+00:00[UTC]" or "2026-02-06T12:00:00-05:00[America/New_York]"
 func parseZonedDateTime(s string) (time.Time, error) {
-	// Extract timezone from brackets
 	re := regexp.MustCompile(`^(.+?)\[([^\]]+)\]$`)
 	matches := re.FindStringSubmatch(s)
 	if matches == nil {
-		// Try parsing without timezone brackets
 		return time.Parse(time.RFC3339, s)
 	}
 
 	isoStr := matches[1]
 	tzName := matches[2]
 
-	// Load the timezone
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
-		// Fall back to parsing as RFC3339
 		return time.Parse(time.RFC3339, isoStr)
 	}
 
-	// Parse the datetime
-	// Remove the offset for parsing
 	t, err := time.Parse(time.RFC3339, isoStr)
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	// Convert to the target timezone
 	return t.In(loc), nil
 }
 
@@ -210,7 +200,6 @@ func TestParse(t *testing.T) {
 	spec := loadSpec(t)
 
 	for section, raw := range spec.Parse {
-		// Skip non-test entries like "description"
 		if section == "description" {
 			continue
 		}
@@ -233,7 +222,6 @@ func TestParse(t *testing.T) {
 						t.Errorf("parse(%q).String() = %q, want %q", tc.Input, got, tc.Canonical)
 					}
 
-					// Roundtrip: parse(canonical).String() == canonical
 					s2, err := ParseSchedule(tc.Canonical)
 					if err != nil {
 						t.Fatalf("failed to parse canonical %q: %v", tc.Canonical, err)
@@ -279,14 +267,12 @@ func TestEvalErrors(t *testing.T) {
 func TestEval(t *testing.T) {
 	spec := loadSpec(t)
 
-	// Parse default now
 	defaultNow, err := parseZonedDateTime(spec.Now)
 	if err != nil {
 		t.Fatalf("failed to parse default now: %v", err)
 	}
 
 	for section, raw := range spec.Eval {
-		// Skip non-test entries like "description", and special sections handled separately
 		if section == "description" || section == "occurrences" || section == "between" || section == "matches" {
 			continue
 		}
@@ -299,13 +285,11 @@ func TestEval(t *testing.T) {
 		t.Run(section, func(t *testing.T) {
 			for _, tc := range group.Tests {
 				t.Run(tc.Name, func(t *testing.T) {
-					// Parse the expression
 					s, err := ParseSchedule(tc.Expression)
 					if err != nil {
 						t.Fatalf("failed to parse %q: %v", tc.Expression, err)
 					}
 
-					// Use test-specific now or default
 					now := defaultNow
 					if tc.Now != "" {
 						now, err = parseZonedDateTime(tc.Now)
@@ -314,11 +298,9 @@ func TestEval(t *testing.T) {
 						}
 					}
 
-					// Test next_from
 					if tc.Next != nil {
 						result := s.NextFrom(now)
 						if *tc.Next == "" {
-							// null expected
 							if result != nil {
 								t.Errorf("NextFrom() = %v, want nil", result)
 							}
@@ -335,7 +317,6 @@ func TestEval(t *testing.T) {
 						}
 					}
 
-					// Test next_date (date only comparison)
 					if tc.NextDate != "" {
 						result := s.NextFrom(now)
 						if result == nil {
@@ -348,7 +329,6 @@ func TestEval(t *testing.T) {
 						}
 					}
 
-					// Test next_n
 					if len(tc.NextN) > 0 {
 						n := len(tc.NextN)
 						if tc.NextNCount > 0 {
@@ -371,7 +351,6 @@ func TestEval(t *testing.T) {
 						}
 					}
 
-					// Test next_n_length (only check count)
 					if tc.NextNLength > 0 {
 						n := tc.NextNCount
 						results := s.NextNFrom(now, n)
@@ -388,7 +367,6 @@ func TestEval(t *testing.T) {
 func TestOccurrences(t *testing.T) {
 	spec := loadSpec(t)
 
-	// Parse the occurrences section
 	var group OccurrencesGroup
 	if err := json.Unmarshal(spec.Eval["occurrences"], &group); err != nil {
 		t.Fatalf("failed to parse occurrences section: %v", err)
@@ -436,7 +414,6 @@ func TestOccurrences(t *testing.T) {
 func TestBetween(t *testing.T) {
 	spec := loadSpec(t)
 
-	// Parse the between section
 	var group BetweenGroup
 	if err := json.Unmarshal(spec.Eval["between"], &group); err != nil {
 		t.Fatalf("failed to parse between section: %v", err)
@@ -490,7 +467,6 @@ func TestBetween(t *testing.T) {
 func TestPreviousFrom(t *testing.T) {
 	spec := loadSpec(t)
 
-	// Parse the previous_from section
 	var group PreviousFromGroup
 	if err := json.Unmarshal(spec.Eval["previous_from"], &group); err != nil {
 		t.Fatalf("failed to parse previous_from section: %v", err)
@@ -607,7 +583,6 @@ func TestCronRoundtrip(t *testing.T) {
 
 	for _, tc := range spec.Cron.Roundtrip.Tests {
 		t.Run(tc.Name, func(t *testing.T) {
-			// hron -> cron
 			s1, err := ParseSchedule(tc.Hron)
 			if err != nil {
 				t.Fatalf("failed to parse %q: %v", tc.Hron, err)
@@ -618,19 +593,16 @@ func TestCronRoundtrip(t *testing.T) {
 				t.Fatalf("ToCron() failed: %v", err)
 			}
 
-			// cron -> hron
 			s2, err := FromCronExpr(cron)
 			if err != nil {
 				t.Fatalf("FromCron(%q) failed: %v", cron, err)
 			}
 
-			// hron -> cron again
 			cron2, err := s2.ToCron()
 			if err != nil {
 				t.Fatalf("ToCron() failed on roundtrip: %v", err)
 			}
 
-			// Both cron expressions should be the same
 			if cron != cron2 {
 				t.Errorf("roundtrip failed: %q -> %q -> %q -> %q", tc.Hron, cron, s2.String(), cron2)
 			}
@@ -652,7 +624,6 @@ type MatchesTest struct {
 func TestMatches(t *testing.T) {
 	spec := loadSpec(t)
 
-	// Parse the matches section
 	var group MatchesGroup
 	if err := json.Unmarshal(spec.Eval["matches"], &group); err != nil {
 		t.Fatalf("failed to parse matches section: %v", err)
@@ -679,7 +650,6 @@ func TestMatches(t *testing.T) {
 }
 
 func TestTimezone(t *testing.T) {
-	// Test timezone getter
 	s1, err := ParseSchedule("every day at 09:00")
 	if err != nil {
 		t.Fatal(err)
@@ -707,7 +677,7 @@ func TestValidate(t *testing.T) {
 }
 
 func TestExactTimeBoundary(t *testing.T) {
-	// Test strict greater-than behavior: if now equals an occurrence exactly, skip it
+	// Occurrences are strictly after now: one at exactly now is skipped.
 	s, err := ParseSchedule("every day at 12:00 in UTC")
 	if err != nil {
 		t.Fatal(err)
@@ -719,7 +689,6 @@ func TestExactTimeBoundary(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 
-	// Next should be tomorrow, not today
 	expected := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
 	if !next.Equal(expected) {
 		t.Errorf("NextFrom() = %v, want %v", next, expected)
@@ -727,7 +696,6 @@ func TestExactTimeBoundary(t *testing.T) {
 }
 
 func TestIntervalAlignment(t *testing.T) {
-	// Test that interval alignment works correctly
 	s, err := ParseSchedule("every 3 days at 09:00 in UTC")
 	if err != nil {
 		t.Fatal(err)
@@ -749,30 +717,24 @@ func TestIntervalAlignment(t *testing.T) {
 }
 
 func TestDST(t *testing.T) {
-	// Test DST handling (spring forward)
 	// March 8, 2026, 2:00 AM doesn't exist in America/New_York (spring forward)
 	s, err := ParseSchedule("every day at 02:30 in America/New_York")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// March 7, 2026 before midnight
 	now := time.Date(2026, 3, 7, 23, 0, 0, 0, time.FixedZone("EST", -5*3600))
 	next := s.NextFrom(now)
 	if next == nil {
 		t.Fatal("expected non-nil result")
 	}
 
-	// On March 8, 2:30 AM doesn't exist - should be pushed forward
-	// The exact behavior depends on Go's time handling
 	loc, _ := time.LoadLocation("America/New_York")
 	if next.In(loc).Hour() < 2 || (next.In(loc).Hour() == 2 && next.In(loc).Minute() < 30) {
-		// This shouldn't happen - time should be pushed forward
 		t.Logf("DST handling result: %v", next.In(loc))
 	}
 }
 
-// Helper to check if a string is valid JSON null
 func isNullJSON(s string) bool {
 	return strings.TrimSpace(s) == "null"
 }

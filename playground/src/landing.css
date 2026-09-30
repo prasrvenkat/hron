@@ -4,7 +4,6 @@
 
 .landing main { flex: 1; }
 
-/* ── Hero ── */
 .hero {
   position: relative;
   text-align: center;
@@ -48,7 +47,6 @@
   text-wrap: balance;
 }
 
-/* — Translator card — */
 .translator {
   width: 100%;
   max-width: 580px;
@@ -131,7 +129,6 @@
   color: var(--ink-soft);
 }
 
-/* ── Section scaffolding ── */
 .section { padding: 4.5rem 0; }
 .section + .section { border-top: 1px solid var(--line); }
 .section-head { margin-bottom: 2.5rem; max-width: 60ch; }
@@ -153,7 +150,6 @@
   border-radius: var(--r-xs);
 }
 
-/* ── cron vs hron ── */
 .versus {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -195,7 +191,6 @@
 .col-hron .versus-cell { color: var(--ink); }
 .col-hron .versus-cell.beyond { color: var(--accent-ink); font-weight: 500; }
 
-/* ── Features ── */
 .features-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -228,7 +223,6 @@
   word-break: break-word;
 }
 
-/* ── Install ── */
 .install-card {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -276,7 +270,6 @@
 }
 .copy-btn:hover { color: var(--ink); border-color: var(--accent); }
 
-/* ── CTA band ── */
 .cta-band { text-align: center; padding: 5rem 1.5rem; }
 .cta-band h2 {
   font-family: var(--font-display);
@@ -286,7 +279,6 @@
 }
 .cta-band .hero-actions { margin-bottom: 0; }
 
-/* ── Responsive ── */
 @media (max-width: 760px) {
   .features-grid { grid-template-columns: 1fr; }
   .versus { grid-template-columns: 1fr; }

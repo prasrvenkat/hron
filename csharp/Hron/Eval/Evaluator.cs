@@ -3,60 +3,25 @@ using Hron.Ast;
 namespace Hron.Eval;
 
 /// <summary>
-/// Evaluates schedule expressions to compute next occurrences.
+/// Evaluates schedule expressions to compute occurrences.
 /// </summary>
 /// <remarks>
-/// <para><strong>Iteration Safety Limits</strong></para>
-/// <para>MaxIterations (1000): Maximum iterations for NextFrom/PreviousFrom loops.
-/// Prevents infinite loops when searching for valid occurrences.</para>
-/// <list type="bullet">
-///   <item><description>Day repeat: 8 days (covers one week + margin)</description></item>
-///   <item><description>Week repeat: 54 weeks (covers one year + margin)</description></item>
-///   <item><description>Month repeat: 24 * interval months (covers 2 years scaled by interval)</description></item>
-///   <item><description>Year repeat: 8 * interval years (covers reasonable future horizon)</description></item>
-/// </list>
-/// <para>These limits are generous safety bounds. In practice, valid schedules
-/// find occurrences within the first few iterations.</para>
-///
-/// <para><strong>DST (Daylight Saving Time) Handling</strong></para>
-/// <para>When resolving a wall-clock time to an instant:</para>
-/// <list type="number">
-///   <item><description>DST Gap (Spring Forward): Time doesn't exist (e.g., 2:30 AM during spring forward).
-///       Solution: Push forward to the next valid time after the gap.</description></item>
-///   <item><description>DST Fold (Fall Back): Time is ambiguous (e.g., 1:30 AM occurs twice).
-///       Solution: Use first occurrence (pre-transition time).</description></item>
-/// </list>
-/// <para>All implementations use the same algorithm for cross-language consistency.</para>
-///
-/// <para><strong>Interval Alignment (Anchor Date)</strong></para>
-/// <para>For schedules with interval &gt; 1 (e.g., "every 3 days"), we determine which dates are
-/// valid based on alignment with an anchor.</para>
-/// <para>Formula: (date_offset - anchor_offset) mod interval == 0</para>
-/// <list type="bullet">
-///   <item><description>date_offset: days/weeks/months from epoch to candidate date</description></item>
-///   <item><description>anchor_offset: days/weeks/months from epoch to anchor date</description></item>
-///   <item><description>interval: the repeat interval (e.g., 3 for "every 3 days")</description></item>
-/// </list>
-/// <para>Default anchor: Epoch (1970-01-01). Custom anchor: Set via "starting YYYY-MM-DD" clause.</para>
-/// <para>For week repeats, we use epoch Monday (1970-01-05) as the reference point.</para>
+/// A wall-clock time that falls in a DST gap shifts forward by the length of the gap (02:30
+/// becomes 03:30). A time that occurs twice at fall-back resolves to the first occurrence.
 /// </remarks>
 public static class Evaluator
 {
-    /// <summary>Maximum iterations to prevent infinite loops.</summary>
     private const int MaxIterations = 1000;
 
-    /// <summary>Epoch date for day/month/year alignment.</summary>
     private static readonly DateOnly EpochDate = new(1970, 1, 1);
 
-    /// <summary>Epoch Monday for week alignment.</summary>
     private static readonly DateOnly EpochMonday = new(1970, 1, 5);
 
     /// <summary>
-    /// Computes the next occurrence after the given time.
+    /// Computes the next occurrence strictly after the given time.
     /// </summary>
     public static DateTimeOffset? NextFrom(ScheduleData data, DateTimeOffset now, TimeZoneInfo location)
     {
-        // Check if this is a NearestWeekday with direction - it handles during filter internally
         var handlesDuringInternally = data.Expr is MonthRepeat mr &&
             mr.Target.Kind == MonthTargetKind.NearestWeekday &&
             mr.Target.NearestWeekdayDirection.HasValue;
@@ -71,15 +36,12 @@ public static class Evaluator
 
             var t = candidate.Value;
 
-            // Apply modifiers
-            // Check exception list
             if (IsExcepted(DateOnly.FromDateTime(t.DateTime), data.Except))
             {
                 now = t;
                 continue;
             }
 
-            // Check until date
             if (data.Until is not null)
             {
                 var untilDate = ResolveUntil(data.Until, DateOnly.FromDateTime(now.DateTime));
@@ -89,10 +51,8 @@ public static class Evaluator
                 }
             }
 
-            // Check during clause (skip if handled internally for NearestWeekday with direction)
             if (!handlesDuringInternally && !MatchesDuring(DateOnly.FromDateTime(t.DateTime), data.During))
             {
-                // Skip to next month that matches
                 var nextMonth = NextDuringMonth(DateOnly.FromDateTime(t.DateTime), data.During);
                 now = AtTimeOnDate(nextMonth, new TimeOfDay(0, 0), location).AddTicks(-1);
                 continue;
@@ -105,7 +65,7 @@ public static class Evaluator
     }
 
     /// <summary>
-    /// Computes the next n occurrences after the given time.
+    /// Computes the next n occurrences strictly after the given time.
     /// </summary>
     public static IReadOnlyList<DateTimeOffset> NextNFrom(ScheduleData data, DateTimeOffset now, int n, TimeZoneInfo location)
     {
@@ -127,7 +87,7 @@ public static class Evaluator
     }
 
     /// <summary>
-    /// Returns a lazy enumerable of occurrences starting after the given time.
+    /// Returns a lazy enumerable of occurrences strictly after the given time.
     /// </summary>
     public static IEnumerable<DateTimeOffset> Occurrences(ScheduleData data, DateTimeOffset from, TimeZoneInfo location)
     {
@@ -167,19 +127,16 @@ public static class Evaluator
         var converted = TimeZoneInfo.ConvertTime(dt, location);
         var date = DateOnly.FromDateTime(converted.DateTime);
 
-        // Check during filter
         if (!MatchesDuring(date, data.During))
         {
             return false;
         }
 
-        // Check exceptions
         if (IsExcepted(date, data.Except))
         {
             return false;
         }
 
-        // Check until
         if (data.Until is not null)
         {
             var untilDate = ResolveUntil(data.Until, date);
@@ -206,12 +163,11 @@ public static class Evaluator
         var converted = TimeZoneInfo.ConvertTime(dt, location);
         foreach (var tod in times)
         {
-            // Direct wall-clock match
             if (converted.Hour == tod.Hour && converted.Minute == tod.Minute)
             {
                 return true;
             }
-            // DST gap check: resolve the scheduled time and compare instants
+            // A time in a DST gap fires at a shifted wall-clock time, so compare instants.
             var resolved = AtTimeOnDate(date, tod, location);
             if (resolved.UtcDateTime == dt.UtcDateTime)
             {
@@ -381,10 +337,8 @@ public static class Evaluator
     /// </summary>
     public static DateTimeOffset? PreviousFrom(ScheduleData data, DateTimeOffset now, TimeZoneInfo location)
     {
-        // Get anchor date for starting bound
         DateOnly? anchorDate = data.Anchor is not null ? DateOnly.Parse(data.Anchor) : null;
 
-        // Handle until clause - if now is after until, search from end of until date
         var searchFrom = now;
         if (data.Until is not null)
         {
@@ -405,13 +359,11 @@ public static class Evaluator
 
             var t = candidate.Value;
 
-            // Check if before anchor
             if (anchorDate.HasValue && DateOnly.FromDateTime(t.DateTime) < anchorDate.Value)
             {
                 return null;
             }
 
-            // Check until date - should not return occurrences after until
             if (data.Until is not null)
             {
                 var untilDate = ResolveUntil(data.Until, DateOnly.FromDateTime(now.DateTime));
@@ -422,14 +374,12 @@ public static class Evaluator
                 }
             }
 
-            // Check exception list
             if (IsExcepted(DateOnly.FromDateTime(t.DateTime), data.Except))
             {
                 searchFrom = t;
                 continue;
             }
 
-            // Check during clause
             if (!MatchesDuring(DateOnly.FromDateTime(t.DateTime), data.During))
             {
                 var prevMonth = PrevDuringMonth(DateOnly.FromDateTime(t.DateTime), data.During);
@@ -484,7 +434,6 @@ public static class Evaluator
         {
             if (dr.Interval > 1)
             {
-                // Check alignment
                 var daysFromAnchor = day.DayNumber - anchorDate.DayNumber;
                 var mod = daysFromAnchor % dr.Interval;
                 if (mod < 0) mod += dr.Interval;
@@ -525,7 +474,6 @@ public static class Evaluator
             var fromMinutes = ir.FromTime.TotalMinutes;
             var toMinutes = ir.ToTime.TotalMinutes;
 
-            // Iterate through the window
             var step = ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
             for (var m = fromMinutes; m <= toMinutes; m += step)
             {
@@ -548,14 +496,11 @@ public static class Evaluator
     private static DateTimeOffset? NextWeekRepeat(WeekRepeat wr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
     {
         var anchorDate = anchor is not null ? DateOnly.Parse(anchor) : EpochMonday;
-        // Find Monday of anchor date
         var anchorMonday = anchorDate.AddDays(-((int)anchorDate.DayOfWeek == 0 ? 6 : (int)anchorDate.DayOfWeek - 1));
 
         var day = DateOnly.FromDateTime(now.DateTime);
-        // Find Monday of current week
         var currentMonday = day.AddDays(-((int)day.DayOfWeek == 0 ? 6 : (int)day.DayOfWeek - 1));
 
-        // Sort target weekdays for earliest-first matching
         var sortedDays = wr.WeekDays.OrderBy(w => w.Number()).ToList();
 
         for (var i = 0; i < 54; i++)
@@ -563,9 +508,6 @@ public static class Evaluator
             var daysBetween = currentMonday.DayNumber - anchorMonday.DayNumber;
             var weeks = daysBetween / 7;
 
-            // Skip weeks before anchor
-            // When weeks_since_anchor < 0, anchorMonday is in the future
-            // Use anchorMonday directly as the first aligned week
             if (weeks < 0)
             {
                 currentMonday = anchorMonday;
@@ -574,7 +516,6 @@ public static class Evaluator
 
             if (weeks % wr.Interval == 0)
             {
-                // Aligned week - try each target weekday
                 foreach (var wd in sortedDays)
                 {
                     var dayOffset = wd.Number() - 1; // Monday=1, so offset = 0 for Monday
@@ -587,7 +528,6 @@ public static class Evaluator
                 }
             }
 
-            // Skip to next aligned week
             var remainder = weeks % wr.Interval;
             var skipWeeks = wr.Interval;
             if (remainder != 0)
@@ -613,7 +553,6 @@ public static class Evaluator
 
         for (var i = 0; i < MaxIterations; i++)
         {
-            // Check during filter for NearestWeekday with direction
             if (applyDuringFilter)
             {
                 var currentMonth = day.Month;
@@ -624,7 +563,6 @@ public static class Evaluator
                 }
             }
 
-            // Check month alignment
             if (mr.Interval > 1)
             {
                 var monthsFromAnchor = (day.Year - anchorDate.Year) * 12 + (day.Month - anchorDate.Month);
@@ -637,12 +575,8 @@ public static class Evaluator
                 }
             }
 
-            // Get target days for this month
             var targetDays = GetTargetDaysInMonth(day.Year, day.Month, mr.Target);
 
-            // For NearestWeekday with direction, don't skip based on day comparison
-            // because the result can cross month boundaries (e.g., nearest to March 1st
-            // with Previous direction could be Feb 27)
             var skipBasedOnDay = !applyDuringFilter;
 
             foreach (var targetDay in targetDays)
@@ -656,7 +590,6 @@ public static class Evaluator
                 }
             }
 
-            // Move to next month
             day = new DateOnly(day.Year, day.Month, 1).AddMonths(mr.Interval > 1 ? mr.Interval : 1);
         }
 
@@ -678,7 +611,6 @@ public static class Evaluator
                 {
                     var year = startYear + y;
                     var date = TryCreateDate(year, sd.DateSpec.Month!.Value.Number(), sd.DateSpec.Day);
-                    // Skip invalid dates (e.g., Feb 30)
                     if (date is null)
                     {
                         continue;
@@ -703,7 +635,6 @@ public static class Evaluator
 
         for (var i = 0; i < MaxIterations; i++)
         {
-            // Check year alignment
             if (yr.Interval > 1)
             {
                 var yearsFromAnchor = year - anchorDate.Year;
@@ -736,8 +667,6 @@ public static class Evaluator
 
         return null;
     }
-
-    // Previous occurrence methods
 
     private static DateTimeOffset? PrevDayRepeat(DayRepeat dr, DateTimeOffset now, TimeZoneInfo location, string? anchor)
     {
@@ -789,14 +718,12 @@ public static class Evaluator
             var toMinutes = ir.ToTime.TotalMinutes;
             var step = ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : 60);
 
-            // Build list of times in window
             var windowTimes = new List<int>();
             for (var m = fromMinutes; m <= toMinutes; m += step)
             {
                 windowTimes.Add(m);
             }
 
-            // Search backwards through window
             for (var j = windowTimes.Count - 1; j >= 0; j--)
             {
                 var m = windowTimes[j];
@@ -824,7 +751,6 @@ public static class Evaluator
         var day = DateOnly.FromDateTime(now.DateTime);
         var currentMonday = day.AddDays(-((int)day.DayOfWeek == 0 ? 6 : (int)day.DayOfWeek - 1));
 
-        // Sort target weekdays in descending order
         var sortedDays = wr.WeekDays.OrderByDescending(w => w.Number()).ToList();
 
         for (var i = 0; i < 54; i++)
@@ -970,8 +896,6 @@ public static class Evaluator
         return null;
     }
 
-    // Helper methods
-
     private static bool MatchesDayFilter(DateOnly d, DayFilter f)
     {
         var dow = d.DayOfWeek;
@@ -1027,11 +951,9 @@ public static class Evaluator
     {
         var dt = new DateTime(date.Year, date.Month, date.Day, tod.Hour, tod.Minute, 0, DateTimeKind.Unspecified);
 
-        // Check if the time is invalid (DST gap)
         if (location.IsInvalidTime(dt))
         {
-            // Dynamically detect the gap size by finding the adjustment rules
-            // Get the UTC offset after the gap by adding a safe amount, then compute gap
+            // TimeZoneInfo doesn't expose the gap itself; the adjustment rule's DaylightDelta is its length.
             var adjustmentRules = location.GetAdjustmentRules();
             TimeSpan gapDuration = TimeSpan.FromHours(1); // fallback
 
@@ -1039,7 +961,6 @@ public static class Evaluator
             {
                 if (rule.DateStart <= dt && dt <= rule.DateEnd)
                 {
-                    // The daylight delta tells us the gap size
                     gapDuration = rule.DaylightDelta;
                     if (gapDuration < TimeSpan.Zero)
                     {
@@ -1139,18 +1060,14 @@ public static class Evaluator
     }
 
     /// <summary>
-    /// Get the nearest weekday to a given day in a month.
-    /// - direction=null: standard cron W behavior (never crosses month boundary)
-    /// - direction=Next: always prefer following weekday (can cross to next month)
-    /// - direction=Previous: always prefer preceding weekday (can cross to prev month)
-    /// Returns null if the target_day doesn't exist in the month (e.g., day 31 in February).
+    /// Returns the weekday nearest to targetDay, or null if the month has no such day. A null
+    /// direction never leaves the month (cron W); Next and Previous may.
     /// </summary>
     private static DateOnly? NearestWeekday(int year, int month, int targetDay, NearestDirection? direction)
     {
         var last = LastDayOfMonth(year, month);
         var lastDay = last.Day;
 
-        // If target day doesn't exist in this month, return null (skip this month)
         if (targetDay > lastDay)
         {
             return null;
@@ -1159,42 +1076,33 @@ public static class Evaluator
         var date = new DateOnly(year, month, targetDay);
         var dow = date.DayOfWeek;
 
-        // Already a weekday
         if (dow is >= DayOfWeek.Monday and <= DayOfWeek.Friday)
         {
             return date;
         }
 
-        // Saturday handling
         if (dow == DayOfWeek.Saturday)
         {
             return direction switch
             {
                 NearestDirection.Next =>
-                    // Always Monday (may cross month)
                     date.AddDays(2),
                 NearestDirection.Previous =>
-                    // Always Friday (may cross month if day==1)
                     date.AddDays(-1),
                 _ =>
-                    // Standard: prefer Friday, but if at month start, use Monday
                     targetDay == 1 ? date.AddDays(2) : date.AddDays(-1)
             };
         }
 
-        // Sunday handling
         if (dow == DayOfWeek.Sunday)
         {
             return direction switch
             {
                 NearestDirection.Next =>
-                    // Always Monday (may cross month)
                     date.AddDays(1),
                 NearestDirection.Previous =>
-                    // Always Friday (go back 2 days, may cross month)
                     date.AddDays(-2),
                 _ =>
-                    // Standard: prefer Monday, but if at month end, use Friday
                     targetDay >= lastDay ? date.AddDays(-2) : date.AddDays(1)
             };
         }
@@ -1270,10 +1178,8 @@ public static class Evaluator
     {
         var currentMonth = d.Month;
 
-        // Sort months
         var months = during.Select(m => m.Number()).OrderBy(m => m).ToList();
 
-        // Find next month after current
         foreach (var m in months)
         {
             if (m > currentMonth)
@@ -1282,7 +1188,6 @@ public static class Evaluator
             }
         }
 
-        // Wrap to first month of next year
         return new DateOnly(d.Year + 1, months[0], 1);
     }
 
@@ -1290,10 +1195,8 @@ public static class Evaluator
     {
         var currentMonth = d.Month;
 
-        // Sort months in descending order
         var months = during.Select(m => m.Number()).OrderByDescending(m => m).ToList();
 
-        // Find previous month before current
         foreach (var m in months)
         {
             if (m < currentMonth)
@@ -1302,7 +1205,6 @@ public static class Evaluator
             }
         }
 
-        // Wrap to last month of previous year
         if (months.Count > 0)
         {
             return LastDayOfMonth(d.Year - 1, months[0]);

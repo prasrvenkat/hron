@@ -1,5 +1,3 @@
-"""Conformance test runner — drives all tests from spec/tests.json."""
-
 from __future__ import annotations
 
 import json
@@ -11,16 +9,11 @@ import pytest
 from hron import HronError, Schedule
 from tests.conftest import format_zoned, parse_zoned
 
-# Load spec at module level for parametrize
 _spec_path = Path(__file__).parent.parent.parent / "spec" / "tests.json"
 with open(_spec_path) as _f:
     _spec = json.load(_f)
 _default_now = parse_zoned(_spec["now"])
 
-
-# ===========================================================================
-# Parse conformance
-# ===========================================================================
 
 _PARSE_SECTIONS = [
     "day_repeat",
@@ -58,7 +51,6 @@ def test_parse_roundtrip(name: str, input_text: str, canonical: str) -> None:
     display = str(schedule)
     assert display == canonical
 
-    # Idempotency: parse(canonical).to_string() == canonical
     s2 = Schedule.parse(canonical)
     assert str(s2) == canonical
 
@@ -75,11 +67,6 @@ def test_parse_errors(name: str, input_text: str) -> None:
         Schedule.parse(input_text)
 
 
-# ===========================================================================
-# Eval conformance
-# ===========================================================================
-
-# Dynamically discover eval sections (skip non-test entries)
 _SKIP_EVAL_SECTIONS = {"description", "matches", "occurrences", "between", "previous_from"}
 _EVAL_SECTIONS = [s for s in _spec["eval"] if s not in _SKIP_EVAL_SECTIONS]
 
@@ -102,7 +89,6 @@ def test_eval(name: str, tc: dict[str, Any]) -> None:
     schedule = Schedule.parse(tc["expression"])
     now = parse_zoned(tc["now"]) if "now" in tc else _default_now
 
-    # next (full timestamp)
     if "next" in tc:
         result = schedule.next_from(now)
         if tc["next"] is None:
@@ -111,13 +97,11 @@ def test_eval(name: str, tc: dict[str, Any]) -> None:
             assert result is not None
             assert format_zoned(result) == tc["next"]
 
-    # next_date (date-only check)
     if "next_date" in tc:
         result = schedule.next_from(now)
         assert result is not None
         assert result.date().isoformat() == tc["next_date"]
 
-    # next_n (list of timestamps)
     if "next_n" in tc:
         expected: list[str] = tc["next_n"]
         n_count = tc.get("next_n_count", len(expected))
@@ -126,17 +110,12 @@ def test_eval(name: str, tc: dict[str, Any]) -> None:
         for j, (r, e) in enumerate(zip(results, expected, strict=True)):
             assert format_zoned(r) == e, f"next_n_from[{j}] mismatch"
 
-    # next_n_length (just check count)
     if "next_n_length" in tc:
         expected_len: int = tc["next_n_length"]
         n_count_len: int = tc["next_n_count"]
         results = schedule.next_n_from(now, n_count_len)
         assert len(results) == expected_len
 
-
-# ===========================================================================
-# Eval matches conformance
-# ===========================================================================
 
 _MATCHES_TESTS = [
     (tc.get("name", tc["expression"]), tc) for tc in _spec["eval"]["matches"]["tests"]
@@ -151,10 +130,6 @@ def test_eval_matches(name: str, tc: dict[str, Any]) -> None:
     result = schedule.matches(dt)
     assert result == tc["expected"]
 
-
-# ===========================================================================
-# Eval occurrences conformance
-# ===========================================================================
 
 _OCCURRENCES_TESTS = [
     (tc.get("name", tc["expression"]), tc) for tc in _spec["eval"]["occurrences"]["tests"]
@@ -180,10 +155,6 @@ def test_eval_occurrences(name: str, tc: dict[str, Any]) -> None:
         assert format_zoned(r) == e, f"occurrences[{j}] mismatch"
 
 
-# ===========================================================================
-# Eval between conformance
-# ===========================================================================
-
 _BETWEEN_TESTS = [
     (tc.get("name", tc["expression"]), tc) for tc in _spec["eval"]["between"]["tests"]
 ]
@@ -207,10 +178,6 @@ def test_eval_between(name: str, tc: dict[str, Any]) -> None:
         assert len(results) == tc["expected_count"]
 
 
-# ===========================================================================
-# Eval previous_from conformance
-# ===========================================================================
-
 _PREVIOUS_FROM_TESTS = [
     (tc.get("name", tc["expression"]), tc) for tc in _spec["eval"]["previous_from"]["tests"]
 ]
@@ -230,10 +197,6 @@ def test_eval_previous_from(name: str, tc: dict[str, Any]) -> None:
         assert format_zoned(result) == tc["expected"]
 
 
-# ===========================================================================
-# Eval errors conformance
-# ===========================================================================
-
 _EVAL_ERROR_TESTS = [
     (tc.get("name", tc["expression"]), tc["expression"]) for tc in _spec["eval_errors"]["tests"]
 ]
@@ -252,10 +215,6 @@ def test_eval_errors(name: str, expression: str) -> None:
     with pytest.raises((HronError, KeyError)):
         schedule.next_from(_default_now)
 
-
-# ===========================================================================
-# Cron conformance
-# ===========================================================================
 
 _TO_CRON_TESTS = [
     (tc.get("name", tc["hron"]), tc["hron"], tc["cron"]) for tc in _spec["cron"]["to_cron"]["tests"]

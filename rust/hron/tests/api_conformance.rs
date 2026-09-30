@@ -75,13 +75,11 @@ fn getter_timezone_some() {
     assert_eq!(tz, Some("America/New_York"));
 }
 
-/// Verify that the spec file is readable and contains expected structure.
 #[test]
 fn spec_api_json_is_valid() {
     let spec_str = include_str!("../../../spec/api.json");
     let spec: serde_json::Value = serde_json::from_str(spec_str).expect("valid JSON");
 
-    // Verify all static methods listed in spec are covered
     let static_methods: Vec<&str> = spec["schedule"]["staticMethods"]
         .as_array()
         .unwrap()
@@ -92,7 +90,6 @@ fn spec_api_json_is_valid() {
     assert!(static_methods.contains(&"fromCron"));
     assert!(static_methods.contains(&"validate"));
 
-    // Verify all instance methods listed in spec are covered
     let instance_methods: Vec<&str> = spec["schedule"]["instanceMethods"]
         .as_array()
         .unwrap()
@@ -105,7 +102,6 @@ fn spec_api_json_is_valid() {
     assert!(instance_methods.contains(&"toCron"));
     assert!(instance_methods.contains(&"toString"));
 
-    // Verify all getters listed in spec are covered
     let getters: Vec<&str> = spec["schedule"]["getters"]
         .as_array()
         .unwrap()

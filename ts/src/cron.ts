@@ -1,5 +1,3 @@
-// Cron conversion — to_cron / from_cron for hron schedules.
-
 import type {
   DayFilter,
   DayOfMonthSpec,
@@ -83,7 +81,6 @@ export function toCron(schedule: ScheduleData): string {
         }
         return `*/${expr.interval} * * * *`;
       }
-      // hours
       return `0 */${expr.interval} * * *`;
     }
 
@@ -130,7 +127,6 @@ export function toCron(schedule: ScheduleData): string {
           "not expressible as cron (ordinal weekday of month not supported)",
         );
       }
-      // nearestWeekday
       if (target.direction !== null) {
         throw HronError.cron(
           "not expressible as cron (directional nearest weekday not supported)",
@@ -167,15 +163,10 @@ function dayFilterToCronDow(filter: DayFilter): string {
   }
 }
 
-// ============================================================================
-// fromCron: Parse 5-field cron expressions (and @ shortcuts)
-// ============================================================================
-
 /** Parse a 5-field cron expression into a ScheduleData. */
 export function fromCron(cron: string): ScheduleData {
   const trimmed = cron.trim();
 
-  // Handle @ shortcuts first
   if (trimmed.startsWith("@")) {
     return parseCronShortcut(trimmed);
   }
@@ -187,14 +178,11 @@ export function fromCron(cron: string): ScheduleData {
 
   const [minuteField, hourField, domFieldRaw, monthField, dowFieldRaw] = fields;
 
-  // Normalize ? to * (semantically equivalent for our purposes)
   const domField = domFieldRaw === "?" ? "*" : domFieldRaw;
   const dowField = dowFieldRaw === "?" ? "*" : dowFieldRaw;
 
-  // Parse month field into during clause
   const during = parseMonthField(monthField);
 
-  // Check for special DOW patterns: nth weekday (#), last weekday (5L)
   const nthWeekdayResult = tryParseNthWeekday(
     minuteField,
     hourField,
@@ -204,7 +192,6 @@ export function fromCron(cron: string): ScheduleData {
   );
   if (nthWeekdayResult) return nthWeekdayResult;
 
-  // Check for L (last day) or LW (last weekday) in DOM
   const lastDayResult = tryParseLastDay(
     minuteField,
     hourField,
@@ -214,7 +201,6 @@ export function fromCron(cron: string): ScheduleData {
   );
   if (lastDayResult) return lastDayResult;
 
-  // Check for W (nearest weekday): e.g., 15W, 1W
   if (domField.endsWith("W") && domField !== "LW") {
     const nearestWeekdayResult = tryParseNearestWeekday(
       minuteField,
@@ -226,7 +212,6 @@ export function fromCron(cron: string): ScheduleData {
     if (nearestWeekdayResult) return nearestWeekdayResult;
   }
 
-  // Check for interval patterns: */N or range/N
   const intervalResult = tryParseInterval(
     minuteField,
     hourField,
@@ -236,12 +221,10 @@ export function fromCron(cron: string): ScheduleData {
   );
   if (intervalResult) return intervalResult;
 
-  // Standard time-based cron
   const minute = parseSingleValue(minuteField, "minute", 0, 59);
   const hour = parseSingleValue(hourField, "hour", 0, 23);
   const time: TimeOfDay = { hour, minute };
 
-  // DOM-based (monthly) - when DOM is specified and DOW is *
   if (domField !== "*" && dowField === "*") {
     const target = parseDomField(domField);
     const schedule = newScheduleData({
@@ -254,7 +237,6 @@ export function fromCron(cron: string): ScheduleData {
     return schedule;
   }
 
-  // DOW-based (day repeat)
   const days = parseCronDow(dowField);
   const schedule = newScheduleData({
     type: "dayRepeat",
@@ -266,7 +248,6 @@ export function fromCron(cron: string): ScheduleData {
   return schedule;
 }
 
-/** Parse @ shortcuts like @daily, @hourly, etc. */
 function parseCronShortcut(cron: string): ScheduleData {
   switch (cron.toLowerCase()) {
     case "@yearly":
@@ -313,14 +294,13 @@ function parseCronShortcut(cron: string): ScheduleData {
   }
 }
 
-/** Parse month field into a MonthName[] for the `during` clause. */
 function parseMonthField(field: string): MonthName[] {
   if (field === "*") return [];
 
   const months: MonthName[] = [];
 
   for (const part of field.split(",")) {
-    // Check for step values FIRST (e.g., 1-12/3 or */3)
+    // Before the range check: a stepped range like `1-12/3` also contains `-`.
     if (part.includes("/")) {
       const [rangePart, stepStr] = part.split("/");
       let start: number, end: number;
@@ -348,7 +328,6 @@ function parseMonthField(field: string): MonthName[] {
         months.push(monthFromNumber(n));
       }
     } else if (part.includes("-")) {
-      // Range like 1-3 or JAN-MAR
       const [startStr, endStr] = part.split("-");
       const startMonth = parseMonthValue(startStr);
       const endMonth = parseMonthValue(endStr);
@@ -363,7 +342,6 @@ function parseMonthField(field: string): MonthName[] {
         months.push(monthFromNumber(n));
       }
     } else {
-      // Single month
       months.push(parseMonthValue(part));
     }
   }
@@ -371,14 +349,11 @@ function parseMonthField(field: string): MonthName[] {
   return months;
 }
 
-/** Parse a single month value (number 1-12 or name JAN-DEC). */
 function parseMonthValue(s: string): MonthName {
-  // Try as number first
   const n = parseInt(s, 10);
   if (!Number.isNaN(n)) {
     return monthFromNumber(n);
   }
-  // Try as name
   const name = parseMonthName(s);
   if (!name) {
     throw HronError.cron(`invalid month: ${s}`);
@@ -416,7 +391,6 @@ function tryParseNthWeekday(
   dowField: string,
   during: MonthName[],
 ): ScheduleData | null {
-  // Check for # pattern (nth weekday of month)
   if (dowField.includes("#")) {
     const [dowStr, nthStr] = dowField.split("#");
     const dowNum = parseDowValue(dowStr);
@@ -452,7 +426,6 @@ function tryParseNthWeekday(
     return schedule;
   }
 
-  // Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
   if (dowField.endsWith("L") && dowField.length > 1) {
     const dowStr = dowField.slice(0, -1);
     const dowNum = parseDowValue(dowStr);
@@ -564,7 +537,6 @@ function tryParseInterval(
   dowField: string,
   during: MonthName[],
 ): ScheduleData | null {
-  // Minute interval: */N or range/N
   if (minuteField.includes("/")) {
     const [rangePart, stepStr] = minuteField.split("/");
     const interval = parseInt(stepStr, 10);
@@ -593,7 +565,6 @@ function tryParseInterval(
         );
       }
     } else {
-      // Single value with step
       fromMinute = parseInt(rangePart, 10);
       if (Number.isNaN(fromMinute)) {
         throw HronError.cron("invalid minute value");
@@ -601,7 +572,6 @@ function tryParseInterval(
       toMinute = 59;
     }
 
-    // Determine the hour window
     let fromHour: number, toHour: number;
     if (hourField === "*") {
       fromHour = 0;
@@ -614,7 +584,7 @@ function tryParseInterval(
         throw HronError.cron("invalid hour range");
       }
     } else if (hourField.includes("/")) {
-      // Hour also has step - complex, skip
+      // A step in both the minute and hour fields is not supported.
       return null;
     } else {
       const h = parseInt(hourField, 10);
@@ -628,13 +598,11 @@ function tryParseInterval(
     const dayFilter = dowField === "*" ? null : parseCronDow(dowField);
 
     if (domField === "*" || domField === "?") {
-      // Determine end minute based on context
       let endMinute: number;
       if (fromMinute === 0 && toMinute === 59 && toHour === 23) {
-        // Full day: 00:00 to 23:59
         endMinute = 59;
       } else if (fromMinute === 0 && toMinute === 59) {
-        // Partial day with full minutes range: use :00 for cleaner output
+        // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
         endMinute = 0;
       } else {
         endMinute = toMinute;
@@ -653,7 +621,6 @@ function tryParseInterval(
     }
   }
 
-  // Hour interval: 0 */N or 0 range/N
   if (
     hourField.includes("/") &&
     (minuteField === "0" || minuteField === "00")
@@ -696,7 +663,6 @@ function tryParseInterval(
       (domField === "*" || domField === "?") &&
       (dowField === "*" || dowField === "?")
     ) {
-      // Use :59 only for full day (00:00 to 23:59), otherwise use :00
       const endMinute = fromHour === 0 && toHour === 23 ? 59 : 0;
 
       const schedule = newScheduleData({
@@ -715,13 +681,11 @@ function tryParseInterval(
   return null;
 }
 
-/** Parse a DOM field into a MonthTarget. */
 function parseDomField(field: string): MonthTarget {
   const specs: DayOfMonthSpec[] = [];
 
   for (const part of field.split(",")) {
     if (part.includes("/")) {
-      // Step value: 1-31/2 or */5
       const [rangePart, stepStr] = part.split("/");
       let start: number, end: number;
 
@@ -764,7 +728,6 @@ function parseDomField(field: string): MonthTarget {
         specs.push({ type: "single", day: d });
       }
     } else if (part.includes("-")) {
-      // Range: 1-5
       const [startStr, endStr] = part.split("-");
       const start = parseInt(startStr, 10);
       const end = parseInt(endStr, 10);
@@ -781,7 +744,6 @@ function parseDomField(field: string): MonthTarget {
       validateDom(end);
       specs.push({ type: "range", start, end });
     } else {
-      // Single: 15
       const day = parseInt(part, 10);
       if (Number.isNaN(day)) {
         throw HronError.cron(`invalid DOM value: ${part}`);
@@ -800,7 +762,6 @@ function validateDom(day: number): void {
   }
 }
 
-/** Parse a DOW field into a DayFilter. */
 function parseCronDow(field: string): DayFilter {
   if (field === "*") return { type: "every" };
 
@@ -808,7 +769,6 @@ function parseCronDow(field: string): DayFilter {
 
   for (const part of field.split(",")) {
     if (part.includes("/")) {
-      // Step value: 0-6/2 or */2
       const [rangePart, stepStr] = part.split("/");
       let start: number, end: number;
 
@@ -840,7 +800,7 @@ function parseCronDow(field: string): DayFilter {
         days.push(cronDowToWeekday(normalized));
       }
     } else if (part.includes("-")) {
-      // Range: 1-5 or MON-FRI (parse without normalizing 7 for range checking)
+      // Parsed raw so a range ending in 7 (Sunday), like `5-7`, stays ascending.
       const [startStr, endStr] = part.split("-");
       const start = parseDowValueRaw(startStr);
       const end = parseDowValueRaw(endStr);
@@ -850,18 +810,15 @@ function parseCronDow(field: string): DayFilter {
         );
       }
       for (let d = start; d <= end; d++) {
-        // Normalize 7 to 0 (Sunday) when converting to weekday
         const normalized = d === 7 ? 0 : d;
         days.push(cronDowToWeekday(normalized));
       }
     } else {
-      // Single: 1 or MON
       const dow = parseDowValue(part);
       days.push(cronDowToWeekday(dow));
     }
   }
 
-  // Check for special patterns
   if (days.length === 5) {
     const sorted = [...days].sort(
       (a, b) => weekdayNumber(a) - weekdayNumber(b),
@@ -891,13 +848,11 @@ function parseCronDow(field: string): DayFilter {
 /** Parse a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0. */
 function parseDowValue(s: string): number {
   const raw = parseDowValueRaw(s);
-  // Normalize 7 to 0 (both mean Sunday)
   return raw === 7 ? 0 : raw;
 }
 
 /** Parse a DOW value without normalizing 7 to 0 (for range checking). */
 function parseDowValueRaw(s: string): number {
-  // Try as number first
   const n = parseInt(s, 10);
   if (!Number.isNaN(n)) {
     if (n > 7) {
@@ -905,7 +860,6 @@ function parseDowValueRaw(s: string): number {
     }
     return n;
   }
-  // Try as name
   const map: Record<string, number> = {
     SUN: 0,
     MON: 1,
@@ -940,7 +894,6 @@ function cronDowToWeekday(n: number): Weekday {
   return result;
 }
 
-/** Parse a single numeric value with validation. */
 function parseSingleValue(
   field: string,
   name: string,
