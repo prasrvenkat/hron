@@ -3,17 +3,17 @@ name: Ruby
 on:
   push:
     branches: [main]
-    paths: ["ruby/**", "spec/**", "justfile", ".github/workflows/ruby.yml"]
+    paths: ["ruby/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/ruby.yml"]
   pull_request:
-    paths: ["ruby/**", "spec/**", "justfile", ".github/workflows/ruby.yml"]
+    paths: ["ruby/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/ruby.yml"]
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: ruby just
       - name: Test
@@ -23,8 +23,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: ruby just
       - name: Install dependencies

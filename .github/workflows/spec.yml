@@ -5,9 +5,17 @@ on:
     branches: [main]
     paths:
       - "spec/**"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/spec.yml"
   pull_request:
     paths:
       - "spec/**"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/spec.yml"
 
 # When the spec changes, verify all implementations still conform.
 jobs:
@@ -15,8 +23,8 @@ jobs:
     name: Rust
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: rust
       - run: cargo test --workspace --all-features
@@ -26,8 +34,8 @@ jobs:
     name: TypeScript
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: nodejs pnpm
       - run: cd ts && pnpm install --frozen-lockfile && pnpm test
@@ -36,8 +44,8 @@ jobs:
     name: Dart
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: dart
       - run: cd dart && dart pub get
@@ -47,8 +55,8 @@ jobs:
     name: Python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - run: cd python && uv sync --locked
@@ -58,8 +66,8 @@ jobs:
     name: WASM
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: rust nodejs pnpm
       - run: rustup target add wasm32-unknown-unknown
@@ -74,8 +82,8 @@ jobs:
     name: Go
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: go
       - run: cd go && go test -v ./...
@@ -84,8 +92,8 @@ jobs:
     name: Java
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '25'
@@ -95,8 +103,8 @@ jobs:
     name: C#
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: dotnet just
       - run: just build-csharp
@@ -106,8 +114,8 @@ jobs:
     name: Ruby
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: ruby just
       - run: just test-ruby
@@ -116,7 +124,7 @@ jobs:
     name: Validate Spec Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate all spec sections are tested
         run: |

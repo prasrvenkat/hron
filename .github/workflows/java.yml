@@ -3,21 +3,21 @@ name: Java
 on:
   push:
     branches: [main]
-    paths: ["java/**", "spec/**", "justfile", ".github/workflows/java.yml"]
+    paths: ["java/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/java.yml"]
   pull_request:
-    paths: ["java/**", "spec/**", "justfile", ".github/workflows/java.yml"]
+    paths: ["java/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/java.yml"]
 
 jobs:
   check:
     name: Format & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '25'
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
         with:
           install_args: just
       - name: Format check
@@ -27,12 +27,12 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '25'
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
         with:
           install_args: just
       - name: Build

@@ -7,12 +7,16 @@ on:
       - "rust/**"
       - "spec/**"
       - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
       - ".github/workflows/rust.yml"
   pull_request:
     paths:
       - "rust/**"
       - "spec/**"
       - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
       - ".github/workflows/rust.yml"
 
 jobs:
@@ -20,8 +24,8 @@ jobs:
     name: Format & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: rust just
       - run: rustup component add rustfmt clippy
@@ -31,8 +35,8 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: rust just
       - run: just test-rust
@@ -41,8 +45,8 @@ jobs:
     name: WASM Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: rust nodejs pnpm
       - run: rustup target add wasm32-unknown-unknown
