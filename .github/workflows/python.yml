@@ -7,12 +7,16 @@ on:
       - "python/**"
       - "spec/**"
       - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
       - ".github/workflows/python.yml"
   pull_request:
     paths:
       - "python/**"
       - "spec/**"
       - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
       - ".github/workflows/python.yml"
 
 jobs:
@@ -20,20 +24,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
         with:
           install_args: just
 
       - name: Install dependencies
-        run: cd python && uv sync --locked --python ${{ matrix.python-version }}
+        run: cd python && uv sync --locked
 
       - name: Format & Lint
         run: just lint-python

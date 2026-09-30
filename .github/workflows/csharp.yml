@@ -3,17 +3,17 @@ name: C#
 on:
   push:
     branches: [main]
-    paths: ["csharp/**", "spec/**", "justfile", ".github/workflows/csharp.yml"]
+    paths: ["csharp/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/csharp.yml"]
   pull_request:
-    paths: ["csharp/**", "spec/**", "justfile", ".github/workflows/csharp.yml"]
+    paths: ["csharp/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/csharp.yml"]
 
 jobs:
   check:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: dotnet just
       - name: Format check
@@ -23,8 +23,8 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: dotnet just
       - name: Build

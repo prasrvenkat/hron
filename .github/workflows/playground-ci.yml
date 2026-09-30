@@ -5,17 +5,23 @@ on:
     branches: [main]
     paths:
       - "playground/**"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/playground-ci.yml"
   pull_request:
     paths:
       - "playground/**"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/playground-ci.yml"
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
         with:
           install_args: nodejs pnpm
 

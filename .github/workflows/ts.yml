@@ -7,21 +7,25 @@ on:
       - "ts/**"
       - "spec/**"
       - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
       - ".github/workflows/ts.yml"
   pull_request:
     paths:
       - "ts/**"
       - "spec/**"
       - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
       - ".github/workflows/ts.yml"
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
         with:
           install_args: nodejs pnpm just
 

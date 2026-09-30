@@ -3,17 +3,17 @@ name: Go
 on:
   push:
     branches: [main]
-    paths: ["go/**", "spec/**", "justfile", ".github/workflows/go.yml"]
+    paths: ["go/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/go.yml"]
   pull_request:
-    paths: ["go/**", "spec/**", "justfile", ".github/workflows/go.yml"]
+    paths: ["go/**", "spec/**", "justfile", ".tool-versions", ".mise.toml", ".github/workflows/go.yml"]
 
 jobs:
   check:
     name: Format & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: go just
       - name: Format & Lint
@@ -23,8 +23,8 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: go just
       - name: Build
