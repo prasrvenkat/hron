@@ -73,7 +73,11 @@ DateTime _parseIsoDateUtc(String s) {
 
 String _resolveTz(String? tz) => tz ?? 'UTC';
 
-Location _getLocation(String tz) => tz == 'UTC' ? UTC : getLocation(tz);
+// The timezone package names its UTC location 'Etc/UTC' since 0.11.1, and
+// 'UTC' is not in its database; the spec requires results in '[UTC]'.
+final Location _utc = Location('UTC', [minTime], [0], [TimeZone.UTC]);
+
+Location _getLocation(String tz) => tz == 'UTC' ? _utc : getLocation(tz);
 
 // --- Helpers ---
 
