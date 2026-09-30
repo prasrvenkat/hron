@@ -75,7 +75,7 @@ func main() {
 - `Matches(dt time.Time) bool` - Report whether the minute containing `dt` (seconds dropped, on the schedule's wall clock) is an occurrence
 - `ToCron() (string, error)` - Convert this schedule to a 5-field cron expression
 - `String() string` - Render as canonical string (roundtrip-safe)
-- `Timezone() string` - Get the IANA timezone name, or empty string if not specified
+- `Timezone() string` - Get the IANA timezone name with its canonical capitalization, or empty string if not specified
 
 ### Error Handling
 
@@ -142,6 +142,8 @@ When a schedule specifies a timezone via the `in` clause, all occurrences are co
 
 - **Spring-forward (gap):** A fixed time that does not exist is pushed forward by the gap length; interval slots in the gap are skipped
 - **Fall-back (ambiguity):** First occurrence is used
+
+Timezone names match in any case when Go can list a zone database (`$ZONEINFO`, the system zoneinfo directory, or GOROOT's `lib/time/zoneinfo.zip`); with only the embedded `time/tzdata`, names must use the exact IANA capitalization.
 
 ```go
 // This schedule will handle DST transitions correctly

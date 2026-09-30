@@ -71,6 +71,10 @@ fn run_parse_error(index: usize) {
     check_fields(case, &["input", "error_contains"], &[]);
     let input = case["input"].as_str().unwrap();
 
+    assert!(
+        !Schedule::validate(input),
+        "validate('{input}') is true, expected false"
+    );
     match Schedule::parse(input) {
         Ok(s) => panic!("expected parse error for '{input}', got: {s}"),
         Err(e) => {
@@ -312,29 +316,6 @@ fn run_eval_previous_from(section: &str, index: usize) {
             .map(|z| z.to_string())
             .unwrap_or_else(|| "None".to_string());
         assert_eq!(got, expected, "previous_from mismatch for '{expr_str}'");
-    }
-}
-
-fn run_eval_error(index: usize) {
-    let case = &SPEC["eval_errors"]["tests"][index];
-    check_fields(case, &["expression"], &[]);
-    let expr_str = case["expression"].as_str().unwrap();
-
-    // Rust validates timezone at eval time, so parse should succeed
-    // but next_from should return Err.
-    match Schedule::parse(expr_str) {
-        Err(_) => {
-            // Caught at parse time — acceptable
-        }
-        Ok(schedule) => {
-            let now = default_now();
-            let result = schedule.next_from(&now);
-            assert!(
-                result.is_err(),
-                "expected eval error for '{expr_str}', got {:?}",
-                result
-            );
-        }
     }
 }
 

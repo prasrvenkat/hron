@@ -101,6 +101,7 @@ public class ConformanceTest {
           String input = text(tc, "input", label);
           HronException e =
               assertThrows(HronException.class, () -> Schedule.parse(input), label + ": " + input);
+          assertFalse(Schedule.validate(input), label + ": validate(" + input + ")");
           if (tc.has("error_contains")) {
             String expected = tc.get("error_contains").asText();
             assertTrue(
@@ -122,7 +123,6 @@ public class ConformanceTest {
           "parse_errors",
           "eval",
           "cron",
-          "eval_errors",
           "invariants");
 
   private static final Set<String> CRON_SECTIONS =
@@ -292,21 +292,6 @@ public class ConformanceTest {
     List<Instant> result = new ArrayList<>();
     node.forEach(item -> result.add(parseZonedDateTime(item.asText()).toInstant()));
     return result;
-  }
-
-  @TestFactory
-  Stream<DynamicTest> evalErrorTests() {
-    return cases(
-        SPEC.get("eval_errors"),
-        "eval_errors",
-        Set.of("expression"),
-        (tc, label) -> {
-          String expression = text(tc, "expression", label);
-          assertThrows(
-              Exception.class,
-              () -> Schedule.parse(expression).nextFrom(DEFAULT_NOW),
-              label + ": " + expression);
-        });
   }
 
   @TestFactory

@@ -219,7 +219,7 @@ class _Lexer {
 
     final num = int.tryParse(digits);
     if (num == null) {
-      throw HronError.lex('invalid number', Span(start, pos), input);
+      throw HronError.lex('number too large', Span(start, pos), input);
     }
 
     if (pos + 1 < input.length) {

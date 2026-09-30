@@ -68,6 +68,14 @@ every day at 09:00 during jan, feb, mar
 every day at 09:00 in America/New_York
 ```
 
+### Timezones
+
+A timezone is `UTC` or an IANA `Area/Location` name such as `America/New_York`; abbreviations
+(`EST`), offsets (`+05:30`) and unknown names are parse errors. Where the platform has a zoneinfo
+directory (Linux, macOS), names match in any case and display with the IANA capitalization, so
+`in america/new_york` becomes `in America/New_York`. On Windows, a name must use its exact IANA
+capitalization. Which names are accepted follows the platform's tz data.
+
 ## Cron Conversion
 
 ```csharp

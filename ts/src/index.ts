@@ -87,7 +87,7 @@ export class Schedule {
     return display(this.data);
   }
 
-  /** Get the timezone, if specified. */
+  /** The IANA timezone name with its canonical capitalization, if specified. */
   get timezone(): string | null {
     return this.data.timezone;
   }

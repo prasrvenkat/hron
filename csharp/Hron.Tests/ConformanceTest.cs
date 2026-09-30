@@ -73,6 +73,7 @@ public partial class ConformanceTest
     {
         _ = _name; // Used for test display
         var error = Assert.Throws<HronException>(() => Schedule.Parse(input));
+        Assert.False(Schedule.Validate(input));
         if (errorContains is not null)
         {
             Assert.Contains(errorContains, error.Message);
@@ -414,30 +415,6 @@ public partial class ConformanceTest
         }
     }
 
-    public static TheoryData<string, string> GetEvalErrorTests()
-    {
-        var data = new TheoryData<string, string>();
-        if (!Spec.RootElement.TryGetProperty("eval_errors", out var evalErrorsSection)) return data;
-        if (!evalErrorsSection.TryGetProperty("tests", out var tests)) return data;
-
-        foreach (var tc in tests.EnumerateArray())
-        {
-            var name = tc.GetProperty("name").GetString()!;
-            var expression = tc.GetProperty("expression").GetString()!;
-            data.Add(name, expression);
-        }
-
-        return data;
-    }
-
-    [Theory]
-    [MemberData(nameof(GetEvalErrorTests))]
-    public void EvalErrorTests(string _name, string expression)
-    {
-        _ = _name; // Used for test display
-        Assert.Throws<HronException>(() => Schedule.Parse(expression).NextFrom(DefaultNow));
-    }
-
     public static TheoryData<string, string, string> GetToCronTests()
     {
         var data = new TheoryData<string, string, string>();
@@ -567,7 +544,7 @@ public partial class ConformanceTest
 
     private static readonly string[] KnownTopLevel =
         ["$schema", "version", "description", "now", "_eval_assertion_types", "_behavioral_notes",
-         "parse", "parse_errors", "eval", "cron", "eval_errors", "invariants"];
+         "parse", "parse_errors", "eval", "cron", "invariants"];
 
     private sealed record CaseShape(string[] Fields, Func<JsonElement, bool> HasAssertion);
 
@@ -582,7 +559,6 @@ public partial class ConformanceTest
     private static readonly Dictionary<string, CaseShape> CaseShapes = new()
     {
         ["parse_errors"] = new(["input", "error_contains"], tc => Has(tc, "input")),
-        ["eval_errors"] = new(["expression"], tc => Has(tc, "expression")),
         ["cron/to_cron"] = new(["hron", "cron"], tc => Has(tc, "hron", "cron")),
         ["cron/to_cron_errors"] = new(["hron"], tc => Has(tc, "hron")),
         ["cron/from_cron"] = new(["cron", "hron"], tc => Has(tc, "cron", "hron")),
@@ -613,7 +589,7 @@ public partial class ConformanceTest
                 yield return ($"{top}/{section.Name}", section.Value);
             }
         }
-        foreach (var top in new[] { "parse_errors", "eval_errors", "invariants" })
+        foreach (var top in new[] { "parse_errors", "invariants" })
         {
             yield return (top, Spec.RootElement.GetProperty(top));
         }

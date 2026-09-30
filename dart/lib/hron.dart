@@ -25,7 +25,8 @@ class Schedule {
 
   /// Parses a hron expression and returns a [Schedule].
   ///
-  /// Throws [HronError] if the expression is invalid.
+  /// Throws [HronError] if the expression is invalid, including a timezone
+  /// name missing from the loaded `package:timezone` database.
   static Schedule parse(String input) => Schedule._(parser_impl.parse(input));
 
   /// Creates a [Schedule] from a standard 5-field cron expression.
@@ -84,7 +85,8 @@ class Schedule {
   @override
   String toString() => display_impl.display(_data);
 
-  /// The IANA timezone for this schedule, or `null` if not specified.
+  /// The IANA timezone name, in its canonical capitalization, or `null` if not
+  /// specified.
   ///
   /// When set (via `in America/New_York` clause), all times are interpreted
   /// in that timezone.

@@ -190,7 +190,7 @@ func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
 
 	num, err := strconv.Atoi(digits)
 	if err != nil {
-		return Token{}, LexError("invalid number", Span{start, l.pos}, l.input)
+		return Token{}, LexError("number too large", Span{start, l.pos}, l.input)
 	}
 
 	if l.pos+1 < len(l.input) {

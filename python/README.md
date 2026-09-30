@@ -80,7 +80,7 @@ Convert to a 5-field cron expression. Raises `HronError` if the schedule can't b
 Render as the canonical string form (roundtrip-safe).
 
 ### `schedule.timezone -> str | None`
-The timezone, if specified.
+The IANA timezone name with its canonical capitalization, if specified.
 
 ### `schedule.expression -> ScheduleExpr`
 The underlying schedule expression AST.

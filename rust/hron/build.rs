@@ -26,7 +26,6 @@ fn main() {
         "parse",
         "parse_errors",
         "eval",
-        "eval_errors",
         "cron",
         "invariants",
     ];
@@ -73,11 +72,6 @@ fn main() {
                 i,
             );
         }
-    }
-
-    for (i, case) in iter_tests(&spec["eval_errors"]).enumerate() {
-        let name = test_name(case, i);
-        emit_flat(&mut f, &format!("eval_error_{name}"), "run_eval_error", i);
     }
 
     for (section, data) in sections(&spec["cron"]) {

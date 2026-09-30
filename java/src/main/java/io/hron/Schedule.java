@@ -142,7 +142,7 @@ public final class Schedule {
   }
 
   /**
-   * Returns the IANA timezone name, or empty if not specified.
+   * Returns the IANA timezone name with its canonical capitalization, or empty if not specified.
    *
    * @return the timezone name
    */

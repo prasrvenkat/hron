@@ -76,11 +76,11 @@ public static class Evaluator
         }
 
         var today = LocalDate(now, location);
-        var last = data.Until is not null ? ResolveUntil(data.Until, today) : DateOnly.MaxValue;
+        var last = data.Until is not null ? ResolveUntil(data.Until, data.Anchor, today) : DateOnly.MaxValue;
         var limit = SearchLimit(data.Expr, Min(today, last), -1);
         if (data.Anchor is not null)
         {
-            limit = Max(limit, DateOnly.Parse(data.Anchor));
+            limit = Max(limit, IsoDate.Parse(data.Anchor));
         }
 
         // A fall-back overlap that crosses midnight repeats times of the next date before now.
@@ -110,11 +110,11 @@ public static class Evaluator
     private static DateTimeOffset? Next(ScheduleData data, DateTimeOffset now, TimeZoneInfo location, DateOnly lastDate)
     {
         var today = LocalDate(now, location);
-        var first = data.Anchor is not null ? DateOnly.Parse(data.Anchor) : DateOnly.MinValue;
+        var first = data.Anchor is not null ? IsoDate.Parse(data.Anchor) : DateOnly.MinValue;
         var limit = Min(SearchLimit(data.Expr, Max(today, first), 1), lastDate);
         if (data.Until is not null)
         {
-            limit = Min(limit, ResolveUntil(data.Until, today));
+            limit = Min(limit, ResolveUntil(data.Until, data.Anchor, today));
         }
 
         // A fixed time shifted out of a gap at midnight fires on the day after its scheduled date.
@@ -250,7 +250,7 @@ public static class Evaluator
 
     private static IEnumerable<DateOnly> DayRepeatDates(DayRepeat dr, string? anchor, DateOnly from, DateOnly limit, int direction)
     {
-        var anchorDay = (anchor is not null ? DateOnly.Parse(anchor) : EpochDate).DayNumber;
+        var anchorDay = (anchor is not null ? IsoDate.Parse(anchor) : EpochDate).DayNumber;
         var first = from.DayNumber + direction * FloorMod(direction * (anchorDay - from.DayNumber), dr.Interval);
 
         for (var day = first; direction * (day - limit.DayNumber) <= 0; day += direction * dr.Interval)
@@ -265,7 +265,7 @@ public static class Evaluator
 
     private static IEnumerable<DateOnly> WeekRepeatDates(WeekRepeat wr, string? anchor, DateOnly from, DateOnly limit, int direction)
     {
-        var anchorMonday = MondayOf(anchor is not null ? DateOnly.Parse(anchor) : EpochMonday).DayNumber;
+        var anchorMonday = MondayOf(anchor is not null ? IsoDate.Parse(anchor) : EpochMonday).DayNumber;
         var start = MondayOf(from).DayNumber;
 
         var offsets = wr.WeekDays.Select(w => w.Number() - 1).Order().ToList();
@@ -295,7 +295,7 @@ public static class Evaluator
     /// </summary>
     private static IEnumerable<DateOnly> MonthRepeatDates(MonthRepeat mr, string? anchor, IReadOnlyList<MonthName> during, DateOnly from, DateOnly limit, int direction)
     {
-        var anchorMonth = MonthIndex(anchor is not null ? DateOnly.Parse(anchor) : EpochDate);
+        var anchorMonth = MonthIndex(anchor is not null ? IsoDate.Parse(anchor) : EpochDate);
         var start = MonthIndex(from) - direction;
         var first = start + direction * FloorMod(direction * (anchorMonth - start), mr.Interval);
 
@@ -334,7 +334,7 @@ public static class Evaluator
 
     private static IEnumerable<DateOnly> YearRepeatDates(YearRepeat yr, string? anchor, DateOnly from, DateOnly limit, int direction)
     {
-        var anchorYear = (anchor is not null ? DateOnly.Parse(anchor) : EpochDate).Year;
+        var anchorYear = (anchor is not null ? IsoDate.Parse(anchor) : EpochDate).Year;
         var first = from.Year + direction * FloorMod(direction * (anchorYear - from.Year), yr.Interval);
 
         for (var year = first; direction * (year - limit.Year) <= 0; year += direction * yr.Interval)
@@ -350,7 +350,7 @@ public static class Evaluator
     {
         if (sd.DateSpec.Kind == DateSpecKind.Iso)
         {
-            yield return DateOnly.Parse(sd.DateSpec.Date!);
+            yield return IsoDate.Parse(sd.DateSpec.Date!);
             yield break;
         }
         for (var year = from.Year; direction * (year - limit.Year) <= 0; year += direction)
@@ -637,7 +637,7 @@ public static class Evaluator
                     }
                     break;
                 case ExceptionSpecKind.Iso:
-                    var excDate = DateOnly.Parse(exc.Date!);
+                    var excDate = IsoDate.Parse(exc.Date!);
                     if (d == excDate)
                     {
                         return true;
@@ -664,23 +664,24 @@ public static class Evaluator
         return false;
     }
 
-    private static DateOnly ResolveUntil(UntilSpec until, DateOnly now)
+    /// <summary>
+    /// The last date an until clause allows. A named until is the first such date on or after the
+    /// starting date, which parse requires.
+    /// </summary>
+    private static DateOnly ResolveUntil(UntilSpec until, string? anchor, DateOnly today)
     {
-        return until.Kind switch
+        if (until.Kind == UntilSpecKind.Iso)
         {
-            UntilSpecKind.Iso => DateOnly.Parse(until.Date!),
-            UntilSpecKind.Named => GetNamedDate(until.Month!.Value.Number(), until.Day, now),
-            _ => now
-        };
-    }
-
-    private static DateOnly GetNamedDate(int month, int day, DateOnly now)
-    {
-        var d = new DateOnly(now.Year, month, day);
-        if (d < now)
-        {
-            d = now.Year < DateOnly.MaxValue.Year ? new DateOnly(now.Year + 1, month, day) : DateOnly.MaxValue;
+            return IsoDate.Parse(until.Date!);
         }
-        return d;
+        var from = anchor is not null ? IsoDate.Parse(anchor) : today;
+        for (var year = from.Year; year <= DateOnly.MaxValue.Year; year++)
+        {
+            if (TryCreateDate(year, until.Month!.Value.Number(), until.Day) is { } date && date >= from)
+            {
+                return date;
+            }
+        }
+        return DateOnly.MaxValue;
     }
 }

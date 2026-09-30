@@ -161,18 +161,19 @@ impl<'a> Parser<'a> {
             schedule.except = self.parse_exception_list()?;
         }
 
+        let mut until_span = None;
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Until)) {
+            let start = self.current_span().start;
             self.advance();
             schedule.until = Some(self.parse_until_spec()?);
+            until_span = Some(Span::new(start, self.tokens[self.pos - 1].span.end));
         }
 
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Starting)) {
             self.advance();
             match self.peek().map(|t| &t.kind) {
                 Some(TokenKind::IsoDate(d)) => {
-                    let date: jiff::civil::Date = d.parse().map_err(|e| {
-                        self.error(format!("invalid starting date: {e}"), self.current_span())
-                    })?;
+                    let date = self.parse_iso_date(d)?;
                     self.advance();
                     schedule.anchor = Some(date);
                 }
@@ -186,6 +187,21 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // spec/README.md, "Named `until`": a month and day has no year of its own.
+        if let (Some(UntilSpec::Named { month, day }), None, Some(span)) =
+            (&schedule.until, schedule.anchor, until_span)
+        {
+            return Err(ScheduleError::parse(
+                "a named until date needs a starting date to resolve its year (or use an ISO date)",
+                span,
+                self.input,
+                Some(format!(
+                    "until {} {day} starting YYYY-MM-DD",
+                    month.as_str()
+                )),
+            ));
+        }
+
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::During)) {
             self.advance();
             schedule.during = self.parse_month_list()?;
@@ -195,7 +211,7 @@ impl<'a> Parser<'a> {
             self.advance();
             match self.peek().map(|t| &t.kind) {
                 Some(TokenKind::Timezone(tz)) => {
-                    schedule.timezone = Some(tz.clone());
+                    schedule.timezone = Some(self.canonical_timezone(tz)?);
                     self.advance();
                 }
                 _ => {
@@ -220,17 +236,55 @@ impl<'a> Parser<'a> {
         Ok(exceptions)
     }
 
-    fn validate_iso_date(&self, d: &str) -> Result<(), ScheduleError> {
-        d.parse::<jiff::civil::Date>()
-            .map_err(|_| self.error(format!("invalid date: {d}"), self.current_span()))?;
-        Ok(())
+    fn parse_iso_date(&self, d: &str) -> Result<jiff::civil::Date, ScheduleError> {
+        match d.parse::<jiff::civil::Date>() {
+            Ok(date) if date.year() >= 1 => Ok(date),
+            _ => Err(self.error(
+                format!("invalid date: {d} (years run from 0001 to 9999)"),
+                self.current_span(),
+            )),
+        }
+    }
+
+    /// spec/README.md, "Parse-time validation": `UTC` or an IANA Area/Location
+    /// name in any case, stored with the database's capitalization.
+    fn canonical_timezone(&self, name: &str) -> Result<String, ScheduleError> {
+        let span = self.current_span();
+        let lower = name.to_ascii_lowercase();
+        // System zoneinfo directories that are not IANA names of their own.
+        let legacy = ["systemv/", "posix/", "right/"]
+            .iter()
+            .any(|prefix| lower.starts_with(prefix));
+        if !name.is_ascii() || legacy || (lower != "utc" && !name.contains('/')) {
+            return Err(self.error(
+                format!(
+                    "unsupported timezone '{name}': use UTC or an IANA Area/Location name such as America/New_York"
+                ),
+                span,
+            ));
+        }
+        // jiff answers `Etc/Unknown` with its placeholder zone rather than an error.
+        match jiff::tz::TimeZone::get(name) {
+            Ok(tz) if !tz.is_unknown() => match tz.iana_name() {
+                Some(canonical) => Ok(canonical.to_string()),
+                None => Err(self.unknown_timezone(name, span)),
+            },
+            _ => Err(self.unknown_timezone(name, span)),
+        }
+    }
+
+    fn unknown_timezone(&self, name: &str, span: Span) -> ScheduleError {
+        self.error(
+            format!("unknown timezone '{name}': not in the IANA timezone database (check the spelling, e.g. America/New_York)"),
+            span,
+        )
     }
 
     fn parse_exception(&mut self) -> Result<Exception, ScheduleError> {
         match self.peek().map(|t| &t.kind) {
             Some(TokenKind::IsoDate(d)) => {
                 let d = d.clone();
-                self.validate_iso_date(&d)?;
+                self.parse_iso_date(&d)?;
                 self.advance();
                 Ok(Exception::Iso(d))
             }
@@ -252,7 +306,7 @@ impl<'a> Parser<'a> {
         match self.peek().map(|t| &t.kind) {
             Some(TokenKind::IsoDate(d)) => {
                 let d = d.clone();
-                self.validate_iso_date(&d)?;
+                self.parse_iso_date(&d)?;
                 self.advance();
                 Ok(UntilSpec::Iso(d))
             }
@@ -334,9 +388,16 @@ impl<'a> Parser<'a> {
             TokenKind::Number(n) => *n,
             _ => unreachable!("parse_number_repeat called without Number token"),
         };
-        if num == 0 {
+        if num == 0 || num > i32::MAX as u32 {
             let span = self.peek().unwrap().span;
-            return Err(self.error("interval must be at least 1".into(), span));
+            return Err(self.error(
+                if num == 0 {
+                    format!("interval must be at least 1 (allowed 1-{})", i32::MAX)
+                } else {
+                    format!("interval number too large (allowed 1-{})", i32::MAX)
+                },
+                span,
+            ));
         }
         self.advance();
 
@@ -381,7 +442,17 @@ impl<'a> Parser<'a> {
         self.consume_kind("'from'", |k| matches!(k, TokenKind::From))?;
         let from = self.parse_time()?;
         self.consume_kind("'to'", |k| matches!(k, TokenKind::To))?;
+        let to_span = self.current_span();
         let to = self.parse_time()?;
+        if from > to {
+            return Err(self.error(
+                format!(
+                    "time range from {:02}:{:02} to {:02}:{:02} is reversed: a window cannot cross midnight, so 'from' must not be later than 'to'",
+                    from.hour, from.minute, to.hour, to.minute
+                ),
+                to_span,
+            ));
+        }
 
         let day_filter = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::On)) {
             self.advance();
@@ -685,7 +756,7 @@ impl<'a> Parser<'a> {
         match self.peek().map(|t| &t.kind) {
             Some(TokenKind::IsoDate(d)) => {
                 let d = d.clone();
-                self.validate_iso_date(&d)?;
+                self.parse_iso_date(&d)?;
                 self.advance();
                 Ok(DateSpec::Iso(d))
             }
@@ -1144,7 +1215,7 @@ mod tests {
 
     #[test]
     fn test_parse_until_named() {
-        let s = parse("every day at 09:00 until dec 31").unwrap();
+        let s = parse("every day at 09:00 until dec 31 starting 2026-01-01").unwrap();
         assert_eq!(
             s.until,
             Some(UntilSpec::Named {

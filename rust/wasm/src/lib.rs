@@ -117,7 +117,7 @@ impl Schedule {
         hron::Schedule::parse(input).is_ok()
     }
 
-    /// Get the timezone, if specified.
+    /// Get the IANA timezone name, if specified, with the capitalization the timezone database uses.
     #[wasm_bindgen(getter)]
     pub fn timezone(&self) -> Option<String> {
         self.inner.timezone().map(|s| s.to_string())

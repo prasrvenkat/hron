@@ -52,7 +52,7 @@ func nextOccurrence(schedule *ScheduleData, loc *time.Location, now, startDate t
 	}
 	var untilDate *time.Time
 	if schedule.Until != nil {
-		ud := dateOnly(resolveUntil(*schedule.Until, now))
+		ud := dateOnly(resolveUntil(*schedule.Until, schedule.Anchor))
 		untilDate = &ud
 	}
 	var targetDuring []MonthName
@@ -426,7 +426,7 @@ func previousOccurrence(schedule *ScheduleData, loc *time.Location, now, startDa
 		anchorDate = &ad
 	}
 	if schedule.Until != nil {
-		untilDate := dateOnly(resolveUntil(*schedule.Until, now))
+		untilDate := dateOnly(resolveUntil(*schedule.Until, schedule.Anchor))
 		if startDate.After(untilDate) {
 			startDate = untilDate
 		}

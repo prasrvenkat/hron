@@ -1,6 +1,7 @@
 package hron
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -9,12 +10,25 @@ var (
 	epochMonday = time.Date(1970, 1, 5, 0, 0, 0, 0, time.UTC) // Monday
 )
 
-// resolveTimezone returns UTC for an empty name so results never depend on the host zone.
-func resolveTimezone(tzName string) (*time.Location, error) {
-	if tzName != "" {
-		return time.LoadLocation(tzName)
+// resolveTimezone returns the location and canonical name for tzName, and UTC
+// for an empty name so results never depend on the host zone.
+func resolveTimezone(tzName string) (*time.Location, string, error) {
+	if tzName == "" {
+		return time.UTC, "", nil
 	}
-	return time.UTC, nil
+	canonical, ok := canonicalTimezone(tzName)
+	if !ok {
+		return nil, "", &HronError{Kind: ErrorKindParse, Message: unknownTimezoneMessage(tzName)}
+	}
+	loc, err := time.LoadLocation(canonical)
+	if err != nil {
+		return nil, "", &HronError{Kind: ErrorKindParse, Message: unknownTimezoneMessage(tzName)}
+	}
+	return loc, canonical, nil
+}
+
+func unknownTimezoneMessage(name string) string {
+	return fmt.Sprintf("unknown timezone %q: use UTC or an IANA Area/Location name such as America/New_York", name)
 }
 
 // atTimeOnDate resolves a fixed time on date d. A time skipped by a
@@ -301,23 +315,22 @@ func nextDuringMonth(d time.Time, during []MonthName) time.Time {
 	return time.Date(d.Year()+1, time.Month(months[0]), 1, 0, 0, 0, 0, time.UTC)
 }
 
-func resolveUntil(until UntilSpec, now time.Time) time.Time {
-	switch until.Kind {
-	case UntilSpecKindISO:
-		d, _ := time.Parse("2006-01-02", until.Date)
+// resolveUntil returns the last date a schedule may fire on. A named until is
+// the first such date on or after the starting date (spec/README.md, "Named
+// until"); consecutive Feb 29s can be eight years apart. Parse rejects the
+// inputs that find no such date (no starting, Feb 30), which end the schedule.
+func resolveUntil(until UntilSpec, anchor string) time.Time {
+	if until.Kind == UntilSpecKindISO {
+		d, _ := parseISODate(until.Date)
 		return d
-	case UntilSpecKindNamed:
-		year := now.Year()
-		for y := year; y <= year+1; y++ {
-			d := time.Date(y, time.Month(until.Month.Number()), until.Day, 0, 0, 0, 0, time.UTC)
-			if !d.Before(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)) {
-				return d
-			}
-		}
-		return time.Date(year+1, time.Month(until.Month.Number()), until.Day, 0, 0, 0, 0, time.UTC)
-	default:
-		return time.Time{}
 	}
+	start, _ := parseISODate(anchor)
+	for year := start.Year(); year <= start.Year()+8; year++ {
+		if d, ok := namedDate(year, NewNamedDate(until.Month, until.Day)); ok && !d.Before(start) {
+			return d
+		}
+	}
+	return time.Time{}
 }
 
 // earliestFutureAtTimes finds the earliest of times on date d that is strictly

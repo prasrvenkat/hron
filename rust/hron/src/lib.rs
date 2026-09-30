@@ -51,10 +51,11 @@ impl Schedule {
     ///
     /// Returns `Ok(None)` when there are no future occurrences (e.g., past the
     /// `until` date), and when `now` or the occurrence is outside the supported
-    /// range, 0001-01-02T00:00Z up to 9999-12-30T00:00Z. Returns `Err` when the
-    /// schedule cannot be evaluated, such as for an unknown timezone or an `until`
-    /// date that cannot be resolved; a `now` outside the supported range returns
-    /// `Ok(None)` before either is checked.
+    /// range, 0001-01-02T00:00Z up to 9999-12-30T00:00Z. A parsed schedule never
+    /// fails to evaluate; `Err` comes only from values set through the builder
+    /// methods that parse would reject, such as an unknown timezone passed to
+    /// [`Schedule::with_timezone`], and a `now` outside the supported range returns
+    /// `Ok(None)` before those are checked.
     ///
     /// A fixed time in a DST spring-forward gap shifts forward by the length of
     /// the gap (02:30 becomes 03:30), while an interval slot in the gap is
@@ -153,7 +154,8 @@ impl Schedule {
         self
     }
 
-    /// Check if an input string is a valid hron expression.
+    /// Check if an input string is a valid hron expression: false for anything
+    /// `parse` rejects, including unknown timezones.
     ///
     /// # Examples
     ///
@@ -215,14 +217,15 @@ impl Schedule {
         cron::to_cron(self)
     }
 
-    /// Get the timezone for this schedule, if specified.
+    /// Get the IANA timezone name, if specified, with the capitalization the
+    /// timezone database uses.
     ///
     /// # Examples
     ///
     /// ```
     /// use hron::Schedule;
     ///
-    /// let schedule = Schedule::parse("every day at 09:00 in America/New_York").unwrap();
+    /// let schedule = Schedule::parse("every day at 09:00 in america/new_york").unwrap();
     /// assert_eq!(schedule.timezone(), Some("America/New_York"));
     ///
     /// let schedule = Schedule::parse("every day at 09:00").unwrap();
@@ -257,7 +260,8 @@ impl Schedule {
         &self.during
     }
 
-    /// Set the timezone.
+    /// Set the timezone. Unlike `parse`, this does not validate the name; an
+    /// unknown one makes evaluation return `Err`.
     pub fn with_timezone(mut self, tz: impl Into<String>) -> Self {
         self.timezone = Some(tz.into());
         self
@@ -269,7 +273,8 @@ impl Schedule {
         self
     }
 
-    /// Set the until spec.
+    /// Set the until spec. A named date resolves from the anchor (`starting`),
+    /// or from the epoch when there is none.
     pub fn with_until(mut self, until: ast::UntilSpec) -> Self {
         self.until = Some(until);
         self

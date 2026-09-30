@@ -39,6 +39,10 @@ export type TokenKind =
   | { type: "comma" }
   | { type: "timezone"; tz: string };
 
+// The largest interval (spec/README.md, "Parse-time validation"), and more
+// than any other numeric field allows.
+const MAX_NUMBER = 2147483647;
+
 export function tokenize(input: string): Token[] {
   const lexer = new Lexer(input);
   return lexer.tokenize();
@@ -187,6 +191,13 @@ class Lexer {
     if (Number.isNaN(num)) {
       throw HronError.lex(
         "invalid number",
+        { start, end: this.pos },
+        this.input,
+      );
+    }
+    if (num > MAX_NUMBER) {
+      throw HronError.lex(
+        "number too large",
         { start, end: this.pos },
         this.input,
       );

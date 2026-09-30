@@ -17,7 +17,6 @@ type TestSpec struct {
 	ParseErrors json.RawMessage            `json:"parse_errors"`
 	Eval        map[string]json.RawMessage `json:"eval"`
 	Cron        map[string]json.RawMessage `json:"cron"`
-	EvalErrors  json.RawMessage            `json:"eval_errors"`
 	Invariants  json.RawMessage            `json:"invariants"`
 }
 
@@ -30,12 +29,6 @@ type InvariantTest struct {
 	Name       string `json:"name"`
 	Expression string `json:"expression"`
 	Now        string `json:"now"`
-}
-
-type EvalErrorTest struct {
-	Name        string `json:"name"`
-	Expression  string `json:"expression"`
-	Description string `json:"description"`
 }
 
 type ParseTest struct {
@@ -197,7 +190,7 @@ func TestSpecSections(t *testing.T) {
 		t.Fatalf("failed to parse spec: %v", err)
 	}
 	checkKnownKeys(t, "top-level", top, "$schema", "version", "description", "now", "_eval_assertion_types",
-		"_behavioral_notes", "parse", "parse_errors", "eval", "cron", "eval_errors", "invariants")
+		"_behavioral_notes", "parse", "parse_errors", "eval", "cron", "invariants")
 
 	checkKnownKeys(t, "cron", loadSpec(t).Cron, "description", "to_cron", "to_cron_errors", "from_cron", "from_cron_errors", "roundtrip")
 }
@@ -257,23 +250,11 @@ func TestParseErrors(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected parse error for %q (%s)", tc.Input, tc.Description)
 			}
+			if Validate(tc.Input) {
+				t.Errorf("Validate(%q) = true, want false", tc.Input)
+			}
 			if !strings.Contains(err.Error(), tc.ErrorContains) {
 				t.Errorf("parse error for %q is %q, want it to contain %q", tc.Input, err, tc.ErrorContains)
-			}
-		})
-	}
-}
-
-func TestEvalErrors(t *testing.T) {
-	spec := loadSpec(t)
-
-	for _, tc := range decodeCases[EvalErrorTest](t, spec.EvalErrors, "expression") {
-		t.Run(tc.Name, func(t *testing.T) {
-			// Go validates timezone at construction time (NewSchedule/ParseSchedule),
-			// so these should fail at parse time.
-			_, err := ParseSchedule(tc.Expression)
-			if err == nil {
-				t.Errorf("expected error for %q (%s), but parse succeeded", tc.Expression, tc.Description)
 			}
 		})
 	}

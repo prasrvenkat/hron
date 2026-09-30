@@ -8,7 +8,7 @@ class ConformanceTest < Minitest::Test
 
   TOP_LEVEL_KEYS = %w[
     $schema version description now _eval_assertion_types _behavioral_notes
-    parse parse_errors eval cron eval_errors invariants
+    parse parse_errors eval cron invariants
   ].freeze
 
   PARSE_SECTIONS = %w[
@@ -103,6 +103,7 @@ class ConformanceTest < Minitest::Test
     define_case("test_parse_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[input error_contains]) do
       error = assert_raises(Hron::HronError) { Hron::Schedule.parse(tc["input"]) }
       assert_includes error.message, tc["error_contains"] if tc.key?("error_contains")
+      assert_equal false, Hron::Schedule.validate(tc["input"]), "validate"
     end
   end
 
@@ -237,17 +238,6 @@ class ConformanceTest < Minitest::Test
   def check_display_roundtrip(schedule, _now, label)
     display = schedule.to_s
     assert_equal display, Hron::Schedule.parse(display).to_s, label
-  end
-
-  SPEC["eval_errors"]["tests"].each do |tc|
-    test_name = tc["name"] || tc["expression"]
-    define_case("test_eval_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[expression]) do
-      # Ruby validates the timezone at eval time, so either parse or next_from may raise,
-      # with a HronError or a native timezone error (e.g. TZInfo::InvalidTimezoneIdentifier).
-      assert_raises(StandardError) do
-        Hron::Schedule.parse(tc["expression"]).next_from(DEFAULT_NOW)
-      end
-    end
   end
 
   SPEC["cron"]["to_cron"]["tests"].each do |tc|

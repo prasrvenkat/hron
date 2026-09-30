@@ -12,7 +12,7 @@ dart pub add hron
 
 ```dart
 import 'package:hron/hron.dart';
-import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 
 void main() {
   // Required: initialize timezone database
@@ -44,14 +44,14 @@ void main() {
 
 ## Timezone Support
 
-This package depends on the [`timezone`](https://pub.dev/packages/timezone) package for IANA timezone support. You must call `initializeTimeZones()` before using hron:
+This package depends on the [`timezone`](https://pub.dev/packages/timezone) package for IANA timezone support. Load its database before parsing an expression with an `in` clause, because `Schedule.parse` checks the name against the loaded database:
 
 ```dart
-import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 tz.initializeTimeZones();
 ```
 
-`latest.dart` does not include link names such as `Europe/Amsterdam` or `US/Eastern`; use `package:timezone/data/latest_all.dart` for those. The `timezone` data has no DST rules after 2037, so later dates keep the offset of each zone's last 2037 transition (standard time in `America/New_York`, daylight time in `Australia/Sydney`).
+Names match in any case and display with the IANA capitalization (`in america/new_york` displays `in America/New_York`). hron uses whichever database your app loads. `latest_all.dart` includes link names such as `US/Eastern` and `Europe/Amsterdam`; the smaller `latest.dart` does not, so with it those names are parse errors. The `timezone` data has no DST rules after 2037, so later dates keep the offset of each zone's last 2037 transition (standard time in `America/New_York`, daylight time in `Australia/Sydney`).
 
 ## Tests
 

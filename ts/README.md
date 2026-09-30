@@ -38,7 +38,7 @@ console.log(schedule.toString());
 
 ## Temporal Polyfill
 
-This package uses the [Temporal API](https://tc39.es/proposal-temporal/) via `@js-temporal/polyfill`. For performance-critical use cases, consider the WASM package (`hron-wasm`).
+This package uses the [Temporal API](https://tc39.es/proposal-temporal/) via `@js-temporal/polyfill`. The accepted timezone names follow the JS engine's Intl/ICU data, so a name IANA has removed may still be accepted. For performance-critical use cases, consider the WASM package (`hron-wasm`).
 
 ## Tests
 

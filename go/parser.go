@@ -2,6 +2,7 @@ package hron
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -133,12 +134,15 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 		schedule.Except = exceptions
 	}
 
+	var untilSpan Span
 	if p.peekKind() == TokenUntil {
+		untilSpan = p.currentSpan()
 		p.advance()
 		until, err := p.parseUntilSpec()
 		if err != nil {
 			return nil, err
 		}
+		untilSpan.End = p.tokens[p.pos-1].Span.End
 		schedule.Until = &until
 	}
 
@@ -155,6 +159,14 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 		}
 	}
 
+	if schedule.Until != nil && schedule.Until.Kind == UntilSpecKindNamed && schedule.Anchor == "" {
+		return nil, ParseError(
+			"a named until date has no year: add a starting date, or use an ISO until date",
+			untilSpan, p.input,
+			fmt.Sprintf("until %s %d starting YYYY-MM-DD", schedule.Until.Month, schedule.Until.Day),
+		)
+	}
+
 	if p.peekKind() == TokenDuring {
 		p.advance()
 		months, err := p.parseMonthList()
@@ -167,7 +179,12 @@ func (p *parser) parseTrailingClauses(expr ScheduleExpr) (*ScheduleData, error) 
 	if p.peekKind() == TokenIn {
 		p.advance()
 		if p.peekKind() == TokenTimezone {
-			schedule.Timezone = p.peek().TimezoneVal
+			name := p.peek().TimezoneVal
+			canonical, ok := canonicalTimezone(name)
+			if !ok {
+				return nil, ParseError(unknownTimezoneMessage(name), p.currentSpan(), p.input, "")
+			}
+			schedule.Timezone = canonical
 			p.advance()
 		} else {
 			return nil, p.error("expected timezone after 'in'", p.currentSpan())
@@ -362,6 +379,9 @@ func (p *parser) parseNumberRepeat() (ScheduleExpr, error) {
 	if num == 0 {
 		return ScheduleExpr{}, p.error("interval must be at least 1", span)
 	}
+	if num > math.MaxInt32 {
+		return ScheduleExpr{}, p.error(fmt.Sprintf("number too large: an interval is at most %d", math.MaxInt32), span)
+	}
 	p.advance()
 
 	switch p.peekKind() {
@@ -394,6 +414,7 @@ func (p *parser) parseIntervalRepeat(interval int) (ScheduleExpr, error) {
 	if _, err := p.consume("'from'", TokenFrom); err != nil {
 		return ScheduleExpr{}, err
 	}
+	rangeSpan := p.currentSpan()
 	fromTime, err := p.parseTime()
 	if err != nil {
 		return ScheduleExpr{}, err
@@ -404,6 +425,13 @@ func (p *parser) parseIntervalRepeat(interval int) (ScheduleExpr, error) {
 	toTime, err := p.parseTime()
 	if err != nil {
 		return ScheduleExpr{}, err
+	}
+	if fromTime.TotalMinutes() > toTime.TotalMinutes() {
+		rangeSpan.End = p.tokens[p.pos-1].Span.End
+		return ScheduleExpr{}, ParseError(
+			fmt.Sprintf("from time %s is later than to time %s: a window cannot cross midnight", fromTime, toTime),
+			rangeSpan, p.input, "",
+		)
 	}
 
 	var dayFilter *DayFilter
@@ -710,8 +738,8 @@ func (p *parser) parseOn() (ScheduleExpr, error) {
 }
 
 func (p *parser) validateIsoDate(dateStr string) error {
-	_, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
+	d, err := time.Parse("2006-01-02", dateStr)
+	if err != nil || d.Year() < 1 {
 		return p.error(fmt.Sprintf("invalid date: %s", dateStr), p.currentSpan())
 	}
 	return nil

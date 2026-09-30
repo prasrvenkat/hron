@@ -122,7 +122,7 @@ try {
 | `matches(ZonedDateTime datetime)` | Check if `datetime` matches this schedule |
 | `toCron()` | Convert to a 5-field cron expression |
 | `toString()` | Get the canonical string form |
-| `timezone()` | Get the IANA timezone name (if specified) |
+| `timezone()` | Get the IANA timezone name with its canonical capitalization (if specified) |
 
 ### HronException
 

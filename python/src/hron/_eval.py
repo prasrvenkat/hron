@@ -312,15 +312,17 @@ def _prev_during_month(d: date, during: tuple[MonthName, ...]) -> date:
     return _month_start(index + 1) - timedelta(days=1)
 
 
-def _resolve_until(until: UntilSpec, now: datetime) -> date:
+def _resolve_until(until: UntilSpec, starting: date | None) -> date:
     match until:
         case IsoUntil(date=iso_str):
             return date.fromisoformat(iso_str)
         case NamedUntil(month=m, day=day):
-            # Feb 29 recurs within 8 years.
-            for year in range(now.year, now.year + 9):
+            # The first such date on or after `starting`, which parse requires; Feb 29 recurs
+            # within 8 years.
+            start = starting or date.min
+            for year in range(start.year, min(start.year + 9, MAXYEAR + 1)):
                 d = _date_if_valid(year, m.number, day)
-                if d is not None and d >= now.date():
+                if d is not None and d >= start:
                     return d
             return date.max
 
@@ -353,11 +355,12 @@ class _Clauses:
         return _prev_during_month(d, self.during)
 
 
-def _clauses(schedule: ScheduleData, now_in_tz: datetime) -> _Clauses:
+def _clauses(schedule: ScheduleData) -> _Clauses:
     named, iso_dates = _parse_exceptions(schedule.except_)
+    starting = date.fromisoformat(schedule.anchor) if schedule.anchor else None
     return _Clauses(
-        until=_resolve_until(schedule.until, now_in_tz) if schedule.until else None,
-        starting=date.fromisoformat(schedule.anchor) if schedule.anchor else None,
+        until=_resolve_until(schedule.until, starting) if schedule.until else None,
+        starting=starting,
         # A month repeat applies `during` itself, to the month it targets, which a nearest
         # weekday can leave; every other expression applies it to the scheduled date.
         during=() if isinstance(schedule.expr, MonthRepeat) else schedule.during,
@@ -395,7 +398,7 @@ def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
 def _next(schedule: ScheduleData, now: datetime) -> datetime | None:
     tz = _resolve_tz(schedule.timezone)
     now_in_tz = now.astimezone(tz)
-    clauses = _clauses(schedule, now_in_tz)
+    clauses = _clauses(schedule)
 
     # A time shifted past midnight by a gap lands on the date after its scheduled date.
     start = _add_days_clamped(now_in_tz.date(), -1)
@@ -681,7 +684,7 @@ def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
 def _previous(schedule: ScheduleData, now: datetime) -> datetime | None:
     tz = _resolve_tz(schedule.timezone)
     now_in_tz = now.astimezone(tz)
-    clauses = _clauses(schedule, now_in_tz)
+    clauses = _clauses(schedule)
 
     # An overlap crossing midnight can put an earlier date's wall clock on a later occurrence.
     start = _add_days_clamped(now_in_tz.date(), 1)
