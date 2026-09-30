@@ -1494,6 +1494,27 @@
           "expression": "every day at 23:00 in America/New_York",
           "description": "next is 2026-02-06T23:00-05:00, which is already Feb 7 in UTC; next_date is the date in the schedule's timezone",
           "next_date": "2026-02-06"
+        },
+        {
+          "name": "every_day_starting_future",
+          "expression": "every day at 09:00 starting 2026-03-01 in UTC",
+          "description": "starting 2026-03-01 is a lower bound: nothing fires before Mar 1 even with interval 1",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2026-03-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_146097_days_one_full_cycle",
+          "expression": "every 146097 days at 09:00 in UTC",
+          "description": "146097 days is one 400-year cycle: from just after 2370-01-01 09:00 the next is 2770-01-01",
+          "now": "2370-01-01T10:00:00+00:00[UTC]",
+          "next": "2770-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "new_york_2040_year_end",
+          "expression": "every day at 09:00 in America/New_York",
+          "description": "winter date after 2037: 2040-12-31 09:00 EST",
+          "now": "2040-12-30T15:00:00+00:00[UTC]",
+          "next": "2040-12-31T09:00:00-05:00[America/New_York]"
         }
       ]
     },
@@ -1595,6 +1616,25 @@
             "2026-02-07T23:57:00+00:00[UTC]",
             "2026-02-07T23:58:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "window_starting_future",
+          "expression": "every 30 min from 09:00 to 10:00 starting 2026-02-10 in UTC",
+          "description": "an interval window does not fire before the starting date",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-10T09:00:00+00:00[UTC]",
+            "2026-02-10T09:30:00+00:00[UTC]",
+            "2026-02-10T10:00:00+00:00[UTC]",
+            "2026-02-11T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "huge_step_only_from_slot",
+          "expression": "every 1073741824 hours from 00:00 to 23:59 in UTC",
+          "description": "a step longer than the window leaves only the from slot",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2026-02-07T00:00:00+00:00[UTC]"
         }
       ]
     },
@@ -1931,6 +1971,52 @@
           "description": "a fifth Friday in February needs a leap year starting on Friday and an aligned month (Feb offset divisible by 11): next is 2464-02-29",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2464-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_month_starting_mid_month",
+          "expression": "every month on the 15th at 09:00 starting 2026-04-10 in UTC",
+          "description": "starting 2026-04-10 excludes Feb 15 and Mar 15 and Apr 1-9: next is Apr 15",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2026-04-15T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "quarterly_starting_mid_month",
+          "expression": "every 3 months on the 1st, 20th at 09:00 starting 2026-02-10 in UTC",
+          "description": "anchor month is February; Feb 1 is before starting, Feb 20 fires, then May",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-20T09:00:00+00:00[UTC]",
+            "2026-05-01T09:00:00+00:00[UTC]",
+            "2026-05-20T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "nearest_weekday_lands_before_starting",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 starting 2026-02-28 in UTC",
+          "description": "target Mar 1 (Sun) lands on Fri Feb 27, before starting Feb 28, so it does not fire; next is Apr 1",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2026-04-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_weekday_target_before_starting_lands_after",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 starting 2026-02-01 in UTC",
+          "description": "target Jan 31 (Sat) is before starting Feb 1 but lands on Mon Feb 2, which is not: it fires",
+          "now": "2026-01-15T00:00:00+00:00[UTC]",
+          "next": "2026-02-02T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nearest_weekday_until_on_landing_date",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 until 2026-02-27 in UTC",
+          "description": "Feb 27 (target Mar 1) is on the until date, which is inclusive",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "next_nearest_31st_same_day_later_time",
+          "expression": "every month on the next nearest weekday to 31st at 09:00 in UTC",
+          "description": "now is Feb 2 08:00; Feb 2 09:00 (target Jan 31) is still ahead",
+          "now": "2026-02-02T08:00:00+00:00[UTC]",
+          "next": "2026-02-02T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2060,6 +2146,18 @@
           "description": "52-week steps drift about 1.24 days a year; the next aligned Monday in February is 2220-02-28",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2220-02-28T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "biweekly_starting_mid_week",
+          "expression": "every 2 weeks on monday, friday at 09:00 starting 2026-02-11 in UTC",
+          "description": "anchor week is the week of Wed Feb 11 (Monday Feb 9); Mon Feb 9 is before starting and does not fire, Fri Feb 13 does",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next_n": [
+            "2026-02-13T09:00:00+00:00[UTC]",
+            "2026-02-23T09:00:00+00:00[UTC]",
+            "2026-02-27T09:00:00+00:00[UTC]",
+            "2026-03-09T09:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -2149,6 +2247,20 @@
           "description": "an ISO date 474 years ahead is found",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2500-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_date_before_starting",
+          "expression": "on 2026-03-15 at 09:00 starting 2026-04-01 in UTC",
+          "description": "a single date before starting never fires",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "named_date_after_starting",
+          "expression": "on feb 14 at 09:00 starting 2027-01-01 in UTC",
+          "description": "a named date recurs yearly; the first one on or after starting is 2027-02-14",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2027-02-14T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2318,6 +2430,20 @@
           "description": "1970 + 8000 = 9970 is inside the supported range",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "9970-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_year_starting_future",
+          "expression": "every year on dec 25 at 00:00 starting 2027-01-01 in UTC",
+          "description": "starting 2027-01-01 excludes Dec 25, 2026: next is 2027-12-25",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2027-12-25T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "biennial_starting_mid_year",
+          "expression": "every 2 years on mar 1 at 09:00 starting 2026-06-01 in UTC",
+          "description": "anchor year 2026, but Mar 1, 2026 is before starting: next is 2028-03-01",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2028-03-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -3941,6 +4067,76 @@
           "description": "except mar 29 does not remove the occurrence scheduled on Mar 28, so Mar 29 00:30 matches",
           "datetime": "2026-03-29T00:30:00-01:00[America/Nuuk]",
           "expected": true
+        },
+        {
+          "name": "every_day_starting_before_bound",
+          "expression": "every day at 09:00 starting 2026-03-01 in UTC",
+          "description": "a date before starting never matches, even when the day and time do",
+          "datetime": "2026-02-10T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "biweekly_starting_mid_week_anchor_monday",
+          "expression": "every 2 weeks on monday, friday at 09:00 starting 2026-02-11 in UTC",
+          "description": "Mon Feb 9 is in the anchor week but before starting, so it does not match",
+          "datetime": "2026-02-09T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "biweekly_starting_mid_week_first_friday",
+          "expression": "every 2 weeks on monday, friday at 09:00 starting 2026-02-11 in UTC",
+          "description": "Fri Feb 13 is the first occurrence on or after starting",
+          "datetime": "2026-02-13T09:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "quarterly_starting_mid_month_anchor_month_before_bound",
+          "expression": "every 3 months on the 1st, 20th at 09:00 starting 2026-02-10 in UTC",
+          "description": "Feb 1 is in the anchor month but before starting",
+          "datetime": "2026-02-01T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "biennial_starting_mid_year_anchor_year_before_bound",
+          "expression": "every 2 years on mar 1 at 09:00 starting 2026-06-01 in UTC",
+          "description": "Mar 1, 2026 is in the anchor year but before starting",
+          "datetime": "2026-03-01T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "day_interval_starting_past_aligned",
+          "expression": "every 2 days at 09:00 starting 2020-01-02 in UTC",
+          "description": "2026-02-07 is aligned with the 2020-01-02 anchor",
+          "datetime": "2026-02-07T09:00:00+00:00[UTC]",
+          "expected": true
+        },
+        {
+          "name": "interval_window_before_starting",
+          "expression": "every 30 min from 09:00 to 10:00 starting 2026-02-10 in UTC",
+          "description": "a slot on a day before starting does not match",
+          "datetime": "2026-02-09T09:30:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "nearest_weekday_lands_before_starting",
+          "expression": "every month on the previous nearest weekday to 1st at 09:00 starting 2026-02-28 in UTC",
+          "description": "Feb 27 (target Mar 1) is before starting, so it does not match",
+          "datetime": "2026-02-27T09:00:00+00:00[UTC]",
+          "expected": false
+        },
+        {
+          "name": "range_end_outside",
+          "expression": "every day at 09:00, 23:30 in America/New_York",
+          "description": "9999-12-29 23:30 EST is outside the supported range, so it never matches",
+          "datetime": "9999-12-29T23:30:00-05:00[America/New_York]",
+          "expected": false
+        },
+        {
+          "name": "new_york_2040_year_end",
+          "expression": "every day at 09:00 in America/New_York",
+          "description": "2040-12-31T14:00Z is 09:00 EST",
+          "datetime": "2040-12-31T14:00:00+00:00[UTC]",
+          "expected": true
         }
       ]
     },
@@ -4347,6 +4543,91 @@
           "next_n": [
             "2026-03-27T23:30:00-02:00[America/Nuuk]",
             "2026-03-29T00:30:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "nuuk_shifted_keeps_scheduled_date_for_starting",
+          "expression": "every day at 23:30 starting 2026-03-29 in America/Nuuk",
+          "description": "Mar 28 23:30 lands on Mar 29 00:30 but is scheduled on Mar 28, before starting Mar 29: first is Mar 29 23:30",
+          "now": "2026-03-28T12:00:00-02:00[America/Nuuk]",
+          "next": "2026-03-29T23:30:00-01:00[America/Nuuk]"
+        },
+        {
+          "name": "pyongyang_offset_change_gap",
+          "expression": "every day at 23:45 in Asia/Pyongyang",
+          "description": "Pyongyang moved from +08:30 to +09:00 at 23:30 on 2018-05-04; 23:45 shifts to 00:15 on May 5",
+          "now": "2018-05-04T12:00:00+08:30[Asia/Pyongyang]",
+          "next": "2018-05-05T00:15:00+09:00[Asia/Pyongyang]"
+        },
+        {
+          "name": "pyongyang_interval_slots_in_gap",
+          "expression": "every 15 min from 23:00 to 23:45 in Asia/Pyongyang",
+          "description": "slots 23:30 and 23:45 on 2018-05-04 do not exist in Pyongyang and are skipped",
+          "now": "2018-05-04T22:50:00+08:30[Asia/Pyongyang]",
+          "next_n": [
+            "2018-05-04T23:00:00+08:30[Asia/Pyongyang]",
+            "2018-05-04T23:15:00+08:30[Asia/Pyongyang]",
+            "2018-05-05T23:00:00+09:00[Asia/Pyongyang]"
+          ]
+        },
+        {
+          "name": "caracas_offset_change_gap",
+          "expression": "every day at 02:45 in America/Caracas",
+          "description": "Caracas moved from -04:30 to -04:00 at 02:30 on 2016-05-01; 02:45 shifts to 03:15",
+          "now": "2016-04-30T12:00:00-04:30[America/Caracas]",
+          "next": "2016-05-01T03:15:00-04:00[America/Caracas]"
+        },
+        {
+          "name": "caracas_interval_slots_in_gap",
+          "expression": "every 15 min from 02:00 to 03:00 in America/Caracas",
+          "description": "slots 02:30 and 02:45 on 2016-05-01 do not exist in Caracas and are skipped",
+          "now": "2016-05-01T01:50:00-04:30[America/Caracas]",
+          "next_n": [
+            "2016-05-01T02:00:00-04:30[America/Caracas]",
+            "2016-05-01T02:15:00-04:30[America/Caracas]",
+            "2016-05-01T03:00:00-04:00[America/Caracas]"
+          ]
+        },
+        {
+          "name": "apia_skipped_day_single_date",
+          "expression": "on 2011-12-30 at 09:00 in Pacific/Apia",
+          "description": "2011-12-30 does not exist in Apia; 09:00 that day shifts 24 hours to Dec 31 09:00",
+          "now": "2011-12-29T00:00:00-10:00[Pacific/Apia]",
+          "next": "2011-12-31T09:00:00+14:00[Pacific/Apia]"
+        },
+        {
+          "name": "apia_skipped_day_except_landing_date",
+          "expression": "every day at 09:00 except dec 31 in Pacific/Apia",
+          "description": "except dec 31 removes Dec 31's own 09:00, but Dec 30's shifted 09:00 (scheduled Dec 30) still fires on Dec 31",
+          "now": "2011-12-29T00:00:00-10:00[Pacific/Apia]",
+          "next_n": [
+            "2011-12-29T09:00:00-10:00[Pacific/Apia]",
+            "2011-12-31T09:00:00+14:00[Pacific/Apia]",
+            "2012-01-01T09:00:00+14:00[Pacific/Apia]"
+          ]
+        },
+        {
+          "name": "apia_skipped_day_interval_slots",
+          "expression": "every 6 hours from 00:00 to 18:00 in Pacific/Apia",
+          "description": "every slot of the skipped 2011-12-30 is skipped in Apia",
+          "now": "2011-12-29T12:00:00-10:00[Pacific/Apia]",
+          "next_n": [
+            "2011-12-29T18:00:00-10:00[Pacific/Apia]",
+            "2011-12-31T00:00:00+14:00[Pacific/Apia]",
+            "2011-12-31T06:00:00+14:00[Pacific/Apia]",
+            "2011-12-31T12:00:00+14:00[Pacific/Apia]"
+          ]
+        },
+        {
+          "name": "kiritimati_skipped_day_keeps_during",
+          "expression": "every day at 09:00 during dec in Pacific/Kiritimati",
+          "description": "1994-12-31 does not exist in Kiritimati; its 09:00 lands on Jan 1 but is scheduled in December, so during dec keeps it",
+          "now": "1994-12-29T00:00:00+00:00[UTC]",
+          "next_n": [
+            "1994-12-29T09:00:00-10:00[Pacific/Kiritimati]",
+            "1994-12-30T09:00:00-10:00[Pacific/Kiritimati]",
+            "1995-01-01T09:00:00+14:00[Pacific/Kiritimati]",
+            "1995-12-01T09:00:00+14:00[Pacific/Kiritimati]"
           ]
         }
       ]
@@ -4920,6 +5201,14 @@
             "2026-02-07T12:00:00+00:00[UTC]",
             "2026-02-07T23:59:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "range_from_after_end",
+          "expression": "every day at 09:00, 23:30 in America/New_York",
+          "description": "an iterator from outside the supported range is empty",
+          "from": "9999-12-31T12:00:00+00:00[UTC]",
+          "take": 3,
+          "expected": []
         }
       ]
     },
@@ -5438,6 +5727,48 @@
             "2026-04-04T23:30:00-03:00[America/Santiago]",
             "2026-04-05T00:30:00-04:00[America/Santiago]"
           ]
+        },
+        {
+          "name": "biweekly_starting_mid_week",
+          "expression": "every 2 weeks on monday, friday at 09:00 starting 2026-02-11 in UTC",
+          "description": "February occurrences of a biweekly schedule anchored mid-week on Feb 11",
+          "from": "2026-02-01T00:00:00+00:00[UTC]",
+          "to": "2026-02-28T23:59:00+00:00[UTC]",
+          "expected": [
+            "2026-02-13T09:00:00+00:00[UTC]",
+            "2026-02-23T09:00:00+00:00[UTC]",
+            "2026-02-27T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "quarterly_starting_mid_month",
+          "expression": "every 3 months on the 1st, 20th at 09:00 starting 2026-02-10 in UTC",
+          "description": "anchor month February: Feb 20, May 1, May 20",
+          "from": "2026-01-01T00:00:00+00:00[UTC]",
+          "to": "2026-06-01T00:00:00+00:00[UTC]",
+          "expected": [
+            "2026-02-20T09:00:00+00:00[UTC]",
+            "2026-05-01T09:00:00+00:00[UTC]",
+            "2026-05-20T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "biennial_starting_mid_year",
+          "expression": "every 2 years on mar 1 at 09:00 starting 2026-06-01 in UTC",
+          "description": "only 2028 fires between 2025 and 2029",
+          "from": "2025-01-01T00:00:00+00:00[UTC]",
+          "to": "2029-01-01T00:00:00+00:00[UTC]",
+          "expected": [
+            "2028-03-01T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "range_from_outside",
+          "expression": "every day at 00:30, 12:00 in Etc/GMT-9",
+          "description": "a from outside the supported range gives an empty result",
+          "from": "0001-01-01T00:00:00+00:00[UTC]",
+          "to": "0001-01-03T00:00:00+00:00[UTC]",
+          "expected": []
         }
       ]
     },
@@ -6367,6 +6698,146 @@
           "description": "until 2026-03-28: the last occurrence is the shifted Mar 29 00:30",
           "now": "2026-04-01T12:00:00-01:00[America/Nuuk]",
           "expected": "2026-03-29T00:30:00-01:00[America/Nuuk]"
+        },
+        {
+          "name": "every_day_starting_future_before_bound",
+          "expression": "every day at 09:00 starting 2026-03-01 in UTC",
+          "description": "before the first day on or after starting there is no previous occurrence",
+          "now": "2026-03-01T08:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "biweekly_starting_mid_week_before_first",
+          "expression": "every 2 weeks on monday, friday at 09:00 starting 2026-02-11 in UTC",
+          "description": "Mon Feb 9 is in the anchor week but before starting: no previous occurrence",
+          "now": "2026-02-12T12:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "quarterly_starting_mid_month_before_first",
+          "expression": "every 3 months on the 1st, 20th at 09:00 starting 2026-02-10 in UTC",
+          "description": "Feb 1 is in the anchor month but before starting: no previous occurrence",
+          "now": "2026-02-15T12:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "biennial_starting_mid_year_before_first",
+          "expression": "every 2 years on mar 1 at 09:00 starting 2026-06-01 in UTC",
+          "description": "Mar 1, 2026 is before starting: no previous occurrence before 2028",
+          "now": "2027-12-31T00:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "day_interval_starting_past",
+          "expression": "every 2 days at 09:00 starting 2020-01-02 in UTC",
+          "description": "starting in the past only anchors: 2026-02-05 is an even number of days after 2020-01-02",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "2026-02-05T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "until_between_now_and_starting",
+          "expression": "every day at 09:00 until 2026-02-20 starting 2026-03-01 in UTC",
+          "description": "until before starting: no occurrence in either direction",
+          "now": "2026-12-01T00:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "interval_window_starting_future",
+          "expression": "every 30 min from 09:00 to 10:00 starting 2026-02-10 in UTC",
+          "description": "no slot before the starting date",
+          "now": "2026-02-10T08:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "range_now_after_end",
+          "expression": "every day at 09:00, 23:30 in America/New_York",
+          "description": "now 9999-12-31T12:00Z is outside the supported range: null",
+          "now": "9999-12-31T12:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "range_start_non_utc",
+          "expression": "every day at 00:30, 12:00 in Etc/GMT-9",
+          "description": "Jan 2 00:30 +09:00 is 0001-01-01T15:30Z, before the supported range; the previous from 03:01Z is Jan 2 12:00",
+          "now": "0001-01-02T03:01:00+00:00[UTC]",
+          "expected": "0001-01-02T12:00:00+09:00[Etc/GMT-9]"
+        },
+        {
+          "name": "range_start_nothing_earlier",
+          "expression": "every day at 00:30, 12:00 in Etc/GMT-9",
+          "description": "Jan 2 12:00 +09:00 equals now and every earlier slot is before the supported range: null",
+          "now": "0001-01-02T03:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "until_far_past_from_far_future",
+          "expression": "every day at 09:00 until 2020-01-01 in UTC",
+          "description": "previousFrom finds the last occurrence before until from 480 years later",
+          "now": "2500-01-01T00:00:00+00:00[UTC]",
+          "expected": "2020-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nuuk_shifted_after_listed_time",
+          "expression": "every day at 00:15, 23:30 in America/Nuuk",
+          "description": "Mar 28 23:30 shifted to Mar 29 00:30 is later than Mar 29's own 00:15 and is the previous",
+          "now": "2026-03-29T00:45:00-01:00[America/Nuuk]",
+          "expected": "2026-03-29T00:30:00-01:00[America/Nuuk]"
+        },
+        {
+          "name": "nuuk_weekly_shifted_equals_now",
+          "expression": "every saturday at 23:30 in America/Nuuk",
+          "description": "Saturday Mar 28 23:30 shifted to Mar 29 00:30 equals now, so the previous is Saturday Mar 21",
+          "now": "2026-03-29T00:30:00-01:00[America/Nuuk]",
+          "expected": "2026-03-21T23:30:00-02:00[America/Nuuk]"
+        },
+        {
+          "name": "apia_skipped_friday_equals_now",
+          "expression": "every friday at 09:00 in Pacific/Apia",
+          "description": "Friday 2011-12-30 does not exist in Apia; its 09:00 shifts to Dec 31 09:00, which equals now",
+          "now": "2011-12-31T09:00:00+14:00[Pacific/Apia]",
+          "expected": "2011-12-23T09:00:00-10:00[Pacific/Apia]"
+        },
+        {
+          "name": "st_johns_overlap_crosses_midnight",
+          "expression": "every day at 00:00 in America/St_Johns",
+          "description": "St. John's fell back at 00:01 on 2010-11-07 to 23:01 on Nov 6; 00:00 Nov 7 first occurs at 02:30Z (-02:30), before now 03:00Z",
+          "now": "2010-11-07T03:00:00+00:00[UTC]",
+          "expected": "2010-11-07T00:00:00-02:30[America/St_Johns]"
+        },
+        {
+          "name": "troll_two_hour_overlap_interval_second_pass",
+          "expression": "every 30 min from 00:00 to 04:00 in Antarctica/Troll",
+          "description": "Troll falls back two hours (03:00 +02 -> 01:00 +00); from 02:10 +00:00 in the second pass the previous slot is 02:30 +02:00",
+          "now": "2025-10-26T02:10:00+00:00[Antarctica/Troll]",
+          "expected": "2025-10-26T02:30:00+02:00[Antarctica/Troll]"
+        },
+        {
+          "name": "magadan_two_hour_overlap_interval_second_pass",
+          "expression": "every 30 min from 00:00 to 03:00 in Asia/Magadan",
+          "description": "Magadan fell back two hours (02:00 +12 -> 00:00 +10) on 2014-10-26; from 01:40 +10:00 the previous slot is 01:30 +12:00",
+          "now": "2014-10-26T01:40:00+10:00[Asia/Magadan]",
+          "expected": "2014-10-26T01:30:00+12:00[Asia/Magadan]"
+        },
+        {
+          "name": "new_york_2040_year_end",
+          "expression": "every day at 09:00 in America/New_York",
+          "description": "winter date after 2037, across the year end: previous from 2041-01-01T13:00Z is 2040-12-31 09:00 EST",
+          "now": "2041-01-01T13:00:00+00:00[UTC]",
+          "expected": "2040-12-31T09:00:00-05:00[America/New_York]"
+        },
+        {
+          "name": "new_york_2041_new_year",
+          "expression": "every day at 09:00 in America/New_York",
+          "description": "winter date after 2037: previous from 2041-01-01T15:00Z is that morning, 09:00 EST",
+          "now": "2041-01-01T15:00:00+00:00[UTC]",
+          "expected": "2041-01-01T09:00:00-05:00[America/New_York]"
+        },
+        {
+          "name": "huge_day_interval",
+          "expression": "every 800000000 days at 09:00 in UTC",
+          "description": "every 800000000 days: the only occurrence in the supported range is the anchor, 1970-01-01",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "1970-01-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -6441,6 +6912,14 @@
           "description": "epoch-aligned years (1970 + 4k) are never leap years, so Feb 29 never fires",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": null
+        },
+        {
+          "name": "until_between_now_and_starting",
+          "expression": "every day at 09:00 until 2026-02-20 starting 2026-03-01 in UTC",
+          "description": "until 2026-02-20 is before starting 2026-03-01: no occurrence",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next_n_count": 3,
+          "next_n": []
         }
       ]
     },
@@ -6565,6 +7044,25 @@
             "2027-04-29T09:00:00+00:00[UTC]",
             "2027-05-29T09:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "range_end_non_utc",
+          "expression": "every day at 09:00, 23:30 in America/New_York",
+          "description": "Dec 29 23:30 EST is 9999-12-30T04:30Z, past the end of the supported range; only 3 occurrences remain",
+          "now": "9999-12-28T12:00:00+00:00[UTC]",
+          "next_n_count": 5,
+          "next_n": [
+            "9999-12-28T09:00:00-05:00[America/New_York]",
+            "9999-12-28T23:30:00-05:00[America/New_York]",
+            "9999-12-29T09:00:00-05:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "range_now_before_start",
+          "expression": "every day at 00:30, 12:00 in Etc/GMT-9",
+          "description": "now 0001-01-01T00:00Z is outside the supported range: null, even though occurrences follow",
+          "now": "0001-01-01T00:00:00+00:00[UTC]",
+          "next": null
         }
       ]
     }
@@ -8865,6 +9363,126 @@
         "name": "lord_howe_overlap_times_around_overlap",
         "expression": "every day at 01:00, 01:45, 02:00 in Australia/Lord_Howe",
         "now": "2026-04-05T01:40:00+10:30[Australia/Lord_Howe]"
+      },
+      {
+        "name": "starting_future_day",
+        "expression": "every day at 09:00 starting 2026-03-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_future_day_interval",
+        "expression": "every 3 days at 09:00 starting 2026-02-20",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_past_day_interval",
+        "expression": "every 3 days at 09:00 starting 2020-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_future_weekday",
+        "expression": "every weekday at 09:00 starting 2026-02-11",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_mid_week_biweekly",
+        "expression": "every 2 weeks on monday, friday at 09:00 starting 2026-02-11",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_mid_week_biweekly_now_in_anchor_week",
+        "expression": "every 2 weeks on monday, friday at 09:00 starting 2026-02-11",
+        "now": "2026-02-10T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_weekly_day_after_start",
+        "expression": "every week on monday at 09:00 starting 2026-02-10",
+        "now": "2026-02-09T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_mid_month_quarterly",
+        "expression": "every 3 months on the 1st, 20th at 09:00 starting 2026-02-10",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_mid_month_quarterly_now_after",
+        "expression": "every 3 months on the 1st, 20th at 09:00 starting 2026-02-10",
+        "now": "2026-06-01T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_monthly_last_day",
+        "expression": "every month on the last day at 09:00 starting 2026-03-15",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_bimonthly_ordinal",
+        "expression": "every 2 months on the first monday at 10:00 starting 2026-02-03",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_nearest_lands_before",
+        "expression": "every month on the previous nearest weekday to 1st at 09:00 starting 2026-02-28",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_nearest_target_before_lands_after",
+        "expression": "every month on the next nearest weekday to 31st at 09:00 starting 2026-02-01",
+        "now": "2026-01-15T00:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_mid_year_biennial",
+        "expression": "every 2 years on mar 1 at 09:00 starting 2026-06-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_yearly_ordinal",
+        "expression": "every year on the first monday of march at 10:00 starting 2027-03-02",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_interval_window",
+        "expression": "every 30 min from 09:00 to 10:00 starting 2026-02-10",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_interval_window_on_weekday",
+        "expression": "every 2 hours from 09:00 to 17:00 on weekday starting 2026-02-14",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_single_iso_before",
+        "expression": "on 2026-03-15 at 09:00 starting 2026-04-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_single_named",
+        "expression": "on feb 14 at 09:00 starting 2027-01-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_until_before_starting",
+        "expression": "every day at 09:00 until 2026-02-20 starting 2026-03-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_except_on_start",
+        "expression": "every day at 09:00 except 2026-03-01 starting 2026-03-01",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_with_during",
+        "expression": "every 2 weeks on monday at 09:00 starting 2026-03-18 during mar, apr",
+        "now": "2026-02-06T12:00:00+00:00[UTC]"
+      },
+      {
+        "name": "starting_dst_shift_before_start",
+        "expression": "every day at 23:30 starting 2026-03-29 in America/Nuuk",
+        "now": "2026-03-28T12:00:00-02:00[America/Nuuk]"
+      },
+      {
+        "name": "starting_now_on_start_day",
+        "expression": "every day at 09:00 starting 2026-02-06",
+        "now": "2026-02-06T08:00:00+00:00[UTC]"
       }
     ]
   }

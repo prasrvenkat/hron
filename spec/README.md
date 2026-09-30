@@ -115,7 +115,7 @@ Schedules with mutually exclusive constraints parse successfully but return no o
 
 ### DST spring-forward (gaps)
 
-A fixed time (`at HH:MM`, including single dates) that does not exist because clocks spring forward fires at that time shifted forward by the length of the gap: 02:30 becomes 03:30 in `America/New_York` and `Australia/Sydney`, 01:30 becomes 02:30 in `Europe/London`, and 02:15 becomes 02:45 in `Australia/Lord_Howe` (a 30-minute gap). The rule is the same in every zone, including zones whose transition instant falls on the previous UTC date (Sydney, Lord Howe) and zones that change at midnight. The shift can carry an occurrence onto the next date: in `America/Nuuk` clocks jump from 23:00 to 00:00, so 23:30 on 2026-03-28 fires at 00:30 on 2026-03-29, ordered by instant among that date's own times (and returned once if one of them is the same instant). A shifted occurrence keeps its scheduled date (the date whose wall time did not exist) for the day filter and for `during`, `except` and `until`, so `every day at 23:30 except mar 28` in Nuuk has no occurrence at 2026-03-29T00:30; unlike nearest weekday, where the date the occurrence lands on is the intended date and `except` and `until` see that date. See the `dst_spring_forward` cases in `tests.json`.
+A fixed time (`at HH:MM`, including single dates) that does not exist because clocks spring forward fires at that time shifted forward by the length of the gap: 02:30 becomes 03:30 in `America/New_York` and `Australia/Sydney`, 01:30 becomes 02:30 in `Europe/London`, and 02:15 becomes 02:45 in `Australia/Lord_Howe` (a 30-minute gap). The rule is the same in every zone, including zones whose transition instant falls on the previous UTC date (Sydney, Lord Howe) and zones that change at midnight. The shift can carry an occurrence onto the next date: in `America/Nuuk` clocks jump from 23:00 to 00:00, so 23:30 on 2026-03-28 fires at 00:30 on 2026-03-29, ordered by instant among that date's own times (and returned once if one of them is the same instant). A shifted occurrence keeps its scheduled date (the date whose wall time did not exist) for the day filter and for `during`, `except`, `until` and `starting`, so `every day at 23:30 except mar 28` in Nuuk has no occurrence at 2026-03-29T00:30; unlike nearest weekday, where the date the occurrence lands on is the intended date and `except`, `until` and `starting` see that date. A whole skipped day (`Pacific/Apia` on 2011-12-30) is a 24-hour gap: its fixed times fire on the next day, and its interval slots are skipped. See the `dst_spring_forward` cases in `tests.json`.
 
 ### Interval slots in a spring-forward gap
 
@@ -135,15 +135,15 @@ When a schedule fires at a time that occurs twice during a DST fall-back transit
 
 ### previousFrom mirrors nextFrom
 
-`previousFrom(now)` returns the latest occurrence strictly before `now`, using the same day-skipping, interval-alignment (including dates before 1970), `during`, `except` and `until` rules as `nextFrom`. A missing day is skipped rather than moved to the month's end, and a named date such as `on feb 29` returns the most recent real Feb 29. Before 1970, interval offsets from the anchor are negative whole days, months or years (floor, not truncation). The `starting` clause is outside this rule; see its own cases.
+`previousFrom(now)` returns the latest occurrence strictly before `now`, using the same day-skipping, interval-alignment (including dates before 1970), `during`, `except`, `until` and `starting` rules as `nextFrom`. A missing day is skipped rather than moved to the month's end, and a named date such as `on feb 29` returns the most recent real Feb 29. Before 1970, interval offsets from the anchor are negative whole days, months or years (floor, not truncation).
 
 ### Nearest weekday and `during`
 
-`nearest weekday to Nth` moves a weekend target to the closest weekday within the same month (cron `W`). `next nearest` always moves forward to Monday and `previous nearest` always moves back to Friday, and both may cross into the adjacent month. The target month (the month whose day is named) is used for `during` and for interval alignment; `except` and `until` apply to the date the occurrence lands on. So `every month on the previous nearest weekday to 1st during mar` fires on Friday 2026-02-27 because its target, Sunday 2026-03-01, is in March. June has no 31st, so `every month on the nearest weekday to 31st during jun` never fires.
+`nearest weekday to Nth` moves a weekend target to the closest weekday within the same month (cron `W`). `next nearest` always moves forward to Monday and `previous nearest` always moves back to Friday, and both may cross into the adjacent month. The target month (the month whose day is named) is used for `during` and for interval alignment; `except`, `until` and `starting` apply to the date the occurrence lands on. So `every month on the previous nearest weekday to 1st during mar` fires on Friday 2026-02-27 because its target, Sunday 2026-03-01, is in March. June has no 31st, so `every month on the nearest weekday to 31st during jun` never fires.
 
 ### matches is true exactly when the minute containing t is an occurrence
 
-`matches(t)` drops the seconds (and sub-seconds) of `t`, then is true if and only if the start of that minute is an occurrence. So 09:00:30 matches `every day at 09:00` but 09:01:30 does not; on DST days the shifted time of a skipped fixed time matches, and only the first pass of a repeated time matches (01:30:30 EST does not match `every day at 01:30`). Only `matches` drops seconds; `nextFrom`, `previousFrom` and `between` compare exact instants.
+`matches(t)` drops the seconds (and sub-seconds) of `t` on the schedule's wall clock (in the schedule's timezone), then is true if and only if the start of that minute is an occurrence. So 09:00:30 matches `every day at 09:00` but 09:01:30 does not; on DST days the shifted time of a skipped fixed time matches, and only the first pass of a repeated time matches (01:30:30 EST does not match `every day at 01:30`). Only `matches` drops seconds; `nextFrom`, `previousFrom` and `between` compare exact instants.
 
 ### Search horizon
 
@@ -151,19 +151,23 @@ Implementations must find any occurrence that exists. The (proleptic) Gregorian 
 
 ### Supported range
 
-Timestamps are in the proleptic Gregorian calendar within years 1 to 9999 inclusive. An occurrence that would fall outside that range does not exist, so the result is null: `every 9000 years on jan 1 at 09:00` has no next occurrence after 1970 (the next aligned year would be 10970), while `every 8000 years on jan 1 at 09:00` next fires in 9970.
+Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z` (proleptic Gregorian calendar). The day of margin at each end lets every platform represent the local time of any supported instant in any timezone. An occurrence outside the range does not exist, so the result is null: `every 9000 years on jan 1 at 09:00` has no next occurrence after 1970 (the next aligned year would be 10970), while `every 8000 years on jan 1 at 09:00` next fires in 9970. A `now`, `from`, `to` or `datetime` outside the range is not an error: `nextFrom` and `previousFrom` return null, `matches` returns false, and `nextNFrom`, `occurrences` and `between` return nothing.
+
+### Timezone data
+
+Historic offsets with seconds (local mean time, before 1972) are rounded to the minute by some platforms, and DST rules far in the future depend on each platform's tz data (`package:timezone` has no rules after 2037; `tzinfo` generates rules about 100 years ahead). The conformance suite therefore pins DST behaviour only before 2038 and only for transitions that are the same across tz data versions; after 2037 it uses dates in standard time.
 
 ### End-of-month day handling
 
 When a monthly schedule specifies a day that doesn't exist in a given month (e.g., `every month on the 31st` in a 30-day month), that month is skipped. The schedule does **not** cascade to the last available day — it waits for a month that actually has the specified day.
 
-### IntervalRepeat and the `starting` clause
+### The `starting` clause
 
-The `starting` clause overrides the anchor date for alignment of multi-interval schedules (e.g., `every 3 days`). However, for `IntervalRepeat` expressions (e.g., `every 30 min from 09:00 to 17:00`), the interval timing within each day is determined by the `from` time, not the anchor. The `starting` clause only affects which days the schedule fires on when combined with a day filter.
+`starting S` does two things. It is the anchor for interval alignment (`every 3 days`, `every 2 weeks`, `every 2 months`, `every 2 years`) in place of the default epoch anchor, and it is a lower bound: no occurrence falls on a date before `S`, in every method and for every expression kind, including interval windows and single dates (a single date before `S` never fires). The bound applies to the same date the other clauses see: the scheduled date of a DST-shifted time and the landing date of a nearest weekday. So `every 2 weeks on monday, friday starting 2026-02-11` (a Wednesday) anchors on the week of Monday 2026-02-09 but first fires on Friday 2026-02-13. For interval repeats (`every 30 min from 09:00 to 17:00`), the slots within a day always start at the `from` time; `starting` only decides which days fire.
 
 ### WeekRepeat epoch alignment
 
-`WeekRepeat` schedules with `interval > 1` align to **epoch Monday** (1970-01-05), not epoch (1970-01-01, a Thursday). This ensures week-based intervals align naturally to week boundaries. The `starting` clause overrides this default anchor.
+`WeekRepeat` schedules with `interval > 1` align to **epoch Monday** (1970-01-05), not epoch (1970-01-01, a Thursday). This ensures week-based intervals align naturally to week boundaries. With `starting`, the anchor is the Monday of the starting date's week.
 
 ### Evaluation order for trailing clauses
 
@@ -172,10 +176,11 @@ When multiple trailing clauses are present, they are applied in this order:
 1. **`during`** — filter to only the specified months
 2. **`except`** — exclude matching dates from the filtered set
 3. **`until`** — stop after the cutoff date
+4. **`starting`** — start on the starting date (it also sets the interval anchor)
 
 ## Invariants
 
-The top-level `invariants` section of `tests.json` lists `{name, expression, now}` entries with no expected values. For each entry an implementation evaluates the expression at `now` with its public API and checks that its answers agree with each other, using `count` as the `n` for `nextNFrom`. Two timestamps are equal when they are the same instant. Entries do not use `starting`, whose semantics are covered by its own cases. The rules (all must hold for every entry):
+The top-level `invariants` section of `tests.json` lists `{name, expression, now}` entries with no expected values. For each entry an implementation evaluates the expression at `now` with its public API and checks that its answers agree with each other, using `count` as the `n` for `nextNFrom`. Two timestamps are equal when they are the same instant. The rules (all must hold for every entry):
 
 - **next_matches** - if `nextFrom(now)` is `t`, `matches(t)` is true.
 - **next_after_now** - if `nextFrom(now)` is `t`, `t` is strictly after `now`.
