@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use jiff::civil::{Date, Time};
 use jiff::tz::{AmbiguousOffset, TimeZone};
-use jiff::{Span, Zoned};
+use jiff::{Span, Timestamp, Zoned};
 
 use crate::ast::*;
 use crate::error::ScheduleError;
@@ -32,25 +32,29 @@ fn eval_error(e: jiff::Error) -> ScheduleError {
 /// jiff's "compatible" disambiguation matches spec/README.md "DST spring-forward
 /// (gaps)" and "DST fall-back (ambiguous times)": a gap time shifts forward by the
 /// gap length, and a time repeated by a fall-back transition takes its first occurrence.
-fn at_time_on_date(date: Date, time: Time, tz: &TimeZone) -> Result<Zoned, ScheduleError> {
-    date.to_datetime(time)
-        .to_zoned(tz.clone())
-        .map_err(eval_error)
+/// None when the time is beyond what jiff can represent, which is outside the
+/// supported range anyway.
+fn at_time_on_date(date: Date, time: Time, tz: &TimeZone) -> Option<Zoned> {
+    date.to_datetime(time).to_zoned(tz.clone()).ok()
 }
 
 /// An interval slot whose wall time falls in a spring-forward gap does not exist
 /// (spec/README.md, "Interval slots in a spring-forward gap").
-fn interval_slot_on_date(
-    date: Date,
-    minute_of_day: i64,
-    tz: &TimeZone,
-) -> Result<Option<Zoned>, ScheduleError> {
+fn interval_slot_on_date(date: Date, minute_of_day: i64, tz: &TimeZone) -> Option<Zoned> {
     let time = Time::new((minute_of_day / 60) as i8, (minute_of_day % 60) as i8, 0, 0).unwrap();
     let ambiguous = tz.to_ambiguous_zoned(date.to_datetime(time));
     if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
-        return Ok(None);
+        return None;
     }
-    ambiguous.earlier().map(Some).map_err(eval_error)
+    ambiguous.earlier().ok()
+}
+
+/// spec/README.md, "Supported range": 0001-01-02T00:00:00Z inclusive to
+/// 9999-12-30T00:00:00Z exclusive.
+fn in_supported_range(t: &Zoned) -> bool {
+    static FIRST: LazyLock<Timestamp> = LazyLock::new(|| "0001-01-02T00:00:00Z".parse().unwrap());
+    static END: LazyLock<Timestamp> = LazyLock::new(|| "9999-12-30T00:00:00Z".parse().unwrap());
+    (*FIRST..*END).contains(&t.timestamp())
 }
 
 fn add_days(date: Date, days: i64) -> Option<Date> {
@@ -305,8 +309,6 @@ struct Cadence {
     interval: i64,
     /// A single ISO date has one period, the one holding that date.
     single: bool,
-    /// A `starting` date admits no interval period before its own.
-    from_origin_only: bool,
 }
 
 impl Cadence {
@@ -324,7 +326,6 @@ impl Cadence {
                     origin: date,
                     interval: 1,
                     single: true,
-                    from_origin_only: false,
                 });
             }
             ScheduleExpr::SingleDate { .. } => (Unit::Year, 1, *EPOCH_DATE),
@@ -350,7 +351,6 @@ impl Cadence {
             origin,
             interval,
             single: false,
-            from_origin_only: schedule.anchor.is_some() && interval > 1,
         })
     }
 
@@ -363,7 +363,7 @@ impl Cadence {
         }
     }
 
-    /// First day of period `k`, or None when it is outside the supported calendar.
+    /// First day of period `k`, or None when jiff cannot represent it.
     fn start_of(&self, k: i64) -> Option<Date> {
         match self.unit {
             Unit::Day => add_days(self.origin, k),
@@ -391,20 +391,11 @@ impl Cadence {
         let (first, step, count) = if self.single {
             (0, 1, 1)
         } else if forward {
-            let first = from + (-from).rem_euclid(n);
-            let first = if self.from_origin_only {
-                first.max(0)
-            } else {
-                first
-            };
-            (first, n, horizon)
+            (from + (-from).rem_euclid(n), n, horizon)
         } else {
             (from - from.rem_euclid(n), -n, horizon)
         };
-        let from_origin_only = self.from_origin_only;
-        (0..count)
-            .map(move |i| first + i * step)
-            .take_while(move |k| !from_origin_only || *k >= 0)
+        (0..count).map(move |i| first + i * step)
     }
 }
 
@@ -455,7 +446,6 @@ fn dates_in_period(expr: &ScheduleExpr, start: Date) -> Vec<Date> {
                 .map(|d| d.to_jiff().to_monday_zero_offset() as i64)
                 .collect();
             offsets.sort();
-            offsets.dedup();
             offsets
                 .into_iter()
                 .filter_map(|offset| add_days(start, offset))
@@ -483,7 +473,6 @@ fn dates_in_period(expr: &ScheduleExpr, start: Date) -> Vec<Date> {
                 }
             };
             dates.sort();
-            dates.dedup();
             dates
         }
         ScheduleExpr::YearRepeat { target, .. } => {
@@ -529,17 +518,13 @@ fn fixed_times(expr: &ScheduleExpr) -> &[TimeOfDay] {
 
 /// The fixed-time occurrences on `date`, in instant order: a time shifted out of a
 /// DST gap can land after a later wall time.
-fn fixed_occurrences(
-    expr: &ScheduleExpr,
-    date: Date,
-    tz: &TimeZone,
-) -> Result<Vec<Zoned>, ScheduleError> {
-    let mut all = fixed_times(expr)
+fn fixed_occurrences(expr: &ScheduleExpr, date: Date, tz: &TimeZone) -> Vec<Zoned> {
+    let mut all: Vec<Zoned> = fixed_times(expr)
         .iter()
-        .map(|tod| at_time_on_date(date, to_time(tod), tz))
-        .collect::<Result<Vec<_>, _>>()?;
+        .filter_map(|tod| at_time_on_date(date, to_time(tod), tz))
+        .collect();
     all.sort();
-    Ok(all)
+    all
 }
 
 /// Wall-clock minutes of the slots `from + k × interval` up to and including `to`.
@@ -551,7 +536,9 @@ fn interval_slots(interval: u32, unit: IntervalUnit, from: &TimeOfDay, to: &Time
     .max(1);
     let from = from.hour as i64 * 60 + from.minute as i64;
     let to = to.hour as i64 * 60 + to.minute as i64;
-    (from..=to).step_by(step as usize).collect()
+    (0..=(to - from).div_euclid(step))
+        .map(|k| from + k * step)
+        .collect()
 }
 
 fn minute_of_day(time: Time) -> i64 {
@@ -564,7 +551,7 @@ fn first_on_date_after(
     date: Date,
     tz: &TimeZone,
     now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
+) -> Option<Zoned> {
     let ScheduleExpr::IntervalRepeat {
         interval,
         unit,
@@ -573,15 +560,15 @@ fn first_on_date_after(
         ..
     } = expr
     else {
-        return Ok(fixed_occurrences(expr, date, tz)?
+        return fixed_occurrences(expr, date, tz)
             .into_iter()
-            .find(|t| t > now));
+            .find(|t| t > now);
     };
     // Slots resolve in wall-clock order, and a slot whose wall time is before
     // now's has already passed, so the scan can start at now's wall time.
     let now_local = now.with_time_zone(tz.clone());
     let earliest_minute = match date.cmp(&now_local.date()) {
-        std::cmp::Ordering::Less => return Ok(None),
+        std::cmp::Ordering::Less => return None,
         std::cmp::Ordering::Equal => minute_of_day(now_local.time()),
         std::cmp::Ordering::Greater => 0,
     };
@@ -589,13 +576,13 @@ fn first_on_date_after(
         if minute < earliest_minute {
             continue;
         }
-        if let Some(t) = interval_slot_on_date(date, minute, tz)? {
+        if let Some(t) = interval_slot_on_date(date, minute, tz) {
             if t > *now {
-                return Ok(Some(t));
+                return Some(t);
             }
         }
     }
-    Ok(None)
+    None
 }
 
 /// The latest occurrence on `date` strictly before `now`.
@@ -604,7 +591,7 @@ fn last_on_date_before(
     date: Date,
     tz: &TimeZone,
     now: &Zoned,
-) -> Result<Option<Zoned>, ScheduleError> {
+) -> Option<Zoned> {
     let ScheduleExpr::IntervalRepeat {
         interval,
         unit,
@@ -613,24 +600,24 @@ fn last_on_date_before(
         ..
     } = expr
     else {
-        return Ok(fixed_occurrences(expr, date, tz)?
+        return fixed_occurrences(expr, date, tz)
             .into_iter()
             .rev()
-            .find(|t| t < now));
+            .find(|t| t < now);
     };
     if date > now.with_time_zone(tz.clone()).date() {
-        return Ok(None);
+        return None;
     }
     // Scans every slot: inside a fall-back overlap, a slot with a later wall time
     // than now's can still be earlier than now.
     for minute in interval_slots(*interval, *unit, from, to).into_iter().rev() {
-        if let Some(t) = interval_slot_on_date(date, minute, tz)? {
+        if let Some(t) = interval_slot_on_date(date, minute, tz) {
             if t < *now {
-                return Ok(Some(t));
+                return Some(t);
             }
         }
     }
-    Ok(None)
+    None
 }
 
 /// What a search needs besides the expression: time zone, cadence and the
@@ -661,15 +648,27 @@ impl<'a> Search<'a> {
         })
     }
 
-    /// `during` applies to the target month; `except` to the date the occurrence
-    /// lands on (spec/README.md, "Nearest weekday and `during`").
+    /// `during` applies to the target month; `except`, `until` and `starting` to
+    /// the scheduled or landing date (spec/README.md, "Nearest weekday and
+    /// `during`", "The `starting` clause").
     fn allows(&self, candidate: &Candidate) -> bool {
         let in_during = self.during.is_empty()
             || self
                 .during
                 .iter()
                 .any(|m| m.number() as i8 == candidate.target_month);
-        in_during && !self.exceptions.is_excepted(candidate.date)
+        in_during
+            && !self.exceptions.is_excepted(candidate.date)
+            && !self.after_until(candidate.date)
+            && !self.before_starting(candidate.date)
+    }
+
+    fn after_until(&self, date: Date) -> bool {
+        self.until.is_some_and(|until| date > until)
+    }
+
+    fn before_starting(&self, date: Date) -> bool {
+        self.starting.is_some_and(|starting| date < starting)
     }
 
     fn local_date(&self, t: &Zoned) -> Date {
@@ -677,16 +676,24 @@ impl<'a> Search<'a> {
     }
 }
 
-// A fixed time shifted out of a gap before midnight lands on the next date, so
-// the candidate after a result can still hold an earlier (or later, searching
-// back) instant. The searches keep the best result until candidates move past
-// the date it lands on.
-
 pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+    if !in_supported_range(now) {
+        return Ok(None);
+    }
+    search_next(schedule, now)
+}
+
+fn search_next(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
     let search = Search::new(schedule, now)?;
     let cadence = &search.cadence;
+    let earliest_date = search
+        .local_date(now)
+        .max(search.starting.unwrap_or(Date::MIN));
     // One period back: a directional nearest weekday can land in the next month.
-    let from = cadence.period_of(search.local_date(now)) - 1;
+    let from = cadence.period_of(earliest_date) - 1;
+    // A fixed time shifted out of a gap before midnight lands on the next date,
+    // so a later candidate can still hold an earlier instant: keep the best
+    // until candidates pass the date it lands on.
     let mut best: Option<Zoned> = None;
     for k in cadence.aligned_periods(from, true) {
         let Some(start) = cadence.start_of(k) else {
@@ -696,24 +703,27 @@ pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Sche
             if best
                 .as_ref()
                 .is_some_and(|b| candidate.date > search.local_date(b))
-                || search.until.is_some_and(|until| candidate.date > until)
+                || search.after_until(candidate.date)
             {
-                return Ok(best);
+                return Ok(best.filter(in_supported_range));
             }
             if !search.allows(&candidate) {
                 continue;
             }
-            if let Some(t) = first_on_date_after(search.expr, candidate.date, &search.tz, now)? {
+            if let Some(t) = first_on_date_after(search.expr, candidate.date, &search.tz, now) {
                 if best.as_ref().is_none_or(|b| t < *b) {
                     best = Some(t);
                 }
             }
         }
     }
-    Ok(best)
+    Ok(best.filter(in_supported_range))
 }
 
 pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+    if !in_supported_range(now) {
+        return Ok(None);
+    }
     let search = Search::new(schedule, now)?;
     let cadence = &search.cadence;
     let now_date = search.local_date(now);
@@ -721,6 +731,8 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
     let latest_date = search.until.map_or(now_date, |until| until.min(now_date));
     // One period ahead: a directional nearest weekday can land in the previous month.
     let from = cadence.period_of(latest_date) + 1;
+    // As in search_next, a time shifted onto the next date can be later than
+    // that date's own times.
     let mut best: Option<Zoned> = None;
     for k in cadence.aligned_periods(from, false) {
         let Some(start) = cadence.start_of(k) else {
@@ -730,43 +742,45 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
             let cannot_reach_best = best.as_ref().is_some_and(|b| {
                 add_days(candidate.date, 1).is_some_and(|d| d < search.local_date(b))
             });
-            let before_starting = search
-                .starting
-                .is_some_and(|starting| candidate.date < starting);
-            if cannot_reach_best || before_starting {
-                return Ok(best);
+            if cannot_reach_best || search.before_starting(candidate.date) {
+                return Ok(best.filter(in_supported_range));
             }
-            if search.until.is_some_and(|until| candidate.date > until)
-                || !search.allows(&candidate)
-            {
+            if !search.allows(&candidate) {
                 continue;
             }
-            if let Some(t) = last_on_date_before(search.expr, candidate.date, &search.tz, now)? {
+            if let Some(t) = last_on_date_before(search.expr, candidate.date, &search.tz, now) {
                 if best.as_ref().is_none_or(|b| t > *b) {
                     best = Some(t);
                 }
             }
         }
     }
-    Ok(best)
+    Ok(best.filter(in_supported_range))
 }
 
 /// Defined through `next_from`, so the two can never disagree about what an
 /// occurrence is (spec/README.md, "matches is true exactly when the minute
 /// containing t is an occurrence").
 pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleError> {
-    let time = datetime.time();
-    let minute_start = datetime
+    if !in_supported_range(datetime) {
+        return Ok(false);
+    }
+    let local = datetime.with_time_zone(resolve_tz(&schedule.timezone)?);
+    let time = local.time();
+    let minute_start = local
         .checked_sub(
             Span::new()
                 .seconds(time.second())
                 .nanoseconds(time.subsec_nanosecond()),
         )
         .map_err(eval_error)?;
+    if !in_supported_range(&minute_start) {
+        return Ok(false);
+    }
     let just_before = minute_start
         .checked_sub(Span::new().nanoseconds(1))
         .map_err(eval_error)?;
-    Ok(next_from(schedule, &just_before)? == Some(minute_start))
+    Ok(search_next(schedule, &just_before)? == Some(minute_start))
 }
 
 pub fn next_n_from(
@@ -780,7 +794,8 @@ pub fn next_n_from(
 /// Lazy iterator over schedule occurrences strictly after a given datetime.
 pub struct Occurrences<'a> {
     schedule: &'a Schedule,
-    current: Zoned,
+    /// None once the iterator has ended or yielded an error.
+    current: Option<Zoned>,
 }
 
 impl<'a> Occurrences<'a> {
@@ -788,7 +803,7 @@ impl<'a> Occurrences<'a> {
     pub fn new(schedule: &'a Schedule, from: Zoned) -> Self {
         Self {
             schedule,
-            current: from,
+            current: Some(from),
         }
     }
 }
@@ -797,14 +812,12 @@ impl Iterator for Occurrences<'_> {
     type Item = Result<Zoned, ScheduleError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match next_from(self.schedule, &self.current) {
-            Ok(Some(dt)) => {
-                self.current = dt.clone();
-                Some(Ok(dt))
-            }
-            Ok(None) => None,
-            Err(e) => Some(Err(e)),
-        }
+        let result = next_from(self.schedule, self.current.as_ref()?).transpose();
+        self.current = match &result {
+            Some(Ok(dt)) => Some(dt.clone()),
+            _ => None,
+        };
+        result
     }
 }
 
@@ -850,6 +863,38 @@ mod tests {
         let date = Date::new(2026, 2, 6).unwrap();
         let time = Time::new(12, 0, 0, 0).unwrap();
         date.to_datetime(time).to_zoned(TimeZone::UTC).unwrap()
+    }
+
+    #[test]
+    fn interval_slots_with_a_step_longer_than_the_day() {
+        let (from, to) = (
+            TimeOfDay { hour: 0, minute: 0 },
+            TimeOfDay {
+                hour: 23,
+                minute: 59,
+            },
+        );
+        assert_eq!(
+            interval_slots(u32::MAX, IntervalUnit::Hours, &from, &to),
+            vec![0]
+        );
+    }
+
+    #[test]
+    fn matches_drops_seconds_on_the_schedule_wall_clock() {
+        // Amsterdam kept local mean time (+00:19:32) until 1937, so 09:00 there
+        // is 08:40:28 UTC; dropping UTC seconds would test 08:59:32 local instead.
+        let s = parse("every day at 09:00 in Europe/Amsterdam").unwrap();
+        let at_nine: Zoned = "1900-06-01T08:40:28+00:00[UTC]".parse().unwrap();
+        assert!(matches(&s, &at_nine).unwrap());
+    }
+
+    #[test]
+    fn occurrences_end_after_an_error() {
+        let s = parse("every day at 09:00 in Invalid/Zone").unwrap();
+        let mut occurrences = Occurrences::new(&s, fixed_now());
+        assert!(matches!(occurrences.next(), Some(Err(_))));
+        assert!(occurrences.next().is_none());
     }
 
     #[test]

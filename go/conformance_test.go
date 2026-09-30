@@ -57,7 +57,7 @@ type EvalTest struct {
 	Description string          `json:"description,omitempty"`
 	Now         string          `json:"now,omitempty"`
 	Next        json.RawMessage `json:"next,omitempty"`
-	NextDate    string          `json:"next_date,omitempty"`
+	NextDate    json.RawMessage `json:"next_date,omitempty"`
 	NextN       *[]string       `json:"next_n,omitempty"`
 	NextNCount  int             `json:"next_n_count,omitempty"`
 	NextNLength *int            `json:"next_n_length,omitempty"`
@@ -296,7 +296,7 @@ func TestEval(t *testing.T) {
 			cases := decodeCases[EvalTest](t, raw, "expression", "now", "next", "next_date", "next_n", "next_n_count", "next_n_length")
 			for _, tc := range cases {
 				t.Run(tc.Name, func(t *testing.T) {
-					if tc.Next == nil && tc.NextDate == "" && tc.NextN == nil && tc.NextNLength == nil {
+					if tc.Next == nil && tc.NextDate == nil && tc.NextN == nil && tc.NextNLength == nil {
 						t.Fatalf("case has no assertion field this runner understands (next, next_date, next_n, next_n_length)")
 					}
 					s, err := ParseSchedule(tc.Expression)
@@ -316,15 +316,19 @@ func TestEval(t *testing.T) {
 						checkTimestamp(t, "NextFrom()", s.NextFrom(now), expectedTimestamp(t, tc.Next))
 					}
 
-					if tc.NextDate != "" {
+					if tc.NextDate != nil {
+						var wantDate *string
+						if err := json.Unmarshal(tc.NextDate, &wantDate); err != nil {
+							t.Fatalf("failed to read next_date %s: %v", tc.NextDate, err)
+						}
 						result := s.NextFrom(now)
-						if result == nil {
-							t.Errorf("NextFrom() = nil, want date %s", tc.NextDate)
-						} else {
-							gotDate := result.Format("2006-01-02")
-							if gotDate != tc.NextDate {
-								t.Errorf("NextFrom() date = %s, want %s", gotDate, tc.NextDate)
-							}
+						switch {
+						case wantDate == nil && result != nil:
+							t.Errorf("NextFrom() = %v, want nil", *result)
+						case wantDate != nil && result == nil:
+							t.Errorf("NextFrom() = nil, want date %s", *wantDate)
+						case wantDate != nil && result.Format("2006-01-02") != *wantDate:
+							t.Errorf("NextFrom() date = %s, want %s", result.Format("2006-01-02"), *wantDate)
 						}
 					}
 

@@ -29,25 +29,26 @@ func atTimeOnDate(d time.Time, tod TimeOfDay, loc *time.Location) time.Time {
 // resolveWallClock returns the first instant whose wall-clock time in loc is
 // tod on date d, and true. If that wall time falls in a gap, it returns the
 // instant the pre-gap offset gives (the time shifted forward by the gap
-// length) and false. time.Date guarantees neither choice, so this walks the
-// zone periods around the wall time instead.
+// length) and false. time.Date guarantees neither choice. The offsets a day
+// before and after the wall time bracket the transition that can affect it;
+// ZoneBounds is not used because Go reports wrong bounds at the end of leap
+// years beyond the zone file's explicit transitions.
 func resolveWallClock(d time.Time, tod TimeOfDay, loc *time.Location) (time.Time, bool) {
 	wall := time.Date(d.Year(), d.Month(), d.Day(), tod.Hour, tod.Minute, 0, 0, time.UTC)
-	probe := wall.Add(-24 * time.Hour).In(loc)
-	var beforeGap time.Time
-	for {
-		start, end := probe.ZoneBounds()
-		_, offset := probe.Zone()
-		candidate := wall.Add(-time.Duration(offset) * time.Second).In(loc)
-		if !start.IsZero() && candidate.Before(start) {
-			return beforeGap, false
+	offsetBefore := offsetAt(wall.Add(-24*time.Hour), loc)
+	offsetAfter := offsetAt(wall.Add(24*time.Hour), loc)
+	first, second := wall.Add(-max(offsetBefore, offsetAfter)), wall.Add(-min(offsetBefore, offsetAfter))
+	for _, candidate := range []time.Time{first, second} {
+		if offsetAt(candidate, loc) == wall.Sub(candidate) {
+			return candidate.In(loc), true
 		}
-		if end.IsZero() || candidate.Before(end) {
-			return candidate, true
-		}
-		beforeGap = candidate
-		probe = end.In(loc)
 	}
+	return wall.Add(-offsetBefore).In(loc), false
+}
+
+func offsetAt(t time.Time, loc *time.Location) time.Duration {
+	_, offset := t.In(loc).Zone()
+	return time.Duration(offset) * time.Second
 }
 
 func matchesDayFilter(d time.Time, f DayFilter) bool {
@@ -138,15 +139,40 @@ func monthIndex(t time.Time) int {
 // floorMod returns a mod n in [0, n), so offsets before an anchor align by
 // floor division rather than truncation.
 func floorMod(a, n int) int {
-	return (a%n + n) % n
+	m := a % n
+	if m < 0 {
+		m += n
+	}
+	return m
 }
 
-// searchSteps returns how many interval steps cover the search horizon. The
-// Gregorian calendar repeats every 400 years (unitsIn400Years units), so a
-// schedule repeats after lcm(unitsIn400Years, interval) units (spec/README.md,
-// "Search horizon").
-func searchSteps(interval, unitsIn400Years int) int {
-	return unitsIn400Years / gcd(unitsIn400Years, max(interval, 1))
+// maxSearchYears covers the whole supported range, which caps any horizon.
+const maxSearchYears = 10000
+
+// horizonUnits returns how many interval units a search spans. The Gregorian
+// calendar repeats every 400 years (units of the interval's kind), so a
+// schedule repeats after lcm(units, interval) units (spec/README.md, "Search
+// horizon"); no search needs to span more than maxSearchYears.
+func horizonUnits(interval, units int) int {
+	n := max(interval, 1)
+	maxUnits := maxSearchYears / 400 * units
+	if repeats := units / gcd(units, n); repeats <= maxUnits/n {
+		return repeats * n
+	}
+	return maxUnits
+}
+
+// searchSteps returns how many interval steps cover the search horizon.
+func searchSteps(interval, units int) int {
+	return ceilDiv(horizonUnits(interval, units), max(interval, 1))
+}
+
+func ceilDiv(a, b int) int {
+	q := a / b
+	if a%b != 0 {
+		q++
+	}
+	return q
 }
 
 func gcd(a, b int) int {

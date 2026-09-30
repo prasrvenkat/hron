@@ -1,13 +1,11 @@
 import { Temporal } from "@js-temporal/polyfill";
 import type {
   DayFilter,
-  Exception,
   MonthTarget,
   NearestDirection,
   OrdinalPosition,
   ScheduleData,
   ScheduleExpr,
-  TimeOfDay,
   UntilSpec,
   Weekday,
   YearTarget,
@@ -97,10 +95,6 @@ function isoDay(iso: string): number {
   return epochDay(year, month, day);
 }
 
-function plainDate(day: number): Temporal.PlainDate {
-  return Temporal.PlainDate.from(civil(day));
-}
-
 function matchesDayFilter(day: number, filter: DayFilter): boolean {
   const dow = weekdayOf(day);
   switch (filter.type) {
@@ -142,9 +136,8 @@ function ordinalWeekday(
 }
 
 /**
- * A plain nearest weekday (cron W) stays inside the month; `next` always moves
- * a weekend forward and `previous` always moves it back, possibly into the
- * adjacent month. Null when the month has no such day.
+ * spec/README.md, "Nearest weekday and `during`". Null when the month has no
+ * such day.
  */
 function nearestWeekday(
   year: number,
@@ -253,7 +246,6 @@ interface Plan {
   unit: Unit;
   interval: number;
   anchor: number;
-  firstPeriod: number | null;
   daysIn(period: number): number[];
 }
 
@@ -272,17 +264,7 @@ function planFor(schedule: ScheduleData): Plan {
   ): Plan => {
     const anchorDay =
       schedule.anchor === null ? unit.epoch : isoDay(schedule.anchor);
-    const anchor = unit.periodOf(anchorDay);
-    // With `starting`, aligned repeats and weekly repeats wait for its period.
-    const bounded =
-      schedule.anchor !== null && (interval > 1 || unit === WEEKS);
-    return {
-      unit,
-      interval,
-      anchor,
-      firstPeriod: bounded ? anchor : null,
-      daysIn,
-    };
+    return { unit, interval, anchor: unit.periodOf(anchorDay), daysIn };
   };
 
   switch (expr.type) {
@@ -343,74 +325,30 @@ const FIRST_DAY = epochDay(1, 1, 1);
 const LAST_DAY = epochDay(9999, 12, 31);
 
 /**
- * Candidate days from `start` (inclusive) in `direction`, up to one full
- * calendar cycle of aligned periods and within the supported years 1-9999.
+ * Candidate days from `start` (inclusive) in `direction`, over one full
+ * calendar cycle of aligned periods, and never outside years 1-9999.
  */
 function* candidateDays(
   plan: Plan,
-  start: number,
+  from: number,
   direction: Direction,
 ): Generator<number> {
   const { unit, interval } = plan;
+  const start = Math.min(Math.max(from, FIRST_DAY), LAST_DAY);
   // Begin one period early: a directional nearest weekday can land in the
   // period before or after the one it belongs to.
   let period = unit.periodOf(start) - direction;
   period += direction * mod(direction * (plan.anchor - period), interval);
   const periods = unit.cycle / gcd(unit.cycle, interval);
-  const end = direction > 0 ? LAST_DAY : FIRST_DAY;
   for (let i = 0; i <= periods; i++, period += direction * interval) {
-    if (plan.firstPeriod !== null && period < plan.firstPeriod) {
-      if (direction < 0) return;
-      period = plan.firstPeriod;
-    }
     const days = plan.daysIn(period);
     if (direction < 0) days.reverse();
     for (const day of days) {
-      if (direction * (day - end) > 0) return;
-      if (direction * (day - start) >= 0) yield day;
+      if (direction * (day - start) < 0) continue;
+      if (day < FIRST_DAY || day > LAST_DAY) return;
+      yield day;
     }
   }
-}
-
-function isBefore(a: ZDT, b: ZDT): boolean {
-  return Temporal.ZonedDateTime.compare(a, b) < 0;
-}
-
-function toPlainTime(tod: TimeOfDay): Temporal.PlainTime {
-  return Temporal.PlainTime.from({ hour: tod.hour, minute: tod.minute });
-}
-
-// Temporal's "compatible" disambiguation is the spec's rule for fixed times:
-// a time in a spring-forward gap shifts forward by the gap length, and a
-// repeated fall-back time resolves to its first pass.
-function fixedTimesOn(day: number, times: TimeOfDay[], tz: string): ZDT[] {
-  const date = plainDate(day);
-  const resolved = times
-    .map((tod) =>
-      date
-        .toPlainDateTime(toPlainTime(tod))
-        .toZonedDateTime(tz, { disambiguation: "compatible" }),
-    )
-    .sort(Temporal.ZonedDateTime.compare);
-  return resolved.filter((t, i) => i === 0 || isBefore(resolved[i - 1], t));
-}
-
-/** Slot `k` of an interval repeat, or null when its wall time is in a gap. */
-function intervalSlot(
-  expr: IntervalRepeat,
-  date: Temporal.PlainDate,
-  k: number,
-  tz: string,
-): ZDT | null {
-  const minutes = minutesOf(expr.from) + k * slotStep(expr);
-  const wall = date.toPlainDateTime({
-    hour: Math.floor(minutes / 60),
-    minute: minutes % 60,
-  });
-  const t = wall.toZonedDateTime(tz, { disambiguation: "compatible" });
-  return Temporal.PlainDateTime.compare(t.toPlainDateTime(), wall) === 0
-    ? t
-    : null;
 }
 
 function minutesOf(time: { hour: number; minute: number }): number {
@@ -427,180 +365,265 @@ function lastSlot(expr: IntervalRepeat): number {
   );
 }
 
-/** The slot index at `now`'s wall time on `day`, as a fraction of a step. */
-function slotPosition(
-  expr: IntervalRepeat,
-  day: number,
-  now: ZDT,
-  tz: string,
-): number {
-  const local = now.withTimeZone(tz);
-  const today = dayOf(local);
-  if (day !== today) return day < today ? Infinity : -Infinity;
-  return (minutesOf(local) - minutesOf(expr.from)) / slotStep(expr);
+const DAY_MS = 86_400_000;
+const MINUTE_MS = 60_000;
+const RANGE_START_MS = epochDay(1, 1, 2) * DAY_MS;
+const RANGE_END_MS = epochDay(9999, 12, 30) * DAY_MS;
+
+function epochMs(t: ZDT): number {
+  return Number(t.epochNanoseconds / 1_000_000n);
 }
 
-function firstSlotAfter(
-  expr: IntervalRepeat,
-  day: number,
-  now: ZDT,
-  tz: string,
-): ZDT | null {
-  const date = plainDate(day);
-  const start = Math.max(0, Math.ceil(slotPosition(expr, day, now, tz)));
-  for (let k = start; k <= lastSlot(expr); k++) {
-    const t = intervalSlot(expr, date, k, tz);
-    if (t !== null && isBefore(now, t)) return t;
-  }
-  return null;
+function inRange(t: ZDT): boolean {
+  const ms = epochMs(t);
+  return ms >= RANGE_START_MS && ms < RANGE_END_MS;
 }
 
-function lastSlotBefore(
-  expr: IntervalRepeat,
-  day: number,
-  now: ZDT,
-  tz: string,
-): ZDT | null {
-  const date = plainDate(day);
-  const last = lastSlot(expr);
-  let k = Math.max(
-    -1,
-    Math.min(last, Math.floor(slotPosition(expr, day, now, tz))),
-  );
-  // Inside a fall-back overlap, first-pass slots later in wall time than `now`
-  // are still earlier instants.
-  while (k < last) {
-    const t = intervalSlot(expr, date, k + 1, tz);
-    if (t === null || !isBefore(t, now)) break;
-    k++;
+/**
+ * Resolves wall-clock times in one timezone. The Temporal polyfill costs
+ * microseconds per call, so offsets are looked up once per day and wall times
+ * are resolved with plain arithmetic.
+ */
+class Zone {
+  private midnightOffsets = new Map<number, number>();
+  private transitions = new Map<number, number>();
+
+  constructor(readonly id: string) {}
+
+  zoned(ms: number): ZDT {
+    return Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(
+      this.id,
+    );
   }
-  for (; k >= 0; k--) {
-    const t = intervalSlot(expr, date, k, tz);
-    if (t !== null && isBefore(t, now)) return t;
+
+  offsetAt(ms: number): number {
+    return this.zoned(ms).offsetNanoseconds / 1e6;
   }
-  return null;
+
+  localDay(ms: number): number {
+    return Math.floor((ms + this.offsetAt(ms)) / DAY_MS);
+  }
+
+  /**
+   * The instant of `minute` on `day` by the spec's rules: a repeated time
+   * takes its first pass, and a time in a gap shifts forward by the gap length,
+   * or is null when `skipGap` is set (interval slots).
+   */
+  resolve(day: number, minute: number, skipGap: boolean): number | null {
+    const local = day * DAY_MS + minute * MINUTE_MS;
+    // Every wall time on `day`, and a time shifted from it onto the next day,
+    // lies between UTC midnight of the day before and of the day after next.
+    // tz data never has two offset changes within those three days (the
+    // closest pair is ten days apart), so equal offsets at both ends mean no
+    // change, and otherwise there is exactly one.
+    const before = this.offsetAtMidnight(day - 1);
+    const after = this.offsetAtMidnight(day + 2);
+    if (before === after) return local - before;
+    const at = this.transitionAfter(day - 1);
+    if (local - before < at) return local - before;
+    if (local - after >= at) return local - after;
+    return skipGap ? null : local - before;
+  }
+
+  private offsetAtMidnight(day: number): number {
+    let offset = this.midnightOffsets.get(day);
+    if (offset === undefined) {
+      if (this.midnightOffsets.size > 64) this.midnightOffsets.clear();
+      offset = this.offsetAt(day * DAY_MS);
+      this.midnightOffsets.set(day, offset);
+    }
+    return offset;
+  }
+
+  private transitionAfter(day: number): number {
+    let at = this.transitions.get(day);
+    if (at === undefined) {
+      if (this.transitions.size > 64) this.transitions.clear();
+      const next = this.zoned(day * DAY_MS).getTimeZoneTransition("next");
+      at = next === null ? Number.POSITIVE_INFINITY : epochMs(next);
+      this.transitions.set(day, at);
+    }
+    return at;
+  }
 }
 
-function firstAfter(
-  expr: ScheduleExpr,
-  day: number,
-  now: ZDT,
-  tz: string,
-): ZDT | null {
-  if (expr.type === "intervalRepeat") {
-    return firstSlotAfter(expr, day, now, tz);
+/** Index of the first element of ascending `times` greater than `ms`. */
+function firstAfter(times: number[], ms: number): number {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] > ms) hi = mid;
+    else lo = mid + 1;
   }
-  return (
-    fixedTimesOn(day, expr.times, tz).find((t) => isBefore(now, t)) ?? null
-  );
+  return lo;
 }
 
-function lastBefore(
-  expr: ScheduleExpr,
-  day: number,
-  now: ZDT,
-  tz: string,
-): ZDT | null {
-  if (expr.type === "intervalRepeat") {
-    return lastSlotBefore(expr, day, now, tz);
-  }
-  const times = fixedTimesOn(day, expr.times, tz).reverse();
-  return times.find((t) => isBefore(t, now)) ?? null;
+interface Occurrence {
+  ms: number;
+  day: number;
 }
 
-function isExcepted(day: number, exceptions: Exception[]): boolean {
-  if (exceptions.length === 0) return false;
-  const date = civil(day);
-  return exceptions.some((exc) =>
-    exc.type === "named"
-      ? monthNumber(exc.month) === date.month && exc.day === date.day
-      : isoDay(exc.date) === day,
-  );
-}
+/**
+ * One schedule evaluated from one `now`: its plan, its clauses resolved to
+ * days, and the occurrences of each scheduled day, cached so that iterators
+ * resolve each day once.
+ */
+class Evaluation {
+  readonly zone: Zone;
+  private readonly plan: Plan;
+  private readonly until: number | null;
+  private readonly starting: number | null;
+  private readonly named: { month: number; day: number }[];
+  private readonly isoExceptions: number[];
+  private readonly days = new Map<number, number[]>();
 
-function resolveUntil(until: UntilSpec, now: ZDT): Temporal.PlainDate {
-  if (until.type === "iso") {
-    return Temporal.PlainDate.from(until.date);
-  }
-  const year = now.toPlainDate().year;
-  for (const y of [year, year + 1]) {
-    try {
-      const d = Temporal.PlainDate.from(
-        {
-          year: y,
-          month: monthNumber(until.month),
-          day: until.day,
-        },
-        { overflow: "reject" },
-      );
-      if (Temporal.PlainDate.compare(d, now.toPlainDate()) >= 0) {
-        return d;
+  constructor(
+    private readonly schedule: ScheduleData,
+    now: ZDT,
+  ) {
+    this.zone = new Zone(schedule.timezone ?? "UTC");
+    this.plan = planFor(schedule);
+    this.until =
+      schedule.until === null ? null : resolveUntil(schedule.until, now);
+    this.starting = schedule.anchor === null ? null : isoDay(schedule.anchor);
+    this.named = [];
+    this.isoExceptions = [];
+    for (const exc of schedule.except) {
+      if (exc.type === "named") {
+        this.named.push({ month: monthNumber(exc.month), day: exc.day });
+      } else {
+        this.isoExceptions.push(isoDay(exc.date));
       }
-    } catch {
-      // Invalid date, try next year
     }
   }
-  return Temporal.PlainDate.from(
-    {
-      year: year + 1,
-      month: monthNumber(until.month),
-      day: until.day,
-    },
-    { overflow: "reject" },
+
+  // A time shifted by a spring-forward gap keeps its scheduled day for every
+  // clause but can land on the next date, after that date's early times. So
+  // the searches key on scheduled days and look one day beyond the best so
+  // far; occurrences two scheduled days apart are always in order.
+
+  /** The first occurrence after `afterMs`, scanning scheduled days from `fromDay`. */
+  next(
+    afterMs: number,
+    fromDay = this.zone.localDay(afterMs) - 1,
+  ): Occurrence | null {
+    let best: Occurrence | null = null;
+    const start = Math.max(fromDay, this.starting ?? fromDay);
+    for (const day of candidateDays(this.plan, start, 1)) {
+      if (best !== null && day > best.day + 1) break;
+      if (this.until !== null && day > this.until) break;
+      if (this.isExcepted(day)) continue;
+      const times = this.occurrencesOn(day);
+      const ms = times[firstAfter(times, afterMs)];
+      if (ms !== undefined && (best === null || ms < best.ms)) {
+        best = { ms, day };
+      }
+    }
+    return best !== null && best.ms < RANGE_END_MS ? best : null;
+  }
+
+  /** The last occurrence before `beforeMs`. */
+  previous(beforeMs: number): Occurrence | null {
+    // A fall-back across midnight can put `now` on the previous date after
+    // the first pass of the next date's times.
+    let start = this.zone.localDay(beforeMs) + 1;
+    if (this.until !== null) start = Math.min(start, this.until);
+    let best: Occurrence | null = null;
+    for (const day of candidateDays(this.plan, start, -1)) {
+      if (best !== null && day < best.day - 1) break;
+      if (this.starting !== null && day < this.starting) break;
+      if (this.isExcepted(day)) continue;
+      const times = this.occurrencesOn(day);
+      const ms = times[firstAfter(times, beforeMs - 1) - 1];
+      if (ms !== undefined && (best === null || ms > best.ms)) {
+        best = { ms, day };
+      }
+    }
+    return best !== null && best.ms >= RANGE_START_MS ? best : null;
+  }
+
+  private isExcepted(day: number): boolean {
+    if (this.isoExceptions.includes(day)) return true;
+    if (this.named.length === 0) return false;
+    const date = civil(day);
+    return this.named.some((n) => n.month === date.month && n.day === date.day);
+  }
+
+  /** The instants of `day`'s occurrences, ascending and without repeats. */
+  private occurrencesOn(day: number): number[] {
+    let times = this.days.get(day);
+    if (times === undefined) {
+      if (this.days.size > 8) this.days.clear();
+      times = this.resolveDay(day);
+      this.days.set(day, times);
+    }
+    return times;
+  }
+
+  private resolveDay(day: number): number[] {
+    const { expr } = this.schedule;
+    const times: number[] = [];
+    if (expr.type === "intervalRepeat") {
+      const first = minutesOf(expr.from);
+      for (let k = 0; k <= lastSlot(expr); k++) {
+        const ms = this.zone.resolve(day, first + k * slotStep(expr), true);
+        if (ms !== null) times.push(ms);
+      }
+      return times;
+    }
+    for (const time of expr.times) {
+      const ms = this.zone.resolve(day, minutesOf(time), false);
+      if (ms !== null) times.push(ms);
+    }
+    times.sort((a, b) => a - b);
+    return times.filter((t, i) => i === 0 || times[i - 1] < t);
+  }
+}
+
+function resolveUntil(until: UntilSpec, now: ZDT): number {
+  if (until.type === "iso") return isoDay(until.date);
+  const today = dayOf(now.toPlainDate());
+  const month = monthNumber(until.month);
+  const { year } = civil(today);
+  for (const y of [year, year + 1]) {
+    if (until.day <= daysInMonth(y, month)) {
+      const day = epochDay(y, month, until.day);
+      if (day >= today) return day;
+    }
+  }
+  throw new RangeError(
+    `no ${until.month} ${until.day} in ${year} or ${year + 1}`,
   );
 }
 
-function resolveTz(tz: string | null): string {
-  return tz ?? "UTC";
-}
-
-// A fixed time in a spring-forward gap at midnight shifts onto the next date
-// but keeps its scheduled date for every clause, so the searches key on the
-// scheduled day and keep looking until no later day can land on a nearer
-// instant: a day's occurrences land on that date or the next.
+// spec/README.md, "Supported range": a `now` outside it has no occurrences.
 
 export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
-  const tz = resolveTz(schedule.timezone);
-  const today = dayOf(now.withTimeZone(tz));
-  const until =
-    schedule.until === null ? null : dayOf(resolveUntil(schedule.until, now));
-  let best: ZDT | null = null;
-  for (const day of candidateDays(planFor(schedule), today - 1, 1)) {
-    if (best !== null && day > dayOf(best)) break;
-    if (until !== null && day > until) break;
-    if (isExcepted(day, schedule.except)) continue;
-    const t = firstAfter(schedule.expr, day, now, tz);
-    if (t !== null && (best === null || isBefore(t, best))) best = t;
-  }
-  return best;
+  if (!inRange(now)) return null;
+  const evaluation = new Evaluation(schedule, now);
+  const next = evaluation.next(epochMs(now));
+  return next === null ? null : evaluation.zone.zoned(next.ms);
 }
 
 /** The most recent occurrence strictly before `now`, or null if there is none. */
 export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
-  const tz = resolveTz(schedule.timezone);
-  const anchor = schedule.anchor === null ? null : isoDay(schedule.anchor);
-  let start = dayOf(now.withTimeZone(tz));
-  if (schedule.until !== null) {
-    start = Math.min(start, dayOf(resolveUntil(schedule.until, now)));
-  }
-  let best: ZDT | null = null;
-  for (const day of candidateDays(planFor(schedule), start, -1)) {
-    if (best !== null && day + 1 < dayOf(best)) break;
-    if (anchor !== null && day < anchor) break;
-    if (isExcepted(day, schedule.except)) continue;
-    const t = lastBefore(schedule.expr, day, now, tz);
-    if (t !== null && (best === null || isBefore(best, t))) best = t;
-  }
-  return best;
+  if (!inRange(now)) return null;
+  const evaluation = new Evaluation(schedule, now);
+  const nowMs = epochMs(now);
+  const beforeMs = now.epochNanoseconds % 1_000_000n === 0n ? nowMs : nowMs + 1;
+  const previous = evaluation.previous(beforeMs);
+  return previous === null ? null : evaluation.zone.zoned(previous.ms);
 }
 
 /** True when the minute containing `datetime` is an occurrence. */
 export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
-  const minute = datetime
-    .withTimeZone(resolveTz(schedule.timezone))
-    .round({ smallestUnit: "minute", roundingMode: "floor" });
-  const next = nextFrom(schedule, minute.subtract({ nanoseconds: 1 }));
-  return next !== null && next.epochNanoseconds === minute.epochNanoseconds;
+  if (!inRange(datetime)) return false;
+  const evaluation = new Evaluation(schedule, datetime);
+  const ms = epochMs(datetime);
+  const offset = evaluation.zone.offsetAt(ms);
+  const minuteMs = Math.floor((ms + offset) / MINUTE_MS) * MINUTE_MS - offset;
+  return evaluation.next(minuteMs - 1)?.ms === minuteMs;
 }
 
 /**
@@ -611,12 +634,12 @@ export function* occurrences(
   schedule: ScheduleData,
   from: ZDT,
 ): Generator<ZDT, void, unknown> {
-  for (
-    let t = nextFrom(schedule, from);
-    t !== null;
-    t = nextFrom(schedule, t)
-  ) {
-    yield t;
+  if (!inRange(from)) return;
+  const evaluation = new Evaluation(schedule, from);
+  let next = evaluation.next(epochMs(from));
+  while (next !== null) {
+    yield evaluation.zone.zoned(next.ms);
+    next = evaluation.next(next.ms, next.day - 1);
   }
 }
 
@@ -636,8 +659,9 @@ export function* between(
   from: ZDT,
   to: ZDT,
 ): Generator<ZDT, void, unknown> {
+  const toNs = to.epochNanoseconds;
   for (const t of occurrences(schedule, from)) {
-    if (Temporal.ZonedDateTime.compare(t, to) > 0) return;
+    if (t.epochNanoseconds > toNs) return;
     yield t;
   }
 }

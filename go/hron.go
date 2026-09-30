@@ -74,6 +74,9 @@ func (s *Schedule) NextFrom(now time.Time) *time.Time {
 
 // NextNFrom computes the next n occurrences strictly after now.
 func (s *Schedule) NextNFrom(now time.Time, n int) []time.Time {
+	if n <= 0 {
+		return nil
+	}
 	var results []time.Time
 	for t := range s.Occurrences(now) {
 		if len(results) >= n {

@@ -62,24 +62,42 @@ def _make_aware(d: date, t: time, tz: ZoneInfo) -> datetime:
     return naive.replace(tzinfo=tz, fold=0)
 
 
-def _at_time_on_date(d: date, tod: TimeOfDay, tz: ZoneInfo) -> datetime:
+_FIRST_INSTANT = datetime(1, 1, 2, tzinfo=UTC)
+_END_INSTANT = datetime(9999, 12, 30, tzinfo=UTC)
+
+
+def _supported_utc(dt: datetime) -> datetime | None:
+    """`dt` as a UTC instant, or None outside the supported range (spec/README.md).
+
+    Searches compare UTC instants because datetimes sharing one ZoneInfo compare by wall clock.
+    """
+    try:
+        instant = dt.astimezone(UTC)
+    except OverflowError:
+        return None
+    return instant if _FIRST_INSTANT <= instant < _END_INSTANT else None
+
+
+def _at_time_on_date(d: date, tod: TimeOfDay, tz: ZoneInfo) -> datetime | None:
+    """The instant a wall-clock time resolves to, or None outside the supported range."""
     aware = _make_aware(d, time(tod.hour, tod.minute), tz)
     # With fold=0, a time in a DST gap converts at the pre-gap offset, so the round-trip
-    # shifts it forward by the gap length (02:30 becomes 03:30). Outside years 1 to 9999
-    # the conversion raises OverflowError.
-    return aware.astimezone(UTC).astimezone(tz)
+    # shifts it forward by the gap length (02:30 becomes 03:30).
+    instant = _supported_utc(aware)
+    return None if instant is None else instant.astimezone(tz)
 
 
 def _slot_on_date(d: date, minutes: int, tz: ZoneInfo) -> datetime | None:
     """Resolve an interval slot, or None when its wall time falls in a spring-forward gap."""
     resolved = _at_time_on_date(d, TimeOfDay(minutes // 60, minutes % 60), tz)
-    if resolved.date() != d or resolved.hour * 60 + resolved.minute != minutes:
+    if resolved is None or resolved.date() != d or resolved.hour * 60 + resolved.minute != minutes:
         return None
     return resolved
 
 
 def _day_ends_in_gap(d: date, tz: ZoneInfo) -> bool:
-    return _at_time_on_date(d, TimeOfDay(23, 59), tz).date() != d
+    last_minute = _at_time_on_date(d, TimeOfDay(23, 59), tz)
+    return last_minute is not None and last_minute.date() != d
 
 
 def _matches_day_filter(d: date, f: DayFilter) -> bool:
@@ -220,6 +238,9 @@ def _year_target_date(target: YearTarget, year: int) -> date | None:
     return None  # pragma: no cover
 
 
+# Every day filter matches within a week, plus a day at each end for times that a gap or an
+# overlap moves across midnight, and a day for a shifted time equal to `now`.
+_DAY_REPEAT_SCAN_DAYS = 7 + 3
 _EPOCH_DATE = date(1970, 1, 1)
 _EPOCH_MONDAY = date(1970, 1, 5)
 _DAYS_PER_400_YEARS = 146097
@@ -264,25 +285,23 @@ def _add_days_clamped(d: date, days: int) -> date:
 
 def _is_excepted_parsed(
     d: date,
-    named: list[tuple[int, int]],
-    iso_dates: list[date],
+    named: set[tuple[int, int]],
+    iso_dates: set[date],
 ) -> bool:
-    return any(d.month == m and d.day == day for m, day in named) or any(
-        d == iso_d for iso_d in iso_dates
-    )
+    return (d.month, d.day) in named or d in iso_dates
 
 
 def _parse_exceptions(
     exceptions: tuple[ExceptionSpec, ...],
-) -> tuple[list[tuple[int, int]], list[date]]:
-    named: list[tuple[int, int]] = []
-    iso_dates: list[date] = []
+) -> tuple[set[tuple[int, int]], set[date]]:
+    named: set[tuple[int, int]] = set()
+    iso_dates: set[date] = set()
     for exc in exceptions:
         match exc:
             case NamedException(month=m, day=day):
-                named.append((m.number, day))
+                named.add((m.number, day))
             case IsoException(date=iso_str):
-                iso_dates.append(date.fromisoformat(iso_str))
+                iso_dates.add(date.fromisoformat(iso_str))
     return named, iso_dates
 
 
@@ -327,50 +346,55 @@ def _resolve_until(until: UntilSpec, now: datetime) -> date:
         case IsoUntil(date=iso_str):
             return date.fromisoformat(iso_str)
         case NamedUntil(month=m, day=day):
-            year = now.year
-            for y in (year, year + 1):
-                try:
-                    d = date(y, m.number, day)
-                    if d >= now.date():
-                        return d
-                except ValueError:
-                    continue
-            return date(year + 1, m.number, day)
+            # Feb 29 recurs within 8 years.
+            for year in range(now.year, now.year + 9):
+                d = _date_if_valid(year, m.number, day)
+                if d is not None and d >= now.date():
+                    return d
+            return date.max
 
 
 # An occurrence and its scheduled date: the date whose wall-clock time it resolves, which
-# `during`, `except` and `until` check even when a gap shifts it onto the next date.
+# `during`, `except`, `until` and `starting` check even when a gap shifts it onto the next date.
 _Occurrence = tuple[datetime, date]
 
 
 def _earliest_on(
     d: date, times: tuple[TimeOfDay, ...], tz: ZoneInfo, now: datetime
 ) -> _Occurrence | None:
-    future = [c for c in (_at_time_on_date(d, tod, tz) for tod in times) if c > now]
+    resolved = (_at_time_on_date(d, tod, tz) for tod in times)
+    future = [c for c in resolved if c is not None and c > now]
     return (min(future), d) if future else None
 
 
 def _latest_on(
     d: date, times: tuple[TimeOfDay, ...], tz: ZoneInfo, now: datetime
 ) -> _Occurrence | None:
-    past = [c for c in (_at_time_on_date(d, tod, tz) for tod in times) if c < now]
+    resolved = (_at_time_on_date(d, tod, tz) for tod in times)
+    past = [c for c in resolved if c is not None and c < now]
     return (max(past), d) if past else None
 
 
 def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
+    instant = _supported_utc(now)
+    return None if instant is None else _next(schedule, instant)
+
+
+def _next(schedule: ScheduleData, now: datetime) -> datetime | None:
     tz = _resolve_tz(schedule.timezone)
-    until_date = _resolve_until(schedule.until, now) if schedule.until else None
+    now_in_tz = now.astimezone(tz)
+    until_date = _resolve_until(schedule.until, now_in_tz) if schedule.until else None
+    starting = date.fromisoformat(schedule.anchor) if schedule.anchor else None
     named_exc, iso_exc = _parse_exceptions(schedule.except_)
     # A month repeat applies `during` itself, to the month it targets, which a nearest weekday
     # can leave; every other expression applies it to the scheduled date.
     during_on_result = () if isinstance(schedule.expr, MonthRepeat) else schedule.during
 
-    # Datetimes sharing one ZoneInfo compare by wall clock, so every search compares in UTC.
-    now = now.astimezone(UTC)
-    now_date = now.astimezone(tz).date()
-    limit = _add_days_clamped(now_date, _search_span_days(schedule.expr))
     # A time shifted past midnight by a gap lands on the date after its scheduled date.
-    start = _add_days_clamped(now_date, -1)
+    start = _add_days_clamped(now_in_tz.date(), -1)
+    if starting is not None and starting > start:
+        start = starting
+    limit = _add_days_clamped(max(start, now_in_tz.date()), _search_span_days(schedule.expr))
     shifted: datetime | None = None
 
     try:
@@ -436,9 +460,12 @@ def next_n_from(schedule: ScheduleData, now: datetime, n: int) -> list[datetime]
 
 def matches(schedule: ScheduleData, dt: datetime) -> bool:
     """True when the minute containing `dt`, on the schedule's wall clock, is an occurrence."""
+    instant = _supported_utc(dt)
+    if instant is None:
+        return False
     tz = _resolve_tz(schedule.timezone)
-    minute_start = dt.astimezone(tz).replace(second=0, microsecond=0).astimezone(UTC)
-    latest = previous_from(schedule, minute_start + timedelta(minutes=1))
+    minute_start = instant.astimezone(tz).replace(second=0, microsecond=0).astimezone(UTC)
+    latest = _previous(schedule, minute_start + timedelta(minutes=1))
     return latest is not None and latest.astimezone(UTC) == minute_start
 
 
@@ -456,7 +483,7 @@ def _next_day_repeat(
         anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
         d += timedelta(days=_days_between(d, anchor_date) % interval)
 
-    for _ in range(9):
+    for _ in range(_DAY_REPEAT_SCAN_DAYS):
         if _matches_day_filter(d, days) and (found := _earliest_on(d, times, tz, now)):
             return found
         d += timedelta(days=interval)
@@ -510,8 +537,6 @@ def _next_week_repeat(
     anchor_monday = anchor_date - timedelta(days=anchor_date.isoweekday() - 1)
 
     monday = start - timedelta(days=start.isoweekday() - 1)
-    if anchor:
-        monday = max(monday, anchor_monday)
     monday += timedelta(weeks=_weeks_between(monday, anchor_monday) % interval)
 
     sorted_days = sorted(days, key=lambda wd: wd.number)
@@ -541,8 +566,6 @@ def _next_month_repeat(
 
     # `next nearest weekday` can land in the month after its target, so start a month early.
     month = max(_month_index(start) - 1, _month_index(date.min))
-    if anchor:
-        month = max(month, anchor_month)
     month += (anchor_month - month) % interval
 
     while month <= _month_index(limit):
@@ -591,8 +614,6 @@ def _next_year_repeat(
     anchor_year = date.fromisoformat(anchor).year if anchor else _EPOCH_DATE.year
 
     year = start.year
-    if anchor:
-        year = max(year, anchor_year)
     year += (anchor_year - year) % interval
 
     while year <= limit.year:
@@ -612,20 +633,30 @@ def occurrences(schedule: ScheduleData, from_: datetime) -> Iterator[datetime]:
 
 
 def between(schedule: ScheduleData, from_: datetime, to: datetime) -> Iterator[datetime]:
-    end = to.astimezone(UTC)
+    end = _supported_utc(to)
+    if end is None:
+        return iter(())
     return takewhile(lambda dt: dt <= end, occurrences(schedule, from_))
 
 
 def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
+    instant = _supported_utc(now)
+    return None if instant is None else _previous(schedule, instant)
+
+
+def _previous(schedule: ScheduleData, now: datetime) -> datetime | None:
     tz = _resolve_tz(schedule.timezone)
-    until_date = _resolve_until(schedule.until, now) if schedule.until else None
-    anchor_date = date.fromisoformat(schedule.anchor) if schedule.anchor else None
+    now_in_tz = now.astimezone(tz)
+    until_date = _resolve_until(schedule.until, now_in_tz) if schedule.until else None
+    starting = date.fromisoformat(schedule.anchor) if schedule.anchor else None
     named_exc, iso_exc = _parse_exceptions(schedule.except_)
     during_on_result = () if isinstance(schedule.expr, MonthRepeat) else schedule.during
 
-    now = now.astimezone(UTC)
-    start = now.astimezone(tz).date()
-    limit = _add_days_clamped(start, -_search_span_days(schedule.expr))
+    # An overlap crossing midnight can put an earlier date's wall clock on a later occurrence.
+    start = _add_days_clamped(now_in_tz.date(), 1)
+    if until_date is not None and until_date < start:
+        start = until_date
+    limit = _add_days_clamped(min(start, now_in_tz.date()), -_search_span_days(schedule.expr))
     shifted_over: datetime | None = None
 
     try:
@@ -633,11 +664,8 @@ def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
             schedule.expr, tz, schedule.anchor, now, start, schedule.during, limit
         ):
             candidate, scheduled = found
-            if scheduled < limit or (anchor_date is not None and scheduled < anchor_date):
+            if scheduled < limit or (starting is not None and scheduled < starting):
                 break
-            if until_date is not None and scheduled > until_date:
-                start = until_date
-                continue
             if during_on_result and not _matches_during(scheduled, during_on_result):
                 start = _prev_during_month(scheduled, during_on_result)
                 continue
@@ -702,7 +730,7 @@ def _prev_day_repeat(
         anchor_date = date.fromisoformat(anchor) if anchor else _EPOCH_DATE
         d -= timedelta(days=_days_between(anchor_date, d) % interval)
 
-    for _ in range(8):
+    for _ in range(_DAY_REPEAT_SCAN_DAYS):
         if _matches_day_filter(d, days) and (found := _latest_on(d, times, tz, now)):
             return found
         d -= timedelta(days=interval)
@@ -765,7 +793,7 @@ def _prev_week_repeat(
     monday -= timedelta(weeks=_weeks_between(anchor_monday, monday) % interval)
 
     sorted_days = sorted(days, key=lambda wd: wd.number, reverse=True)
-    for _ in range(2):
+    for _ in range(3):
         for wd in sorted_days:
             d = monday + timedelta(days=wd.number - 1)
             if d <= start and (found := _latest_on(d, times, tz, now)):

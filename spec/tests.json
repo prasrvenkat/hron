@@ -5206,7 +5206,7 @@
           "name": "range_from_after_end",
           "expression": "every day at 09:00, 23:30 in America/New_York",
           "description": "an iterator from outside the supported range is empty",
-          "from": "9999-12-31T12:00:00+00:00[UTC]",
+          "from": "9999-12-30T12:00:00+00:00[UTC]",
           "take": 3,
           "expected": []
         }
@@ -6751,8 +6751,8 @@
         {
           "name": "range_now_after_end",
           "expression": "every day at 09:00, 23:30 in America/New_York",
-          "description": "now 9999-12-31T12:00Z is outside the supported range: null",
-          "now": "9999-12-31T12:00:00+00:00[UTC]",
+          "description": "now 9999-12-30T12:00Z is outside the supported range: null",
+          "now": "9999-12-30T12:00:00+00:00[UTC]",
           "expected": null
         },
         {

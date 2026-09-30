@@ -184,7 +184,9 @@ public class ConformanceTest {
       case "matches" -> {
         assertKnownFields(tc, Set.of("expression", "datetime", "expected"), label);
         ZonedDateTime datetime = parseZonedDateTime(required(tc, "datetime", label).asText());
-        boolean expected = required(tc, "expected", label).asBoolean();
+        JsonNode expectedNode = required(tc, "expected", label);
+        assertTrue(expectedNode.isBoolean(), label + ": expected is not a boolean");
+        boolean expected = expectedNode.asBoolean();
         assertEquals(expected, s.matches(datetime), label + ": matches(" + datetime + ")");
       }
       case "previous_from" -> {

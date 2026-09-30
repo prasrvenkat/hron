@@ -79,9 +79,6 @@ DateTime? _validDate(int year, int month, int day) {
 
 DateTime _lastDayOfMonth(int year, int month) {
   // Day 0 of next month = last day of this month
-  if (month == 12) {
-    return DateTime.utc(year + 1, 1, 0);
-  }
   return DateTime.utc(year, month + 1, 0);
 }
 
@@ -400,38 +397,38 @@ DateTime _resolveUntil(UntilSpec until, TZDateTime now) {
   final named = until as NamedUntil;
   final year = now.year;
   for (final y in [year, year + 1]) {
-    try {
-      final d = DateTime.utc(y, named.month.number, named.day);
-      // DateTime.utc rolls an invalid day over into the next month.
-      if (d.month == named.month.number && d.day == named.day) {
-        if (!d.isBefore(DateTime.utc(now.year, now.month, now.day))) {
-          return d;
-        }
-      }
-    } on Exception catch (_) {
-      // Invalid date construction, try next year
+    final d = _validDate(y, named.month.number, named.day);
+    if (d != null && !d.isBefore(DateTime.utc(now.year, now.month, now.day))) {
+      return d;
     }
   }
   return DateTime.utc(year + 1, named.month.number, named.day);
 }
 
+// spec/README.md "Supported range".
+final DateTime _firstInstant = DateTime.utc(1, 1, 2);
+final DateTime _endInstant = DateTime.utc(9999, 12, 30);
+
+bool _inRange(DateTime t) =>
+    !t.isBefore(_firstInstant) && t.isBefore(_endInstant);
+
 TZDateTime? nextFrom(ScheduleData schedule, TZDateTime now) =>
-    _search(schedule, now, 1);
+    _inRange(now) ? _search(schedule, now, 1) : null;
 
 TZDateTime? previousFrom(ScheduleData schedule, TZDateTime now) =>
-    _search(schedule, now, -1);
+    _inRange(now) ? _search(schedule, now, -1) : null;
 
 /// The first occurrence after [now] when [dir] is 1, or the last before it
 /// when [dir] is -1, walking the aligned units of the schedule for one full
-/// cycle of the calendar (spec/README.md "Search horizon") within years 1 to
-/// 9999 ("Supported range").
+/// cycle of the calendar (spec/README.md "Search horizon").
 TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
   final loc = _getLocation(_resolveTz(schedule.timezone));
   final expr = schedule.expr;
   final (unit, interval) = _repetition(expr);
-  final anchor = schedule.anchor == null
+  final starting = schedule.anchor == null
       ? null
-      : unit.of(_parseIsoDateUtc(schedule.anchor!));
+      : _parseIsoDateUtc(schedule.anchor!);
+  final anchor = starting == null ? null : unit.of(starting);
   final origin =
       anchor ?? unit.of(unit == _Unit.week ? _epochMonday : _epochDate);
   final until = schedule.until == null
@@ -445,7 +442,9 @@ TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
   // weekday targeted in the adjacent month can land in this one.
   var n = unit.of(start) - dir;
   n += dir > 0 ? (origin - n) % interval : -((n - origin) % interval);
-  if (anchor != null && n < anchor && dir > 0) n = anchor;
+  // Units before the anchor's hold no date on or after [starting], except a
+  // nearest weekday landing forward from the unit just before.
+  if (anchor != null && dir > 0 && n < anchor - interval) n = anchor - interval;
   // An ISO date occurs once, so the search jumps straight to its year.
   if (expr case SingleDate(date: IsoDate(:final date))) {
     final year = _parseIsoDateUtc(date).year;
@@ -464,7 +463,7 @@ TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
     i < count && (n - lastUnit) * dir <= 1;
     i++, n += dir * interval
   ) {
-    if (anchor != null && n < anchor) return best;
+    if (anchor != null && n < anchor - interval) return best;
     final dates = _datesIn(expr, n);
     for (final (date, month) in dir > 0 ? dates : dates.reversed) {
       // A time shifted past midnight by a gap lands on the next date, where
@@ -483,7 +482,8 @@ TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
         continue;
       }
       if (!_matchesDuring(month, schedule.during) ||
-          exceptions.isExcepted(date)) {
+          exceptions.isExcepted(date) ||
+          (starting != null && date.isBefore(starting))) {
         continue;
       }
       final t = switch (expr) {
@@ -494,7 +494,9 @@ TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
         SingleDate(:final times) ||
         YearRepeat(:final times) => _timeOn(times, date, now, dir, loc),
       };
-      if (t != null && (best == null || t.compareTo(best) * dir < 0)) {
+      if (t != null &&
+          _inRange(t) &&
+          (best == null || t.compareTo(best) * dir < 0)) {
         best = t;
         bestDate ??= date;
       }
@@ -505,6 +507,7 @@ TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
 
 /// True when the minute containing [datetime] is an occurrence.
 bool matches(ScheduleData schedule, TZDateTime datetime) {
+  if (!_inRange(datetime)) return false;
   final local = TZDateTime.from(
     datetime,
     _getLocation(_resolveTz(schedule.timezone)),
@@ -516,9 +519,10 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
       microseconds: local.microsecond,
     ),
   );
-  final next = nextFrom(
+  final next = _search(
     schedule,
     minute.subtract(const Duration(milliseconds: 1)),
+    1,
   );
   return next != null && next.isAtSameMomentAs(minute);
 }
@@ -540,4 +544,6 @@ Iterable<TZDateTime> between(
   ScheduleData schedule,
   TZDateTime from,
   TZDateTime to,
-) => occurrences(schedule, from).takeWhile((t) => !t.isAfter(to));
+) => _inRange(to)
+    ? occurrences(schedule, from).takeWhile((t) => !t.isAfter(to))
+    : const [];

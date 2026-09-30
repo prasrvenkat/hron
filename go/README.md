@@ -140,7 +140,7 @@ hron.ParseSchedule("every day at 9:00 during jan, jun")
 
 When a schedule specifies a timezone via the `in` clause, all occurrences are computed in that timezone with full DST awareness:
 
-- **Spring-forward (gap):** Non-existent times are pushed forward
+- **Spring-forward (gap):** A fixed time that does not exist is pushed forward by the gap length; interval slots in the gap are skipped
 - **Fall-back (ambiguity):** First occurrence is used
 
 ```go

@@ -3,31 +3,33 @@ package io.hron.eval;
 import io.hron.ast.*;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
+import java.time.zone.ZoneRules;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Spliterator;
-import java.util.Spliterators;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 /**
  * Evaluates schedule expressions to compute occurrences.
  *
  * <p>A fixed time that falls in a DST gap shifts forward by the length of the gap (02:30 becomes
  * 03:30); an interval slot in a gap is skipped. A time that occurs twice at fall-back resolves to
- * the first occurrence.
+ * the first occurrence. Only instants in [0001-01-02T00:00Z, 9999-12-30T00:00Z) are supported.
  */
 public final class Evaluator {
-  private static final int FIRST_YEAR = 1;
+  private static final Instant FIRST_INSTANT = Instant.parse("0001-01-02T00:00:00Z");
 
-  private static final int LAST_YEAR = 9999;
+  private static final Instant END_INSTANT = Instant.parse("9999-12-30T00:00:00Z");
+
+  // Local dates that can hold a supported instant in any zone, or its scheduled date when a DST
+  // gap carries it past midnight.
+  private static final LocalDate FIRST_DATE = LocalDate.of(0, 12, 31);
+
+  private static final LocalDate LAST_DATE = LocalDate.of(9999, 12, 31);
 
   private static final LocalDate EPOCH_DATE = LocalDate.of(1970, 1, 1);
 
@@ -41,37 +43,11 @@ public final class Evaluator {
    * @param data the schedule data
    * @param now the reference time
    * @param location the timezone
-   * @return the next occurrence, or empty if none exists
+   * @return the next occurrence, or empty if none exists or now is outside the supported range
    */
   public static Optional<ZonedDateTime> nextFrom(
       ScheduleData data, ZonedDateTime now, ZoneId location) {
-    LocalDate untilDate = untilDate(data, now.toLocalDate());
-    LocalDate limit = searchLimit(data.expr(), now.toLocalDate(), true);
-    if (untilDate != null && untilDate.isBefore(limit)) {
-      limit = untilDate;
-    }
-
-    ZonedDateTime best = null;
-    // A time shifted past midnight by a DST gap lands the day after its scheduled date.
-    Iterator<LocalDate> days = datesForward(data, now.toLocalDate().minusDays(1), limit).iterator();
-    while (days.hasNext()) {
-      LocalDate day = days.next();
-      if (best != null && !day.atStartOfDay(location).isBefore(best)) {
-        break;
-      }
-      if (!clausesAllow(data, day, untilDate)) {
-        continue;
-      }
-      for (ZonedDateTime t : occurrencesOn(data.expr(), day, location)) {
-        if (t.isAfter(now)) {
-          if (best == null || t.isBefore(best)) {
-            best = t;
-          }
-          break;
-        }
-      }
-    }
-    return Optional.ofNullable(best).filter(t -> t.getYear() <= LAST_YEAR);
+    return isSupported(now) ? next(data, now, location) : Optional.empty();
   }
 
   /**
@@ -85,19 +61,7 @@ public final class Evaluator {
    */
   public static List<ZonedDateTime> nextNFrom(
       ScheduleData data, ZonedDateTime now, int n, ZoneId location) {
-    List<ZonedDateTime> results = new ArrayList<>();
-    ZonedDateTime current = now;
-
-    for (int i = 0; i < n; i++) {
-      Optional<ZonedDateTime> next = nextFrom(data, current, location);
-      if (next.isEmpty()) {
-        break;
-      }
-      results.add(next.get());
-      current = next.get();
-    }
-
-    return results;
+    return occurrences(data, now, location).limit(Math.max(n, 0)).toList();
   }
 
   /**
@@ -110,47 +74,9 @@ public final class Evaluator {
    */
   public static Stream<ZonedDateTime> occurrences(
       ScheduleData data, ZonedDateTime from, ZoneId location) {
-    Iterator<ZonedDateTime> iterator =
-        new Iterator<>() {
-          private ZonedDateTime current = from;
-          private ZonedDateTime next = null;
-          private boolean hasNext = false;
-          private boolean computed = false;
-
-          private void computeNext() {
-            if (!computed) {
-              Optional<ZonedDateTime> result = nextFrom(data, current, location);
-              if (result.isPresent()) {
-                next = result.get();
-                current = next;
-                hasNext = true;
-              } else {
-                hasNext = false;
-              }
-              computed = true;
-            }
-          }
-
-          @Override
-          public boolean hasNext() {
-            computeNext();
-            return hasNext;
-          }
-
-          @Override
-          public ZonedDateTime next() {
-            computeNext();
-            if (!hasNext) {
-              throw new NoSuchElementException();
-            }
-            computed = false;
-            return next;
-          }
-        };
-
-    return StreamSupport.stream(
-        Spliterators.spliteratorUnknownSize(iterator, Spliterator.ORDERED | Spliterator.NONNULL),
-        false);
+    return Stream.iterate(
+            nextFrom(data, from, location), Optional::isPresent, t -> next(data, t.get(), location))
+        .map(Optional::get);
   }
 
   /**
@@ -160,15 +86,18 @@ public final class Evaluator {
    * @param from the start time (exclusive)
    * @param to the end time (inclusive)
    * @param location the timezone
-   * @return a stream of occurrences in the range
+   * @return a stream of occurrences in the range, empty if to is outside the supported range
    */
   public static Stream<ZonedDateTime> between(
       ScheduleData data, ZonedDateTime from, ZonedDateTime to, ZoneId location) {
+    if (!isSupported(to)) {
+      return Stream.empty();
+    }
     return occurrences(data, from, location).takeWhile(dt -> !dt.isAfter(to));
   }
 
   /**
-   * Checks if the minute containing a datetime is an occurrence, using structural matching.
+   * Checks if the minute containing a datetime, on the schedule's wall clock, is an occurrence.
    *
    * @param data the schedule data
    * @param dt the datetime to check; its seconds are ignored
@@ -177,138 +106,8 @@ public final class Evaluator {
    */
   public static boolean matches(ScheduleData data, ZonedDateTime dt, ZoneId location) {
     ZonedDateTime minute = dt.withZoneSameInstant(location).truncatedTo(ChronoUnit.MINUTES);
-    LocalDate date = minute.toLocalDate();
-
-    if (date.getYear() < FIRST_YEAR || date.getYear() > LAST_YEAR) {
-      return false;
-    }
-    // A time shifted past midnight by a DST gap keeps its scheduled date, the day before.
-    return isOccurrenceOn(data, date, minute, location)
-        || isOccurrenceOn(data, date.minusDays(1), minute, location);
-  }
-
-  private static boolean isOccurrenceOn(
-      ScheduleData data, LocalDate day, ZonedDateTime minute, ZoneId location) {
-    return clausesAllow(data, day, untilDate(data, day))
-        && isScheduledOn(data, day, minute, location);
-  }
-
-  private static boolean isScheduledOn(
-      ScheduleData data, LocalDate date, ZonedDateTime minute, ZoneId location) {
-    return switch (data.expr()) {
-      case DayRepeat dr -> {
-        if (!matchesDayFilter(date, dr.days()) || !timeMatches(date, dr.times(), minute)) {
-          yield false;
-        }
-        if (dr.interval() > 1) {
-          LocalDate anchorDate = anchorDate(data.anchor(), EPOCH_DATE);
-          yield isAligned(ChronoUnit.DAYS.between(anchorDate, date), dr.interval(), data.anchor());
-        }
-        yield true;
-      }
-      case IntervalRepeat ir -> {
-        if (ir.dayFilter() != null && !matchesDayFilter(date, ir.dayFilter())) {
-          yield false;
-        }
-        int fromMinutes = ir.fromTime().totalMinutes();
-        int currentMinutes = minute.getHour() * 60 + minute.getMinute();
-        if (currentMinutes < fromMinutes
-            || currentMinutes > ir.toTime().totalMinutes()
-            || (currentMinutes - fromMinutes) % intervalStep(ir) != 0) {
-          yield false;
-        }
-        yield intervalSlot(date, currentMinutes, location)
-            .filter(slot -> slot.isEqual(minute))
-            .isPresent();
-      }
-      case WeekRepeat wr -> {
-        Weekday wd = Weekday.fromDayOfWeek(date.getDayOfWeek());
-        if (!wr.weekDays().contains(wd) || !timeMatches(date, wr.times(), minute)) {
-          yield false;
-        }
-        LocalDate anchorMonday = monday(anchorDate(data.anchor(), EPOCH_MONDAY));
-        long weeks = ChronoUnit.WEEKS.between(anchorMonday, monday(date));
-        yield isAligned(weeks, wr.interval(), data.anchor());
-      }
-      case MonthRepeat mr ->
-          timeMatches(date, mr.times(), minute)
-              && isMonthRepeatDate(date, mr, data.anchor(), data.during());
-      case SingleDate sd -> {
-        if (!timeMatches(date, sd.times(), minute)) {
-          yield false;
-        }
-        yield switch (sd.dateSpec().kind()) {
-          case ISO -> date.equals(LocalDate.parse(sd.dateSpec().date()));
-          case NAMED ->
-              date.getMonthValue() == sd.dateSpec().month().number()
-                  && date.getDayOfMonth() == sd.dateSpec().day();
-        };
-      }
-      case YearRepeat yr -> {
-        if (!timeMatches(date, yr.times(), minute)) {
-          yield false;
-        }
-        if (yr.interval() > 1) {
-          int anchorYear = anchorDate(data.anchor(), EPOCH_DATE).getYear();
-          if (!isAligned(date.getYear() - anchorYear, yr.interval(), data.anchor())) {
-            yield false;
-          }
-        }
-        yield matchesYearTarget(date, yr.target());
-      }
-    };
-  }
-
-  /**
-   * Whether offset is a whole number of intervals from the anchor. Nothing before an explicit
-   * starting date is aligned; before the default epoch anchor, offsets are negative multiples.
-   */
-  private static boolean isAligned(long offset, int interval, String anchor) {
-    return (anchor == null || offset >= 0) && Math.floorMod(offset, interval) == 0;
-  }
-
-  private static boolean timeMatches(LocalDate date, List<TimeOfDay> times, ZonedDateTime minute) {
-    return times.stream()
-        .anyMatch(tod -> atTimeOnDate(date, tod, minute.getZone()).isEqual(minute));
-  }
-
-  /** A nearest weekday can land in the month before or after the month whose day it targets. */
-  private static boolean isMonthRepeatDate(
-      LocalDate date, MonthRepeat mr, String anchor, List<MonthName> during) {
-    YearMonth anchorMonth = YearMonth.from(anchorDate(anchor, EPOCH_DATE));
-    YearMonth landing = YearMonth.from(date);
-    for (YearMonth month : List.of(landing.minusMonths(1), landing, landing.plusMonths(1))) {
-      if (matchesDuring(month, during)
-          && (mr.interval() == 1
-              || isAligned(ChronoUnit.MONTHS.between(anchorMonth, month), mr.interval(), anchor))
-          && getTargetDaysInMonth(month, mr.target()).contains(date)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static boolean matchesYearTarget(LocalDate date, YearTarget target) {
-    return switch (target.kind()) {
-      case DATE ->
-          date.getMonthValue() == target.month().number() && date.getDayOfMonth() == target.day();
-      case ORDINAL_WEEKDAY -> {
-        if (date.getMonthValue() != target.month().number()) {
-          yield false;
-        }
-        Optional<LocalDate> ord =
-            nthWeekdayOfMonth(date.getYear(), date.getMonth(), target.weekday(), target.ordinal());
-        yield ord.isPresent() && date.equals(ord.get());
-      }
-      case DAY_OF_MONTH ->
-          date.getMonthValue() == target.month().number() && date.getDayOfMonth() == target.day();
-      case LAST_WEEKDAY -> {
-        if (date.getMonthValue() != target.month().number()) {
-          yield false;
-        }
-        yield date.equals(lastWeekdayOfMonth(date.getYear(), date.getMonth()));
-      }
-    };
+    return isSupported(minute)
+        && next(data, minute.minusNanos(1), location).filter(minute::isEqual).isPresent();
   }
 
   /**
@@ -317,51 +116,94 @@ public final class Evaluator {
    * @param data the schedule data
    * @param now the reference time (exclusive upper bound)
    * @param location the timezone
-   * @return the previous occurrence, or empty if none exists
+   * @return the previous occurrence, or empty if none exists or now is outside the supported range
    */
   public static Optional<ZonedDateTime> previousFrom(
       ScheduleData data, ZonedDateTime now, ZoneId location) {
-    LocalDate untilDate = untilDate(data, now.toLocalDate());
-    LocalDate start = now.toLocalDate();
-    if (untilDate != null && untilDate.isBefore(start)) {
-      start = untilDate;
+    if (!isSupported(now)) {
+      return Optional.empty();
     }
-    LocalDate limit = searchLimit(data.expr(), start, false);
-    if (data.anchor() != null && limit.isBefore(LocalDate.parse(data.anchor()))) {
-      limit = LocalDate.parse(data.anchor());
+    LocalDate untilDate = untilDate(data, now.toLocalDate());
+    LocalDate searchFrom = now.toLocalDate();
+    if (untilDate != null) {
+      searchFrom = min(searchFrom, untilDate);
+    }
+    LocalDate limit = searchLimit(data.expr(), searchFrom, false);
+    if (data.anchor() != null) {
+      limit = max(limit, LocalDate.parse(data.anchor()));
     }
 
     ZonedDateTime best = null;
-    Iterator<LocalDate> days = datesBackward(data, start, limit).iterator();
+    // A fall-back overlap that crosses midnight repeats the start of the next date before now.
+    LocalDate start = min(now.toLocalDate().plusDays(1), LAST_DATE);
+    if (untilDate != null) {
+      start = min(start, untilDate);
+    }
+    Iterator<LocalDate> days = scheduledDates(data, start, limit, false).iterator();
     while (days.hasNext()) {
       LocalDate day = days.next();
-      // An occurrence on day lands before the start of the day after next.
+      // An occurrence scheduled on day lands before the start of the day after next.
       if (best != null && !day.plusDays(2).atStartOfDay(location).isAfter(best)) {
         break;
       }
-      if (!clausesAllow(data, day, untilDate)) {
-        continue;
-      }
-      for (ZonedDateTime t : occurrencesOn(data.expr(), day, location).reversed()) {
-        if (t.isBefore(now)) {
-          if (best == null || t.isAfter(best)) {
-            best = t;
-          }
-          break;
+      if (clausesAllow(data, day, untilDate)) {
+        Optional<ZonedDateTime> t = nearestOn(data.expr(), day, location, now, false);
+        if (t.isPresent() && (best == null || t.get().isAfter(best))) {
+          best = t.get();
         }
       }
     }
-    return Optional.ofNullable(best).filter(t -> t.getYear() >= FIRST_YEAR);
+    return Optional.ofNullable(best).filter(Evaluator::isSupported);
+  }
+
+  private static Optional<ZonedDateTime> next(
+      ScheduleData data, ZonedDateTime now, ZoneId location) {
+    LocalDate untilDate = untilDate(data, now.toLocalDate());
+    LocalDate searchFrom = now.toLocalDate();
+    if (data.anchor() != null) {
+      searchFrom = max(searchFrom, LocalDate.parse(data.anchor()));
+    }
+    LocalDate limit = searchLimit(data.expr(), searchFrom, true);
+    if (untilDate != null) {
+      limit = min(limit, untilDate);
+    }
+
+    ZonedDateTime best = null;
+    // A time shifted past midnight by a DST gap lands the day after its scheduled date.
+    LocalDate start = now.toLocalDate().minusDays(1);
+    if (data.anchor() != null) {
+      start = max(start, LocalDate.parse(data.anchor()));
+    }
+    Iterator<LocalDate> days = scheduledDates(data, start, limit, true).iterator();
+    while (days.hasNext()) {
+      LocalDate day = days.next();
+      if (best != null && !day.atStartOfDay(location).isBefore(best)) {
+        break;
+      }
+      if (clausesAllow(data, day, untilDate)) {
+        Optional<ZonedDateTime> t = nearestOn(data.expr(), day, location, now, true);
+        if (t.isPresent() && (best == null || t.get().isBefore(best))) {
+          best = t.get();
+        }
+      }
+    }
+    return Optional.ofNullable(best).filter(Evaluator::isSupported);
+  }
+
+  private static boolean isSupported(ZonedDateTime t) {
+    Instant instant = t.toInstant();
+    return !instant.isBefore(FIRST_INSTANT) && instant.isBefore(END_INSTANT);
   }
 
   /**
-   * Whether the except, until and during clauses allow an occurrence scheduled on day. A time
-   * shifted past midnight by a DST gap keeps its scheduled date; a month repeat applies during to
-   * its target month when enumerating dates instead.
+   * Whether the except, until, starting and during clauses allow an occurrence scheduled on day. A
+   * time shifted past midnight by a DST gap keeps its scheduled date; a month repeat applies during
+   * to its target month when listing dates instead.
    */
   private static boolean clausesAllow(ScheduleData data, LocalDate day, LocalDate untilDate) {
     return !isExcepted(day, data.except())
         && (untilDate == null || !day.isAfter(untilDate))
+        && (data.anchor() == null || !day.isBefore(LocalDate.parse(data.anchor())))
         && (data.expr() instanceof MonthRepeat || matchesDuring(day, data.during()));
   }
 
@@ -370,9 +212,9 @@ public final class Evaluator {
   }
 
   /**
-   * Returns the last date a search from {@code from} needs to reach, within years 1 to 9999. The
-   * Gregorian calendar repeats every 400 years, so a schedule repeats after lcm(400 years, its
-   * interval), and a search that covers that span finds an occurrence if one exists.
+   * Returns the last date a search from {@code from} needs to reach. The Gregorian calendar repeats
+   * every 400 years, so a schedule repeats after lcm(400 years, its interval), and a search that
+   * covers that span finds an occurrence if one exists.
    */
   private static LocalDate searchLimit(ScheduleExpr expr, LocalDate from, boolean forward) {
     long years =
@@ -385,13 +227,9 @@ public final class Evaluator {
           case SingleDate sd -> 400;
         };
     if (forward) {
-      return from.getYear() + years > LAST_YEAR
-          ? LocalDate.of(LAST_YEAR, 12, 31)
-          : from.plusYears(years);
+      return from.getYear() + years > LAST_DATE.getYear() ? LAST_DATE : from.plusYears(years);
     }
-    return from.getYear() - years < FIRST_YEAR
-        ? LocalDate.of(FIRST_YEAR, 1, 1)
-        : from.minusYears(years);
+    return from.getYear() - years < FIRST_DATE.getYear() ? FIRST_DATE : from.minusYears(years);
   }
 
   /** Returns lcm(400 years, interval units) in years, given how many units make 400 years. */
@@ -403,152 +241,165 @@ public final class Evaluator {
     return b == 0 ? a : gcd(b, a % b);
   }
 
-  /** Returns the occurrences scheduled on a date, ordered by instant. */
-  private static List<ZonedDateTime> occurrencesOn(ScheduleExpr expr, LocalDate day, ZoneId zone) {
-    return switch (expr) {
-      case DayRepeat dr -> timesOn(day, dr.times(), zone);
-      case WeekRepeat wr -> timesOn(day, wr.times(), zone);
-      case MonthRepeat mr -> timesOn(day, mr.times(), zone);
-      case SingleDate sd -> timesOn(day, sd.times(), zone);
-      case YearRepeat yr -> timesOn(day, yr.times(), zone);
-      case IntervalRepeat ir -> {
-        List<ZonedDateTime> slots = new ArrayList<>();
-        for (int m = ir.fromTime().totalMinutes();
-            m <= ir.toTime().totalMinutes();
-            m += intervalStep(ir)) {
-          intervalSlot(day, m, zone).ifPresent(slots::add);
-        }
-        yield slots;
-      }
-    };
-  }
-
-  private static List<ZonedDateTime> timesOn(LocalDate day, List<TimeOfDay> times, ZoneId zone) {
-    return times.stream()
-        .map(tod -> atTimeOnDate(day, tod, zone))
-        .sorted(Comparator.comparing(ZonedDateTime::toInstant))
-        .toList();
-  }
-
-  /** Candidate scheduled dates from {@code from} up to {@code limit}, in ascending order. */
-  private static Stream<LocalDate> datesForward(
-      ScheduleData data, LocalDate from, LocalDate limit) {
-    String anchor = data.anchor();
+  /**
+   * Candidate scheduled dates from {@code from} towards {@code limit}, in search order. They are
+   * aligned to the interval and pass the day filter and, for month repeats, during.
+   */
+  private static Stream<LocalDate> scheduledDates(
+      ScheduleData data, LocalDate from, LocalDate limit, boolean forward) {
+    int sign = forward ? 1 : -1;
+    Comparator<LocalDate> order = forward ? Comparator.naturalOrder() : Comparator.reverseOrder();
     return switch (data.expr()) {
       case DayRepeat dr -> {
-        LocalDate anchorDate = anchorDate(anchor, EPOCH_DATE);
-        LocalDate first =
-            from.plusDays(Math.floorMod(ChronoUnit.DAYS.between(from, anchorDate), dr.interval()));
-        yield Stream.iterate(first, d -> !d.isAfter(limit), d -> d.plusDays(dr.interval()))
-            .filter(d -> matchesDayFilter(d, dr.days()));
-      }
-      case IntervalRepeat ir ->
-          Stream.iterate(from, d -> !d.isAfter(limit), d -> d.plusDays(1))
-              .filter(d -> ir.dayFilter() == null || matchesDayFilter(d, ir.dayFilter()));
-      case WeekRepeat wr -> {
-        LocalDate anchorMonday = monday(anchorDate(anchor, EPOCH_MONDAY));
-        LocalDate week = monday(from);
-        long weeks = ChronoUnit.WEEKS.between(anchorMonday, week);
-        LocalDate first =
-            anchor != null && weeks < 0
-                ? anchorMonday
-                : week.plusWeeks(Math.floorMod(-weeks, wr.interval()));
-        List<Weekday> days =
-            wr.weekDays().stream().sorted(Comparator.comparing(Weekday::number)).toList();
-        yield Stream.iterate(first, w -> !w.isAfter(limit), w -> w.plusWeeks(wr.interval()))
-            .flatMap(w -> days.stream().map(wd -> w.plusDays(wd.number() - 1)));
-      }
-      case MonthRepeat mr -> {
-        // A nearest weekday can land in the month before or after its target month.
-        YearMonth anchorMonth = YearMonth.from(anchorDate(anchor, EPOCH_DATE));
-        YearMonth month = YearMonth.from(from).minusMonths(1);
-        YearMonth first =
-            month.plusMonths(
-                Math.floorMod(ChronoUnit.MONTHS.between(month, anchorMonth), mr.interval()));
+        LocalDate anchor = anchorDate(data.anchor(), EPOCH_DATE);
+        long toAligned = alignStep(ChronoUnit.DAYS.between(from, anchor), dr.interval(), sign);
         yield Stream.iterate(
-                first,
-                m -> !m.minusMonths(1).atEndOfMonth().isAfter(limit),
-                m -> m.plusMonths(mr.interval()))
-            .filter(m -> matchesDuring(m, data.during()))
-            .flatMap(m -> getTargetDaysInMonth(m, mr.target()).stream());
-      }
-      case SingleDate sd -> singleDates(sd, from.getYear(), limit.getYear());
-      case YearRepeat yr -> {
-        long anchorYear = anchorDate(anchor, EPOCH_DATE).getYear();
-        long first = from.getYear() + Math.floorMod(anchorYear - from.getYear(), yr.interval());
-        yield LongStream.iterate(first, y -> y <= limit.getYear(), y -> y + yr.interval())
-            .mapToObj(y -> getYearTargetDay((int) y, yr.target()))
-            .flatMap(Optional::stream);
-      }
-    };
-  }
-
-  /** Mirrors {@link #datesForward}: candidate dates from {@code from} down to {@code limit}. */
-  private static Stream<LocalDate> datesBackward(
-      ScheduleData data, LocalDate from, LocalDate limit) {
-    String anchor = data.anchor();
-    return switch (data.expr()) {
-      case DayRepeat dr -> {
-        LocalDate anchorDate = anchorDate(anchor, EPOCH_DATE);
-        LocalDate first =
-            from.minusDays(Math.floorMod(ChronoUnit.DAYS.between(anchorDate, from), dr.interval()));
-        yield Stream.iterate(first, d -> !d.isBefore(limit), d -> d.minusDays(dr.interval()))
+                from.plusDays(toAligned),
+                d -> order.compare(d, limit) <= 0,
+                d -> d.plusDays((long) sign * dr.interval()))
             .filter(d -> matchesDayFilter(d, dr.days()));
       }
       case IntervalRepeat ir ->
-          Stream.iterate(from, d -> !d.isBefore(limit), d -> d.minusDays(1))
+          Stream.iterate(from, d -> order.compare(d, limit) <= 0, d -> d.plusDays(sign))
               .filter(d -> ir.dayFilter() == null || matchesDayFilter(d, ir.dayFilter()));
       case WeekRepeat wr -> {
-        LocalDate anchorMonday = monday(anchorDate(anchor, EPOCH_MONDAY));
+        LocalDate anchorMonday = monday(anchorDate(data.anchor(), EPOCH_MONDAY));
         LocalDate week = monday(from);
-        LocalDate first =
-            week.minusWeeks(
-                Math.floorMod(ChronoUnit.WEEKS.between(anchorMonday, week), wr.interval()));
-        List<Weekday> days =
+        long toAligned =
+            alignStep(ChronoUnit.WEEKS.between(week, anchorMonday), wr.interval(), sign);
+        List<Integer> dayOffsets =
             wr.weekDays().stream()
-                .sorted(Comparator.comparing(Weekday::number).reversed())
+                .map(wd -> wd.number() - 1)
+                .sorted(forward ? Comparator.naturalOrder() : Comparator.reverseOrder())
                 .toList();
         yield Stream.iterate(
-                first, w -> !w.plusDays(6).isBefore(limit), w -> w.minusWeeks(wr.interval()))
-            .flatMap(w -> days.stream().map(wd -> w.plusDays(wd.number() - 1)));
+                week.plusWeeks(toAligned),
+                w -> order.compare(forward ? w : w.plusDays(6), limit) <= 0,
+                w -> w.plusWeeks((long) sign * wr.interval()))
+            .flatMap(w -> dayOffsets.stream().map(w::plusDays));
       }
       case MonthRepeat mr -> {
-        // A nearest weekday can land in the month before or after its target month.
-        YearMonth anchorMonth = YearMonth.from(anchorDate(anchor, EPOCH_DATE));
-        YearMonth month = YearMonth.from(from).plusMonths(1);
-        YearMonth first =
-            month.minusMonths(
-                Math.floorMod(ChronoUnit.MONTHS.between(anchorMonth, month), mr.interval()));
+        YearMonth anchorMonth = YearMonth.from(anchorDate(data.anchor(), EPOCH_DATE));
+        // A nearest weekday can land up to two days outside its target month.
+        YearMonth month = YearMonth.from(from).minusMonths(sign);
+        long toAligned =
+            alignStep(ChronoUnit.MONTHS.between(month, anchorMonth), mr.interval(), sign);
         yield Stream.iterate(
-                first,
-                m -> !m.plusMonths(1).atDay(1).isBefore(limit),
-                m -> m.minusMonths(mr.interval()))
+                month.plusMonths(toAligned),
+                m ->
+                    forward
+                        ? !m.atDay(1).minusDays(2).isAfter(limit)
+                        : !m.atEndOfMonth().plusDays(2).isBefore(limit),
+                m -> m.plusMonths((long) sign * mr.interval()))
             .filter(m -> matchesDuring(m, data.during()))
-            .flatMap(m -> getTargetDaysInMonth(m, mr.target()).reversed().stream());
+            .flatMap(m -> getTargetDaysInMonth(m, mr.target()).stream().sorted(order));
       }
-      case SingleDate sd -> singleDates(sd, from.getYear(), limit.getYear());
+      case SingleDate sd -> {
+        DateSpec spec = sd.dateSpec();
+        yield switch (spec.kind()) {
+          case ISO -> Stream.of(LocalDate.parse(spec.date()));
+          case NAMED ->
+              IntStream.iterate(
+                      from.getYear(), y -> y * sign <= limit.getYear() * sign, y -> y + sign)
+                  .mapToObj(y -> tryCreateDate(y, spec.month().number(), spec.day()))
+                  .filter(Objects::nonNull);
+        };
+      }
       case YearRepeat yr -> {
-        long anchorYear = anchorDate(anchor, EPOCH_DATE).getYear();
-        long first = from.getYear() - Math.floorMod(from.getYear() - anchorYear, yr.interval());
-        yield LongStream.iterate(first, y -> y >= limit.getYear(), y -> y - yr.interval())
+        long anchorYear = anchorDate(data.anchor(), EPOCH_DATE).getYear();
+        long first = from.getYear() + alignStep(anchorYear - from.getYear(), yr.interval(), sign);
+        yield LongStream.iterate(
+                first,
+                y -> y * sign <= (long) limit.getYear() * sign,
+                y -> y + (long) sign * yr.interval())
             .mapToObj(y -> getYearTargetDay((int) y, yr.target()))
             .flatMap(Optional::stream);
       }
     };
   }
 
-  /** The dates of a single date from year {@code from} to year {@code to}, in that order. */
-  private static Stream<LocalDate> singleDates(SingleDate sd, int from, int to) {
-    DateSpec spec = sd.dateSpec();
-    return switch (spec.kind()) {
-      case ISO -> Stream.of(LocalDate.parse(spec.date()));
-      case NAMED -> {
-        int step = from <= to ? 1 : -1;
-        yield IntStream.iterate(from, y -> y != to + step, y -> y + step)
-            .mapToObj(y -> tryCreateDate(y, spec.month().number(), spec.day()))
-            .filter(Objects::nonNull);
-      }
+  /**
+   * Returns the signed step to the nearest aligned unit in the search direction, given the offset
+   * to the anchor. Offsets before the anchor are negative multiples (floor, not truncation).
+   */
+  private static long alignStep(long offsetToAnchor, int interval, int sign) {
+    return sign * Math.floorMod(sign * offsetToAnchor, interval);
+  }
+
+  /** Returns the occurrence scheduled on day nearest to now in the search direction. */
+  private static Optional<ZonedDateTime> nearestOn(
+      ScheduleExpr expr, LocalDate day, ZoneId zone, ZonedDateTime now, boolean forward) {
+    return switch (expr) {
+      case IntervalRepeat ir -> nearestSlot(ir, day, zone, now, forward);
+      case DayRepeat dr -> nearestTime(dr.times(), day, zone, now, forward);
+      case WeekRepeat wr -> nearestTime(wr.times(), day, zone, now, forward);
+      case MonthRepeat mr -> nearestTime(mr.times(), day, zone, now, forward);
+      case SingleDate sd -> nearestTime(sd.times(), day, zone, now, forward);
+      case YearRepeat yr -> nearestTime(yr.times(), day, zone, now, forward);
     };
+  }
+
+  private static Optional<ZonedDateTime> nearestTime(
+      List<TimeOfDay> times, LocalDate day, ZoneId zone, ZonedDateTime now, boolean forward) {
+    Stream<ZonedDateTime> candidates =
+        times.stream()
+            .map(tod -> atTimeOnDate(day, tod, zone))
+            .filter(t -> forward ? t.isAfter(now) : t.isBefore(now));
+    Comparator<ZonedDateTime> byInstant = Comparator.comparing(ZonedDateTime::toInstant);
+    return forward ? candidates.min(byInstant) : candidates.max(byInstant);
+  }
+
+  /**
+   * Returns the interval slot on day nearest to now in the search direction. Placing a wall time at
+   * its earliest instant, or at the end of the gap it falls in, never goes back in time as the wall
+   * time advances, so a binary search finds the slot nearest to now; slots in a gap are then
+   * skipped.
+   */
+  private static Optional<ZonedDateTime> nearestSlot(
+      IntervalRepeat ir, LocalDate day, ZoneId zone, ZonedDateTime now, boolean forward) {
+    long from = ir.fromTime().totalMinutes();
+    long to = ir.toTime().totalMinutes();
+    long step = (long) ir.interval() * (ir.unit() == IntervalUnit.MINUTES ? 1 : 60);
+    if (to < from) {
+      return Optional.empty();
+    }
+    long lastIndex = (to - from) / step;
+
+    long low = 0;
+    long high = lastIndex + 1;
+    while (low < high) {
+      long mid = (low + high) / 2;
+      Instant t = instantOrGapEnd(day.atStartOfDay().plusMinutes(from + mid * step), zone);
+      if (forward ? t.isAfter(now.toInstant()) : !t.isBefore(now.toInstant())) {
+        high = mid;
+      } else {
+        low = mid + 1;
+      }
+    }
+
+    int direction = forward ? 1 : -1;
+    for (long k = forward ? low : low - 1; k >= 0 && k <= lastIndex; k += direction) {
+      Optional<ZonedDateTime> slot = intervalSlot(day, from + k * step, zone);
+      if (slot.isPresent()) {
+        return slot;
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static Instant instantOrGapEnd(LocalDateTime wallTime, ZoneId zone) {
+    ZoneRules rules = zone.getRules();
+    return rules.getValidOffsets(wallTime).isEmpty()
+        ? rules.getTransition(wallTime).getInstant()
+        : ZonedDateTime.of(wallTime, zone).toInstant();
+  }
+
+  private static LocalDate min(LocalDate a, LocalDate b) {
+    return a.isBefore(b) ? a : b;
+  }
+
+  private static LocalDate max(LocalDate a, LocalDate b) {
+    return a.isAfter(b) ? a : b;
   }
 
   private static LocalDate anchorDate(String anchor, LocalDate defaultAnchor) {
@@ -559,14 +410,10 @@ public final class Evaluator {
     return date.minusDays(date.getDayOfWeek().getValue() - 1);
   }
 
-  private static int intervalStep(IntervalRepeat ir) {
-    return ir.interval() * (ir.unit() == IntervalUnit.MINUTES ? 1 : 60);
-  }
-
   /** Returns the interval slot at a wall-clock minute, or empty if a DST gap skips it. */
   private static Optional<ZonedDateTime> intervalSlot(
-      LocalDate date, int minuteOfDay, ZoneId location) {
-    LocalDateTime slot = date.atTime(minuteOfDay / 60, minuteOfDay % 60);
+      LocalDate date, long minuteOfDay, ZoneId location) {
+    LocalDateTime slot = date.atStartOfDay().plusMinutes(minuteOfDay);
     if (location.getRules().getValidOffsets(slot).isEmpty()) {
       return Optional.empty();
     }
@@ -730,19 +577,6 @@ public final class Evaluator {
         }
       }
       case LAST_WEEKDAY -> Optional.of(lastWeekdayOfMonth(year, target.month().toMonth()));
-    };
-  }
-
-  private static LocalDate resolveDate(DateSpec spec, LocalDate now) {
-    return switch (spec.kind()) {
-      case ISO -> LocalDate.parse(spec.date());
-      case NAMED -> {
-        LocalDate d = tryCreateDate(now.getYear(), spec.month().number(), spec.day());
-        if (d == null || d.isBefore(now)) {
-          d = tryCreateDate(now.getYear() + 1, spec.month().number(), spec.day());
-        }
-        yield d;
-      }
     };
   }
 

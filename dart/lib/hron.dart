@@ -61,7 +61,8 @@ class Schedule {
   TZDateTime? previousFrom(TZDateTime now) =>
       eval_impl.previousFrom(_data, now);
 
-  /// Returns `true` if [datetime] matches this schedule.
+  /// Returns `true` if the minute containing [datetime] is an occurrence
+  /// (seconds are ignored).
   bool matches(TZDateTime datetime) => eval_impl.matches(_data, datetime);
 
   /// Returns a lazy iterable of occurrences strictly after [from].

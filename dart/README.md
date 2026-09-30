@@ -51,6 +51,8 @@ import 'package:timezone/data/latest.dart' as tz;
 tz.initializeTimeZones();
 ```
 
+`latest.dart` does not include link names such as `Europe/Amsterdam` or `US/Eastern`; use `package:timezone/data/latest_all.dart` for those. The `timezone` data has no DST rules after 2037, so later dates keep the offset of each zone's last 2037 transition (standard time in `America/New_York`, daylight time in `Australia/Sydney`).
+
 ## Tests
 
 ```sh

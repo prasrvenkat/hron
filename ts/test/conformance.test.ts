@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
-import { Schedule } from "../src/index.js";
+import { HronError, Schedule } from "../src/index.js";
 
 const specPath = resolve(__dirname, "../../spec/tests.json");
 const spec = JSON.parse(readFileSync(specPath, "utf-8"));
@@ -73,6 +73,12 @@ function checkFields(tc: SpecCase, fields: string[]): void {
   expect(unchecked, "fields this runner does not check").toEqual([]);
 }
 
+// A missing or non-integer count would make an iterator loop run forever.
+function integer(value: unknown, label: string): number {
+  expect(Number.isInteger(value), `${label} is an integer`).toBe(true);
+  return value as number;
+}
+
 function show(t: Temporal.ZonedDateTime | null): string | null {
   return t === null ? null : t.toString();
 }
@@ -102,11 +108,12 @@ function checkNext(tc: SpecCase): void {
     expect(date, "next_date").toBe(tc.next_date);
   }
   if ("next_n" in tc) {
-    const n = tc.next_n_count ?? tc.next_n.length;
+    const n = integer(tc.next_n_count ?? tc.next_n.length, "next_n_count");
     expect(schedule.nextNFrom(now, n).map(show), "next_n").toEqual(tc.next_n);
   }
   if ("next_n_length" in tc) {
-    const results = schedule.nextNFrom(now, tc.next_n_count);
+    const n = integer(tc.next_n_count, "next_n_count");
+    const results = schedule.nextNFrom(now, n);
     expect(results.length, "next_n_length").toBe(tc.next_n_length);
   }
 }
@@ -128,10 +135,11 @@ function checkPreviousFrom(tc: SpecCase): void {
 function checkOccurrences(tc: SpecCase): void {
   checkFields(tc, ["expression", "from", "take", "expected"]);
   expect(Array.isArray(tc.expected), "expected is a list").toBe(true);
+  const take = integer(tc.take, "take");
   const schedule = Schedule.parse(tc.expression);
   const taken: (string | null)[] = [];
   for (const t of schedule.occurrences(parseZoned(tc.from))) {
-    if (taken.length >= tc.take) break;
+    if (taken.length >= take) break;
     taken.push(show(t));
   }
   expect(taken).toEqual(tc.expected);
@@ -198,7 +206,16 @@ describe("parse errors", () => {
     const name = tc.name ?? tc.input;
     it(name, () => {
       checkFields(tc, ["input", "error_contains"]);
-      expect(() => Schedule.parse(tc.input)).toThrow(tc.error_contains ?? "");
+      let error: unknown = null;
+      try {
+        Schedule.parse(tc.input);
+      } catch (e) {
+        error = e;
+      }
+      expect(error, "a HronError").toBeInstanceOf(HronError);
+      if ("error_contains" in tc) {
+        expect((error as HronError).message).toContain(tc.error_contains);
+      }
     });
   }
 });
@@ -350,7 +367,8 @@ describe("invariants", () => {
       for (const [rule, check] of Object.entries(invariantRules)) {
         it(rule, () => {
           const schedule = Schedule.parse(tc.expression);
-          check(schedule, parseZoned(tc.now), spec.invariants.count);
+          const count = integer(spec.invariants.count, "invariants.count");
+          check(schedule, parseZoned(tc.now), count);
         });
       }
     });

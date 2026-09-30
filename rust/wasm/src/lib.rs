@@ -1,5 +1,20 @@
 use wasm_bindgen::prelude::*;
 
+/// A well-formed timestamp beyond what jiff can represent becomes jiff's nearest
+/// extreme, which is also outside the supported range, so every method returns
+/// nothing for it instead of throwing (spec/README.md, "Supported range").
+fn parse_zoned(s: &str) -> Result<jiff::Zoned, JsError> {
+    s.parse::<jiff::Zoned>().or_else(|e| {
+        let civil: jiff::civil::DateTime = s.parse().map_err(|_| JsError::new(&e.to_string()))?;
+        let extreme = match civil.year() {
+            ..=1 => jiff::Timestamp::MIN,
+            9999.. => jiff::Timestamp::MAX,
+            _ => return Err(JsError::new(&e.to_string())),
+        };
+        Ok(extreme.to_zoned(jiff::tz::TimeZone::UTC))
+    })
+}
+
 /// A parsed hron schedule, usable from JavaScript.
 #[wasm_bindgen]
 pub struct Schedule {
@@ -18,9 +33,7 @@ impl Schedule {
     /// Compute the next occurrence strictly after `now`.
     #[wasm_bindgen(js_name = "nextFrom")]
     pub fn next_from(&self, now: &str) -> Result<Option<String>, JsError> {
-        let now: jiff::Zoned = now
-            .parse()
-            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let now = parse_zoned(now)?;
         let result = self
             .inner
             .next_from(&now)
@@ -31,9 +44,7 @@ impl Schedule {
     /// Compute the next `n` occurrences strictly after `now`.
     #[wasm_bindgen(js_name = "nextNFrom")]
     pub fn next_n_from(&self, now: &str, n: u32) -> Result<JsValue, JsError> {
-        let now: jiff::Zoned = now
-            .parse()
-            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let now = parse_zoned(now)?;
         let results = self
             .inner
             .next_n_from(&now, n as usize)
@@ -45,9 +56,7 @@ impl Schedule {
     /// Compute the most recent occurrence strictly before `now`.
     #[wasm_bindgen(js_name = "previousFrom")]
     pub fn previous_from(&self, now: &str) -> Result<Option<String>, JsError> {
-        let now: jiff::Zoned = now
-            .parse()
-            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let now = parse_zoned(now)?;
         let result = self
             .inner
             .previous_from(&now)
@@ -57,9 +66,7 @@ impl Schedule {
 
     /// Check whether the minute containing `datetime` is an occurrence (seconds are ignored).
     pub fn matches(&self, datetime: &str) -> Result<bool, JsError> {
-        let dt: jiff::Zoned = datetime
-            .parse()
-            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let dt = parse_zoned(datetime)?;
         self.inner
             .matches(&dt)
             .map_err(|e| JsError::new(&e.to_string()))
@@ -99,9 +106,7 @@ impl Schedule {
     /// Returns occurrences strictly after `from`, limited to `limit` results.
     /// Returns an array of datetime strings.
     pub fn occurrences(&self, from: &str, limit: u32) -> Result<JsValue, JsError> {
-        let from: jiff::Zoned = from
-            .parse()
-            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let from = parse_zoned(from)?;
         let results: Vec<String> = self
             .inner
             .occurrences(&from)
@@ -115,12 +120,8 @@ impl Schedule {
     /// Returns occurrences in the range (from, to], where from is exclusive and to is inclusive.
     /// Returns an array of datetime strings.
     pub fn between(&self, from: &str, to: &str) -> Result<JsValue, JsError> {
-        let from: jiff::Zoned = from
-            .parse()
-            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
-        let to: jiff::Zoned = to
-            .parse()
-            .map_err(|e: jiff::Error| JsError::new(&format!("{e}")))?;
+        let from = parse_zoned(from)?;
+        let to = parse_zoned(to)?;
         let results: Vec<String> = self
             .inner
             .between(&from, &to)

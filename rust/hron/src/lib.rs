@@ -50,8 +50,9 @@ impl Schedule {
     /// Compute the next occurrence strictly after `now`.
     ///
     /// Returns `Ok(None)` when there are no future occurrences (e.g., past the
-    /// `until` date). Returns `Err` on evaluation errors such as invalid
-    /// timezone or date arithmetic overflow.
+    /// `until` date), and when `now` or the occurrence is outside the supported
+    /// range, 0001-01-02T00:00Z up to 9999-12-30T00:00Z. Returns `Err` for an
+    /// invalid timezone.
     ///
     /// A fixed time in a DST spring-forward gap shifts forward by the length of
     /// the gap (02:30 becomes 03:30), while an interval slot in the gap is
@@ -94,7 +95,7 @@ impl Schedule {
 
     /// Compute the most recent occurrence strictly before `now`.
     ///
-    /// Returns `Ok(None)` when there is no earlier occurrence.
+    /// Returns `Ok(None)` when there is no earlier occurrence in the supported range.
     ///
     /// # Examples
     ///
@@ -111,7 +112,8 @@ impl Schedule {
     }
 
     /// Check whether the minute containing `datetime` is an occurrence of this
-    /// schedule. Seconds are ignored, so 09:00:30 matches `every day at 09:00`.
+    /// schedule. Seconds on the schedule's wall clock are ignored, so 09:00:30
+    /// matches `every day at 09:00`. False outside the supported range.
     ///
     /// # Examples
     ///

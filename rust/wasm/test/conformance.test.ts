@@ -140,6 +140,7 @@ describe("eval", () => {
           }
 
           if ("next_n_length" in tc) {
+            expect("next_n_count" in tc, "next_n_length needs next_n_count").toBe(true);
             const expectedLen: number = tc.next_n_length;
             const nCount: number = tc.next_n_count;
             const results = schedule.nextNFrom(now, nCount) as string[];

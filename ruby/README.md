@@ -90,8 +90,8 @@ The underlying schedule expression AST.
 
 ## Requirements
 
-- Ruby >= 3.2
-- TZInfo gem for timezone support
+- Ruby >= 4.0
+- TZInfo gem for timezone support. TZInfo projects DST rules only about 100 years ahead, so times further out use standard time.
 
 ## License
 

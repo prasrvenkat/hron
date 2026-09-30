@@ -20,9 +20,21 @@ fn default_now() -> jiff::Zoned {
         .expect("invalid 'now' timestamp")
 }
 
+/// A well-formed timestamp beyond what jiff can represent (the spec pins some
+/// just past the supported range) becomes jiff's nearest extreme, which is also
+/// outside the supported range, so the case checks the same behaviour.
 fn parse_zoned(s: &str) -> jiff::Zoned {
-    s.parse()
-        .unwrap_or_else(|e| panic!("bad timestamp '{s}': {e}"))
+    s.parse().unwrap_or_else(|e| {
+        let civil: jiff::civil::DateTime = s
+            .parse()
+            .unwrap_or_else(|_| panic!("bad timestamp '{s}': {e}"));
+        let extreme = match civil.year() {
+            ..=1 => jiff::Timestamp::MIN,
+            9999.. => jiff::Timestamp::MAX,
+            _ => panic!("bad timestamp '{s}': {e}"),
+        };
+        extreme.to_zoned(jiff::tz::TimeZone::UTC)
+    })
 }
 
 /// Fails on a field this runner does not check, and on a case with none of the
@@ -166,7 +178,10 @@ fn run_eval(section: &str, index: usize) {
 
     if let Some(expected_len) = case.get("next_n_length") {
         let expected = expected_len.as_u64().unwrap() as usize;
-        let n_count = case["next_n_count"].as_u64().unwrap() as usize;
+        let n_count = case["next_n_count"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("next_n_length needs next_n_count for '{expr_str}'"))
+            as usize;
         let results = schedule
             .next_n_from(&now, n_count)
             .unwrap_or_else(|e| panic!("next_n_from error for '{expr_str}': {e}"));
