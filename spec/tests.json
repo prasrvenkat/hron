@@ -1481,6 +1481,13 @@
           "description": "1969-06-05 is 210 days before 1970-01-01 (210 mod 7 = 0), so it is aligned",
           "now": "1969-06-01T00:00:00+00:00[UTC]",
           "next": "1969-06-05T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_365_days_during_feb_horizon",
+          "expression": "every 365 days at 09:00 during feb in UTC",
+          "description": "365-day steps drift 0.2425 days a year against the calendar; the next aligned day in February is 3232-02-29",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "3232-02-29T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -1911,6 +1918,13 @@
           "next_n": [
             "2026-02-27T09:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "every_11_months_fifth_friday_during_feb_horizon",
+          "expression": "every 11 months on the fifth friday at 09:00 during feb in UTC",
+          "description": "a fifth Friday in February needs a leap year starting on Friday and an aligned month (Feb offset divisible by 11): next is 2464-02-29",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2464-02-29T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2002,20 +2016,6 @@
           ]
         },
         {
-          "name": "biweekly_matches_aligned",
-          "expression": "every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC",
-          "datetime": "2026-02-16T09:00:00+00:00[UTC]",
-          "expected": true,
-          "description": "Feb 16 is an aligned biweekly Monday"
-        },
-        {
-          "name": "biweekly_matches_not_aligned",
-          "expression": "every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC",
-          "datetime": "2026-02-09T09:00:00+00:00[UTC]",
-          "expected": false,
-          "description": "Feb 9 is a Monday but not aligned to the biweekly cycle"
-        },
-        {
           "name": "every_week_singular",
           "expression": "every week on monday at 09:00 in UTC",
           "description": "every week on monday is equivalent to every 1 weeks on monday",
@@ -2047,6 +2047,13 @@
             "2026-02-18T14:00:00+00:00[UTC]",
             "2026-02-25T14:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "every_52_weeks_during_feb_horizon",
+          "expression": "every 52 weeks on monday at 09:00 during feb in UTC",
+          "description": "52-week steps drift about 1.24 days a year; the next aligned Monday in February is 2220-02-28",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2220-02-28T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2120,27 +2127,6 @@
           ]
         },
         {
-          "name": "iso_date_matches_true",
-          "expression": "on 2026-03-15 at 09:00 in UTC",
-          "datetime": "2026-03-15T09:00:00+00:00[UTC]",
-          "expected": true,
-          "description": "exact match on ISO date and time"
-        },
-        {
-          "name": "iso_date_matches_wrong_date",
-          "expression": "on 2026-03-15 at 09:00 in UTC",
-          "datetime": "2026-03-14T09:00:00+00:00[UTC]",
-          "expected": false,
-          "description": "wrong date does not match"
-        },
-        {
-          "name": "iso_date_matches_wrong_time",
-          "expression": "on 2026-03-15 at 09:00 in UTC",
-          "datetime": "2026-03-15T17:00:00+00:00[UTC]",
-          "expected": false,
-          "description": "right date but wrong time does not match"
-        },
-        {
           "name": "named_date_with_timezone",
           "expression": "on mar 15 at 09:00 in America/New_York",
           "description": "named date in specific timezone (EDT in March)",
@@ -2150,6 +2136,13 @@
             "2027-03-15T09:00:00-04:00[America/New_York]",
             "2028-03-15T09:00:00-04:00[America/New_York]"
           ]
+        },
+        {
+          "name": "iso_date_far_future",
+          "expression": "on 2500-01-01 at 09:00 in UTC",
+          "description": "an ISO date 474 years ahead is found",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2500-01-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2305,6 +2298,20 @@
           "expression": "every 11 years on the fifth sunday of february at 09:00 in UTC",
           "description": "Year interval 11 repeats every lcm(400, 11) years; the next occurrence is 406 years ahead",
           "next": "2432-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_9000_years_beyond_9999",
+          "expression": "every 9000 years on jan 1 at 09:00 in UTC",
+          "description": "the next aligned year is 1970 + 9000 = 10970, outside years 1-9999, so null",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "every_8000_years_near_9999",
+          "expression": "every 8000 years on jan 1 at 09:00 in UTC",
+          "description": "1970 + 8000 = 9970 is inside the supported range",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "9970-01-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -3788,6 +3795,146 @@
           "description": "1968 is aligned with the 1970 epoch for every 2 years",
           "datetime": "1968-01-01T09:00:00+00:00[UTC]",
           "expected": true
+        },
+        {
+          "name": "biweekly_matches_aligned",
+          "expression": "every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC",
+          "datetime": "2026-02-16T09:00:00+00:00[UTC]",
+          "expected": true,
+          "description": "Feb 16 is an aligned biweekly Monday"
+        },
+        {
+          "name": "biweekly_matches_not_aligned",
+          "expression": "every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC",
+          "datetime": "2026-02-09T09:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "Feb 9 is a Monday but not aligned to the biweekly cycle"
+        },
+        {
+          "name": "iso_date_matches_true",
+          "expression": "on 2026-03-15 at 09:00 in UTC",
+          "datetime": "2026-03-15T09:00:00+00:00[UTC]",
+          "expected": true,
+          "description": "exact match on ISO date and time"
+        },
+        {
+          "name": "iso_date_matches_wrong_date",
+          "expression": "on 2026-03-15 at 09:00 in UTC",
+          "datetime": "2026-03-14T09:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "wrong date does not match"
+        },
+        {
+          "name": "iso_date_matches_wrong_time",
+          "expression": "on 2026-03-15 at 09:00 in UTC",
+          "datetime": "2026-03-15T17:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "right date but wrong time does not match"
+        },
+        {
+          "name": "feb_29_matches_true",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "datetime": "2028-02-29T09:00:00+00:00[UTC]",
+          "expected": true,
+          "description": "matches on an actual Feb 29 at the right time"
+        },
+        {
+          "name": "feb_29_matches_non_leap_year",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "datetime": "2026-02-28T09:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "Feb 28 in a non-leap year does not match a Feb 29 schedule"
+        },
+        {
+          "name": "feb_29_matches_wrong_time",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "datetime": "2028-02-29T17:00:00+00:00[UTC]",
+          "expected": false,
+          "description": "correct date but wrong time does not match"
+        },
+        {
+          "name": "matches_spring_forward_pushed_time",
+          "expression": "every day at 02:30 in America/New_York",
+          "datetime": "2026-03-08T03:30:00-04:00[America/New_York]",
+          "expected": true,
+          "description": "pushed time 03:30 on spring-forward day matches schedule for 02:30"
+        },
+        {
+          "name": "matches_spring_forward_normal_day_after",
+          "expression": "every day at 02:30 in America/New_York",
+          "datetime": "2026-03-09T02:30:00-04:00[America/New_York]",
+          "expected": true,
+          "description": "normal 02:30 EDT on the day after spring-forward matches"
+        },
+        {
+          "name": "matches_fall_back_est",
+          "expression": "every day at 01:30 in America/New_York",
+          "datetime": "2026-11-02T01:30:00-05:00[America/New_York]",
+          "expected": true,
+          "description": "01:30 EST (after fall-back transition) matches"
+        },
+        {
+          "name": "dst_gap_nuuk_shifted_to_next_date",
+          "expression": "every day at 23:30 in America/Nuuk",
+          "description": "Nuuk: Mar 29 00:30 is the shifted occurrence of Mar 28 23:30",
+          "datetime": "2026-03-29T00:30:00-01:00[America/Nuuk]",
+          "expected": true
+        },
+        {
+          "name": "dst_gap_nuuk_interval_slot_not_shifted",
+          "expression": "every 30 min from 22:00 to 23:30 in America/Nuuk",
+          "description": "Nuuk: skipped interval slot 23:30 is not moved to Mar 29 00:30",
+          "datetime": "2026-03-29T00:30:00-01:00[America/Nuuk]",
+          "expected": false
+        },
+        {
+          "name": "dst_gap_santiago_midnight_shifted",
+          "expression": "every day at 00:30 in America/Santiago",
+          "description": "Santiago: Sep 6 01:30 is the shifted occurrence of 00:30",
+          "datetime": "2026-09-06T01:30:00-03:00[America/Santiago]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_santiago_first_pass",
+          "expression": "every day at 23:30 in America/Santiago",
+          "description": "Santiago: 23:30 -03:00 on Apr 4 is the occurrence",
+          "datetime": "2026-04-04T23:30:00-03:00[America/Santiago]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_santiago_second_pass",
+          "expression": "every day at 23:30 in America/Santiago",
+          "description": "Santiago: the repeated 23:30 -04:00 on Apr 4 is not an occurrence",
+          "datetime": "2026-04-04T23:30:00-04:00[America/Santiago]",
+          "expected": false
+        },
+        {
+          "name": "dst_gap_havana_midnight_shifted",
+          "expression": "every day at 00:30 in America/Havana",
+          "description": "Havana: Mar 8 01:30 is the shifted occurrence of 00:30",
+          "datetime": "2026-03-08T01:30:00-04:00[America/Havana]",
+          "expected": true
+        },
+        {
+          "name": "dst_fall_back_havana_second_pass",
+          "expression": "every day at 00:30 in America/Havana",
+          "description": "Havana: the repeated 00:30 -05:00 on Nov 1 is not an occurrence",
+          "datetime": "2026-11-01T00:30:00-05:00[America/Havana]",
+          "expected": false
+        },
+        {
+          "name": "dst_gap_nuuk_shifted_removed_by_scheduled_date_except",
+          "expression": "every day at 23:30 except mar 28 in America/Nuuk",
+          "description": "except mar 28 removes the occurrence scheduled on Mar 28, so its shifted time Mar 29 00:30 does not match",
+          "datetime": "2026-03-29T00:30:00-01:00[America/Nuuk]",
+          "expected": false
+        },
+        {
+          "name": "dst_gap_nuuk_shifted_not_removed_by_landing_date_except",
+          "expression": "every day at 23:30 except mar 29 in America/Nuuk",
+          "description": "except mar 29 does not remove the occurrence scheduled on Mar 28, so Mar 29 00:30 matches",
+          "datetime": "2026-03-29T00:30:00-01:00[America/Nuuk]",
+          "expected": true
         }
       ]
     },
@@ -3839,25 +3986,18 @@
           ]
         },
         {
-          "name": "feb_29_matches_true",
+          "name": "feb_29_skips_2100",
           "expression": "on feb 29 at 09:00 in UTC",
-          "datetime": "2028-02-29T09:00:00+00:00[UTC]",
-          "expected": true,
-          "description": "matches on an actual Feb 29 at the right time"
+          "description": "2100 is not a leap year: after 2096 the next Feb 29 is in 2104",
+          "now": "2097-01-01T00:00:00+00:00[UTC]",
+          "next": "2104-02-29T09:00:00+00:00[UTC]"
         },
         {
-          "name": "feb_29_matches_non_leap_year",
-          "expression": "on feb 29 at 09:00 in UTC",
-          "datetime": "2026-02-28T09:00:00+00:00[UTC]",
-          "expected": false,
-          "description": "Feb 28 in a non-leap year does not match a Feb 29 schedule"
-        },
-        {
-          "name": "feb_29_matches_wrong_time",
-          "expression": "on feb 29 at 09:00 in UTC",
-          "datetime": "2028-02-29T17:00:00+00:00[UTC]",
-          "expected": false,
-          "description": "correct date but wrong time does not match"
+          "name": "yearly_feb_29_skips_2100",
+          "expression": "every year on feb 29 at 09:00 in UTC",
+          "description": "2100 is not a leap year: every year on feb 29 goes from 2096 to 2104",
+          "now": "2097-01-01T00:00:00+00:00[UTC]",
+          "next": "2104-02-29T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -3928,20 +4068,6 @@
             "2026-03-10T02:30:00-04:00[America/New_York]",
             "2026-03-11T02:30:00-04:00[America/New_York]"
           ]
-        },
-        {
-          "name": "matches_spring_forward_pushed_time",
-          "expression": "every day at 02:30 in America/New_York",
-          "datetime": "2026-03-08T03:30:00-04:00[America/New_York]",
-          "expected": true,
-          "description": "pushed time 03:30 on spring-forward day matches schedule for 02:30"
-        },
-        {
-          "name": "matches_spring_forward_normal_day_after",
-          "expression": "every day at 02:30 in America/New_York",
-          "datetime": "2026-03-09T02:30:00-04:00[America/New_York]",
-          "expected": true,
-          "description": "normal 02:30 EDT on the day after spring-forward matches"
         },
         {
           "name": "weekday_spring_forward_sequence",
@@ -4065,6 +4191,157 @@
             "2026-10-04T04:00:00+11:00[Australia/Sydney]",
             "2026-10-05T01:00:00+11:00[Australia/Sydney]"
           ]
+        },
+        {
+          "name": "nuuk_gap_before_midnight_shifts_to_next_date",
+          "expression": "every day at 23:30 in America/Nuuk",
+          "description": "Nuuk springs forward 23:00 -> 00:00 on Mar 28; 23:30 shifts one hour to 00:30 on Mar 29",
+          "now": "2026-03-28T12:00:00-02:00[America/Nuuk]",
+          "next_n": [
+            "2026-03-29T00:30:00-01:00[America/Nuuk]",
+            "2026-03-29T23:30:00-01:00[America/Nuuk]",
+            "2026-03-30T23:30:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "nuuk_weekly_shift_lands_on_next_weekday",
+          "expression": "every saturday at 23:30 in America/Nuuk",
+          "description": "Saturday Mar 28 23:30 does not exist in Nuuk; the occurrence is Sunday Mar 29 00:30",
+          "now": "2026-03-28T12:00:00-02:00[America/Nuuk]",
+          "next": "2026-03-29T00:30:00-01:00[America/Nuuk]"
+        },
+        {
+          "name": "nuuk_shifted_time_after_listed_time_on_next_date",
+          "expression": "every day at 00:15, 23:30 in America/Nuuk",
+          "description": "Mar 28 23:30 shifts to Mar 29 00:30, after Mar 29's own 00:15; both are returned in instant order",
+          "now": "2026-03-28T12:00:00-02:00[America/Nuuk]",
+          "next_n": [
+            "2026-03-29T00:15:00-01:00[America/Nuuk]",
+            "2026-03-29T00:30:00-01:00[America/Nuuk]",
+            "2026-03-29T23:30:00-01:00[America/Nuuk]",
+            "2026-03-30T00:15:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "nuuk_shifted_time_equals_listed_time_on_next_date",
+          "expression": "every day at 00:30, 23:30 in America/Nuuk",
+          "description": "Mar 28 23:30 shifts to Mar 29 00:30, the same instant as Mar 29's own 00:30; it is returned once",
+          "now": "2026-03-28T12:00:00-02:00[America/Nuuk]",
+          "next_n": [
+            "2026-03-29T00:30:00-01:00[America/Nuuk]",
+            "2026-03-29T23:30:00-01:00[America/Nuuk]",
+            "2026-03-30T00:30:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "nuuk_interval_gap_before_midnight",
+          "expression": "every 30 min from 22:00 to 23:30 in America/Nuuk",
+          "description": "interval slots 23:00 and 23:30 on Mar 28 do not exist in Nuuk and are skipped",
+          "now": "2026-03-28T21:00:00-02:00[America/Nuuk]",
+          "next_n": [
+            "2026-03-28T22:00:00-02:00[America/Nuuk]",
+            "2026-03-28T22:30:00-02:00[America/Nuuk]",
+            "2026-03-29T22:00:00-01:00[America/Nuuk]",
+            "2026-03-29T22:30:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "santiago_midnight_gap",
+          "expression": "every day at 00:30 in America/Santiago",
+          "description": "Santiago springs forward 00:00 -> 01:00 on Sep 6; 00:30 shifts to 01:30",
+          "now": "2026-09-05T12:00:00-04:00[America/Santiago]",
+          "next_n": [
+            "2026-09-06T01:30:00-03:00[America/Santiago]",
+            "2026-09-07T00:30:00-03:00[America/Santiago]"
+          ]
+        },
+        {
+          "name": "santiago_midnight_does_not_exist",
+          "expression": "every day at 00:00 in America/Santiago",
+          "description": "midnight itself does not exist on Sep 6 in Santiago; 00:00 shifts to 01:00",
+          "now": "2026-09-05T12:00:00-04:00[America/Santiago]",
+          "next_n": [
+            "2026-09-06T01:00:00-03:00[America/Santiago]",
+            "2026-09-07T00:00:00-03:00[America/Santiago]"
+          ]
+        },
+        {
+          "name": "santiago_interval_midnight_gap",
+          "expression": "every 30 min from 00:00 to 02:00 in America/Santiago",
+          "description": "interval slots 00:00 and 00:30 on Sep 6 do not exist and are skipped; 01:00 follows the previous day",
+          "now": "2026-09-05T23:00:00-04:00[America/Santiago]",
+          "next_n": [
+            "2026-09-06T01:00:00-03:00[America/Santiago]",
+            "2026-09-06T01:30:00-03:00[America/Santiago]",
+            "2026-09-06T02:00:00-03:00[America/Santiago]",
+            "2026-09-07T00:00:00-03:00[America/Santiago]"
+          ]
+        },
+        {
+          "name": "havana_midnight_gap",
+          "expression": "every day at 00:00 in America/Havana",
+          "description": "Havana springs forward 00:00 -> 01:00 on Mar 8; 00:00 shifts to 01:00",
+          "now": "2026-03-07T12:00:00-05:00[America/Havana]",
+          "next_n": [
+            "2026-03-08T01:00:00-04:00[America/Havana]",
+            "2026-03-09T00:00:00-04:00[America/Havana]"
+          ]
+        },
+        {
+          "name": "havana_interval_midnight_gap",
+          "expression": "every 20 min from 00:00 to 01:00 in America/Havana",
+          "description": "interval slots 00:00, 00:20, 00:40 on Mar 8 do not exist and are skipped; 01:00 is kept",
+          "now": "2026-03-07T23:00:00-05:00[America/Havana]",
+          "next_n": [
+            "2026-03-08T01:00:00-04:00[America/Havana]",
+            "2026-03-09T00:00:00-04:00[America/Havana]",
+            "2026-03-09T00:20:00-04:00[America/Havana]",
+            "2026-03-09T00:40:00-04:00[America/Havana]"
+          ]
+        },
+        {
+          "name": "nuuk_shifted_keeps_scheduled_date_for_named_except",
+          "expression": "every day at 23:30 except mar 28 in America/Nuuk",
+          "description": "Mar 28 23:30 would shift to Mar 29 00:30, but it is scheduled on Mar 28, so except mar 28 removes it",
+          "now": "2026-03-27T12:00:00-02:00[America/Nuuk]",
+          "next_n": [
+            "2026-03-27T23:30:00-02:00[America/Nuuk]",
+            "2026-03-29T23:30:00-01:00[America/Nuuk]",
+            "2026-03-30T23:30:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "nuuk_shifted_keeps_scheduled_date_for_iso_except",
+          "expression": "every day at 23:30 except 2026-03-28 in America/Nuuk",
+          "description": "Mar 28 23:30 is scheduled on 2026-03-28, so except 2026-03-28 removes the shifted Mar 29 00:30",
+          "now": "2026-03-27T12:00:00-02:00[America/Nuuk]",
+          "next_n": [
+            "2026-03-27T23:30:00-02:00[America/Nuuk]",
+            "2026-03-29T23:30:00-01:00[America/Nuuk]",
+            "2026-03-30T23:30:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "nuuk_shifted_not_removed_by_landing_date_except",
+          "expression": "every day at 23:30 except mar 29 in America/Nuuk",
+          "description": "except mar 29 removes Mar 29 23:30 but not the shifted Mar 29 00:30, which is scheduled on Mar 28",
+          "now": "2026-03-28T12:00:00-02:00[America/Nuuk]",
+          "next_n": [
+            "2026-03-29T00:30:00-01:00[America/Nuuk]",
+            "2026-03-30T23:30:00-01:00[America/Nuuk]",
+            "2026-03-31T23:30:00-01:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "nuuk_shifted_kept_by_until_scheduled_date",
+          "expression": "every day at 23:30 until 2026-03-28 in America/Nuuk",
+          "description": "until 2026-03-28 keeps the Mar 28 occurrence although it lands on Mar 29 00:30; it is the last one",
+          "now": "2026-03-27T12:00:00-02:00[America/Nuuk]",
+          "next_n_count": 3,
+          "next_n": [
+            "2026-03-27T23:30:00-02:00[America/Nuuk]",
+            "2026-03-29T00:30:00-01:00[America/Nuuk]"
+          ]
         }
       ]
     },
@@ -4144,13 +4421,6 @@
             "2026-11-07T01:30:00-05:00[America/New_York]",
             "2026-11-08T01:30:00-05:00[America/New_York]"
           ]
-        },
-        {
-          "name": "matches_fall_back_est",
-          "expression": "every day at 01:30 in America/New_York",
-          "datetime": "2026-11-02T01:30:00-05:00[America/New_York]",
-          "expected": true,
-          "description": "01:30 EST (after fall-back transition) matches"
         },
         {
           "name": "weekday_across_fall_back",
@@ -4312,6 +4582,75 @@
           "description": "Lord Howe now 01:40 +10:30 (second pass): 01:45 +11:00 already happened",
           "now": "2026-04-05T01:40:00+10:30[Australia/Lord_Howe]",
           "next": "2026-04-06T01:45:00+10:30[Australia/Lord_Howe]"
+        },
+        {
+          "name": "nuuk_overlap_before_midnight",
+          "expression": "every day at 23:30 in America/Nuuk",
+          "description": "Nuuk falls back 24:00 -> 23:00 on Oct 24; 23:30 resolves to the first pass (-01:00)",
+          "now": "2026-10-24T12:00:00-01:00[America/Nuuk]",
+          "next_n": [
+            "2026-10-24T23:30:00-01:00[America/Nuuk]",
+            "2026-10-25T23:30:00-02:00[America/Nuuk]"
+          ]
+        },
+        {
+          "name": "santiago_fall_back_date_moves_backward",
+          "expression": "every day at 23:30 in America/Santiago",
+          "description": "Santiago falls back from Apr 5 00:00 to Apr 4 23:00; 23:30 on Apr 4 resolves to the first pass (-03:00)",
+          "now": "2026-04-04T12:00:00-03:00[America/Santiago]",
+          "next_n": [
+            "2026-04-04T23:30:00-03:00[America/Santiago]",
+            "2026-04-05T23:30:00-04:00[America/Santiago]",
+            "2026-04-06T23:30:00-04:00[America/Santiago]"
+          ]
+        },
+        {
+          "name": "santiago_now_after_first_pass",
+          "expression": "every day at 00:30, 23:30 in America/Santiago",
+          "description": "now Apr 4 23:40 -03:00: the repeated 23:30 -04:00 is not an occurrence, next is Apr 5 00:30",
+          "now": "2026-04-04T23:40:00-03:00[America/Santiago]",
+          "next_n": [
+            "2026-04-05T00:30:00-04:00[America/Santiago]",
+            "2026-04-05T23:30:00-04:00[America/Santiago]",
+            "2026-04-06T00:30:00-04:00[America/Santiago]"
+          ]
+        },
+        {
+          "name": "santiago_now_in_second_pass",
+          "expression": "every day at 23:30 in America/Santiago",
+          "description": "now Apr 4 23:10 -04:00 (second pass): 23:30 -03:00 already happened, next is Apr 5 23:30",
+          "now": "2026-04-04T23:10:00-04:00[America/Santiago]",
+          "next": "2026-04-05T23:30:00-04:00[America/Santiago]"
+        },
+        {
+          "name": "santiago_interval_before_midnight_overlap",
+          "expression": "every 30 min from 22:00 to 23:30 in America/Santiago",
+          "description": "slots 23:00 and 23:30 on Apr 4 resolve to the first pass (-03:00)",
+          "now": "2026-04-04T21:00:00-03:00[America/Santiago]",
+          "next_n": [
+            "2026-04-04T22:00:00-03:00[America/Santiago]",
+            "2026-04-04T22:30:00-03:00[America/Santiago]",
+            "2026-04-04T23:00:00-03:00[America/Santiago]",
+            "2026-04-04T23:30:00-03:00[America/Santiago]",
+            "2026-04-05T22:00:00-04:00[America/Santiago]"
+          ]
+        },
+        {
+          "name": "havana_midnight_overlap",
+          "expression": "every day at 00:30 in America/Havana",
+          "description": "Havana falls back 01:00 -> 00:00 on Nov 1; 00:30 resolves to the first pass (-04:00)",
+          "now": "2026-10-31T12:00:00-04:00[America/Havana]",
+          "next_n": [
+            "2026-11-01T00:30:00-04:00[America/Havana]",
+            "2026-11-02T00:30:00-05:00[America/Havana]"
+          ]
+        },
+        {
+          "name": "interval_now_in_second_pass",
+          "expression": "every 45 min from 00:00 to 04:00 in America/New_York",
+          "description": "now 01:10 EST (second pass): 01:30 EDT is past and 01:30 EST is not a slot, so next is 02:15 EST",
+          "now": "2026-11-01T01:10:00-05:00[America/New_York]",
+          "next": "2026-11-01T02:15:00-05:00[America/New_York]"
         }
       ]
     },
@@ -5081,6 +5420,17 @@
           "expected": [
             "2026-03-08T03:00:00-04:00[America/New_York]",
             "2026-03-08T03:45:00-04:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "dst_fall_back_santiago_across_midnight",
+          "expression": "every day at 00:30, 23:30 in America/Santiago",
+          "description": "across the Santiago overlap: 23:30 -03:00 once, then Apr 5 00:30 -04:00",
+          "from": "2026-04-04T22:45:00-03:00[America/Santiago]",
+          "to": "2026-04-05T00:45:00-04:00[America/Santiago]",
+          "expected": [
+            "2026-04-04T23:30:00-03:00[America/Santiago]",
+            "2026-04-05T00:30:00-04:00[America/Santiago]"
           ]
         }
       ]
@@ -5920,6 +6270,97 @@
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "expected": "1788-02-29T09:00:00+00:00[UTC]",
           "description": "Aligned years with a Friday Feb 29 are rare; the previous one is 238 years back (proleptic Gregorian)"
+        },
+        {
+          "name": "nuuk_gap_shifted_to_next_date",
+          "expression": "every day at 23:30 in America/Nuuk",
+          "description": "now Mar 29 00:45: the previous is Mar 28's 23:30 shifted to Mar 29 00:30",
+          "now": "2026-03-29T00:45:00-01:00[America/Nuuk]",
+          "expected": "2026-03-29T00:30:00-01:00[America/Nuuk]"
+        },
+        {
+          "name": "nuuk_gap_shifted_after_now",
+          "expression": "every day at 23:30 in America/Nuuk",
+          "description": "now Mar 29 00:20: Mar 28's shifted 00:30 is still ahead, so the previous is Mar 27 23:30",
+          "now": "2026-03-29T00:20:00-01:00[America/Nuuk]",
+          "expected": "2026-03-27T23:30:00-02:00[America/Nuuk]"
+        },
+        {
+          "name": "nuuk_interval_gap_before_midnight",
+          "expression": "every 30 min from 22:00 to 23:30 in America/Nuuk",
+          "description": "now Mar 29 00:45: the 23:00 and 23:30 slots of Mar 28 were skipped, so the previous is 22:30",
+          "now": "2026-03-29T00:45:00-01:00[America/Nuuk]",
+          "expected": "2026-03-28T22:30:00-02:00[America/Nuuk]"
+        },
+        {
+          "name": "santiago_midnight_gap",
+          "expression": "every day at 00:30 in America/Santiago",
+          "description": "after the Santiago gap: previous is the shifted 01:30",
+          "now": "2026-09-06T01:40:00-03:00[America/Santiago]",
+          "expected": "2026-09-06T01:30:00-03:00[America/Santiago]"
+        },
+        {
+          "name": "santiago_interval_midnight_gap",
+          "expression": "every 30 min from 00:00 to 02:00 in America/Santiago",
+          "description": "now is 01:00 -03:00, just after the gap: 00:00 and 00:30 were skipped and 01:00 equals now, so previous is Sep 5 02:00",
+          "now": "2026-09-06T01:00:00-03:00[America/Santiago]",
+          "expected": "2026-09-05T02:00:00-04:00[America/Santiago]"
+        },
+        {
+          "name": "santiago_now_in_second_pass",
+          "expression": "every day at 23:30 in America/Santiago",
+          "description": "now Apr 4 23:10 -04:00 (second pass): previous is 23:30 -03:00 the same night",
+          "now": "2026-04-04T23:10:00-04:00[America/Santiago]",
+          "expected": "2026-04-04T23:30:00-03:00[America/Santiago]"
+        },
+        {
+          "name": "havana_midnight_gap",
+          "expression": "every day at 00:30 in America/Havana",
+          "description": "after the Havana gap: previous is the shifted 01:30",
+          "now": "2026-03-08T01:40:00-04:00[America/Havana]",
+          "expected": "2026-03-08T01:30:00-04:00[America/Havana]"
+        },
+        {
+          "name": "named_feb_29_across_2100",
+          "expression": "on feb 29 at 09:00 in UTC",
+          "description": "2100 is not a leap year: the most recent Feb 29 before mid-2103 is 2096",
+          "now": "2103-06-01T00:00:00+00:00[UTC]",
+          "expected": "2096-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "yearly_feb_29_across_2100",
+          "expression": "every year on feb 29 at 09:00 in UTC",
+          "description": "2100 is not a leap year: previous from mid-2103 is 2096-02-29",
+          "now": "2103-06-01T00:00:00+00:00[UTC]",
+          "expected": "2096-02-29T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_date_far_past",
+          "expression": "on 1500-06-01 at 09:00 in UTC",
+          "description": "an ISO date 526 years back is found",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "1500-06-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "every_9000_years_epoch_year",
+          "expression": "every 9000 years on jan 1 at 09:00 in UTC",
+          "description": "the previous aligned year is the anchor year 1970",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "expected": "1970-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "nuuk_shifted_keeps_scheduled_date_for_except",
+          "expression": "every day at 23:30 except mar 28 in America/Nuuk",
+          "description": "except mar 28 removes the shifted Mar 29 00:30, so the previous from Mar 29 noon is Mar 27 23:30",
+          "now": "2026-03-29T12:00:00-01:00[America/Nuuk]",
+          "expected": "2026-03-27T23:30:00-02:00[America/Nuuk]"
+        },
+        {
+          "name": "nuuk_shifted_kept_by_until_scheduled_date",
+          "expression": "every day at 23:30 until 2026-03-28 in America/Nuuk",
+          "description": "until 2026-03-28: the last occurrence is the shifted Mar 29 00:30",
+          "now": "2026-04-01T12:00:00-01:00[America/Nuuk]",
+          "expected": "2026-03-29T00:30:00-01:00[America/Nuuk]"
         }
       ]
     },
@@ -6935,6 +7376,7 @@
     "count": 5,
     "rules": {
       "next_matches": "If nextFrom(now) returns t, then matches(t) is true.",
+      "next_after_now": "If nextFrom(now) returns t, then t is strictly after now.",
       "next_n_chain": "nextNFrom(now, count) is strictly increasing, is empty exactly when nextFrom(now) is null, starts with nextFrom(now), and each later element equals nextFrom(the element before it).",
       "occurrences_prefix": "Taking count elements from occurrences(now) gives exactly nextNFrom(now, count).",
       "between_window": "If nextNFrom(now, count) is non-empty and its last element is L, then between(now, L) equals nextNFrom(now, count).",

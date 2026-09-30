@@ -21,7 +21,7 @@ test-python:
 
 # Go tests
 test-go:
-    cd go && go test -v ./...
+    cd go && go test -count=1 -v ./...
 
 # Java tests
 test-java:

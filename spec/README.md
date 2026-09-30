@@ -42,6 +42,18 @@ When adding new test cases to `tests.json`:
 2. Include both positive and negative (error) test cases
 3. Run all language test suites to verify the new tests pass
 
+### Writing a runner
+
+A conformance runner must fail any case it cannot check: a section it does not know, a case with no assertion field it understands, or an invariant rule it does not implement. Silently skipping is a pass that checked nothing. A field that is present with the value `null` or `[]` is an assertion (no occurrence, empty list), not an absent field. The assertion fields per `eval` section are:
+
+- **`matches`** - `datetime`; asserts `expected` (boolean) for `matches(datetime)`.
+- **`previous_from`** - `now`; asserts `expected` (timestamp or null) for `previousFrom(now)`.
+- **`occurrences`** - `from`, `take`; asserts `expected` (list) for the first `take` elements of `occurrences(from)`.
+- **`between`** - `from`, `to`; asserts `expected` (list) or `expected_count` (number) for `between(from, to)`.
+- **every other section** (`day_repeat`, `interval_repeat`, `week_repeat`, `month_repeat`, `year_repeat`, `single_date`, `leap_year`, `dst_spring_forward`, `dst_fall_back`, ...) - optional `now` (defaults to the top-level `now`); asserts one or more of `next` (timestamp or null for `nextFrom`), `next_date` (date of `nextFrom`), `next_n` (list from `nextNFrom(now, next_n_count)`, where `next_n_count` defaults to the list length) and `next_n_length` (length of `nextNFrom(now, next_n_count)`).
+
+`invariants` entries carry `name`, `expression` and `now`; every rule in `invariants.rules` applies to every entry.
+
 ## Error Message Format
 
 All hron implementations should produce error messages with consistent structure.
@@ -93,7 +105,7 @@ Schedules with mutually exclusive constraints parse successfully but return no o
 
 ### DST spring-forward (gaps)
 
-A fixed time (`at HH:MM`, including single dates) that does not exist because clocks spring forward fires at that time shifted forward by the length of the gap: 02:30 becomes 03:30 in `America/New_York` and `Australia/Sydney`, 01:30 becomes 02:30 in `Europe/London`, and 02:15 becomes 02:45 in `Australia/Lord_Howe` (a 30-minute gap). The rule is the same in every zone, including zones whose transition instant falls on the previous UTC date (Sydney, Lord Howe). See the `dst_spring_forward` cases in `tests.json`.
+A fixed time (`at HH:MM`, including single dates) that does not exist because clocks spring forward fires at that time shifted forward by the length of the gap: 02:30 becomes 03:30 in `America/New_York` and `Australia/Sydney`, 01:30 becomes 02:30 in `Europe/London`, and 02:15 becomes 02:45 in `Australia/Lord_Howe` (a 30-minute gap). The rule is the same in every zone, including zones whose transition instant falls on the previous UTC date (Sydney, Lord Howe) and zones that change at midnight. The shift can carry an occurrence onto the next date: in `America/Nuuk` clocks jump from 23:00 to 00:00, so 23:30 on 2026-03-28 fires at 00:30 on 2026-03-29, ordered by instant among that date's own times (and returned once if one of them is the same instant). A shifted occurrence keeps its scheduled date (the date whose wall time did not exist) for the day filter and for `during`, `except` and `until`, so `every day at 23:30 except mar 28` in Nuuk has no occurrence at 2026-03-29T00:30; unlike nearest weekday, where the date the occurrence lands on is the intended date and `except` and `until` see that date. See the `dst_spring_forward` cases in `tests.json`.
 
 ### Interval slots in a spring-forward gap
 
@@ -127,6 +139,10 @@ When a schedule fires at a time that occurs twice during a DST fall-back transit
 
 Implementations must find any occurrence that exists. The (proleptic) Gregorian calendar repeats every 400 years, so a schedule with an interval of `n` years, months, weeks or days repeats after lcm(400 years, `n` of those units); searching that span from `now` in the given direction finds the occurrence if one exists, and the result is null otherwise. For example, `every 11 years on the fifth sunday of february` next fires 406 years ahead (2432-02-29). Each call restarts the search from its own `now`.
 
+### Supported range
+
+Timestamps are in the proleptic Gregorian calendar within years 1 to 9999 inclusive. An occurrence that would fall outside that range does not exist, so the result is null: `every 9000 years on jan 1 at 09:00` has no next occurrence after 1970 (the next aligned year would be 10970), while `every 8000 years on jan 1 at 09:00` next fires in 9970.
+
 ### End-of-month day handling
 
 When a monthly schedule specifies a day that doesn't exist in a given month (e.g., `every month on the 31st` in a 30-day month), that month is skipped. The schedule does **not** cascade to the last available day — it waits for a month that actually has the specified day.
@@ -152,6 +168,7 @@ When multiple trailing clauses are present, they are applied in this order:
 The top-level `invariants` section of `tests.json` lists `{name, expression, now}` entries with no expected values. For each entry an implementation evaluates the expression at `now` with its public API and checks that its answers agree with each other, using `count` as the `n` for `nextNFrom`. Two timestamps are equal when they are the same instant. Entries do not use `starting`, whose semantics are covered by its own cases. The rules (all must hold for every entry):
 
 - **next_matches** - if `nextFrom(now)` is `t`, `matches(t)` is true.
+- **next_after_now** - if `nextFrom(now)` is `t`, `t` is strictly after `now`.
 - **next_n_chain** - `nextNFrom(now, count)` is strictly increasing, starts with `nextFrom(now)` (empty when that is null), and each later element is `nextFrom` of the one before it.
 - **occurrences_prefix** - taking `count` elements from `occurrences(now)` gives `nextNFrom(now, count)`.
 - **between_window** - if `nextNFrom(now, count)` ends with `L`, `between(now, L)` returns the same list.
