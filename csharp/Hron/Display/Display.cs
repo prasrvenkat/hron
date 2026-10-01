@@ -3,14 +3,8 @@ using Hron.Ast;
 
 namespace Hron.Display;
 
-/// <summary>
-/// Renders schedule data as canonical strings.
-/// </summary>
 public static class Display
 {
-    /// <summary>
-    /// Renders a schedule data as a canonical string.
-    /// </summary>
     public static string Render(ScheduleData data)
     {
         var sb = new StringBuilder();

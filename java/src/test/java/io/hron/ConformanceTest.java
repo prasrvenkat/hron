@@ -25,7 +25,6 @@ import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
-/** Conformance tests loaded from spec/tests.json. */
 public class ConformanceTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static JsonNode SPEC;
@@ -494,7 +493,6 @@ public class ConformanceTest {
     return times.stream().map(ZonedDateTime::toInstant).toList();
   }
 
-  // Format: "2026-02-06T12:00:00+00:00[UTC]"
   private static final Pattern ZDT_PATTERN = Pattern.compile("^(.+?)\\[([^\\]]+)\\]$");
 
   private static ZonedDateTime parseZonedDateTime(String s) {

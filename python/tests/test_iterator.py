@@ -23,7 +23,6 @@ def parse_zoned(s: str) -> datetime:
 
 class TestLaziness:
     def test_occurrences_is_lazy(self) -> None:
-        """An unbounded schedule should not hang or OOM when creating the iterator."""
         schedule = Schedule.parse("every day at 09:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
@@ -59,7 +58,6 @@ class TestEarlyTermination:
 
         results = list(itertools.takewhile(lambda dt: dt < cutoff, schedule.occurrences(from_dt)))
 
-        # Feb 1, 2, 3, 4 at 09:00 (4 occurrences before Feb 5 00:00)
         assert len(results) == 4
 
     def test_occurrences_early_termination_with_break(self) -> None:
@@ -145,7 +143,6 @@ class TestItertoolsIntegration:
         weekends = filter(lambda dt: dt.weekday() >= 5, two_weeks)
         results = list(weekends)
 
-        # 2 weekends in 2 weeks = 4 days
         assert len(results) == 4
 
     def test_works_with_map(self) -> None:
@@ -187,7 +184,7 @@ class TestCollectPatterns:
 
         results = list(schedule.occurrences(from_dt))
 
-        assert len(results) == 5  # Feb 1-5
+        assert len(results) == 5
 
     def test_between_collect_to_list(self) -> None:
         schedule = Schedule.parse("every day at 09:00 in UTC")
@@ -205,7 +202,6 @@ class TestCollectPatterns:
 
         count = len(list(schedule.between(from_dt, to_dt)))
 
-        # Feb 1-10 inclusive = 10 days
         assert count == 10
 
 
@@ -274,19 +270,17 @@ class TestTimezoneHandling:
             assert dt.tzinfo.key == "America/New_York"
 
     def test_between_handles_dst_transition(self) -> None:
-        # March 8, 2026 is DST spring forward in America/New_York
-        # 2:00 AM springs forward to 3:00 AM, so 02:30 shifts to 03:30
+        # March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
         schedule = Schedule.parse("every day at 02:30 in America/New_York")
         from_dt = parse_zoned("2026-03-07T00:00:00-05:00[America/New_York]")
         to_dt = parse_zoned("2026-03-10T00:00:00-04:00[America/New_York]")
 
         results = list(schedule.between(from_dt, to_dt))
 
-        # Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
         assert len(results) == 3
-        assert results[0].hour == 2  # Mar 7 02:30
-        assert results[1].hour == 3  # Mar 8 03:30 (shifted due to DST)
-        assert results[2].hour == 2  # Mar 9 02:30
+        assert results[0].hour == 2
+        assert results[1].hour == 3
+        assert results[2].hour == 2
 
 
 class TestMultipleTimesPerDay:
@@ -294,7 +288,7 @@ class TestMultipleTimesPerDay:
         schedule = Schedule.parse("every day at 09:00, 12:00, 17:00 in UTC")
         from_dt = parse_zoned("2026-02-01T00:00:00+00:00[UTC]")
 
-        results = list(itertools.islice(schedule.occurrences(from_dt), 9))  # 3 days worth
+        results = list(itertools.islice(schedule.occurrences(from_dt), 9))
 
         assert len(results) == 9
         assert results[0].hour == 9

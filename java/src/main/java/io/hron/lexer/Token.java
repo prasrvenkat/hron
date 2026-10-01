@@ -6,21 +6,6 @@ import io.hron.ast.MonthName;
 import io.hron.ast.OrdinalPosition;
 import io.hron.ast.Weekday;
 
-/**
- * Represents a lexed token.
- *
- * @param kind the type of token
- * @param span the location in the input
- * @param dayNameVal the weekday value (for DAY_NAME tokens)
- * @param monthNameVal the month value (for MONTH_NAME tokens)
- * @param ordinalVal the ordinal value (for ORDINAL tokens)
- * @param unitVal the interval unit value (for INTERVAL_UNIT tokens)
- * @param numberVal the number value (for NUMBER and ORDINAL_NUMBER tokens)
- * @param timeHour the hour (for TIME tokens)
- * @param timeMinute the minute (for TIME tokens)
- * @param isoDateVal the ISO date string (for ISO_DATE tokens)
- * @param timezoneVal the timezone string (for TIMEZONE tokens)
- */
 public record Token(
     TokenKind kind,
     Span span,
@@ -57,13 +42,6 @@ public record Token(
     return new Token(TokenKind.NUMBER, span, null, null, null, null, value, 0, 0, null, null);
   }
 
-  /**
-   * Creates an ordinal number token (e.g., "1st", "15th").
-   *
-   * @param value the numeric value
-   * @param span the source span
-   * @return a new ordinal number token
-   */
   public static Token ordinalNumber(int value, Span span) {
     return new Token(
         TokenKind.ORDINAL_NUMBER, span, null, null, null, null, value, 0, 0, null, null);

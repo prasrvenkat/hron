@@ -8,7 +8,6 @@ import type {
   Weekday,
 } from "./ast.js";
 
-/** Render a schedule as its canonical string form. */
 export function display(schedule: ScheduleData): string {
   let out = displayExpr(schedule.expr);
 

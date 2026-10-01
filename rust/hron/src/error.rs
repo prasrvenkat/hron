@@ -13,7 +13,6 @@ impl Span {
     }
 }
 
-/// All errors produced by hron.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum ScheduleError {

@@ -3,9 +3,6 @@ using Hron.Ast;
 
 namespace Hron.Lexer;
 
-/// <summary>
-/// Tokenizes input strings into a list of tokens.
-/// </summary>
 public sealed class Lexer
 {
     private readonly string _input;
@@ -19,9 +16,6 @@ public sealed class Lexer
         _afterIn = false;
     }
 
-    /// <summary>
-    /// Tokenizes the input string into a list of tokens.
-    /// </summary>
     public static List<Token> Tokenize(string input)
         => new Lexer(input).DoTokenize();
 
@@ -126,7 +120,7 @@ public sealed class Lexer
             && _pos < _input.Length
             && _input[_pos] == ':')
         {
-            _pos++; // skip ':'
+            _pos++;
             var minStart = _pos;
             while (_pos < _input.Length && IsDigit(_input[_pos]))
             {

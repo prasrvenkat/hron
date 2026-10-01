@@ -1,5 +1,3 @@
-//! Modifier clause examples: except, until, during, starting.
-
 use hron::Schedule;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

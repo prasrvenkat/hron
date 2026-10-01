@@ -71,7 +71,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetParseErrorTests))]
     public void ParseErrorTests(string _name, string input, string? errorContains)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var error = Assert.Throws<HronException>(() => Schedule.Parse(input));
         Assert.False(Schedule.Validate(input));
         if (errorContains is not null)
@@ -108,7 +108,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetEvalNextTests))]
     public void EvalNextTests(string _name, string expression, string? nowStr, string? expectedNext)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var now = nowStr is not null ? ParseZonedDateTime(nowStr) : DefaultNow;
         var result = s.NextFrom(now);
@@ -153,7 +153,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetEvalNextDateTests))]
     public void EvalNextDateTests(string _name, string expression, string? nowStr, string? expectedDate)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var now = nowStr is not null ? ParseZonedDateTime(nowStr) : DefaultNow;
         var result = s.NextFrom(now);
@@ -197,7 +197,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetEvalNextNTests))]
     public void EvalNextNTests(string _name, string expression, string? nowStr, int n, string[] expectedStrs)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var now = nowStr is not null ? ParseZonedDateTime(nowStr) : DefaultNow;
         var results = s.NextNFrom(now, n);
@@ -240,7 +240,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetEvalNextNLengthTests))]
     public void EvalNextNLengthTests(string _name, string expression, string? nowStr, int n, int expectedLength)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var now = nowStr is not null ? ParseZonedDateTime(nowStr) : DefaultNow;
         var results = s.NextNFrom(now, n);
@@ -270,7 +270,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetPreviousFromTests))]
     public void PreviousFromTests(string _name, string expression, string nowStr, string? expectedStr)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var now = ParseZonedDateTime(nowStr);
         var result = s.PreviousFrom(now);
@@ -309,7 +309,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetMatchesTests))]
     public void MatchesTests(string _name, string expression, string datetimeStr, bool expected)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var datetime = ParseZonedDateTime(datetimeStr);
         var result = s.Matches(datetime);
@@ -340,7 +340,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetOccurrencesTests))]
     public void OccurrencesTests(string _name, string expression, string fromStr, int take, string[] expectedStrs)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var from = ParseZonedDateTime(fromStr);
         var results = s.Occurrences(from).Take(take).ToList();
@@ -389,7 +389,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetBetweenTests))]
     public void BetweenTests(string _name, string expression, string fromStr, string toStr, string[]? expectedStrs, int? expectedCount)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(expression);
         var from = ParseZonedDateTime(fromStr);
         var to = ParseZonedDateTime(toStr);
@@ -435,7 +435,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetToCronTests))]
     public void ToCronTests(string _name, string hron, string expectedCron)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(hron);
         var cron = s.ToCron();
         Assert.Equal(expectedCron, cron);
@@ -460,7 +460,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetToCronErrorTests))]
     public void ToCronErrorTests(string _name, string hron)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.Parse(hron);
         Assert.Throws<HronException>(() => s.ToCron());
     }
@@ -485,7 +485,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetFromCronTests))]
     public void FromCronTests(string _name, string cron, string expectedHron)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s = Schedule.FromCron(cron);
         Assert.Equal(expectedHron, s.ToString());
     }
@@ -509,7 +509,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetFromCronErrorTests))]
     public void FromCronErrorTests(string _name, string cron)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         Assert.Throws<HronException>(() => Schedule.FromCron(cron));
     }
 
@@ -532,7 +532,7 @@ public partial class ConformanceTest
     [MemberData(nameof(GetCronRoundtripTests))]
     public void CronRoundtripTests(string _name, string hron)
     {
-        _ = _name; // Used for test display
+        _ = _name;
         var s1 = Schedule.Parse(hron);
         var cron = s1.ToCron();
 
@@ -787,7 +787,6 @@ public partial class ConformanceTest
 
     private static string Show(IEnumerable<DateTimeOffset> ts) => "[" + string.Join(", ", ts.Select(t => Show(t))) + "]";
 
-    // Format: "2026-02-06T12:00:00+00:00[UTC]"
     [GeneratedRegex(@"^(.+?)\[([^\]]+)\]$")]
     private static partial Regex ZdtPattern();
 

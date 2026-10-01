@@ -1,5 +1,5 @@
-"""Generates the differential cases. The output depends only on SEED and the
-system timezone database, never on the wall clock."""
+"""The output depends only on SEED and the system timezone database, never on the
+wall clock."""
 
 import random
 import re
@@ -303,8 +303,8 @@ WEEK = timedelta(weeks=1)
 
 
 class Cases(list):
-    """Case objects with ids numbered within each family, so that adding a family
-    leaves the ids of the others unchanged."""
+    """Ids are numbered within each family, so adding a family leaves the others' ids
+    unchanged."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -317,7 +317,6 @@ class Cases(list):
 
 
 def meant_to_parse(case: dict) -> bool:
-    """Whether the generator meant the case's expression to parse."""
     return case["op"] != "fromCron" and not case["id"].startswith(("invalid-", "mutant-"))
 
 
@@ -334,9 +333,6 @@ def generate() -> list[dict]:
 
 
 def generate_stress() -> list[dict]:
-    """Cases around the DST transitions from 1971 to 2035 that stress_transitions picks:
-    schedules firing in, beside and across the wall-clock range each one skips or
-    repeats, evaluated from instants on both sides of it."""
     cases = Cases()
     for zone, change in stress_transitions(random.Random(SEED)):
         add_stress(cases, zone, change)
@@ -344,7 +340,6 @@ def generate_stress() -> list[dict]:
 
 
 def stamp(instant: datetime, zone: str | None = None) -> str:
-    """The spec's canonical form, YYYY-MM-DDTHH:MM:SS+HH:MM[Zone]."""
     zone = zone or "UTC"
     return f"{instant.astimezone(ZoneInfo(zone)).isoformat()}[{zone}]"
 
@@ -416,8 +411,7 @@ def add_eval(cases: Cases, rng: random.Random) -> None:
 
 
 def add_evaluations(cases: Cases, rng: random.Random, expr: str, zone: str | None) -> None:
-    """Evaluations of `expr` around NOWS, with times written in its zone or in UTC.
-    A zoneless schedule runs in UTC, so it gets times written in another zone
+    """A zoneless schedule runs in UTC, so it gets times written in another zone
     instead, which must not change its answers."""
     written_in = rng.choice([zone or rng.choice(DST_ZONES + OTHER_ZONES), None])
 
@@ -448,8 +442,7 @@ def offset(instant: datetime, tz: ZoneInfo) -> timedelta:
 
 
 def transitions(zone: str, start: datetime, end: datetime) -> list[datetime]:
-    """The instants in (start, end] at which the zone's UTC offset changes,
-    assuming no two changes in a week undo each other."""
+    """Assumes no two changes in a week undo each other."""
     tz = ZoneInfo(zone)
     found = []
     while start < end:
@@ -468,8 +461,6 @@ def transitions(zone: str, start: datetime, end: datetime) -> list[datetime]:
 
 
 def wall_range(change: datetime, tz: ZoneInfo) -> tuple[timedelta, timedelta, datetime, datetime]:
-    """The offsets before and after a change, and the wall-clock range [start, end)
-    that it skips or repeats."""
     before, after = offset(change - MINUTE, tz), offset(change, tz)
     naive = change.replace(tzinfo=None)
     start, end = sorted([naive + before, naive + after])
@@ -492,8 +483,6 @@ def add_dst(cases: Cases) -> None:
 
 
 def dst_schedules(start: datetime, end: datetime) -> list[tuple[str, datetime]]:
-    """Schedules, each with the wall time it fires at, in, just before and just
-    after the wall-clock range [start, end) that a transition skips or repeats."""
     middle = start + (end - start) // 2
     schedules = []
     for wall in [start - MINUTE, start, middle, end - MINUTE, end]:
@@ -569,10 +558,6 @@ def add_cron(cases: Cases, rng: random.Random) -> None:
 
 
 def stress_transitions(rng: random.Random) -> list[tuple[str, datetime]]:
-    """Every transition whose skipped or repeated range crosses midnight or lasts a
-    day or more, STRESS_PER_SHAPE of those that start or end at midnight for each
-    direction, start time and length, and one other transition in each of
-    STRESS_OTHER_ZONES zones. Zones with the same transitions count once."""
     zones = {}
     for zone in sorted(available_timezones()):
         if zone.startswith(AREAS) and (changes := transitions(zone, STRESS_START, STRESS_END)):

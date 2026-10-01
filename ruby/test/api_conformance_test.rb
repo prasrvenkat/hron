@@ -64,7 +64,6 @@ class ApiConformanceTest < Minitest::Test
     result = @schedule.previous_from(@now)
     refute_nil result
     assert_kind_of Time, result
-    # Previous should be today at 09:00
     assert_equal 6, result.day
     assert_equal 9, result.hour
   end

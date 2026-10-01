@@ -1,8 +1,5 @@
 namespace Hron.Lexer;
 
-/// <summary>
-/// The type of token.
-/// </summary>
 public enum TokenKind
 {
     Every,

@@ -2,9 +2,6 @@ using Hron.Ast;
 
 namespace Hron.Eval;
 
-/// <summary>
-/// A schedule prepared for searching: its zone, cadence, times and clauses resolved once.
-/// </summary>
 internal sealed class Search
 {
     private readonly IScheduleExpr _expr;
@@ -33,15 +30,8 @@ internal sealed class Search
             Clauses.Of(data, starting));
     }
 
-    /// <summary>
-    /// Ends the search on <paramref name="date"/>: nothing after it is an occurrence.
-    /// </summary>
     public void EndOn(DateOnly date) => _clauses.EndOn(date);
 
-    /// <summary>
-    /// The occurrence nearest <paramref name="now"/> strictly beyond it in
-    /// <paramref name="direction"/>.
-    /// </summary>
     public DateTimeOffset? Nearest(DateTimeOffset now, Direction direction)
     {
         var nowDate = WallClock.LocalDate(now, _zone);
@@ -85,10 +75,6 @@ internal sealed class Search
     /// </summary>
     private bool RejectsPeriod(long period) => _cadence.MonthOf(period) is { } month && !_clauses.AllowsMonth(month);
 
-    /// <summary>
-    /// The occurrence on <paramref name="date"/> nearest <paramref name="now"/> strictly beyond it
-    /// in <paramref name="direction"/>.
-    /// </summary>
     private DateTimeOffset? NearestOnDate(DateOnly date, DateTimeOffset now, Direction direction) => _times switch
     {
         DailyTimes.Fixed fixedTimes => NearestFixedTime(fixedTimes.Times, date, now, direction),
@@ -113,12 +99,6 @@ internal sealed class Search
         return nearest;
     }
 
-    /// <summary>
-    /// One binary search on the slots' keys, which never decrease in wall-clock order, splits them
-    /// at <paramref name="now"/>: forward, the slots from the first whose key is after it; backward,
-    /// those before the first whose key is not before it. The nearest beyond now is the first of
-    /// these, in <paramref name="direction"/>, with an instant.
-    /// </summary>
     private DateTimeOffset? NearestSlot(DailyTimes.Slots slots, DateOnly date, DateTimeOffset now, Direction direction)
     {
         var offsets = WallClock.OffsetsOn(date, _zone);
@@ -147,9 +127,6 @@ internal sealed class Search
         return null;
     }
 
-    /// <summary>
-    /// The candidates in <paramref name="period"/>, earliest first.
-    /// </summary>
     private IReadOnlyList<Candidate> CandidatesInPeriod(long period)
     {
         if (_expr is MonthRepeat mr)

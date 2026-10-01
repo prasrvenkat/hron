@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module Hron
-  # Span in source input for error reporting
   Span = Data.define(:start, :end_pos) do # end_pos to avoid Ruby keyword
     def length
       end_pos - start
@@ -15,7 +14,6 @@ module Hron
     CRON = :cron
   end
 
-  # Main error class for hron
   class HronError < StandardError
     attr_reader :kind, :span, :input, :suggestion
 

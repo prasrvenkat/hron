@@ -5,8 +5,8 @@ require_relative "../ast"
 
 module Hron
   class Evaluator
-    # Date arithmetic on the proleptic Gregorian calendar, so a search that reaches back
-    # before 1582 stays on the same calendar: no time zones, no schedules.
+    # Proleptic Gregorian throughout: Ruby's Date otherwise switches to the Julian calendar
+    # before 1582, and a search can reach back that far.
     module Calendar
       # The calendar a search walks: no date outside it holds an occurrence in the
       # supported range (spec/README.md, "Supported range").
@@ -19,7 +19,6 @@ module Hron
 
       module_function
 
-      # The date, or nil when the month has no such day.
       def date(year, month, day)
         Date.new(year, month, day, Date::GREGORIAN) if Date.valid_date?(year, month, day, Date::GREGORIAN)
       end
@@ -32,7 +31,6 @@ module Hron
         to.jd - from.jd
       end
 
-      # Months since January of year 0.
       def month_index(date)
         (date.year * 12) + date.month - 1
       end
@@ -50,7 +48,6 @@ module Hron
         date - (date.cwday - 1)
       end
 
-      # Whether date passes filter; no filter passes every date.
       def matches_day_filter?(date, filter)
         case filter
         when nil, DayFilterEvery then true
@@ -60,7 +57,6 @@ module Hron
         end
       end
 
-      # The dates a monthly target names in a month, earliest first.
       def month_target_dates(year, month, target)
         case target
         when DaysTarget
@@ -85,14 +81,11 @@ module Hron
         Date.new(year, month, -1, Date::GREGORIAN)
       end
 
-      # The last Monday to Friday of a month.
       def last_weekday_of_month(year, month)
         last = last_day_of_month(year, month)
         last - [last.cwday - FRIDAY, 0].max
       end
 
-      # The nth given weekday of a month, or its last for OrdinalPosition::LAST; nil when
-      # the month has no nth.
       def ordinal_weekday(year, month, ordinal, weekday)
         target = Weekday.number(weekday)
         if ordinal == OrdinalPosition::LAST
@@ -105,9 +98,8 @@ module Hron
         nth if nth.month == month
       end
 
-      # The weekday nearest day of a month, or nil when the month is shorter. Without a
-      # direction it stays in the month, as cron's W does; with one it can cross into the
-      # adjacent month (spec/README.md, "Nearest weekday and `during`").
+      # Without a direction it stays in the month, as cron's W does; with one it can cross into
+      # the adjacent month (spec/README.md, "Nearest weekday and `during`").
       def nearest_weekday(year, month, day, toward)
         target = date(year, month, day)
         return target if target.nil? || target.cwday <= FRIDAY

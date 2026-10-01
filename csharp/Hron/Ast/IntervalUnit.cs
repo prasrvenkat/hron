@@ -1,8 +1,5 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents the unit of an interval (minutes or hours).
-/// </summary>
 public enum IntervalUnit
 {
     Minutes,

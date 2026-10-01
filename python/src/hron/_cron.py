@@ -146,10 +146,6 @@ def _day_filter_to_cron_dow(f: DayFilter) -> str:
 
 
 def from_cron(cron: str) -> ScheduleData:
-    """Parse a 5-field cron expression, or an @ shortcut such as @daily, into ScheduleData.
-
-    Raises HronError if the expression is invalid.
-    """
     trimmed = cron.strip()
 
     if trimmed.startswith("@"):
@@ -161,7 +157,6 @@ def from_cron(cron: str) -> ScheduleData:
 
     minute_field, hour_field, dom_field_raw, month_field, dow_field_raw = fields
 
-    # Normalize ? to * (semantically equivalent for our purposes)
     dom_field = "*" if dom_field_raw == "?" else dom_field_raw
     dow_field = "*" if dow_field_raw == "?" else dow_field_raw
 
@@ -260,7 +255,6 @@ def _parse_month_field(field: str) -> tuple[MonthName, ...]:
     months: list[MonthName] = []
 
     for part in field.split(","):
-        # Check for step values FIRST (e.g., 1-12/3 or */3)
         if "/" in part:
             range_part, step_str = part.split("/", 1)
             if range_part == "*":
@@ -350,7 +344,6 @@ def _try_parse_nth_weekday(
     dow_field: str,
     during: tuple[MonthName, ...],
 ) -> ScheduleData | None:
-    """Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday)."""
     if "#" in dow_field:
         dow_str, nth_str = dow_field.split("#", 1)
         dow_num = _parse_dow_value(dow_str)
@@ -388,7 +381,6 @@ def _try_parse_nth_weekday(
         schedule.during = during
         return schedule
 
-    # Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
     if dow_field.endswith("L") and len(dow_field) > 1:
         dow_str = dow_field[:-1]
         dow_num = _parse_dow_value(dow_str)
@@ -420,7 +412,6 @@ def _try_parse_last_day(
     dow_field: str,
     during: tuple[MonthName, ...],
 ) -> ScheduleData | None:
-    """Try to parse L (last day) or LW (last weekday) patterns."""
     if dom_field != "L" and dom_field != "LW":
         return None
 
@@ -450,7 +441,6 @@ def _try_parse_nearest_weekday(
     dow_field: str,
     during: tuple[MonthName, ...],
 ) -> ScheduleData | None:
-    """Try to parse W (nearest weekday) patterns: 15W, 1W, etc."""
     if not dom_field.endswith("W") or dom_field == "LW":
         return None
 
@@ -511,7 +501,6 @@ def _try_parse_interval(
             if from_minute > to_minute:
                 raise HronError.cron(f"range start must be <= end: {from_minute}-{to_minute}")
         else:
-            # Single value with step (e.g., 0/15) - treat as starting point
             try:
                 from_minute = int(range_part)
             except ValueError:
@@ -714,7 +703,7 @@ def _parse_cron_dow(field: str) -> DayFilter:
                 days.append(_cron_dow_to_weekday(normalized))
                 d += step
         elif "-" in part:
-            # Parse without normalizing 7 to 0 for range purposes
+            # Raw, so a range ending at 7 (Sunday), like `5-7`, stays ascending.
             start_str, end_str = part.split("-", 1)
             start = _parse_dow_value_raw(start_str)
             end = _parse_dow_value_raw(end_str)
@@ -744,7 +733,7 @@ def _parse_cron_dow(field: str) -> DayFilter:
 
 def _parse_dow_value(s: str) -> int:
     raw = _parse_dow_value_raw(s)
-    # Normalize 7 to 0 (both mean Sunday)
+    # 7 and 0 both mean Sunday.
     return 0 if raw == 7 else raw
 
 

@@ -1,8 +1,5 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents a day of the week.
-/// </summary>
 public enum Weekday
 {
     Monday = 1,

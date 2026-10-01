@@ -365,7 +365,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // day_repeat: day_target already parsed (or "day" not yet consumed)
     fn parse_day_repeat(
         &mut self,
         interval: u32,
@@ -816,7 +815,7 @@ impl<'a> Parser<'a> {
         }
 
         while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Comma)) {
-            self.advance(); // skip comma
+            self.advance();
             match self.peek().map(|t| &t.kind) {
                 Some(TokenKind::DayName(name)) => {
                     days.push(parse_weekday(name).unwrap());
@@ -837,7 +836,7 @@ impl<'a> Parser<'a> {
         specs.push(self.parse_ordinal_day_spec()?);
 
         while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Comma)) {
-            self.advance(); // skip comma
+            self.advance();
             specs.push(self.parse_ordinal_day_spec()?);
         }
 
@@ -858,7 +857,7 @@ impl<'a> Parser<'a> {
         };
 
         if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::To)) {
-            self.advance(); // skip "to"
+            self.advance();
             let end = match self.peek().map(|t| &t.kind) {
                 Some(TokenKind::OrdinalNumber(n)) => {
                     let d = self.validate_day_number(*n)?;

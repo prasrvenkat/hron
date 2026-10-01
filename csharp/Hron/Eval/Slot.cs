@@ -1,16 +1,12 @@
 namespace Hron.Eval;
 
 /// <summary>
-/// An interval slot on a date: where it sits in time, in UTC ticks, and its instant unless a
-/// spring-forward gap skips it (spec/README.md, "Interval slots in a spring-forward gap"). A
-/// skipped slot sits at the instant its gap ends, so keys never decrease in wall-clock order and
-/// one binary search finds the slots on either side of an instant.
+/// A slot a spring-forward gap skips (spec/README.md, "Interval slots in a spring-forward gap")
+/// keys at the instant its gap ends, so keys never decrease in wall-clock order and one binary
+/// search finds the slots on either side of an instant.
 /// </summary>
 internal readonly struct Slot
 {
-    /// <summary>
-    /// The zone the slot's instant is in, or null when a gap skips it.
-    /// </summary>
     private readonly TimeZoneInfo? _zone;
 
     private Slot(long key, TimeZoneInfo? zone)

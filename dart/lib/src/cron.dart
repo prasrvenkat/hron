@@ -348,7 +348,6 @@ MonthName? _parseMonthName(String s) {
   };
 }
 
-/// Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday).
 ScheduleData? _tryParseNthWeekday(
   String minuteField,
   String hourField,
@@ -519,7 +518,6 @@ ScheduleData? _tryParseInterval(
       fromMinute = s;
       toMinute = e;
     } else {
-      // Single value with step (e.g., 0/15) - treat as starting point
       final s = int.tryParse(rangePart);
       if (s == null) {
         throw HronError.cron('invalid minute value');
@@ -830,7 +828,7 @@ int _parseDowValue(String s) {
   return raw == 7 ? 0 : raw;
 }
 
-/// Parse a DOW value without normalizing 7 to 0 (for range checking).
+// Raw, so a range ending at 7 (Sunday), like `5-7`, stays ascending.
 int _parseDowValueRaw(String s) {
   final n = int.tryParse(s);
   if (n != null) {

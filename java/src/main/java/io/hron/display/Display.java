@@ -4,16 +4,9 @@ import io.hron.ast.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/** Renders schedule data as canonical strings. */
 public final class Display {
   private Display() {}
 
-  /**
-   * Renders a schedule data as a canonical string.
-   *
-   * @param data the schedule data to render
-   * @return the canonical string representation
-   */
   public static String render(ScheduleData data) {
     StringBuilder sb = new StringBuilder();
 

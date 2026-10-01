@@ -21,7 +21,6 @@ public class IteratorTest
     [Fact]
     public void OccurrencesIsLazy()
     {
-        // An unbounded schedule should not hang or OOM when creating the enumerable
         var schedule = Schedule.Parse("every day at 09:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
@@ -40,7 +39,6 @@ public class IteratorTest
 
         var iter = schedule.Between(from, to);
 
-        // Taking just 3 should not evaluate all ~330 days
         var results = iter.Take(3).ToList();
         Assert.Equal(3, results.Count);
     }
@@ -67,7 +65,6 @@ public class IteratorTest
             .TakeWhile(dt => dt < cutoff)
             .ToList();
 
-        // Feb 1, 2, 3, 4 at 09:00 (4 occurrences before Feb 5 00:00)
         Assert.Equal(4, results.Count);
     }
 
@@ -111,7 +108,6 @@ public class IteratorTest
             .Where(dt => dt.DayOfWeek == DayOfWeek.Saturday || dt.DayOfWeek == DayOfWeek.Sunday)
             .ToList();
 
-        // 2 weekends in 2 weeks = 4 days
         Assert.Equal(4, weekends.Count);
     }
 
@@ -141,7 +137,6 @@ public class IteratorTest
             .ToList();
 
         Assert.Equal(3, results.Count);
-        // Should be Feb 6, 7, 8
         Assert.Equal(6, results[0].Day);
         Assert.Equal(7, results[1].Day);
         Assert.Equal(8, results[2].Day);
@@ -156,7 +151,6 @@ public class IteratorTest
 
         var count = schedule.Between(from, to).Count();
 
-        // Feb 1-10 inclusive = 10 days
         Assert.Equal(10, count);
     }
 
@@ -180,7 +174,7 @@ public class IteratorTest
 
         var results = schedule.Occurrences(from).ToList();
 
-        Assert.Equal(5, results.Count); // Feb 1-5
+        Assert.Equal(5, results.Count);
     }
 
     [Fact]
@@ -268,7 +262,6 @@ public class IteratorTest
         var schedule = Schedule.Parse("on 2026-02-14 at 14:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        // Request many but should only get 1
         var results = schedule.Occurrences(from).Take(100).ToList();
 
         Assert.Single(results);
@@ -291,19 +284,17 @@ public class IteratorTest
     [Fact]
     public void BetweenHandlesDSTTransition()
     {
-        // March 8, 2026 is DST spring forward in America/New_York
-        // 2:00 AM springs forward to 3:00 AM, so 02:30 shifts to 03:30
+        // March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
         var schedule = Schedule.Parse("every day at 02:30 in America/New_York");
         var from = ParseZoned("2026-03-07T00:00:00-05:00[America/New_York]");
         var to = ParseZoned("2026-03-10T00:00:00-04:00[America/New_York]");
 
         var results = schedule.Between(from, to).ToList();
 
-        // Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
         Assert.Equal(3, results.Count);
-        Assert.Equal(2, results[0].Hour); // Mar 7 02:30
-        Assert.Equal(3, results[1].Hour); // Mar 8 03:30 (shifted due to DST)
-        Assert.Equal(2, results[2].Hour); // Mar 9 02:30
+        Assert.Equal(2, results[0].Hour);
+        Assert.Equal(3, results[1].Hour);
+        Assert.Equal(2, results[2].Hour);
     }
 
     [Fact]
@@ -312,10 +303,9 @@ public class IteratorTest
         var schedule = Schedule.Parse("every day at 09:00, 12:00, 17:00 in UTC");
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-        var results = schedule.Occurrences(from).Take(9).ToList(); // 3 days worth
+        var results = schedule.Occurrences(from).Take(9).ToList();
 
         Assert.Equal(9, results.Count);
-        // First day: 09:00, 12:00, 17:00
         Assert.Equal(9, results[0].Hour);
         Assert.Equal(12, results[1].Hour);
         Assert.Equal(17, results[2].Hour);
@@ -328,7 +318,7 @@ public class IteratorTest
         var from = ParseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
         var weekdayDays = schedule.Occurrences(from)
-            .Take(14) // Two weeks to ensure we have enough
+            .Take(14)
             .Where(dt => dt.DayOfWeek >= DayOfWeek.Monday && dt.DayOfWeek <= DayOfWeek.Friday)
             .Take(5)
             .Select(dt => dt.Day)

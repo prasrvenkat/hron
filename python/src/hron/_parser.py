@@ -91,7 +91,6 @@ _MAX_INTERVAL = 2147483647
 
 @functools.cache
 def _timezones_by_lowercase_name() -> dict[str, str]:
-    """UTC and every IANA Area/Location name (zones and links), keyed in lowercase."""
     names = {
         name.lower(): name
         for name in zoneinfo.available_timezones()

@@ -8,7 +8,7 @@ require_relative "lexer"
 
 module Hron
   class Parser
-    # IANA zone and link names by lowercase name, since timezone names match in any case.
+    # Timezone names match in any case (spec/README.md, "Parse-time validation").
     def self.iana_names
       @iana_names ||= TZInfo::Timezone.all_identifiers.to_h { |id| [id.downcase, id] }
     end

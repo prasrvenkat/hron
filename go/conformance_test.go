@@ -130,8 +130,8 @@ func loadSpec(t *testing.T) *TestSpec {
 	return &spec
 }
 
-// decodeCases decodes a section's tests. A case field outside fields fails the
-// test, because this runner would not check it; name and description are labels.
+// A case field outside fields fails the test, because this runner would not
+// check it; name and description are labels.
 func decodeCases[T any](t *testing.T, section json.RawMessage, fields ...string) []T {
 	t.Helper()
 	var group struct {
@@ -634,7 +634,6 @@ func TestValidate(t *testing.T) {
 }
 
 func TestExactTimeBoundary(t *testing.T) {
-	// Occurrences are strictly after now: one at exactly now is skipped.
 	s, err := ParseSchedule("every day at 12:00 in UTC")
 	if err != nil {
 		t.Fatal(err)
@@ -658,9 +657,8 @@ func TestIntervalAlignment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Feb 6, 2026 is day 20490 from epoch (1970-01-01)
-	// 20490 % 3 = 0, so Feb 6 is aligned
-	// Since 09:00 has passed, next should be Feb 9 (20490 + 3)
+	// Feb 6, 2026 is day 20490 from the epoch, a multiple of 3, so the next
+	// aligned day after its 09:00 is Feb 9.
 	now := time.Date(2026, 2, 6, 12, 0, 0, 0, time.UTC)
 	next := s.NextFrom(now)
 	if next == nil {
@@ -673,7 +671,6 @@ func TestIntervalAlignment(t *testing.T) {
 	}
 }
 
-// expectedTimestamp decodes a timestamp assertion; null asserts no occurrence.
 func expectedTimestamp(t *testing.T, raw json.RawMessage) *time.Time {
 	if strings.TrimSpace(string(raw)) == "null" {
 		return nil

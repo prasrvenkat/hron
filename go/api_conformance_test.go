@@ -229,7 +229,6 @@ func TestSpecCoverage(t *testing.T) {
 				t.Errorf("unmapped spec static method: %s", method.Name)
 				continue
 			}
-			// We verify these exist by compiling - if they don't exist, the code won't compile
 			_ = goName
 		}
 	})

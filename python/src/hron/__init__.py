@@ -68,14 +68,17 @@ class Schedule:
 
     @classmethod
     def parse(cls, input_text: str) -> Schedule:
+        """Raises HronError if `input_text` is not a valid expression."""
         return cls(parse(input_text))
 
     @classmethod
     def from_cron(cls, cron_expr: str) -> Schedule:
+        """Raises HronError for an invalid 5-field cron expression or @ shortcut."""
         return cls(from_cron(cron_expr))
 
     @classmethod
     def validate(cls, input_text: str) -> bool:
+        """False, rather than throwing, for anything `parse` rejects."""
         try:
             parse(input_text)
             return True
@@ -83,9 +86,11 @@ class Schedule:
             return False
 
     def next_from(self, now: datetime) -> datetime | None:
+        """Return the first occurrence strictly after `now`, or None if there is none."""
         return _next_from(self._prepared, now)
 
     def next_n_from(self, now: datetime, n: int) -> list[datetime]:
+        """Return up to `n` occurrences after `now`; fewer if the schedule ends."""
         return _next_n_from(self._prepared, now, n)
 
     def previous_from(self, now: datetime) -> datetime | None:
@@ -93,6 +98,7 @@ class Schedule:
         return _previous_from(self._prepared, now)
 
     def matches(self, dt: datetime) -> bool:
+        """True if `dt`'s minute on the schedule's wall clock is an occurrence; seconds ignored."""
         return _matches(self._prepared, dt)
 
     def occurrences(self, from_: datetime) -> Iterator[datetime]:
@@ -107,6 +113,7 @@ class Schedule:
         return _between(self._prepared, from_, to)
 
     def to_cron(self) -> str:
+        """Raises HronError when the schedule has no cron equivalent."""
         return to_cron(self._data)
 
     def __str__(self) -> str:
@@ -117,6 +124,7 @@ class Schedule:
 
     @property
     def timezone(self) -> str | None:
+        """The IANA name in canonical capitalization, or None if unset."""
         return self._data.timezone
 
     @property

@@ -104,7 +104,6 @@ fn main() {
     }
 }
 
-/// The sections of a category, skipping its `description`.
 fn sections(category: &serde_json::Value) -> impl Iterator<Item = (&str, &serde_json::Value)> {
     category
         .as_object()

@@ -1,7 +1,4 @@
-//! API conformance test — verifies Rust exposes all methods from spec/api.json.
-//!
-//! This is a compile-time + runtime check: if any method is missing, the code
-//! won't compile. The runtime assertions verify return types.
+//! Rust exposes every method in spec/api.json: a missing one fails to compile.
 
 use hron::Schedule;
 

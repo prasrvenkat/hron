@@ -1,7 +1,3 @@
-//! Iterator-specific tests for `occurrences()` and `between()` methods.
-//!
-//! They cover Rust-specific iterator behavior beyond the conformance suite.
-
 use hron::Schedule;
 use jiff::{tz::TimeZone, Zoned};
 
@@ -11,7 +7,6 @@ fn parse_zoned(s: &str) -> Zoned {
 
 #[test]
 fn occurrences_is_lazy() {
-    // An unbounded schedule should not hang or OOM when creating the iterator
     let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     let from = parse_zoned("2026-02-01T00:00:00+00:00[UTC]");
 
@@ -29,7 +24,6 @@ fn between_is_lazy() {
 
     let iter = schedule.between(&from, &to);
 
-    // Taking just 3 should not evaluate all ~330 days
     let first_three: Vec<_> = iter.take(3).collect::<Result<_, _>>().unwrap();
     assert_eq!(first_three.len(), 3);
 }
@@ -63,7 +57,6 @@ fn occurrences_early_termination_with_take_while() {
         .collect::<Result<_, _>>()
         .unwrap();
 
-    // Feb 1, 2, 3, 4 at 09:00 (4 occurrences before Feb 5 00:00)
     assert_eq!(results.len(), 4);
 }
 
@@ -75,7 +68,7 @@ fn occurrences_early_termination_with_find() {
     let saturday = schedule
         .occurrences(&from)
         .find(|r| match r {
-            Ok(dt) => dt.weekday().to_sunday_zero_offset() == 6, // Saturday
+            Ok(dt) => dt.weekday().to_sunday_zero_offset() == 6,
             Err(_) => false,
         })
         .unwrap()
@@ -92,18 +85,17 @@ fn occurrences_works_with_filter() {
 
     let weekends: Vec<_> = schedule
         .occurrences(&from)
-        .take(14) // Two weeks
+        .take(14)
         .filter(|r| match r {
             Ok(dt) => {
                 let dow = dt.weekday().to_sunday_zero_offset();
-                dow == 0 || dow == 6 // Sunday or Saturday
+                dow == 0 || dow == 6
             }
             Err(_) => false,
         })
         .collect::<Result<_, _>>()
         .unwrap();
 
-    // 2 weekends in 2 weeks = 4 days
     assert_eq!(weekends.len(), 4);
 }
 
@@ -161,7 +153,6 @@ fn between_works_with_count() {
 
     let count = schedule.between(&from, &to).filter(|r| r.is_ok()).count();
 
-    // Feb 1-10 inclusive = 10 days
     assert_eq!(count, 10);
 }
 
@@ -186,7 +177,7 @@ fn occurrences_collect_to_vec() {
         .collect::<Result<_, _>>()
         .unwrap();
 
-    assert_eq!(results.len(), 5); // Feb 1-5
+    assert_eq!(results.len(), 5);
 }
 
 #[test]
@@ -270,7 +261,7 @@ fn occurrences_single_date_terminates() {
 
     let results: Vec<_> = schedule
         .occurrences(&from)
-        .take(100) // Request many but should only get 1
+        .take(100)
         .collect::<Result<_, _>>()
         .unwrap();
 
@@ -295,8 +286,7 @@ fn occurrences_preserves_timezone() {
 
 #[test]
 fn between_handles_dst_transition() {
-    // March 8, 2026 is DST spring forward in America/New_York
-    // 2:00 AM springs forward to 3:00 AM, so 02:30 shifts to 03:30
+    // March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
     let schedule = Schedule::parse("every day at 02:30 in America/New_York").unwrap();
     let from = parse_zoned("2026-03-07T00:00:00-05:00[America/New_York]");
     let to = parse_zoned("2026-03-10T00:00:00-04:00[America/New_York]");
@@ -306,11 +296,10 @@ fn between_handles_dst_transition() {
         .collect::<Result<_, _>>()
         .unwrap();
 
-    // Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
     assert_eq!(results.len(), 3);
-    assert_eq!(results[0].time().hour(), 2); // Mar 7 02:30
-    assert_eq!(results[1].time().hour(), 3); // Mar 8 03:30 (shifted due to DST)
-    assert_eq!(results[2].time().hour(), 2); // Mar 9 02:30
+    assert_eq!(results[0].time().hour(), 2);
+    assert_eq!(results[1].time().hour(), 3);
+    assert_eq!(results[2].time().hour(), 2);
 }
 
 #[test]
@@ -320,7 +309,7 @@ fn occurrences_multiple_times_per_day() {
 
     let results: Vec<_> = schedule
         .occurrences(&from)
-        .take(9) // 3 days worth
+        .take(9)
         .collect::<Result<_, _>>()
         .unwrap();
 
@@ -337,11 +326,11 @@ fn complex_iterator_chain() {
 
     let weekday_days: Vec<i8> = schedule
         .occurrences(&from)
-        .take(14) // Two weeks to ensure we have enough
+        .take(14)
         .filter_map(|r| r.ok())
         .filter(|dt| {
             let dow = dt.weekday().to_sunday_zero_offset();
-            (1..=5).contains(&dow) // Monday-Friday
+            (1..=5).contains(&dow)
         })
         .take(5)
         .map(|dt| dt.date().day())

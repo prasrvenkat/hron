@@ -201,7 +201,7 @@ class _Lexer {
     if ((digits.length == 1 || digits.length == 2) &&
         pos < input.length &&
         input[pos] == ':') {
-      pos++; // skip ':'
+      pos++;
       final minStart = pos;
       while (pos < input.length && _isDigit(input[pos])) {
         pos++;

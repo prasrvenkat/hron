@@ -204,7 +204,7 @@ module Hron
       end
 
       if digits.length.between?(1, 2) && @pos < @input.length && @input[@pos] == ":"
-        @pos += 1 # skip ':'
+        @pos += 1
         min_start = @pos
         @pos += 1 while @pos < @input.length && @input[@pos].match?(/\d/)
         min_digits = @input[min_start...@pos]

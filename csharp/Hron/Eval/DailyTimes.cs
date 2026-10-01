@@ -2,24 +2,14 @@ using Hron.Ast;
 
 namespace Hron.Eval;
 
-/// <summary>
-/// The times of day an expression fires at.
-/// </summary>
 internal abstract record DailyTimes
 {
     private DailyTimes()
     {
     }
 
-    /// <summary>
-    /// Fixed times, each shifted out of a gap.
-    /// </summary>
     public sealed record Fixed(IReadOnlyList<TimeOfDay> Times) : DailyTimes;
 
-    /// <summary>
-    /// Interval slots <c>From + k × Step</c> up to and including <c>To</c>, in minutes after
-    /// midnight, each skipped in a gap.
-    /// </summary>
     public sealed record Slots(long From, long To, long Step) : DailyTimes
     {
         public long Count => Math.Max(Calendar.FloorDiv(To - From, Step) + 1, 0);

@@ -1,14 +1,13 @@
 package io.hron;
 
-/** The type of error that occurred during parsing, evaluation, or conversion. */
 public enum ErrorKind {
   /** Lexer error - invalid tokens in input. */
   LEX("lex"),
   /** Parser error - invalid syntax. */
   PARSE("parse"),
-  /** Evaluation error - cannot compute next occurrence. */
+  /** Runtime evaluation error (spec/README.md, "Error Types"). */
   EVAL("eval"),
-  /** Cron conversion error - expression not convertible to cron. */
+  /** A cron expression {@code fromCron} rejects, or a schedule {@code toCron} cannot express. */
   CRON("cron");
 
   private final String value;
@@ -17,11 +16,7 @@ public enum ErrorKind {
     this.value = value;
   }
 
-  /**
-   * Returns the lowercase string representation.
-   *
-   * @return the kind as a lowercase string
-   */
+  /** Returns the kind as a lowercase string. */
   public String value() {
     return value;
   }

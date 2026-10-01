@@ -2,14 +2,8 @@ using Hron.Ast;
 
 namespace Hron.Cron;
 
-/// <summary>
-/// Converts between hron expressions and 5-field cron expressions.
-/// </summary>
 public static class CronConverter
 {
-    /// <summary>
-    /// Converts a schedule to a 5-field cron expression.
-    /// </summary>
     public static string ToCron(ScheduleData data)
     {
         if (data.Except.Count > 0)
@@ -123,9 +117,6 @@ public static class CronConverter
     private static string FormatIntList(IReadOnlyList<int> nums)
         => string.Join(",", nums);
 
-    /// <summary>
-    /// Converts a 5-field cron expression to a ScheduleData.
-    /// </summary>
     public static ScheduleData FromCron(string cron)
     {
         cron = cron.Trim();
@@ -147,7 +138,7 @@ public static class CronConverter
         var monthField = fields[3];
         var dowField = fields[4];
 
-        // Normalize ? to * (they're semantically equivalent for our purposes)
+        // Cron's `?` means the same as `*` here.
         if (domField == "?") domField = "*";
         if (dowField == "?") dowField = "*";
 
@@ -321,9 +312,6 @@ public static class CronConverter
         return month.Value;
     }
 
-    /// <summary>
-    /// Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday).
-    /// </summary>
     private static ScheduleData? TryParseNthWeekday(
         string minuteField,
         string hourField,
@@ -388,9 +376,6 @@ public static class CronConverter
         return null;
     }
 
-    /// <summary>
-    /// Try to parse L (last day) or LW (last weekday) patterns.
-    /// </summary>
     private static ScheduleData? TryParseLastDay(
         string minuteField,
         string hourField,
@@ -493,7 +478,7 @@ public static class CronConverter
             }
             else
             {
-                // Single value with step (e.g., 0/15) - treat as starting point
+                // Cron reads `0/15` as `0-59/15`.
                 if (!int.TryParse(rangePart, out fromMinute))
                 {
                     throw HronException.Cron("invalid minute value");
@@ -602,7 +587,6 @@ public static class CronConverter
 
             if ((domField == "*" || domField == "?") && (dowField == "*" || dowField == "?"))
             {
-                // Use :59 only for full day (00:00 to 23:59), otherwise use :00
                 var endMinute = (fromHour == 0 && toHour == 23) ? 59 : 0;
 
                 return ScheduleData.Of(new IntervalRepeat(
@@ -819,9 +803,6 @@ public static class CronConverter
         return raw == 7 ? 0 : raw;
     }
 
-    /// <summary>
-    /// Parse a DOW value without normalizing 7 to 0 (for range checking).
-    /// </summary>
     private static int ParseDowValueRaw(string s)
     {
         if (int.TryParse(s, out var n))

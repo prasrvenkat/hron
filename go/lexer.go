@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// TokenKind represents the type of token.
 type TokenKind int
 
 const (
@@ -43,12 +42,10 @@ const (
 	TokenPrevious
 )
 
-// Token represents a lexed token.
 type Token struct {
 	Kind TokenKind
 	Span Span
 
-	// Value fields (only one is set based on Kind)
 	DayNameVal   Weekday
 	MonthNameVal MonthName
 	OrdinalVal   OrdinalPosition
@@ -66,7 +63,6 @@ type lexer struct {
 	afterIn bool
 }
 
-// Tokenize tokenizes the input string into a list of tokens.
 func Tokenize(input string) ([]Token, error) {
 	l := &lexer{input: input}
 	return l.tokenize()
@@ -166,7 +162,7 @@ func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
 	}
 
 	if (len(digits) == 1 || len(digits) == 2) && l.pos < len(l.input) && l.input[l.pos] == ':' {
-		l.pos++ // skip ':'
+		l.pos++
 		minStart := l.pos
 		for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
 			l.pos++
@@ -252,7 +248,7 @@ var keywordMap = map[string]Token{
 	"week":     {Kind: TokenWeeks},
 	"month":    {Kind: TokenMonth},
 	"months":   {Kind: TokenMonth},
-	// Day names
+
 	"monday":    {Kind: TokenDayName, DayNameVal: Monday},
 	"mon":       {Kind: TokenDayName, DayNameVal: Monday},
 	"tuesday":   {Kind: TokenDayName, DayNameVal: Tuesday},
@@ -267,7 +263,7 @@ var keywordMap = map[string]Token{
 	"sat":       {Kind: TokenDayName, DayNameVal: Saturday},
 	"sunday":    {Kind: TokenDayName, DayNameVal: Sunday},
 	"sun":       {Kind: TokenDayName, DayNameVal: Sunday},
-	// Month names
+
 	"january":   {Kind: TokenMonthName, MonthNameVal: Jan},
 	"jan":       {Kind: TokenMonthName, MonthNameVal: Jan},
 	"february":  {Kind: TokenMonthName, MonthNameVal: Feb},
@@ -291,17 +287,17 @@ var keywordMap = map[string]Token{
 	"nov":       {Kind: TokenMonthName, MonthNameVal: Nov},
 	"december":  {Kind: TokenMonthName, MonthNameVal: Dec},
 	"dec":       {Kind: TokenMonthName, MonthNameVal: Dec},
-	// Ordinals
+
 	"first":  {Kind: TokenOrdinal, OrdinalVal: First},
 	"second": {Kind: TokenOrdinal, OrdinalVal: Second},
 	"third":  {Kind: TokenOrdinal, OrdinalVal: Third},
 	"fourth": {Kind: TokenOrdinal, OrdinalVal: Fourth},
 	"fifth":  {Kind: TokenOrdinal, OrdinalVal: Fifth},
-	// Nearest weekday keywords
+
 	"nearest":  {Kind: TokenNearest},
 	"next":     {Kind: TokenNext},
 	"previous": {Kind: TokenPrevious},
-	// Interval units
+
 	"min":     {Kind: TokenIntervalUnit, UnitVal: IntervalMin},
 	"mins":    {Kind: TokenIntervalUnit, UnitVal: IntervalMin},
 	"minute":  {Kind: TokenIntervalUnit, UnitVal: IntervalMin},

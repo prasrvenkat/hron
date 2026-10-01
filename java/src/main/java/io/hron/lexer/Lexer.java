@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Tokenizes input strings into a list of tokens. */
 public final class Lexer {
   private final String input;
   private int pos;
@@ -22,13 +21,6 @@ public final class Lexer {
     this.afterIn = false;
   }
 
-  /**
-   * Tokenizes the input string into a list of tokens.
-   *
-   * @param input the input string to tokenize
-   * @return a list of tokens
-   * @throws HronException if the input contains invalid tokens
-   */
   public static List<Token> tokenize(String input) throws HronException {
     return new Lexer(input).doTokenize();
   }
@@ -118,7 +110,8 @@ public final class Lexer {
     if ((digits.length() == 1 || digits.length() == 2)
         && pos < input.length()
         && input.charAt(pos) == ':') {
-      pos++; // skip ':'
+      pos++;
+
       int minStart = pos;
       while (pos < input.length() && isDigit(input.charAt(pos))) {
         pos++;

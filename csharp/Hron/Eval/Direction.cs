@@ -14,9 +14,6 @@ internal static class DirectionExtensions
         _ => -1
     };
 
-    /// <summary>
-    /// Whether <paramref name="a"/> comes before <paramref name="b"/> in this direction.
-    /// </summary>
     public static bool Precedes<T>(this Direction direction, T a, T b) where T : IComparable<T> => direction switch
     {
         Direction.Forward => a.CompareTo(b) < 0,

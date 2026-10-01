@@ -62,7 +62,6 @@ describe("early termination", () => {
       results.push(dt);
     }
 
-    // Feb 1, 2, 3, 4 at 09:00 (4 occurrences before Feb 5 00:00)
     expect(results.length).toBe(4);
   });
 });
@@ -95,7 +94,7 @@ describe("iterator protocol", () => {
 
     const results = Array.from(schedule.occurrences(from));
 
-    expect(results.length).toBe(5); // Feb 1-5
+    expect(results.length).toBe(5);
     expect(results.every((dt) => dt instanceof Temporal.ZonedDateTime)).toBe(
       true,
     );
@@ -108,7 +107,7 @@ describe("iterator protocol", () => {
 
     const results = [...schedule.between(from, to)];
 
-    expect(results.length).toBe(4); // Feb 1,2,3,4 at 09:00
+    expect(results.length).toBe(4);
     expect(results[0].day).toBe(1);
   });
 });
@@ -194,8 +193,7 @@ describe("timezone handling", () => {
   });
 
   it("between handles DST transition", () => {
-    // March 8, 2026 is DST spring forward in America/New_York
-    // 2:00 AM springs forward to 3:00 AM, so 02:30 shifts to 03:30
+    // March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
     const schedule = Schedule.parse("every day at 02:30 in America/New_York");
     const from = parseZoned("2026-03-07T00:00:00-05:00[America/New_York]");
     const to = parseZoned("2026-03-10T00:00:00-04:00[America/New_York]");
@@ -203,9 +201,9 @@ describe("timezone handling", () => {
     const results = [...schedule.between(from, to)];
 
     expect(results.length).toBe(3);
-    expect(results[0].hour).toBe(2); // Mar 7 02:30
-    expect(results[1].hour).toBe(3); // Mar 8 03:30 (shifted due to DST)
-    expect(results[2].hour).toBe(2); // Mar 9 02:30
+    expect(results[0].hour).toBe(2);
+    expect(results[1].hour).toBe(3);
+    expect(results[2].hour).toBe(2);
   });
 });
 
@@ -217,7 +215,7 @@ describe("multiple times per day", () => {
     const results: Temporal.ZonedDateTime[] = [];
     for (const dt of schedule.occurrences(from)) {
       results.push(dt);
-      if (results.length >= 9) break; // 3 days worth
+      if (results.length >= 9) break;
     }
 
     expect(results.length).toBe(9);

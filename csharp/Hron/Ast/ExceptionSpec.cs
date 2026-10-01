@@ -1,8 +1,5 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents an exception date.
-/// </summary>
 public sealed record ExceptionSpec(ExceptionSpecKind Kind, MonthName? Month, int Day, string? Date)
 {
     public static ExceptionSpec Named(MonthName month, int day)
@@ -12,13 +9,8 @@ public sealed record ExceptionSpec(ExceptionSpecKind Kind, MonthName? Month, int
         => new(ExceptionSpecKind.Iso, null, 0, date);
 }
 
-/// <summary>
-/// The type of exception specification.
-/// </summary>
 public enum ExceptionSpecKind
 {
-    /// <summary>A named exception (e.g., dec 25).</summary>
     Named,
-    /// <summary>An ISO exception (e.g., 2026-12-25).</summary>
     Iso
 }

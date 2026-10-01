@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// ErrorKind represents the type of error that occurred.
 type ErrorKind string
 
 const (
@@ -15,13 +14,12 @@ const (
 	ErrorKindCron  ErrorKind = "cron"
 )
 
-// Span represents a range of character positions in the input.
+// Span is a byte range in the input: Start inclusive, End exclusive.
 type Span struct {
 	Start int
 	End   int
 }
 
-// HronError represents an error that occurred during parsing, evaluation, or conversion.
 type HronError struct {
 	Kind       ErrorKind
 	Message    string
@@ -30,12 +28,10 @@ type HronError struct {
 	Suggestion string
 }
 
-// Error implements the error interface.
 func (e *HronError) Error() string {
 	return e.Message
 }
 
-// LexError creates a new lexer error.
 func LexError(message string, span Span, input string) *HronError {
 	return &HronError{
 		Kind:    ErrorKindLex,
@@ -45,7 +41,6 @@ func LexError(message string, span Span, input string) *HronError {
 	}
 }
 
-// ParseError creates a new parser error.
 func ParseError(message string, span Span, input string, suggestion string) *HronError {
 	return &HronError{
 		Kind:       ErrorKindParse,
@@ -56,7 +51,6 @@ func ParseError(message string, span Span, input string, suggestion string) *Hro
 	}
 }
 
-// EvalError creates a new evaluation error.
 func EvalError(message string) *HronError {
 	return &HronError{
 		Kind:    ErrorKindEval,
@@ -64,7 +58,6 @@ func EvalError(message string) *HronError {
 	}
 }
 
-// CronError creates a new cron conversion error.
 func CronError(message string) *HronError {
 	return &HronError{
 		Kind:    ErrorKindCron,

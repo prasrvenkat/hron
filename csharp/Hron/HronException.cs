@@ -14,47 +14,32 @@ public sealed class HronException : Exception
         Suggestion = suggestion;
     }
 
-    /// <summary>
-    /// Creates a new lexer error.
-    /// </summary>
     public static HronException Lex(string message, Span span, string input)
         => new(ErrorKind.Lex, message, span, input, null);
 
-    /// <summary>
-    /// Creates a new parser error.
-    /// </summary>
     public static HronException Parse(string message, Span span, string input, string? suggestion = null)
         => new(ErrorKind.Parse, message, span, input, suggestion);
 
-    /// <summary>
-    /// Creates a new evaluation error.
-    /// </summary>
     public static HronException Eval(string message)
         => new(ErrorKind.Eval, message, null, null, null);
 
-    /// <summary>
-    /// Creates a new cron conversion error.
-    /// </summary>
     public static HronException Cron(string message)
         => new(ErrorKind.Cron, message, null, null, null);
 
-    /// <summary>
-    /// The kind of error.
-    /// </summary>
     public ErrorKind Kind { get; }
 
     /// <summary>
-    /// The span where the error occurred, if available.
+    /// Null unless this is a lex or parse error.
     /// </summary>
     public Span? Span { get; }
 
     /// <summary>
-    /// The original input string, if available.
+    /// Null unless this is a lex or parse error.
     /// </summary>
     public string? Input { get; }
 
     /// <summary>
-    /// A suggestion for fixing the error, if available.
+    /// Null unless the parser has a fix to suggest.
     /// </summary>
     public string? Suggestion { get; }
 

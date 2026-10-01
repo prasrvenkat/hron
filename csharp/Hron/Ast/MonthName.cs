@@ -1,8 +1,5 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents a month of the year.
-/// </summary>
 public enum MonthName
 {
     January = 1,
@@ -60,7 +57,7 @@ public static class MonthNameExtensions
     public static int Number(this MonthName month) => (int)month;
 
     /// <summary>
-    /// Returns the short display name (e.g., "jan", "feb").
+    /// Returns the lowercase three-letter name.
     /// </summary>
     public static string ToDisplayString(this MonthName month) => DisplayNames[(int)month];
 
@@ -70,9 +67,6 @@ public static class MonthNameExtensions
     public static MonthName? Parse(string s)
         => ParseMap.TryGetValue(s, out var month) ? month : null;
 
-    /// <summary>
-    /// Returns a MonthName from a month number.
-    /// </summary>
     public static MonthName? FromNumber(int n)
         => n is >= 1 and <= 12 ? (MonthName)n : null;
 }

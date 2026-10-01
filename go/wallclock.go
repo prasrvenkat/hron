@@ -7,9 +7,8 @@ const (
 	minutesPerDay  = 24 * minutesPerHour
 )
 
-// fixedTimeOn returns the instant of the wall time minute minutes after
-// midnight on date, shifted forward by the gap's length when it falls in a
-// spring-forward gap (spec/README.md, "DST spring-forward (gaps)").
+// A wall time in a spring-forward gap shifts forward by the gap's length
+// (spec/README.md, "DST spring-forward (gaps)").
 func fixedTimeOn(date time.Time, minute int, zone *time.Location) time.Time {
 	instant, _ := resolveWallClock(date, minute, zone)
 	return instant
@@ -26,7 +25,6 @@ type slot struct {
 	skipped bool
 }
 
-// slotOn returns the slot minute minutes after midnight on date.
 func slotOn(date time.Time, minute int, zone *time.Location) slot {
 	instant, ok := resolveWallClock(date, minute, zone)
 	if ok {
@@ -55,16 +53,13 @@ func gapEnd(wall time.Time, before, after time.Duration, zone *time.Location) ti
 	return time.Unix(hi, 0)
 }
 
-// resolveWallClock returns the first instant whose wall-clock time in zone is
-// minute minutes after midnight on date, and true; a wall time a fall-back
-// repeats takes its first pass (spec/README.md, "DST fall-back (ambiguous
-// times)"). If the wall time falls in a gap, it returns the instant the pre-gap
-// offset gives (the time shifted forward by the gap's length) and false.
-// time.Date guarantees neither choice. The offsets a day before and after the
-// wall time bracket the transition that can affect it; ZoneBounds is not used
-// because Go reports wrong bounds at the end of leap years beyond the zone
-// file's explicit transitions. This assumes at most one offset change within a
-// day of the wall time; tzdata has none closer than about four days.
+// A wall time a fall-back repeats takes its first pass (spec/README.md, "DST
+// fall-back (ambiguous times)"); one in a gap takes the pre-gap offset, which
+// shifts it forward by the gap's length, and returns false. time.Date
+// guarantees neither choice. ZoneBounds is not used because Go reports wrong
+// bounds at the end of leap years beyond the zone file's explicit transitions.
+// This assumes at most one offset change within a day of the wall time; tzdata
+// has none closer than about four days.
 func resolveWallClock(date time.Time, minute int, zone *time.Location) (time.Time, bool) {
 	wall := date.Add(time.Duration(minute) * time.Minute)
 	offsetBefore := offsetAt(wall.Add(-24*time.Hour), zone)

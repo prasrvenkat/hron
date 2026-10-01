@@ -1,5 +1,5 @@
-//! Wall-clock times on dates in a time zone. A wall time a fall-back repeats
-//! takes its first pass (spec/README.md, "DST fall-back (ambiguous times)").
+//! A wall time a fall-back repeats takes its first pass (spec/README.md,
+//! "DST fall-back (ambiguous times)").
 
 use jiff::civil::{Date, Time};
 use jiff::tz::{AmbiguousOffset, TimeZone};

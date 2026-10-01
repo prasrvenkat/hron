@@ -16,8 +16,11 @@ HronErrorKind = Literal["lex", "parse", "eval", "cron"]
 class HronError(Exception):
     kind: HronErrorKind
     span: Span | None
+    """None unless this is a lex or parse error."""
     input_text: str | None
+    """None unless this is a lex or parse error."""
     suggestion: str | None
+    """None unless the parser has a fix to suggest."""
 
     def __init__(
         self,

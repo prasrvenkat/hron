@@ -1,8 +1,5 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents an until date.
-/// </summary>
 public sealed record UntilSpec(UntilSpecKind Kind, string? Date, MonthName? Month, int Day)
 {
     public static UntilSpec Iso(string date)
@@ -12,13 +9,8 @@ public sealed record UntilSpec(UntilSpecKind Kind, string? Date, MonthName? Mont
         => new(UntilSpecKind.Named, null, month, day);
 }
 
-/// <summary>
-/// The type of until specification.
-/// </summary>
 public enum UntilSpecKind
 {
-    /// <summary>An ISO until date (e.g., 2026-12-31).</summary>
     Iso,
-    /// <summary>A named until date (e.g., dec 31).</summary>
     Named
 }

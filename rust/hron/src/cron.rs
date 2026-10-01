@@ -147,7 +147,6 @@ fn day_filter_to_cron_dow(filter: &DayFilter) -> Result<String, ScheduleError> {
     }
 }
 
-/// Cron uses 0=Sunday, 1=Monday, ..., 6=Saturday.
 fn cron_dow_number(day: Weekday) -> u8 {
     match day {
         Weekday::Sunday => 0,
@@ -181,7 +180,7 @@ pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
     let month_field = fields[3];
     let dow_field = fields[4];
 
-    // Normalize ? to * (they're semantically equivalent for our purposes)
+    // Cron's `?` means the same as `*` here.
     let dom_field = if dom_field == "?" { "*" } else { dom_field };
     let dow_field = if dow_field == "?" { "*" } else { dow_field };
 
@@ -356,7 +355,6 @@ fn month_from_number(n: u8) -> Result<MonthName, ScheduleError> {
     }
 }
 
-/// Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday).
 fn try_parse_nth_weekday(
     minute_field: &str,
     hour_field: &str,
@@ -429,7 +427,6 @@ fn try_parse_nth_weekday(
     Ok(None)
 }
 
-/// Try to parse L (last day) or LW (last weekday) patterns.
 fn try_parse_last_day(
     minute_field: &str,
     hour_field: &str,
@@ -465,7 +462,6 @@ fn try_parse_last_day(
     Ok(Some(schedule))
 }
 
-/// Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
 fn try_parse_nearest_weekday(
     minute_field: &str,
     hour_field: &str,
@@ -510,7 +506,6 @@ fn try_parse_nearest_weekday(
     Ok(Some(schedule))
 }
 
-/// Try to parse interval patterns: */N, range/N in minute or hour fields.
 fn try_parse_interval(
     minute_field: &str,
     hour_field: &str,
@@ -548,7 +543,7 @@ fn try_parse_interval(
             }
             (s, e)
         } else {
-            // Single value with step (e.g., 0/15) - treat as starting point
+            // Cron reads `0/15` as `0-59/15`.
             let s: u8 = range_part
                 .parse()
                 .map_err(|_| ScheduleError::cron("invalid minute value"))?;
@@ -793,7 +788,7 @@ fn parse_cron_dow(field: &str) -> Result<DayFilter, ScheduleError> {
                 d += step;
             }
         } else if let Some((start_str, end_str)) = part.split_once('-') {
-            // Parse without normalizing 7 to 0 for range purposes
+            // Unnormalized, so a range can end at 7 (Sunday).
             let start = parse_dow_value_raw(start_str)?;
             let end = parse_dow_value_raw(end_str)?;
             if start > end {

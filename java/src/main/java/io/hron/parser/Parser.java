@@ -16,7 +16,6 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Recursive descent parser for hron expressions. */
 public final class Parser {
   // spec/README.md "Parse-time validation": UTC or an IANA Area/Location name, in any case, but
   // not the SystemV/, posix/ and right/ build directories.
@@ -41,13 +40,6 @@ public final class Parser {
     this.pos = 0;
   }
 
-  /**
-   * Parses an hron expression into a ScheduleData.
-   *
-   * @param input the input string to parse
-   * @return the parsed schedule data
-   * @throws HronException if the input is invalid
-   */
   public static ScheduleData parse(String input) throws HronException {
     if (input == null || input.trim().isEmpty()) {
       throw HronException.parse("empty input", new Span(0, 0), input, null);

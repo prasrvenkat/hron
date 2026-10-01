@@ -1,5 +1,3 @@
-/// Date arithmetic on the proleptic Gregorian calendar: no time zones, no
-/// schedules. A date is a [DateTime] at midnight UTC.
 library;
 
 import '../ast.dart';
@@ -10,7 +8,6 @@ DateTime parseIsoDate(String iso) {
   return DateTime.utc(year, month, day);
 }
 
-/// [year]-[month]-[day], or null when the month has no such day.
 DateTime? validDate(int year, int month, int day) {
   final date = DateTime.utc(year, month, day);
   return date.month == month ? date : null;
@@ -25,7 +22,6 @@ int daysBetween(DateTime a, DateTime b) => epochDay(b) - epochDay(a);
 
 DateTime addDays(DateTime date, int days) => date.add(Duration(days: days));
 
-/// Months since January of year 0.
 int monthIndex(DateTime date) => date.year * 12 + date.month - 1;
 
 int monthsBetween(DateTime a, DateTime b) => monthIndex(b) - monthIndex(a);
@@ -46,7 +42,6 @@ bool matchesDayFilter(DateTime date, DayFilter filter) => switch (filter) {
 bool _isWeekend(DateTime date) =>
     date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
 
-/// The dates a monthly target names in a month, earliest first.
 List<DateTime> monthTargetDates(int year, int month, MonthTarget target) =>
     switch (target) {
       DaysTarget() => [
@@ -80,7 +75,6 @@ DateTime? yearTargetDate(int year, YearTarget target) => switch (target) {
 DateTime _lastDayOfMonth(int year, int month) =>
     DateTime.utc(year, month + 1, 0);
 
-/// The last Monday to Friday of a month.
 DateTime _lastWeekdayOfMonth(int year, int month) {
   final last = _lastDayOfMonth(year, month);
   final back = switch (last.weekday) {
@@ -107,10 +101,9 @@ DateTime? _ordinalWeekday(
   return date.month == month ? date : null;
 }
 
-/// The weekday nearest [day] of a month, or null when the month is shorter.
-/// Without a direction it stays in the month, as cron's `W` does; with one it
-/// can cross into the adjacent month (spec/README.md, "Nearest weekday and
-/// `during`").
+/// Without a direction the nearest weekday stays in the month, as cron's
+/// `W` does; with one it can cross into the adjacent month (spec/README.md,
+/// "Nearest weekday and `during`").
 DateTime? _nearestWeekday(
   int year,
   int month,

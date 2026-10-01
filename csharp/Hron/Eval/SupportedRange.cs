@@ -1,7 +1,7 @@
 namespace Hron.Eval;
 
 /// <summary>
-/// spec/README.md, "Supported range": from RangeStart inclusive to RangeEnd exclusive.
+/// spec/README.md, "Supported range".
 /// </summary>
 internal static class SupportedRange
 {

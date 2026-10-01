@@ -1,7 +1,6 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// A parsed hron schedule: expression + optional modifiers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Schedule {
@@ -14,7 +13,6 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    /// Create a Schedule from just an expression (no modifiers).
     pub fn new(expr: ScheduleExpr) -> Self {
         Self {
             expr,
@@ -27,11 +25,9 @@ impl Schedule {
     }
 }
 
-/// The core schedule expression (what repeats).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ScheduleExpr {
-    /// `every 30 min from 09:00 to 17:00 [on weekdays]`
     IntervalRepeat {
         interval: u32,
         unit: IntervalUnit,
@@ -39,30 +35,25 @@ pub enum ScheduleExpr {
         to: TimeOfDay,
         day_filter: Option<DayFilter>,
     },
-    /// `every day at 09:00`, `every 2 days at 09:00`
     DayRepeat {
         interval: u32,
         days: DayFilter,
         times: Vec<TimeOfDay>,
     },
-    /// `every 2 weeks on monday at 09:00`
     WeekRepeat {
         interval: u32,
         days: Vec<Weekday>,
         times: Vec<TimeOfDay>,
     },
-    /// `every month on the 1st at 09:00`, `every 2 months on the 1st at 09:00`
     MonthRepeat {
         interval: u32,
         target: MonthTarget,
         times: Vec<TimeOfDay>,
     },
-    /// `on feb 14 at 9:00, 17:00`
     SingleDate {
         date: DateSpec,
         times: Vec<TimeOfDay>,
     },
-    /// `every year on dec 25 at 00:00`, `every 2 years on dec 25 at 00:00`
     YearRepeat {
         interval: u32,
         target: YearTarget,
@@ -70,51 +61,53 @@ pub enum ScheduleExpr {
     },
 }
 
-/// Exception date for `except` clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Exception {
-    /// Recurring named date: `dec 25` matches every year.
+    /// Matches this month and day every year.
     Named { month: MonthName, day: u8 },
-    /// One-off ISO date: `2026-12-25`.
+    /// Matches only this date, as YYYY-MM-DD.
     Iso(String),
 }
 
-/// Until spec for `until` clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum UntilSpec {
-    /// ISO date: `2026-12-31`.
     Iso(String),
-    /// Named date: `dec 31` — the first such date on or after the `starting` date.
-    Named { month: MonthName, day: u8 },
+    /// Resolves to the first such date on or after `starting`.
+    Named {
+        month: MonthName,
+        day: u8,
+    },
 }
 
-/// Year target for yearly expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum YearTarget {
-    /// `on dec 25` — specific month and day.
-    Date { month: MonthName, day: u8 },
-    /// `on the first monday of march` — ordinal weekday of a month.
+    Date {
+        month: MonthName,
+        day: u8,
+    },
     OrdinalWeekday {
         ordinal: OrdinalPosition,
         weekday: Weekday,
         month: MonthName,
     },
-    /// `on the 15th of march` — day of a month.
-    DayOfMonth { day: u8, month: MonthName },
-    /// `on the last weekday of december` — last weekday of a month.
-    LastWeekday { month: MonthName },
+    DayOfMonth {
+        day: u8,
+        month: MonthName,
+    },
+    LastWeekday {
+        month: MonthName,
+    },
 }
 
-/// Time of day (hours and minutes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TimeOfDay {
     pub hour: u8,
@@ -152,7 +145,6 @@ impl<'de> Deserialize<'de> for TimeOfDay {
     }
 }
 
-/// Day filter for day-repeat and interval expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -164,7 +156,7 @@ pub enum DayFilter {
     Days(Vec<Weekday>),
 }
 
-/// Weekday with custom serde (lowercase string).
+/// Serializes as its lowercase name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Weekday {
     Monday,
@@ -294,7 +286,6 @@ pub(crate) fn parse_weekday(s: &str) -> Option<Weekday> {
     }
 }
 
-/// A single day or range of days in a monthly target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -305,7 +296,6 @@ pub enum DayOfMonthSpec {
 }
 
 impl DayOfMonthSpec {
-    /// Expand into individual day numbers.
     pub fn expand(&self) -> Vec<u8> {
         match self {
             DayOfMonthSpec::Single(d) => vec![*d],
@@ -314,7 +304,6 @@ impl DayOfMonthSpec {
     }
 }
 
-/// Direction for nearest weekday (hron extension beyond cron W).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -326,7 +315,6 @@ pub enum NearestDirection {
     Previous,
 }
 
-/// Month target for month-repeat expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -342,7 +330,6 @@ pub enum MonthTarget {
         day: u8,
         direction: Option<NearestDirection>,
     },
-    /// Ordinal weekday of month: `first monday`, `last friday`, etc.
     OrdinalWeekday {
         ordinal: OrdinalPosition,
         weekday: Weekday,
@@ -358,7 +345,6 @@ impl MonthTarget {
     }
 }
 
-/// Ordinal position (first through fifth, or last).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -385,7 +371,6 @@ impl OrdinalPosition {
     }
 }
 
-/// Date specification for single-date expressions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -395,7 +380,6 @@ pub enum DateSpec {
     Iso(String),
 }
 
-/// Month name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
@@ -468,7 +452,6 @@ pub(crate) fn parse_month_name(s: &str) -> Option<MonthName> {
     }
 }
 
-/// Interval unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

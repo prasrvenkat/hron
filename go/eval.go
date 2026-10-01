@@ -124,7 +124,6 @@ func (d direction) sign() int {
 	return int(d)
 }
 
-// precedes reports whether a comes before b in direction d.
 func (d direction) precedes(a, b time.Time) bool {
 	if d == forward {
 		return a.Before(b)
@@ -132,8 +131,6 @@ func (d direction) precedes(a, b time.Time) bool {
 	return a.After(b)
 }
 
-// search is a schedule prepared for searching: its zone, cadence, times and
-// clauses resolved once.
 type search struct {
 	expr    *ScheduleExpr
 	zone    *time.Location
@@ -153,13 +150,11 @@ func newSearch(data *ScheduleData, zone *time.Location) search {
 	}
 }
 
-// occurrence is an instant a search found, with the local date it lands on.
 type occurrence struct {
 	instant time.Time
 	landing time.Time
 }
 
-// nearest returns the occurrence nearest now strictly beyond it in direction d.
 func (s *search) nearest(now time.Time, d direction) (time.Time, bool) {
 	now = now.In(s.zone)
 	nowDate := dateOf(now)
@@ -202,8 +197,6 @@ walk:
 	return best.instant, true
 }
 
-// nearestOnDate returns the occurrence on date nearest now strictly beyond it
-// in direction d.
 func (s *search) nearestOnDate(date, now time.Time, d direction) (time.Time, bool) {
 	if s.times.fixed != nil {
 		return s.nearestFixedTime(date, now, d)
@@ -225,10 +218,6 @@ func (s *search) nearestFixedTime(date, now time.Time, d direction) (time.Time, 
 	return nearest, found
 }
 
-// nearestSlot finds the slots on either side of now by one binary search on
-// their keys, which never decrease in wall-clock order, then takes the nearest
-// one in direction d that a gap does not skip. Forward, the slots behind now
-// are those keyed at or before it; backward, before it.
 func (s *search) nearestSlot(date, now time.Time, d direction) (time.Time, bool) {
 	slots := s.times.slots
 	at := func(k int) slot { return slotOn(date, slots.minute(k), s.zone) }
@@ -269,10 +258,8 @@ func (s *search) nearestSlot(date, now time.Time, d direction) (time.Time, bool)
 	return time.Time{}, false
 }
 
-// couldBeat reports whether an occurrence scheduled on date can precede, in
-// direction d, the best one, which landed on landing. An occurrence lands from
-// its scheduled date to shift dates after it, on a first pass, and first passes
-// keep wall-clock order.
+// An occurrence lands from its scheduled date to shift dates after it, on a
+// first pass, and first passes keep wall-clock order.
 func couldBeat(date, landing time.Time, d direction, shift int) bool {
 	if d == forward {
 		return !date.After(landing)
@@ -280,8 +267,6 @@ func couldBeat(date, landing time.Time, d direction, shift int) bool {
 	return daysBetween(date, landing) <= shift
 }
 
-// isBehind reports whether every occurrence scheduled on date lies behind now,
-// whose wall date is nowDate, in direction d.
 func isBehind(date, nowDate time.Time, d direction, shift int) bool {
 	if d == forward {
 		return daysBetween(date, nowDate) > shift
@@ -289,9 +274,6 @@ func isBehind(date, nowDate time.Time, d direction, shift int) bool {
 	return daysBetween(nowDate, date) > maxOverlapDays
 }
 
-// dailyTimes are the times of day an expression fires at: fixed times in
-// minutes after midnight, each shifted out of a gap, or, when fixed is nil,
-// interval slots, each skipped in a gap.
 type dailyTimes struct {
 	fixed []int
 	slots slots
@@ -308,12 +290,10 @@ func dailyTimesOf(expr *ScheduleExpr) dailyTimes {
 	return dailyTimes{fixed: fixed}
 }
 
-// slots are the wall-clock minutes from + k × step for 0 <= k < count.
 type slots struct {
 	from, step, count int
 }
 
-// intervalSlots returns the slots from + k × interval up to and including to.
 func intervalSlots(expr *ScheduleExpr) slots {
 	step := min(max(expr.Interval, 1), maxInterval)
 	if expr.Unit == IntervalHours {
@@ -323,8 +303,7 @@ func intervalSlots(expr *ScheduleExpr) slots {
 	return slots{from: from, step: step, count: max(floorDiv(to-from, step)+1, 0)}
 }
 
-// maxShiftDays returns how many dates past its scheduled date an occurrence at
-// these times can land: a gap pushes a fixed time forward, and skips a slot.
+// A gap pushes a fixed time forward, and skips a slot.
 func (t *dailyTimes) maxShiftDays() int {
 	if t.fixed != nil {
 		return maxShiftDays
@@ -336,17 +315,12 @@ func (s slots) minute(k int) int {
 	return s.from + k*s.step
 }
 
-// behindBounds bounds how many of the slots on date are behind now (keyed
-// before it, or at it when atNow), given that their keys resolve with offsets
-// a and b. A key lies between its wall time read at the larger offset and at
-// the smaller, so the count lies between the slots whose wall time is behind
-// now read at each.
+// A key lies between its wall time read at the larger offset and at the
+// smaller, so the slots behind now number between the counts read at each.
 func (s slots) behindBounds(date, now time.Time, atNow bool, a, b time.Duration) (lo, hi int) {
 	return s.wallBehind(date, now, min(a, b), atNow), s.wallBehind(date, now, max(a, b), atNow)
 }
 
-// wallBehind returns how many slots on date have a wall time before now read
-// at offset, or at it when atNow.
 func (s slots) wallBehind(date, now time.Time, offset time.Duration, atNow bool) int {
 	seconds := now.Unix() + int64(offset/time.Second) - date.Unix()
 	minute := seconds / 60
@@ -366,13 +340,13 @@ type monthDay struct {
 	day   int
 }
 
-// clauses are the trailing clauses, resolved once. during applies to a
-// candidate's target month; except, until and starting to its date
-// (spec/README.md, "Nearest weekday and `during`", "The `starting` clause").
+// during applies to a candidate's target month; except, until and starting to
+// its date (spec/README.md, "Nearest weekday and `during`", "The `starting`
+// clause").
 type clauses struct {
 	during          []time.Month
 	exceptMonthDays []monthDay
-	exceptDates     []time.Time // ascending
+	exceptDates     []time.Time
 	until           *time.Time
 	starting        *time.Time
 }
@@ -412,20 +386,18 @@ func (c *clauses) allows(candidate candidate) bool {
 		(c.starting == nil || !date.Before(*c.starting))
 }
 
-// allowsMonth reports whether during allows a candidate that targets month.
 func (c *clauses) allowsMonth(month time.Month) bool {
 	return len(c.during) == 0 || slices.Contains(c.during, month)
 }
 
-// endOn ends the search on date: nothing after it is an occurrence.
 func (c *clauses) endOn(date time.Time) {
 	if c.until == nil || date.Before(*c.until) {
 		c.until = &date
 	}
 }
 
-// farthestExceptDate returns the one-off except date farthest along direction
-// d: the calendar repeats only beyond it (spec/README.md, "Search horizon").
+// The calendar repeats only beyond the farthest one-off except date
+// (spec/README.md, "Search horizon").
 func (c *clauses) farthestExceptDate(d direction) (time.Time, bool) {
 	if len(c.exceptDates) == 0 {
 		return time.Time{}, false
@@ -436,8 +408,6 @@ func (c *clauses) farthestExceptDate(d direction) (time.Time, bool) {
 	return c.exceptDates[0], true
 }
 
-// clamp returns the date a search starts from: nothing fires before starting
-// or after until.
 func (c *clauses) clamp(date time.Time, d direction) time.Time {
 	switch {
 	case d == forward && c.starting != nil && date.Before(*c.starting):
@@ -448,8 +418,6 @@ func (c *clauses) clamp(date time.Time, d direction) time.Time {
 	return date
 }
 
-// endsSearch reports whether date, and every date beyond it in direction d, is
-// past the bound the search moves toward.
 func (c *clauses) endsSearch(date time.Time, d direction) bool {
 	if d == forward {
 		return c.until != nil && date.After(*c.until)
@@ -457,11 +425,9 @@ func (c *clauses) endsSearch(date time.Time, d direction) bool {
 	return c.starting != nil && date.Before(*c.starting)
 }
 
-// resolveUntilDate returns the last date a schedule fires on. A named until
-// date is the first such date on or after the starting date (spec/README.md,
-// "Named `until`"). Parse requires starting; a schedule built without one
-// resolves from the default anchor, the epoch. Nil when no such date exists,
-// so nothing bounds the schedule.
+// A named until resolves to its first date on or after starting
+// (spec/README.md, "Named `until`"). Parse requires starting; a schedule built
+// without one resolves from the epoch.
 func resolveUntilDate(until UntilSpec, starting *time.Time) *time.Time {
 	if until.Kind == UntilSpecKindISO {
 		date, _ := parseISODate(until.Date)
@@ -488,8 +454,6 @@ const (
 	unitYear
 )
 
-// per400Years returns the units in 400 years, after which the proleptic
-// Gregorian calendar repeats.
 func (u unit) per400Years() int {
 	switch u {
 	case unitDay:
@@ -503,13 +467,11 @@ func (u unit) per400Years() int {
 	}
 }
 
-// cadence is the periods (days, weeks, months or years) an expression fires
-// in, numbered from origin: period k is aligned when k is a multiple of interval.
 type cadence struct {
 	unit     unit
 	origin   time.Time
 	interval int
-	// A single ISO date has one period, the one holding that date.
+
 	single bool
 }
 
@@ -560,13 +522,10 @@ func (c *cadence) periodOf(date time.Time) int {
 	}
 }
 
-// targetsStartMonth reports whether every candidate in a period targets the
-// month the period starts in, as in a day or a month.
 func (c *cadence) targetsStartMonth() bool {
 	return c.unit == unitDay || c.unit == unitMonth
 }
 
-// startOf returns the first day of period k.
 func (c *cadence) startOf(k int) time.Time {
 	switch c.unit {
 	case unitDay:
@@ -581,9 +540,8 @@ func (c *cadence) startOf(k int) time.Time {
 	}
 }
 
-// periodStarts walks the first days of the aligned periods from firstPeriod in
-// direction d, through one search horizon beyond whichever of firstPeriod and
-// reach is farther along it (spec/README.md, "Search horizon").
+// The walk reaches one search horizon beyond whichever of firstPeriod and
+// reach is farther along d (spec/README.md, "Search horizon").
 func (c *cadence) periodStarts(firstPeriod, reach int, d direction) periodWalk {
 	if c.single {
 		return periodWalk{cadence: c, step: 1, left: 1, direction: d}
@@ -599,7 +557,6 @@ func (c *cadence) periodStarts(firstPeriod, reach int, d direction) periodWalk {
 	}
 }
 
-// align returns the first aligned period at or beyond period k in direction d.
 func (c *cadence) align(k int, d direction) int {
 	if d == forward {
 		return k + floorMod(-k, c.interval)
@@ -622,8 +579,6 @@ type periodWalk struct {
 	direction direction
 }
 
-// next returns the first day of the next period, or false once the walk is
-// done or past the calendar's edge in its direction.
 func (w *periodWalk) next() (time.Time, bool) {
 	if w.left == 0 {
 		return time.Time{}, false
@@ -646,8 +601,6 @@ var (
 	calendarEnd   = newDate(10000, time.December, 31)
 )
 
-// pastCalendar reports whether a period starting at start, and every one
-// beyond it in direction d, is outside the calendar.
 func pastCalendar(start time.Time, d direction) bool {
 	if d == forward {
 		return start.After(calendarEnd)
@@ -655,16 +608,13 @@ func pastCalendar(start time.Time, d direction) bool {
 	return start.Before(calendarStart)
 }
 
-// candidate is a date an expression fires on, with the month whose day it
-// names. They differ only when a directional nearest weekday crosses into the
-// adjacent month.
+// targetMonth differs from date's month only when a directional nearest
+// weekday crosses into the adjacent month.
 type candidate struct {
 	date        time.Time
 	targetMonth time.Month
 }
 
-// candidatesInPeriod returns the candidates in the period starting at start,
-// earliest first.
 func candidatesInPeriod(expr *ScheduleExpr, start time.Time) []candidate {
 	dates := datesInPeriod(expr, start)
 	candidates := make([]candidate, len(dates))

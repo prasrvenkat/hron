@@ -18,8 +18,7 @@ import java.util.TreeSet;
 /**
  * The trailing clauses, resolved once. {@code during} applies to a candidate's target month; {@code
  * except}, {@code until} and {@code starting} to its date (spec/README.md, "Nearest weekday and
- * `during`", "The `starting` clause"). A null {@code until} or {@code starting} is no bound, and an
- * empty {@code during} allows every month.
+ * `during`", "The `starting` clause").
  */
 record Clauses(
     Set<Month> during,
@@ -60,7 +59,6 @@ record Clauses(
     return during.isEmpty() || during.contains(month);
   }
 
-  /** These clauses, ending the search on {@code date}: nothing after it is an occurrence. */
   Clauses endOn(LocalDate date) {
     LocalDate end = until == null || date.isBefore(until) ? date : until;
     return new Clauses(during, exceptMonthDays, exceptDates, end, starting);
@@ -77,19 +75,13 @@ record Clauses(
     return Optional.of(direction == Direction.FORWARD ? exceptDates.last() : exceptDates.first());
   }
 
-  /**
-   * The date a search starts from: nothing fires before {@code starting} or after {@code until}.
-   */
   LocalDate clamp(LocalDate date, Direction direction) {
     LocalDate bound = direction == Direction.FORWARD ? starting : until;
     return bound != null && direction.precedes(date, bound) ? bound : date;
   }
 
-  /**
-   * Whether {@code date}, and every date beyond it in {@code direction}, is past the bound the
-   * search moves toward.
-   */
   boolean endsSearch(LocalDate date, Direction direction) {
+
     LocalDate bound = direction == Direction.FORWARD ? until : starting;
     return bound != null && direction.precedes(bound, date);
   }

@@ -3,12 +3,6 @@ using static Hron.Eval.SupportedRange;
 
 namespace Hron.Eval;
 
-/// <summary>
-/// Evaluates schedule expressions to compute occurrences.
-/// </summary>
-/// <remarks>
-/// Implements the "Behavioral Semantics" section of spec/README.md.
-/// </remarks>
 public static class Evaluator
 {
     /// <summary>

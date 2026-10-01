@@ -6,7 +6,6 @@ require_relative "display"
 require_relative "cron"
 
 module Hron
-  # Main Schedule class - the primary public API for hron
   class Schedule
     attr_reader :data
 
@@ -37,7 +36,7 @@ module Hron
       Evaluator.next_from(@data, now)
     end
 
-    # Get the next N occurrences from the given time
+    # Returns an Array of up to n occurrences strictly after now.
     def next_n_from(now, n)
       Evaluator.next_n_from(@data, now, n)
     end
@@ -47,7 +46,7 @@ module Hron
       Evaluator.previous_from(@data, now)
     end
 
-    # Check if the schedule matches the given datetime
+    # True when the minute containing dt, on the schedule's wall clock, is an occurrence.
     def matches(dt)
       Evaluator.matches(@data, dt)
     end
@@ -58,7 +57,8 @@ module Hron
       Evaluator.occurrences(@data, from)
     end
 
-    # Returns a lazy Enumerator of occurrences where from < occurrence <= to
+    # Returns a lazy Enumerator of occurrences where from < occurrence <= to, empty when either
+    # bound is outside the supported range.
     def between(from, to)
       Evaluator.between(@data, from, to)
     end
@@ -82,7 +82,6 @@ module Hron
       @data.timezone
     end
 
-    # Get the schedule expression
     def expression
       @data.expr
     end

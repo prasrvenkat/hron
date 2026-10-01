@@ -22,7 +22,6 @@ import java.util.Optional;
  * directional nearest weekday crosses into the adjacent month.
  */
 record Candidate(LocalDate date, Month targetMonth) {
-  /** The candidates in the period starting at {@code start}, earliest first. */
   static List<Candidate> candidatesInPeriod(ScheduleExpr expr, LocalDate start) {
     return switch (expr) {
       case IntervalRepeat ir ->

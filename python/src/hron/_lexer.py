@@ -373,7 +373,7 @@ class _Lexer:
                 return Token(TIsoDate(self._input[start : self._pos]), Span(start, self._pos))
 
         if len(digits) in (1, 2) and self._pos < len(self._input) and self._input[self._pos] == ":":
-            self._pos += 1  # skip ':'
+            self._pos += 1
             min_start = self._pos
             while self._pos < len(self._input) and self._input[self._pos].isdigit():
                 self._pos += 1

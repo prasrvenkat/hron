@@ -57,7 +57,6 @@ fn next_every_weekday() {
     let now = fixed_now();
     let next = next_from(&s, &now).unwrap().unwrap();
     // 2026-02-06 is a Friday, time already passed at 12:00
-    // Next weekday is Monday 2026-02-09
     assert_eq!(next.date(), Date::new(2026, 2, 9).unwrap());
 }
 
@@ -75,7 +74,6 @@ fn next_interval() {
     let s = parse("every 45 min from 09:00 to 17:00 in UTC").unwrap();
     let now = fixed_now();
     let next = next_from(&s, &now).unwrap().unwrap();
-    // At 12:00, next 45-min tick: 9:00+45*4=12:00, but > now means 12:45
     assert_eq!(next.time().hour(), 12);
     assert_eq!(next.time().minute(), 45);
 }
