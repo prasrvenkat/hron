@@ -140,6 +140,9 @@ Where a platform needs it, an implementation may also:
 - Number periods by their calendar index instead of their first date, where a date type cannot hold December of year 0 or building dates is costly.
 - Drop an instant outside the supported range where it is resolved instead of filtering the result: the nearest instant is out of range only when every farther one is.
 - Find a date's slots from the index of the instant's wall minute instead of a binary search on keys, where resolving a slot is costly: forward from the next slot, backward from the slot at the wall minute read on its first pass. These are the two slot scans that may be mirrored.
+- Resolve a date's slots once into an ascending list of instants, gap slots dropped, and binary-search that list: it needs no gap keys.
+- Find a gap's end without a transition API by binary-searching whole seconds between the wall time read with the offsets after and before the gap: every slot instant is a whole second, so the first second at or after the transition is as good a key.
+- Narrow a date's binary search with the UTC offsets a day either side of it, where offset changes are days apart: on a date without a change, the keys follow from the wall minutes.
 
 ## Pull Requests
 
