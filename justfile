@@ -325,7 +325,7 @@ publish-go:
     set -euo pipefail
     version=$(cat VERSION)
     echo "Triggering pkg.go.dev indexing for go/v${version}..."
-    curl -sfL "https://proxy.golang.org/github.com/prasrvenkat/hron/go/@v/v${version}.info" || {
+    curl -sfL "https://proxy.golang.org/github.com/simpllyf/hron/go/v2/@v/v${version}.info" || {
         echo "Warning: proxy.golang.org returned an error (may need a few minutes to propagate)"
         exit 0
     }

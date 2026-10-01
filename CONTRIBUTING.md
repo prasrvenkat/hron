@@ -165,4 +165,4 @@ LLM-assisted contributions are welcome. If you're using an AI coding agent, plea
 
 ## Questions & Feedback
 
-We use [GitHub Discussions](https://github.com/prasrvenkat/hron/discussions) for questions, ideas, and general conversation — issues are disabled in favor of a more open-ended format. Feel free to open a discussion or comment on an existing one.
+We use [GitHub Discussions](https://github.com/simpllyf/hron/discussions) for questions, ideas, and general conversation — issues are disabled in favor of a more open-ended format. Feel free to open a discussion or comment on an existing one.

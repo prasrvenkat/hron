@@ -54,7 +54,7 @@ Hron::Schedule.validate("invalid")  # false
 
 ## Expression Syntax
 
-See the full [expression reference](https://github.com/prasrvenkat/hron#expression-syntax).
+See the full [expression reference](https://github.com/simpllyf/hron#expression-syntax).
 
 ## API
 

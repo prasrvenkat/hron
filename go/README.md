@@ -5,7 +5,7 @@ Go implementation of hron (human-readable cron).
 ## Installation
 
 ```sh
-go get github.com/prasrvenkat/hron/go
+go get github.com/simpllyf/hron/go/v2
 ```
 
 ## Usage
@@ -17,7 +17,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/prasrvenkat/hron/go"
+    "github.com/simpllyf/hron/go/v2"
 )
 
 func main() {

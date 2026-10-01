@@ -6,7 +6,7 @@
     <Description>Human-readable cron expressions</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://hron.io</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/prasrvenkat/hron</RepositoryUrl>
+    <RepositoryUrl>https://github.com/simpllyf/hron</RepositoryUrl>
     <PackageTags>cron;scheduling;parser</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

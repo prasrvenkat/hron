@@ -1,8 +1,8 @@
 # hron-wasm
 
-WASM bindings for [hron](https://github.com/prasrvenkat/hron) — human-readable cron expressions for JavaScript/TypeScript via WebAssembly.
+WASM bindings for [hron](https://github.com/simpllyf/hron) — human-readable cron expressions for JavaScript/TypeScript via WebAssembly.
 
-For a native TypeScript implementation (no WASM), see [`hron-ts`](https://github.com/prasrvenkat/hron/tree/main/ts).
+For a native TypeScript implementation (no WASM), see [`hron-ts`](https://github.com/simpllyf/hron/tree/main/ts).
 
 ## Install
 
