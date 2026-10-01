@@ -1,5 +1,3 @@
-//! Date arithmetic on the proleptic Gregorian calendar: no time zones, no schedules.
-
 use jiff::civil::{Date, Weekday as CivilWeekday};
 use jiff::Span;
 
@@ -17,7 +15,6 @@ pub(super) fn months_between(a: Date, b: Date) -> i64 {
     month_index(b) - month_index(a)
 }
 
-/// Months since January of year 0.
 pub(super) fn month_index(date: Date) -> i64 {
     date.year() as i64 * 12 + date.month() as i64 - 1
 }
@@ -47,7 +44,6 @@ fn is_weekend(date: Date) -> bool {
     )
 }
 
-/// The dates a monthly target names in a month, earliest first.
 pub(super) fn month_target_dates(year: i16, month: i8, target: &MonthTarget) -> Vec<Date> {
     let mut dates: Vec<Date> = match target {
         MonthTarget::Days(_) => target
@@ -92,7 +88,6 @@ fn last_day_of_month(year: i16, month: i8) -> Date {
     Date::new(year, month, 1).unwrap().last_of_month()
 }
 
-/// The last Monday to Friday of a month.
 fn last_weekday_of_month(year: i16, month: i8) -> Date {
     let last = last_day_of_month(year, month);
     let back = match last.weekday() {

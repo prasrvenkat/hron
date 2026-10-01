@@ -30,7 +30,6 @@ TZDateTime parseZoned(String s) {
 
   final loc = tzName == 'UTC' ? UTC : getLocation(tzName);
   // DateTime.parse converts offset strings to UTC internally.
-  // Use fromMillisecondsSinceEpoch to correctly reconstruct in the target timezone.
   final dt = DateTime.parse(isoStr);
   return TZDateTime.fromMillisecondsSinceEpoch(loc, dt.millisecondsSinceEpoch);
 }
@@ -335,7 +334,6 @@ void main() {
             final display = schedule.toString();
             expect(display, equals(tc['canonical']));
 
-            // Idempotency
             final s2 = Schedule.parse(tc['canonical'] as String);
             expect(s2.toString(), equals(tc['canonical']));
           });

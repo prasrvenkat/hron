@@ -29,7 +29,7 @@ export class Schedule {
     return new Schedule(fromCron(cronExpr));
   }
 
-  /** Check if an input string is a valid hron expression. */
+  /** False, rather than throwing, for anything `parse` rejects. */
   static validate(input: string): boolean {
     try {
       parse(input);
@@ -92,7 +92,6 @@ export class Schedule {
     return this.data.timezone;
   }
 
-  /** Get the underlying schedule expression. */
   get expression(): ScheduleExpr {
     return this.data.expr;
   }

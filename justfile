@@ -134,6 +134,10 @@ lint-java:
     cd java && mvn fmt:check
     cd java && mvn javadoc:jar -q
 
+# List the comment lines this branch adds, so each gets a reason or goes (AGENTS.md, "Comments")
+comments base="main":
+    python3 tools/comments.py {{base}}
+
 # Lint the differential tool's Python
 lint-tools:
     cd python && uv run ruff check ../tools && uv run ruff format --check ../tools

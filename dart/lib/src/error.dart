@@ -17,30 +17,26 @@ enum HronErrorKind {
   /// Parse error (invalid syntax).
   parse,
 
-  /// Evaluation error.
   eval,
 
-  /// Cron conversion error (expression not representable in cron).
+  /// A cron expression `fromCron` rejects, or a schedule `toCron` cannot
+  /// express.
   cron,
 }
 
 /// An error thrown when parsing, evaluating, or converting hron expressions.
-///
-/// Use [displayRich] for user-friendly error messages with source context.
 class HronError implements Exception {
-  /// The error category.
   final HronErrorKind kind;
 
-  /// The error message.
   final String message;
 
-  /// The location in the source input where the error occurred.
+  /// Null unless this is a lex or parse error.
   final Span? span;
 
-  /// The original source input.
+  /// Null unless this is a lex or parse error.
   final String? input;
 
-  /// A suggested correction, if available.
+  /// Null unless the parser has a fix to suggest.
   final String? suggestion;
 
   const HronError(
@@ -51,11 +47,9 @@ class HronError implements Exception {
     this.suggestion,
   });
 
-  /// Creates a lexical error.
   factory HronError.lex(String message, Span span, String input) =>
       HronError(HronErrorKind.lex, message, span: span, input: input);
 
-  /// Creates a parse error.
   factory HronError.parse(
     String message,
     Span span,
@@ -69,11 +63,9 @@ class HronError implements Exception {
     suggestion: suggestion,
   );
 
-  /// Creates an evaluation error.
   factory HronError.eval(String message) =>
       HronError(HronErrorKind.eval, message);
 
-  /// Creates a cron conversion error.
   factory HronError.cron(String message) =>
       HronError(HronErrorKind.cron, message);
 

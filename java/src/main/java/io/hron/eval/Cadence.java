@@ -17,16 +17,10 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.LongPredicate;
 
-/**
- * The periods (days, weeks, months or years) an expression fires in, numbered from {@code origin}:
- * period {@code k} is aligned when {@code k} is a multiple of {@code interval}. A single ISO date
- * has one period, the one holding that date.
- */
 record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
   /** Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment"). */
   static final LocalDate EPOCH_MONDAY = LocalDate.of(1970, 1, 5);
 
-  /** Default anchor for day, month and year intervals. */
   static final LocalDate EPOCH_DATE = LocalDate.of(1970, 1, 1);
 
   /**
@@ -95,7 +89,6 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
     };
   }
 
-  /** First day of period {@code k}. */
   LocalDate startOf(long k) {
     return switch (unit) {
       case DAY -> origin.plusDays(k);
@@ -105,12 +98,7 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
     };
   }
 
-  /**
-   * The first days of the aligned periods from {@code firstPeriod} in {@code direction}, through
-   * one search horizon beyond whichever of {@code firstPeriod} and {@code reach} is farther along
-   * it (spec/README.md, "Search horizon"), leaving out those holding no date from FIRST_DATE to
-   * LAST_DATE.
-   */
+  /** spec/README.md, "Search horizon". */
   Iterable<LocalDate> periodStarts(long firstPeriod, long reach, Direction direction) {
     if (single) {
       return List.of(origin);
@@ -154,8 +142,8 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
         };
   }
 
-  /** The first aligned period at or beyond period {@code k} in {@code direction}. */
   long align(long k, Direction direction) {
+
     return switch (direction) {
       case FORWARD -> k + Math.floorMod(-k, interval);
       case BACKWARD -> k - Math.floorMod(k, interval);

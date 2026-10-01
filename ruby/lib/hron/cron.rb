@@ -134,7 +134,6 @@ module Hron
 
       minute_field, hour_field, dom_field, month_field, dow_field = fields
 
-      # Normalize ? to * (they're semantically equivalent for our purposes)
       dom_field = "*" if dom_field == "?"
       dow_field = "*" if dow_field == "?"
 
@@ -227,7 +226,6 @@ module Hron
 
       months = []
       field.split(",").each do |part|
-        # Check for step values FIRST (e.g., 1-12/3 or */3)
         if part.include?("/")
           range_part, step_str = part.split("/", 2)
           if range_part == "*"
@@ -288,7 +286,6 @@ module Hron
       month
     end
 
-    # Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday).
     def self.try_parse_nth_weekday(minute_field, hour_field, dom_field, dow_field, during)
       if dow_field.include?("#")
         dow_str, nth_str = dow_field.split("#", 2)
@@ -320,7 +317,6 @@ module Hron
         )
       end
 
-      # Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
       if dow_field.end_with?("L") && dow_field.length > 1
         dow_str = dow_field[0..-2]
         dow_num = parse_dow_value(dow_str)
@@ -340,7 +336,6 @@ module Hron
       nil
     end
 
-    # Try to parse L (last day) or LW (last weekday) patterns.
     def self.try_parse_last_day(minute_field, hour_field, dom_field, dow_field, during)
       return nil unless dom_field == "L" || dom_field == "LW"
 
@@ -357,7 +352,6 @@ module Hron
       )
     end
 
-    # Try to parse W (nearest weekday) patterns: 15W, 1W, etc.
     def self.try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, during)
       return nil unless dom_field.end_with?("W") && dom_field != "LW"
 
@@ -409,7 +403,6 @@ module Hron
           end
           raise HronError.cron("range start must be <= end: #{s}-#{e}") if from_minute > to_minute
         else
-          # Single value with step (e.g., 0/15) - treat as starting point
           from_minute = begin
             Integer(range_part)
           rescue
@@ -637,7 +630,7 @@ module Hron
             d += step
           end
         elsif part.include?("-")
-          # Parse without normalizing 7 to 0 for range purposes
+          # Raw, so a range ending at 7 (Sunday), like `5-7`, stays ascending.
           start_str, end_str = part.split("-", 2)
           start_dow = parse_dow_value_raw(start_str)
           end_dow = parse_dow_value_raw(end_str)

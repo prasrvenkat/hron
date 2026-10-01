@@ -1,5 +1,5 @@
-// Wall-clock times on dates in a time zone. A wall time a fall-back repeats
-// takes its first pass (spec/README.md, "DST fall-back (ambiguous times)").
+// A wall time a fall-back repeats takes its first pass (spec/README.md, "DST
+// fall-back (ambiguous times)").
 
 import { Temporal } from "@js-temporal/polyfill";
 import type { TimeOfDay } from "./ast.js";
@@ -28,9 +28,8 @@ export function minuteOfDay(time: TimeOfDay): number {
 }
 
 /**
- * Resolves wall-clock times in one time zone, in epoch milliseconds. The
- * Temporal polyfill costs microseconds per call, so offsets are looked up once
- * per date and wall times are resolved with plain arithmetic.
+ * The Temporal polyfill costs microseconds per call, so offsets are looked up
+ * once per date and wall times are resolved with plain arithmetic.
  */
 export class Zone {
   private readonly midnightOffsets = new Map<number, number>();
@@ -48,15 +47,13 @@ export class Zone {
     return Math.floor((ms + this.offsetAt(ms)) / DAY_MS);
   }
 
-  /** The instant the wall-clock minute holding `ms` starts. */
   minuteStart(ms: number): number {
     const offset = this.offsetAt(ms);
     return Math.floor((ms + offset) / MINUTE_MS) * MINUTE_MS - offset;
   }
 
   /**
-   * The instant `minute` minutes after midnight names on `date`, shifted
-   * forward by the gap's length when it falls in a spring-forward gap
+   * A time in a spring-forward gap shifts forward by the gap's length
    * (spec/README.md, "DST spring-forward (gaps)").
    */
   fixedTimeOn(date: number, minute: number): number {
@@ -68,9 +65,8 @@ export class Zone {
   }
 
   /**
-   * The instant of the interval slot `minute` minutes after midnight on
-   * `date`, or null when that wall time falls in a spring-forward gap
-   * (spec/README.md, "Interval slots in a spring-forward gap").
+   * Null when the slot falls in a spring-forward gap (spec/README.md,
+   * "Interval slots in a spring-forward gap").
    */
   slotOn(date: number, minute: number): number | null {
     const local = date * DAY_MS + minute * MINUTE_MS;
@@ -84,10 +80,6 @@ export class Zone {
     return null;
   }
 
-  /**
-   * The wall date `instant` lands on, resolved from a time on `date`: `date`,
-   * or the date after it for a time shifted out of a gap before midnight.
-   */
   landingDate(date: number, instant: number): number {
     const before = this.offsetAtMidnight(date - 1);
     const after = this.offsetAtMidnight(date - 1 + TRANSITION_WINDOW_DAYS);
@@ -114,10 +106,6 @@ export class Zone {
     return offset;
   }
 
-  /**
-   * The first instant of the window from UTC midnight of `date` whose offset
-   * is not `before`.
-   */
   private transitionAfter(date: number, before: number): number {
     let at = this.transitions.get(date);
     if (at === undefined) {

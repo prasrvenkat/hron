@@ -158,7 +158,8 @@ public class ScheduleTest {
     var results = s.nextNFrom(now, 5);
 
     assertEquals(5, results.size());
-    // First should be Feb 7 (today's 09:00 has passed)
+    // Today's 09:00 has passed.
+
     assertEquals(7, results.get(0).getDayOfMonth());
     assertEquals(8, results.get(1).getDayOfMonth());
     assertEquals(9, results.get(2).getDayOfMonth());

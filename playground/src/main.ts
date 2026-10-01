@@ -36,7 +36,6 @@ const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"
 const BATCH = 6;
 const MAX_OCCURRENCES = 120;
 
-/** Current time as a zoned ISO string in the viewer's local zone. */
 function nowZoned(): string {
   const now = new Date();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -47,13 +46,12 @@ function nowZoned(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}[${tz}]`;
 }
 
-/** Pull the IANA zone out of a zoned ISO string like `...+00:00[UTC]`. */
 function tzFromIso(iso: string): string | null {
   const m = iso.match(/\[([^\]]+)\]\s*$/);
   return m ? m[1] : null;
 }
 
-/** Human "in 3 days" using the true instant (offset-aware), vs the wall-clock shown. */
+/** From the true instant, offset-aware, not the wall-clock time shown. */
 function relativeTime(iso: string): string {
   const instant = new Date(iso.replace(/\[[^\]]*\]\s*$/, "")).getTime();
   if (Number.isNaN(instant)) return "";
@@ -301,7 +299,7 @@ document.querySelectorAll<HTMLButtonElement>(".chip[data-expr]").forEach((btn) =
   });
 });
 
-// Hint the placeholder with the viewer's own zone (results stay UTC unless specified).
+// A hint only: results stay UTC unless the expression names a zone.
 try {
   const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (localTz) textarea.placeholder = `every weekday at 9:00 in ${localTz}`;

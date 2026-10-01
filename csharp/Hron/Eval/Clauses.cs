@@ -3,9 +3,9 @@ using Hron.Ast;
 namespace Hron.Eval;
 
 /// <summary>
-/// The trailing clauses, resolved once. <c>during</c> applies to a candidate's target month;
-/// <c>except</c>, <c>until</c> and <c>starting</c> to its date (spec/README.md, "Nearest weekday
-/// and `during`", "The `starting` clause").
+/// <c>during</c> applies to a candidate's target month; <c>except</c>, <c>until</c> and
+/// <c>starting</c> to its date (spec/README.md, "Nearest weekday and `during`", "The
+/// `starting` clause").
 /// </summary>
 internal sealed class Clauses
 {
@@ -29,10 +29,6 @@ internal sealed class Clauses
         _starting = starting;
     }
 
-    /// <summary>
-    /// The clauses of <paramref name="data"/>, whose <c>starting</c> date is
-    /// <paramref name="starting"/>.
-    /// </summary>
     public static Clauses Of(ScheduleData data, DateOnly? starting)
     {
         return new Clauses(
@@ -50,9 +46,6 @@ internal sealed class Clauses
             starting);
     }
 
-    /// <summary>
-    /// Ends the search on <paramref name="date"/>: nothing after it is an occurrence.
-    /// </summary>
     public void EndOn(DateOnly date)
     {
         if (_until is not { } until || date < until)
@@ -86,9 +79,6 @@ internal sealed class Clauses
         return direction == Direction.Forward ? _exceptDates[^1] : _exceptDates[0];
     }
 
-    /// <summary>
-    /// The date a search starts from: nothing fires before <c>starting</c> or after <c>until</c>.
-    /// </summary>
     public DateOnly Clamp(DateOnly date, Direction direction) => direction switch
     {
         Direction.Forward when _starting is { } starting && starting > date => starting,

@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-// resolveTimezone returns the location and canonical name for tzName, and UTC
-// for an empty name so results never depend on the host zone.
+// An empty name resolves to UTC, so results never depend on the host zone.
 func resolveTimezone(tzName string) (*time.Location, string, error) {
 	if tzName == "" {
 		return time.UTC, "", nil
@@ -33,9 +32,7 @@ func unknownTimezoneMessage(name string) string {
 	return fmt.Sprintf("unknown timezone %q: use UTC or an IANA Area/Location name such as America/New_York", name)
 }
 
-// canonicalTimezone returns the IANA spelling of name, which matches in any
-// case: "UTC", or an Area/Location zone or link name. Abbreviations, offsets,
-// non-ASCII and unknown names, and the SystemV, posix and right trees that some
+// Names match in any case. The SystemV, posix and right trees that some
 // systems ship are rejected (spec/README.md, "Parse-time validation").
 func canonicalTimezone(name string) (string, bool) {
 	if strings.EqualFold(name, "UTC") {
@@ -86,9 +83,8 @@ var zoneNameIndex = sync.OnceValue(func() map[string]string {
 	return index
 })
 
-// addZoneNames lists the zone names in a zoneinfo directory or zip file. The
-// source is resolved first because WalkDir does not follow a symlinked root,
-// as /usr/share/zoneinfo is on macOS and NixOS.
+// The source is resolved first because WalkDir does not follow a symlinked
+// root, as /usr/share/zoneinfo is on macOS and NixOS.
 func addZoneNames(source string, add func(string)) {
 	source, err := filepath.EvalSymlinks(source)
 	if err != nil {

@@ -10,7 +10,6 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 
-/** A schedule prepared for searching: its zone, cadence, times and clauses resolved once. */
 record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times, Clauses clauses) {
   static Search of(ScheduleData data, ZoneId zone) {
     LocalDate starting = data.anchor() == null ? null : LocalDate.parse(data.anchor());
@@ -22,12 +21,10 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
         Clauses.of(data, starting));
   }
 
-  /** This search, ended on {@code date}: nothing after it is an occurrence. */
   Search endOn(LocalDate date) {
     return new Search(expr, zone, cadence, times, clauses.endOn(date));
   }
 
-  /** The occurrence nearest {@code now} strictly beyond it in {@code direction}. */
   Optional<ZonedDateTime> nearest(ZonedDateTime now, Direction direction) {
     ZonedDateTime local = now.withZoneSameInstant(zone);
     LocalDate nowDate = local.toLocalDate();
@@ -74,7 +71,6 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
         && !clauses.allowsMonth(start.getMonth());
   }
 
-  /** The occurrence on {@code date} nearest {@code now} strictly beyond it in {@code direction}. */
   private Optional<ZonedDateTime> nearestOnDate(
       LocalDate date, ZonedDateTime now, Direction direction) {
     return switch (times) {

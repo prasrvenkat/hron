@@ -2,9 +2,6 @@ using Hron.Ast;
 
 namespace Hron.Eval;
 
-/// <summary>
-/// Date arithmetic on the proleptic Gregorian calendar: no time zones, no schedules.
-/// </summary>
 internal static class Calendar
 {
     public const int DaysPer400Years = 146097;
@@ -25,14 +22,8 @@ internal static class Calendar
         return year >= DateOnly.MinValue.Year && year <= DateOnly.MaxValue.Year ? new DateOnly((int)year, 1, 1) : null;
     }
 
-    /// <summary>
-    /// Months since January of year 0.
-    /// </summary>
     public static int MonthIndex(DateOnly date) => date.Year * 12 + date.Month - 1;
 
-    /// <summary>
-    /// The month, 1 to 12, of the month <paramref name="monthIndex"/> months after January of year 0.
-    /// </summary>
     public static int MonthOf(long monthIndex) => (int)FloorMod(monthIndex, 12) + 1;
 
     public static DateOnly? FirstOfMonth(long monthIndex)
@@ -60,7 +51,6 @@ internal static class Calendar
     };
 
     /// <summary>
-    /// The dates a monthly target names in the month <paramref name="monthIndex"/>, earliest first.
     /// DateOnly cannot hold year 0, yet a nearest weekday in its December can land on 0001-01-01;
     /// the calendar repeats every 400 years, so a month of year 0 is taken 400 years later and its
     /// dates moved back.
@@ -122,9 +112,6 @@ internal static class Calendar
         return new DateOnly(year, month, DateTime.DaysInMonth(year, month));
     }
 
-    /// <summary>
-    /// The last Monday to Friday of a month.
-    /// </summary>
     private static DateOnly LastWeekdayOfMonth(int year, int month)
     {
         var last = LastDayOfMonth(year, month);
@@ -149,7 +136,6 @@ internal static class Calendar
     }
 
     /// <summary>
-    /// The weekday nearest <paramref name="day"/> of a month, or null when the month is shorter.
     /// Without a direction it stays in the month, as cron's W does; with one it can cross into the
     /// adjacent month (spec/README.md, "Nearest weekday and `during`").
     /// </summary>

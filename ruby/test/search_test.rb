@@ -2,15 +2,11 @@
 
 require_relative "test_helper"
 
-# The search's footing: a slot in a spring-forward gap sits at the instant its gap ends, and a
-# slot a fall-back repeats takes its first pass, so slot keys never decrease in wall-clock order
-# and one binary search finds where they part. A key out of order would otherwise show only as
-# a search that never ends.
+# Slot keys must never decrease in wall-clock order for one binary search to find where they
+# part; a key out of order would otherwise show only as a search that never ends.
 class SearchTest < Minitest::Test
   WallClock = Hron::Evaluator.const_get(:WallClock)
 
-  # A gap per zone: its first wall time, the first wall time after it, and the instant it ends,
-  # as the zone's transition data gives them. Wall times are written as UTC Times.
   GAPS = {
     "new-york" => ["America/New_York", Time.utc(2026, 3, 8, 2, 0), Time.utc(2026, 3, 8, 3, 0), Time.utc(2026, 3, 8, 7, 0)],
     "lord-howe-half-hour" => ["Australia/Lord_Howe", Time.utc(2026, 10, 4, 2, 0), Time.utc(2026, 10, 4, 2, 30), Time.utc(2026, 10, 3, 15, 30)],
@@ -19,8 +15,6 @@ class SearchTest < Minitest::Test
     "santiago-at-midnight" => ["America/Santiago", Time.utc(2026, 9, 6, 0, 0), Time.utc(2026, 9, 6, 1, 0), Time.utc(2026, 9, 6, 4, 0)]
   }.freeze
 
-  # An overlap per zone: its first repeated wall time, the first wall time after it, and the
-  # offset of its first pass in seconds.
   OVERLAPS = {
     "new-york" => ["America/New_York", Time.utc(2026, 11, 1, 1, 0), Time.utc(2026, 11, 1, 2, 0), -4 * 3600],
     "santiago-across-midnight" => ["America/Santiago", Time.utc(2026, 4, 4, 23, 0), Time.utc(2026, 4, 5, 0, 0), -3 * 3600]

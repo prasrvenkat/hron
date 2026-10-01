@@ -140,7 +140,6 @@ func FromCron(cron string) (*ScheduleData, error) {
 	monthField := fields[3]
 	dowField := fields[4]
 
-	// Normalize ? to * (they're semantically equivalent for our purposes)
 	if domField == "?" {
 		domField = "*"
 	}
@@ -238,7 +237,6 @@ func parseMonthField(field string) ([]MonthName, error) {
 
 	var months []MonthName
 	for _, part := range strings.Split(field, ",") {
-		// Check for step values FIRST (e.g., 1-12/3 or */3)
 		if strings.Contains(part, "/") {
 			rangePart, stepStr, _ := strings.Cut(part, "/")
 			var start, end int
@@ -322,7 +320,6 @@ func monthFromNumber(n int) (MonthName, error) {
 	return MonthName(n), nil
 }
 
-// tryParseNthWeekday tries to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday).
 func tryParseNthWeekday(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
 	if strings.Contains(dowField, "#") {
 		dowStr, nthStr, _ := strings.Cut(dowField, "#")
@@ -374,7 +371,6 @@ func tryParseNthWeekday(minuteField, hourField, domField, dowField string, durin
 		return schedule, true, nil
 	}
 
-	// Check for nL pattern (last weekday of month, e.g., 5L = last Friday)
 	if strings.HasSuffix(dowField, "L") && len(dowField) > 1 {
 		dowStr := dowField[:len(dowField)-1]
 		dowNum, err := parseDOWValue(dowStr)
@@ -408,7 +404,6 @@ func tryParseNthWeekday(minuteField, hourField, domField, dowField string, durin
 	return nil, false, nil
 }
 
-// tryParseNearestWeekday tries to parse W (nearest weekday) patterns like 15W.
 func tryParseNearestWeekday(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
 	if !strings.HasSuffix(domField, "W") || domField == "LW" {
 		return nil, false, nil
@@ -442,7 +437,6 @@ func tryParseNearestWeekday(minuteField, hourField, domField, dowField string, d
 	return schedule, true, nil
 }
 
-// tryParseLastDay tries to parse L (last day) or LW (last weekday) patterns.
 func tryParseLastDay(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
 	if domField != "L" && domField != "LW" {
 		return nil, false, nil
@@ -502,7 +496,6 @@ func tryParseInterval(minuteField, hourField, domField, dowField string, during 
 			}
 			fromMinute, toMinute = s, e
 		} else {
-			// Single value with step (e.g., 0/15) - treat as starting point
 			s, err := strconv.Atoi(rangePart)
 			if err != nil {
 				return nil, false, CronError("invalid minute value")
@@ -767,7 +760,7 @@ func parseCronDOW(field string) (DayFilter, error) {
 			}
 		} else if strings.Contains(part, "-") {
 			startStr, endStr, _ := strings.Cut(part, "-")
-			// Parse without normalizing 7 to 0 for range purposes
+			// Raw, so a range ending at 7 (Sunday) stays ascending.
 			start, err := parseDOWValueRaw(startStr)
 			if err != nil {
 				return DayFilter{}, err
@@ -846,7 +839,7 @@ func parseDOWValue(s string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Normalize 7 to 0 (both mean Sunday)
+	// Cron allows 7 as well as 0 for Sunday.
 	if raw == 7 {
 		return 0, nil
 	}

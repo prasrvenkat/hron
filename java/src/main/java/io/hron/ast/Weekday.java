@@ -3,7 +3,6 @@ package io.hron.ast;
 import java.util.Map;
 import java.util.Optional;
 
-/** Represents a day of the week. */
 public enum Weekday {
   MONDAY(1, "monday"),
   TUESDAY(2, "tuesday"),
@@ -21,20 +20,12 @@ public enum Weekday {
     this.displayName = displayName;
   }
 
-  /**
-   * Returns the ISO 8601 day number (Monday=1, Sunday=7).
-   *
-   * @return the ISO day number
-   */
+  /** ISO 8601: Monday=1, Sunday=7. */
   public int number() {
     return isoNumber;
   }
 
-  /**
-   * Returns the cron day of week number (Sunday=0, Monday=1, ..., Saturday=6).
-   *
-   * @return the cron day of week number
-   */
+  /** Sunday=0 … Saturday=6. */
   public int cronDOW() {
     return switch (this) {
       case SUNDAY -> 0;
@@ -62,22 +53,11 @@ public enum Weekday {
           Map.entry("saturday", SATURDAY), Map.entry("sat", SATURDAY),
           Map.entry("sunday", SUNDAY), Map.entry("sun", SUNDAY));
 
-  /**
-   * Parses a weekday name (case insensitive).
-   *
-   * @param s the string to parse
-   * @return the weekday if valid
-   */
+  /** Case insensitive. */
   public static Optional<Weekday> parse(String s) {
     return Optional.ofNullable(PARSE_MAP.get(s.toLowerCase()));
   }
 
-  /**
-   * Returns a Weekday from an ISO 8601 day number.
-   *
-   * @param n the ISO day number (1-7)
-   * @return the weekday if valid
-   */
   public static Optional<Weekday> fromNumber(int n) {
     if (n < 1 || n > 7) {
       return Optional.empty();

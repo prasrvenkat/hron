@@ -46,8 +46,7 @@ class ConformanceTest < Minitest::Test
 
   LABEL_FIELDS = %w[name description].freeze
 
-  # Defines the test for one spec case. It fails on any case field it does not check, and a
-  # second case with the same name would silently replace the first test, so that raises.
+  # A second case with the same name would silently replace the first test, so that raises.
   def self.define_case(name, tc, fields, &body)
     raise ArgumentError, "duplicate conformance case: #{name}" if method_defined?(name)
 

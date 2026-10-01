@@ -29,7 +29,6 @@ class IteratorTest {
 
   @Test
   void occurrencesIsLazy() throws HronException {
-    // An unbounded schedule should not hang or OOM when creating the stream
     Schedule schedule = Schedule.parse("every day at 09:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
@@ -47,7 +46,6 @@ class IteratorTest {
 
     Stream<ZonedDateTime> stream = schedule.between(from, to);
 
-    // Taking just 3 should not evaluate all ~330 days
     List<ZonedDateTime> results = stream.limit(3).collect(Collectors.toList());
     assertEquals(3, results.size());
   }
@@ -74,7 +72,6 @@ class IteratorTest {
             .takeWhile(dt -> dt.isBefore(cutoff))
             .collect(Collectors.toList());
 
-    // Feb 1, 2, 3, 4 at 09:00 (4 occurrences before Feb 5 00:00)
     assertEquals(4, results.size());
   }
 
@@ -106,11 +103,10 @@ class IteratorTest {
             .filter(
                 dt -> {
                   int dow = dt.getDayOfWeek().getValue();
-                  return dow == 6 || dow == 7; // Saturday or Sunday
+                  return dow == 6 || dow == 7;
                 })
             .collect(Collectors.toList());
 
-    // 2 weekends in 2 weeks = 4 days
     assertEquals(4, weekends.size());
   }
 
@@ -138,7 +134,6 @@ class IteratorTest {
         schedule.occurrences(from).skip(5).limit(3).collect(Collectors.toList());
 
     assertEquals(3, results.size());
-    // Should be Feb 6, 7, 8
     assertEquals(6, results.get(0).getDayOfMonth());
     assertEquals(7, results.get(1).getDayOfMonth());
     assertEquals(8, results.get(2).getDayOfMonth());
@@ -152,7 +147,6 @@ class IteratorTest {
 
     long count = schedule.between(from, to).count();
 
-    // Feb 1-10 inclusive = 10 days
     assertEquals(10, count);
   }
 
@@ -175,7 +169,7 @@ class IteratorTest {
 
     List<ZonedDateTime> results = schedule.occurrences(from).collect(Collectors.toList());
 
-    assertEquals(5, results.size()); // Feb 1-5
+    assertEquals(5, results.size());
   }
 
   @Test
@@ -238,7 +232,6 @@ class IteratorTest {
     Schedule schedule = Schedule.parse("on 2026-02-14 at 14:00 in UTC");
     ZonedDateTime from = parseZoned("2026-02-01T00:00:00+00:00[UTC]");
 
-    // Request many but should only get 1
     List<ZonedDateTime> results =
         schedule.occurrences(from).limit(100).collect(Collectors.toList());
 
@@ -259,19 +252,17 @@ class IteratorTest {
 
   @Test
   void betweenHandlesDSTTransition() throws HronException {
-    // March 8, 2026 is DST spring forward in America/New_York
-    // 2:00 AM springs forward to 3:00 AM, so 02:30 shifts to 03:30
+    // March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
     Schedule schedule = Schedule.parse("every day at 02:30 in America/New_York");
     ZonedDateTime from = parseZoned("2026-03-07T00:00:00-05:00[America/New_York]");
     ZonedDateTime to = parseZoned("2026-03-10T00:00:00-04:00[America/New_York]");
 
     List<ZonedDateTime> results = schedule.between(from, to).collect(Collectors.toList());
 
-    // Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
     assertEquals(3, results.size());
-    assertEquals(2, results.get(0).getHour()); // Mar 7 02:30
-    assertEquals(3, results.get(1).getHour()); // Mar 8 03:30 (shifted due to DST)
-    assertEquals(2, results.get(2).getHour()); // Mar 9 02:30
+    assertEquals(2, results.get(0).getHour());
+    assertEquals(3, results.get(1).getHour());
+    assertEquals(2, results.get(2).getHour());
   }
 
   @Test
@@ -286,7 +277,6 @@ class IteratorTest {
             .collect(Collectors.toList());
 
     assertEquals(9, results.size());
-    // First day: 09:00, 12:00, 17:00
     assertEquals(9, results.get(0).getHour());
     assertEquals(12, results.get(1).getHour());
     assertEquals(17, results.get(2).getHour());
@@ -300,11 +290,11 @@ class IteratorTest {
     List<Integer> weekdayDays =
         schedule
             .occurrences(from)
-            .limit(14) // Two weeks to ensure we have enough
+            .limit(14)
             .filter(
                 dt -> {
                   int dow = dt.getDayOfWeek().getValue();
-                  return dow >= 1 && dow <= 5; // Monday-Friday
+                  return dow >= 1 && dow <= 5;
                 })
             .limit(5)
             .map(ZonedDateTime::getDayOfMonth)
@@ -322,7 +312,6 @@ class IteratorTest {
     Stream<ZonedDateTime> stream = schedule.occurrences(from);
 
     assertNotNull(stream);
-    // Streams are one-shot, consuming it
     stream.limit(1).forEach(dt -> {});
   }
 

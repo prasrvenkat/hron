@@ -137,7 +137,6 @@ proptest! {
         }
     }
 
-    /// If next_from returns a time, matches() should return true for it.
     #[test]
     fn self_consistency(expr in arb_hron_expression()) {
         let schedule = Schedule::parse(&expr).unwrap();

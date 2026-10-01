@@ -1,10 +1,5 @@
-/// AST types for hron schedule expressions.
-///
-/// These types represent the parsed structure of hron expressions and are
-/// exposed for advanced use cases like custom schedule analysis.
 library;
 
-/// Days of the week.
 enum Weekday {
   monday,
   tuesday,
@@ -14,10 +9,12 @@ enum Weekday {
   saturday,
   sunday;
 
-  int get number => index + 1; // 1=Monday ... 7=Sunday
+  /// ISO 8601: Monday=1, Sunday=7.
+  int get number => index + 1;
 
+  /// Sunday=0 … Saturday=6.
   int get cronDow {
-    const map = [1, 2, 3, 4, 5, 6, 0]; // mon=1..sat=6, sun=0
+    const map = [1, 2, 3, 4, 5, 6, 0];
     return map[index];
   }
 
@@ -57,7 +54,6 @@ const _weekdayMap = {
   'sun': Weekday.sunday,
 };
 
-/// Month names for date specifications.
 enum MonthName {
   jan,
   feb,
@@ -105,16 +101,8 @@ const _monthMap = {
   'dec': MonthName.dec,
 };
 
-/// Time interval units for repeat expressions.
-enum IntervalUnit {
-  /// Minutes.
-  min,
+enum IntervalUnit { min, hours }
 
-  /// Hours.
-  hours,
-}
-
-/// Position of a weekday within a month: first to fifth, or last.
 enum OrdinalPosition {
   first,
   second,
@@ -123,6 +111,7 @@ enum OrdinalPosition {
   fifth,
   last;
 
+  /// 1-5 for [first] to [fifth]; throws for [last].
   int get toN {
     const map = {
       OrdinalPosition.first: 1,
@@ -154,10 +143,8 @@ class TimeOfDay {
       '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
-/// Filter for which days a schedule applies to.
 sealed class DayFilter {}
 
-/// Matches every day of the week.
 class EveryDay extends DayFilter {}
 
 /// Matches Monday through Friday.
@@ -166,13 +153,11 @@ class WeekdayFilter extends DayFilter {}
 /// Matches Saturday and Sunday.
 class WeekendFilter extends DayFilter {}
 
-/// Matches specific days of the week.
 class SpecificDays extends DayFilter {
   final List<Weekday> days;
   SpecificDays(this.days);
 }
 
-/// Specification for days within a month.
 sealed class DayOfMonthSpec {}
 
 class SingleDay extends DayOfMonthSpec {
@@ -195,7 +180,6 @@ enum NearestDirection {
   previous,
 }
 
-/// Target specification for monthly schedules.
 sealed class MonthTarget {}
 
 class DaysTarget extends MonthTarget {
@@ -207,23 +191,20 @@ class LastDayTarget extends MonthTarget {}
 
 class LastWeekdayTarget extends MonthTarget {}
 
-/// Nearest weekday to a given day of month.
-/// Standard (direction=null): never crosses month boundary (cron W compatibility).
-/// Directional (direction!=null): can cross month boundary.
+/// Nearest weekday to [day]. With a null [direction] it never leaves the
+/// month, as cron `W` does; with one it can cross into the adjacent month.
 class NearestWeekdayTarget extends MonthTarget {
   final int day;
   final NearestDirection? direction;
   NearestWeekdayTarget(this.day, [this.direction]);
 }
 
-/// Ordinal weekday of month: "first monday", "last friday", etc.
 class OrdinalWeekdayMonthTarget extends MonthTarget {
   final OrdinalPosition ordinal;
   final Weekday weekday;
   OrdinalWeekdayMonthTarget(this.ordinal, this.weekday);
 }
 
-/// Target specification for yearly schedules.
 sealed class YearTarget {}
 
 class DateTarget extends YearTarget {
@@ -250,7 +231,6 @@ class LastWeekdayYearTarget extends YearTarget {
   LastWeekdayYearTarget(this.month);
 }
 
-/// A specific date (named like "Jan 1" or ISO like "2024-01-01").
 sealed class DateSpec {}
 
 class NamedDate extends DateSpec {

@@ -5,11 +5,9 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 
 /**
- * An occurrence a search found, with the local date it lands on.
- *
- * <p>{@link #couldBeat} and {@link #isBehind} rest on one fact: an occurrence lands on a first
- * pass, from its scheduled date to {@code shift} dates after it ({@link DailyTimes#maxShiftDays}),
- * and first passes keep wall-clock order.
+ * {@link #couldBeat} and {@link #isBehind} rest on one fact: an occurrence lands on a first pass,
+ * from its scheduled date to {@code shift} dates after it ({@link DailyTimes#maxShiftDays}), and
+ * first passes keep wall-clock order.
  */
 record Occurrence(ZonedDateTime instant, LocalDate landing) {
   /**
@@ -18,10 +16,6 @@ record Occurrence(ZonedDateTime instant, LocalDate landing) {
    */
   static final long MAX_OVERLAP_DAYS = 1;
 
-  /**
-   * Whether an occurrence scheduled on {@code date} can precede, in {@code direction}, the best
-   * one, which landed on {@code landing}.
-   */
   static boolean couldBeat(LocalDate date, LocalDate landing, Direction direction, long shift) {
     return switch (direction) {
       case FORWARD -> !date.isAfter(landing);
@@ -29,10 +23,6 @@ record Occurrence(ZonedDateTime instant, LocalDate landing) {
     };
   }
 
-  /**
-   * Whether every occurrence scheduled on {@code date} lies behind now, whose wall date is {@code
-   * nowDate}, in {@code direction}.
-   */
   static boolean isBehind(LocalDate date, LocalDate nowDate, Direction direction, long shift) {
     return switch (direction) {
       case FORWARD -> ChronoUnit.DAYS.between(date, nowDate) > shift;

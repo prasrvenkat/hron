@@ -1,6 +1,5 @@
 package io.hron.lexer;
 
-/** The type of token. */
 public enum TokenKind {
   EVERY,
   ON,
@@ -27,11 +26,9 @@ public enum TokenKind {
 
   DAY_NAME,
   MONTH_NAME,
-  /** An ordinal position (e.g., "first"). */
   ORDINAL,
   INTERVAL_UNIT,
   NUMBER,
-  /** An ordinal number (e.g., "1st", "15th"). */
   ORDINAL_NUMBER,
   TIME,
   ISO_DATE,

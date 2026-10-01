@@ -1,5 +1,3 @@
-//! Cron conversion: hron-to-cron and cron-to-hron.
-
 use hron::Schedule;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

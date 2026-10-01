@@ -1,8 +1,6 @@
-// Date arithmetic on the proleptic Gregorian calendar: no time zones, no
-// schedules. A date is an epoch day, the whole days since 1970-01-01: a search
-// can walk a 400-year calendar cycle (spec/README.md, "Search horizon"), and
-// integer arithmetic keeps that fast where the Temporal polyfill costs
-// microseconds per date.
+// Dates are epoch days, not Temporal values: a search can walk a 400-year
+// calendar cycle (spec/README.md, "Search horizon"), and integer arithmetic
+// keeps that fast where the Temporal polyfill costs microseconds per date.
 
 import type {
   DayFilter,
@@ -19,7 +17,6 @@ import {
   weekdayNumber,
 } from "./ast.js";
 
-/** The remainder of `a / b` with the sign of `b`. */
 export function mod(a: number, b: number): number {
   return ((a % b) + b) % b;
 }
@@ -67,38 +64,27 @@ export function civil(date: number): {
   };
 }
 
-/** The date of a `YYYY-MM-DD` string the parser has validated. */
 export function parseIsoDate(iso: string): number {
   const [year, month, day] = iso.split("-").map(Number);
   return epochDay(year, month, day);
 }
 
-/** ISO day of week of epoch day 0: 1970-01-01 was a Thursday. */
+/** 1970-01-01 was a Thursday. */
 const EPOCH_WEEKDAY = 4;
 
-/** ISO day of week: Monday=1, Sunday=7. */
 function weekdayOf(date: number): number {
   return mod(date + EPOCH_WEEKDAY - 1, 7) + 1;
 }
 
-/** The year and month of a month index, the months since January of year 0. */
 export function yearAndMonth(index: number): { year: number; month: number } {
   return { year: Math.floor(index / 12), month: mod(index, 12) + 1 };
 }
 
-/**
- * The Monday that starts week 0. Any Monday would do, since a cadence aligns
- * weeks to its own anchor; this is the first after the epoch.
- */
+/** Any Monday would do: a cadence aligns weeks to its own anchor. */
 const WEEK_ZERO = epochDay(1970, 1, 5);
 
-/** A unit of the calendar that periods count in. */
 export type Unit = "day" | "week" | "month" | "year";
 
-/**
- * The index of the `unit` holding `date`: its epoch day, weeks since Monday
- * 1970-01-05, months since January of year 0, or its year.
- */
 export function unitIndex(unit: Unit, date: number): number {
   switch (unit) {
     case "day":
@@ -114,7 +100,6 @@ export function unitIndex(unit: Unit, date: number): number {
   }
 }
 
-/** The first date of the `unit` with `index`, the inverse of unitIndex. */
 export function firstDateOfUnit(unit: Unit, index: number): number {
   switch (unit) {
     case "day":
@@ -153,7 +138,6 @@ export function matchesDayFilter(date: number, filter: DayFilter): boolean {
   }
 }
 
-/** The dates a monthly target names in a month, earliest first. */
 export function monthTargetDates(
   year: number,
   month: number,
@@ -180,7 +164,6 @@ export function monthTargetDates(
   }
 }
 
-/** The date a yearly target names in a year, or null when that year lacks it. */
 export function yearTargetDate(
   year: number,
   target: YearTarget,
@@ -197,7 +180,6 @@ export function yearTargetDate(
   }
 }
 
-/** The date of `day` in a month, or null when the month is shorter. */
 export function dateIn(
   year: number,
   month: number,
@@ -214,7 +196,6 @@ function lastDayOfMonth(year: number, month: number): number {
   return epochDay(year, month, daysInMonth(year, month));
 }
 
-/** The last Monday to Friday of a month. */
 function lastWeekdayOfMonth(year: number, month: number): number {
   const last = lastDayOfMonth(year, month);
   return last - Math.max(0, weekdayOf(last) - 5);
@@ -238,10 +219,8 @@ function ordinalWeekday(
 }
 
 /**
- * The weekday nearest `day` of a month, or null when the month is shorter.
- * Without a direction it stays in the month, as cron's `W` does; with one it
- * can cross into the adjacent month (spec/README.md, "Nearest weekday and
- * `during`").
+ * Without a direction it stays in the month, as cron's `W` does
+ * (spec/README.md, "Nearest weekday and `during`").
  */
 function nearestWeekday(
   year: number,

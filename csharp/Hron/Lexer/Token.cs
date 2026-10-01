@@ -2,9 +2,6 @@ using Hron.Ast;
 
 namespace Hron.Lexer;
 
-/// <summary>
-/// Represents a lexed token.
-/// </summary>
 public sealed record Token(
     TokenKind Kind,
     Span Span,
@@ -36,7 +33,6 @@ public sealed record Token(
     public static Token Number(int value, Span span)
         => new(TokenKind.Number, span, NumberVal: value);
 
-    /// <summary>Creates an ordinal number token (e.g., "1st", "15th").</summary>
     public static Token OrdinalNumber(int value, Span span)
         => new(TokenKind.OrdinalNumber, span, NumberVal: value);
 

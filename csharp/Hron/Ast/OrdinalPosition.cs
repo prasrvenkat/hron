@@ -1,8 +1,5 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents an ordinal position (first, second, etc.).
-/// </summary>
 public enum OrdinalPosition
 {
     First = 1,

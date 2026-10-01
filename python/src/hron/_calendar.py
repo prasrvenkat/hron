@@ -1,5 +1,3 @@
-"""Date arithmetic on the proleptic Gregorian calendar: no time zones, no schedules."""
-
 from __future__ import annotations
 
 import calendar
@@ -45,8 +43,6 @@ class YearMonth:
 
 
 def year_month(index: int) -> YearMonth | None:
-    """Month `index` counted from January of year 0, or None outside year 0 and `date`'s
-    years."""
     year, month = divmod(index, 12)
     return YearMonth(year, month + 1) if MINYEAR - 1 <= year <= MAXYEAR else None
 
@@ -94,7 +90,6 @@ def matches_day_filter(d: date, day_filter: DayFilter) -> bool:
 
 
 def month_target_dates(month: YearMonth, target: MonthTarget) -> list[date]:
-    """The dates a monthly target names in a month, earliest first."""
     year, number = month.year, month.month
     match target:
         case NearestWeekdayTarget(day=day, direction=toward):
@@ -130,7 +125,6 @@ def last_day_of_month(year: int, month: int) -> date:
 
 
 def last_weekday_of_month(year: int, month: int) -> date:
-    """The last Monday to Friday of a month."""
     last = last_day_of_month(year, month)
     return last - timedelta(days=max(last.isoweekday() - 5, 0))
 
@@ -146,10 +140,8 @@ def ordinal_weekday(
 
 
 def nearest_weekday(month: YearMonth, day: int, toward: NearestDirection | None) -> date | None:
-    """The weekday nearest `day` of a month, or None when the month is shorter or the
-    weekday lies outside `date`'s years. Without a direction it stays in the month, as
-    cron's `W` does; with one it can cross into the adjacent month (spec/README.md,
-    "Nearest weekday and `during`")."""
+    """Without a direction it stays in the month, as cron's `W` does; with one it can cross
+    into the adjacent month (spec/README.md, "Nearest weekday and `during`")."""
     year, number = month.year, month.month
     last = days_in_month(year, number)
     if day > last:

@@ -14,7 +14,6 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-/** API conformance tests loaded from spec/api.json. */
 public class ApiConformanceTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static JsonNode SPEC;
@@ -66,7 +65,6 @@ public class ApiConformanceTest {
     ZonedDateTime now = ZonedDateTime.of(2026, 2, 6, 12, 0, 0, 0, ZoneId.of("UTC"));
     var result = s.previousFrom(now);
     assertTrue(result.isPresent());
-    // Previous should be today at 09:00
     assertEquals(6, result.get().getDayOfMonth());
     assertEquals(9, result.get().getHour());
   }
@@ -155,13 +153,11 @@ public class ApiConformanceTest {
 
   @Test
   void testExactTimeBoundary() throws HronException {
-    // If now equals an occurrence exactly, skip it
     Schedule s = Schedule.parse("every day at 12:00 in UTC");
     ZonedDateTime now = ZonedDateTime.of(2026, 2, 6, 12, 0, 0, 0, ZoneId.of("UTC"));
     var next = s.nextFrom(now);
     assertTrue(next.isPresent());
 
-    // Next should be tomorrow, not today
     assertEquals(7, next.get().getDayOfMonth());
   }
 
@@ -172,8 +168,8 @@ public class ApiConformanceTest {
     var next = s.nextFrom(now);
     assertTrue(next.isPresent());
 
-    // Feb 6 is aligned (day 20490 from epoch, 20490 % 3 = 0)
-    // Since 09:00 has passed, next should be Feb 9
+    // Feb 6, 2026 is day 20490 from the epoch, a multiple of 3, so the next
+    // aligned day after its 09:00 is Feb 9.
     assertEquals(9, next.get().getDayOfMonth());
   }
 

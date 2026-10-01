@@ -31,7 +31,6 @@ void main() {
 
   group('laziness', () {
     test('occurrences is lazy - does not evaluate unbounded schedule', () {
-      // An unbounded schedule should not hang or OOM when creating the iterator
       final schedule = Schedule.parse('every day at 09:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
@@ -48,7 +47,6 @@ void main() {
 
       final iter = schedule.between(from, to);
 
-      // Taking just 3 should not evaluate all ~330 days
       final results = iter.take(3).toList();
       expect(results.length, equals(3));
     });
@@ -74,7 +72,6 @@ void main() {
           .takeWhile((dt) => dt.isBefore(cutoff))
           .toList();
 
-      // Feb 1, 2, 3, 4 at 09:00 (4 occurrences before Feb 5 00:00)
       expect(results.length, equals(4));
     });
 
@@ -95,7 +92,6 @@ void main() {
       final schedule = Schedule.parse('every day at 09:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      // Find the first Saturday occurrence (weekday 6 in Dart)
       final saturday = schedule
           .occurrences(from)
           .firstWhere((dt) => dt.weekday == 6);
@@ -116,7 +112,6 @@ void main() {
           .where((dt) => dt.weekday == 6 || dt.weekday == 7)
           .toList();
 
-      // 2 weekends in 2 weeks = 4 days
       expect(weekends.length, equals(4));
     });
 
@@ -152,7 +147,6 @@ void main() {
 
       final count = schedule.between(from, to).length;
 
-      // Feb 1-10 inclusive = 10 days
       expect(count, equals(10));
     });
 
@@ -188,7 +182,7 @@ void main() {
 
       final results = schedule.occurrences(from).toList();
 
-      expect(results.length, equals(5)); // Feb 1-5
+      expect(results.length, equals(5));
     });
 
     test('between collect to list', () {
@@ -256,7 +250,6 @@ void main() {
       final schedule = Schedule.parse('on 2026-02-14 at 14:00 in UTC');
       final from = parseZoned('2026-02-01T00:00:00+00:00[UTC]');
 
-      // Request many but should only get 1
       final results = schedule.occurrences(from).take(100).toList();
 
       expect(results.length, equals(1));
@@ -276,8 +269,7 @@ void main() {
     });
 
     test('between handles DST transition', () {
-      // March 8, 2026 is DST spring forward in America/New_York
-      // 2:00 AM springs forward to 3:00 AM, so 02:30 shifts to 03:30
+      // March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
       final schedule = Schedule.parse('every day at 02:30 in America/New_York');
       final from = parseZoned('2026-03-07T00:00:00-05:00[America/New_York]');
       final to = parseZoned('2026-03-10T00:00:00-04:00[America/New_York]');
@@ -285,9 +277,9 @@ void main() {
       final results = schedule.between(from, to).toList();
 
       expect(results.length, equals(3));
-      expect(results[0].hour, equals(2)); // Mar 7 02:30
-      expect(results[1].hour, equals(3)); // Mar 8 03:30 (shifted due to DST)
-      expect(results[2].hour, equals(2)); // Mar 9 02:30
+      expect(results[0].hour, equals(2));
+      expect(results[1].hour, equals(3));
+      expect(results[2].hour, equals(2));
     });
   });
 
@@ -317,8 +309,8 @@ void main() {
 
       final weekdayDays = schedule
           .occurrences(from)
-          .take(14) // Two weeks to ensure we have enough
-          .where((dt) => dt.weekday >= 1 && dt.weekday <= 5) // Monday-Friday
+          .take(14)
+          .where((dt) => dt.weekday >= 1 && dt.weekday <= 5)
           .take(5)
           .map((dt) => dt.day)
           .toList();

@@ -7,7 +7,6 @@ import (
 )
 
 func TestOccurrencesIsLazy(t *testing.T) {
-	// An unbounded schedule should not hang or OOM when creating the iterator
 	s, err := ParseSchedule("every day at 09:00 in UTC")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -92,7 +91,6 @@ func TestOccurrencesEarlyTerminationWithCondition(t *testing.T) {
 		results = append(results, dt)
 	}
 
-	// Feb 1, 2, 3, 4 at 09:00 (4 occurrences before Feb 5 00:00)
 	if len(results) != 4 {
 		t.Errorf("expected 4 occurrences, got %d", len(results))
 	}
@@ -294,8 +292,7 @@ func TestOccurrencesPreservesTimezone(t *testing.T) {
 }
 
 func TestBetweenHandlesDSTTransition(t *testing.T) {
-	// March 8, 2026 is DST spring forward in America/New_York
-	// 2:00 AM springs forward to 3:00 AM, so 02:30 shifts to 03:30
+	// March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
 	s, err := ParseSchedule("every day at 02:30 in America/New_York")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
@@ -307,7 +304,6 @@ func TestBetweenHandlesDSTTransition(t *testing.T) {
 
 	results := slices.Collect(s.Between(from, to))
 
-	// Mar 7 at 02:30, Mar 8 at 03:30 (shifted), Mar 9 at 02:30
 	if len(results) != 3 {
 		t.Errorf("expected 3 occurrences, got %d", len(results))
 	}
@@ -333,7 +329,7 @@ func TestOccurrencesMultipleTimesPerDay(t *testing.T) {
 	var results []time.Time
 	for dt := range s.Occurrences(from) {
 		results = append(results, dt)
-		if len(results) >= 9 { // 3 days worth
+		if len(results) >= 9 {
 			break
 		}
 	}
@@ -363,7 +359,7 @@ func TestComplexIterationChain(t *testing.T) {
 	var weekdayDays []int
 	count := 0
 	for dt := range s.Occurrences(from) {
-		if count >= 14 { // Two weeks to ensure we have enough
+		if count >= 14 {
 			break
 		}
 		count++
@@ -406,7 +402,6 @@ func TestFilterWeekends(t *testing.T) {
 		}
 	}
 
-	// 2 weekends in 2 weeks = 4 days
 	if len(weekends) != 4 {
 		t.Errorf("expected 4 weekend days, got %d", len(weekends))
 	}

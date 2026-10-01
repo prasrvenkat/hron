@@ -1,5 +1,3 @@
-"""How to build and run each language's runner, and how to feed it cases."""
-
 import json
 import os
 import queue
@@ -72,8 +70,6 @@ class RunnerError(Exception):
 
 @dataclass
 class Answers:
-    """A runner's outcome for each case by id, and how long it took to evaluate it."""
-
     outcomes: dict[str, dict] = field(default_factory=dict)
     micros: dict[str, int] = field(default_factory=dict)
 
@@ -97,10 +93,8 @@ def build(name: str) -> None:
 
 
 def run(name: str, cases: list[dict], timeout: float) -> Answers:
-    """Runs every case and returns the runner's answers. A case that hangs
-    or kills the runner gets a timeout or crash outcome, and the runner restarts
-    with the case after it. A runner that fails its first two cases that way is
-    broken, not buggy, so the run stops."""
+    """A runner that fails its first two cases by hanging or crashing is broken, not
+    buggy, so the run stops."""
     answers = Answers()
     with open(BUILD / f"{name}.log", "w") as log:
         pending = cases

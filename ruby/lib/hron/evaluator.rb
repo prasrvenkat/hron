@@ -13,7 +13,6 @@ module Hron
     # Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment").
     EPOCH_MONDAY = Date.new(1970, 1, 5, Date::GREGORIAN)
 
-    # Default anchor for day, month and year intervals.
     EPOCH_DATE = Date.new(1970, 1, 1, Date::GREGORIAN)
 
     # spec/README.md, "Supported range".
@@ -34,12 +33,10 @@ module Hron
     # Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
     NAMED_UNTIL_MAX_YEARS = 8
 
-    # Returns the next occurrence strictly after now, or nil if there is none in the supported range.
     def self.next_from(schedule, now)
       Search.new(schedule).nearest(now, Direction::FORWARD) if SUPPORTED_RANGE.cover?(now)
     end
 
-    # Returns the latest occurrence strictly before now, or nil if there is none in the supported range.
     def self.previous_from(schedule, now)
       Search.new(schedule).nearest(now, Direction::BACKWARD) if SUPPORTED_RANGE.cover?(now)
     end
@@ -48,8 +45,6 @@ module Hron
       occurrences(schedule, now).first([n, 0].max)
     end
 
-    # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for repeating
-    # schedules unless an until clause or the end of the supported range ends them.
     def self.occurrences(schedule, from)
       Enumerator.new do |yielder|
         next unless SUPPORTED_RANGE.cover?(from)
@@ -62,8 +57,6 @@ module Hron
       end.lazy
     end
 
-    # Returns a lazy Enumerator of occurrences where from < occurrence <= to, empty when either
-    # bound is outside the supported range.
     def self.between(schedule, from, to)
       Enumerator.new do |yielder|
         next unless SUPPORTED_RANGE.cover?(to)
@@ -76,7 +69,6 @@ module Hron
       end.lazy
     end
 
-    # True when the minute containing dt, on the schedule's wall clock, is an occurrence.
     # Defined through the forward search, so the two cannot disagree (spec/README.md,
     # "matches is true exactly when the minute containing t is an occurrence").
     def self.matches(schedule, dt)
@@ -105,12 +97,10 @@ module Hron
         @forward
       end
 
-      # Whether a comes before b in this direction.
       def precedes?(a, b)
         @forward ? a < b : a > b
       end
 
-      # Items given earliest first, in the order this direction visits them.
       def in_order(items)
         (@forward || items.size < 2) ? items : items.reverse
       end
@@ -120,7 +110,6 @@ module Hron
       private_class_method :new
     end
 
-    # A schedule prepared for searching: its zone, cadence, times and clauses resolved once.
     class Search
       attr_reader :zone, :clauses
 
@@ -133,7 +122,6 @@ module Hron
         @expr = schedule.expr
       end
 
-      # The occurrence nearest now strictly beyond it in direction, or nil.
       def nearest(now, direction)
         now = @zone.utc_to_local(now.utc)
         now_date = now.to_date.gregorian
@@ -159,7 +147,6 @@ module Hron
 
       private
 
-      # Yields each period's candidates, in direction order.
       def each_candidate(first_period, reach, direction, &)
         @cadence.period_starts(first_period, reach, direction) do |start|
           direction.in_order(candidates_in_period(start)).each(&) unless rejects_period?(start)
@@ -173,7 +160,6 @@ module Hron
         (unit == :day || unit == :month) && !@clauses.allows_month?(start.month)
       end
 
-      # The candidates in the period starting at start, earliest first.
       def candidates_in_period(start)
         case @expr
         when DayRepeat
@@ -193,15 +179,12 @@ module Hron
         end
       end
 
-      # Whether an occurrence scheduled on date can precede, in direction, the best one, which
-      # landed on landing. An occurrence lands from its scheduled date to shift dates after
-      # it, on a first pass, and first passes keep wall-clock order.
+      # An occurrence lands from its scheduled date to shift dates after it, on a first pass,
+      # and first passes keep wall-clock order.
       def could_beat?(date, landing, direction, shift)
         direction.forward? ? date <= landing : Calendar.days_between(date, landing) <= shift
       end
 
-      # Whether every occurrence scheduled on date lies behind now, whose wall date is
-      # now_date, in direction.
       def behind?(date, now_date, direction, shift)
         if direction.forward?
           Calendar.days_between(date, now_date) > shift
@@ -210,7 +193,6 @@ module Hron
         end
       end
 
-      # The occurrence on date nearest now strictly beyond it in direction.
       def nearest_on_date(date, now, direction)
         case @times
         when DailyTimes::Fixed
@@ -231,9 +213,8 @@ module Hron
         end
       end
 
-      # The instant of the slot on date nearest now strictly beyond it in direction. Slot keys
-      # never decrease in wall-clock order, so one binary search finds where the slots past now
-      # begin, and the scan starts from the slot beside that boundary that the search resolved.
+      # Slot keys never decrease in wall-clock order, so one binary search finds where the
+      # slots past now begin.
       def nearest_slot(date, now, direction)
         minutes = @times.minutes
         forward = direction.forward?
@@ -263,29 +244,25 @@ module Hron
       end
     end
 
-    # An occurrence a search found, with the local date it lands on.
     Occurrence = Data.define(:instant, :landing)
 
-    # A date the expression fires on, with the month whose day it names. They differ only
-    # when a directional nearest weekday crosses into the adjacent month. A Struct, as one is
-    # made for every date a search walks and a Data costs twice as much to make.
+    # target_month differs from date's month only when a directional nearest weekday crosses
+    # into the adjacent month. A Struct, as one is made for every date a search walks and a
+    # Data costs twice as much to make.
     Candidate = Struct.new(:date, :target_month) do
       def self.on(date)
         new(date, date.month)
       end
     end
 
-    # The times of day an expression fires at.
     module DailyTimes
-      # Fixed times, each shifted out of a gap.
       Fixed = Data.define(:times) do
         def max_shift_days
           MAX_SHIFT_DAYS
         end
       end
 
-      # Interval slots in minutes after midnight, each skipped in a gap, so a slot lands on
-      # its own date.
+      # Each slot is skipped in a gap, so it lands on its own date.
       Slots = Data.define(:minutes) do
         def max_shift_days
           0
@@ -302,9 +279,8 @@ module Hron
       end
     end
 
-    # The trailing clauses, resolved once. during applies to a candidate's target month;
-    # except, until and starting to its date (spec/README.md, "Nearest weekday and `during`",
-    # "The `starting` clause").
+    # during applies to a candidate's target month; except, until and starting to its date
+    # (spec/README.md, "Nearest weekday and `during`", "The `starting` clause").
     class Clauses
       attr_reader :starting
 
@@ -330,7 +306,6 @@ module Hron
         @during.empty? || @during.include?(month)
       end
 
-      # Ends the search on date: nothing after it is an occurrence.
       def end_on(date)
         @until = date if @until.nil? || date < @until
       end
@@ -341,7 +316,6 @@ module Hron
         direction.forward? ? @except_dates.max : @except_dates.min
       end
 
-      # The date a search starts from: nothing fires before starting or after until.
       def clamp(date, direction)
         if direction.forward?
           @starting ? [date, @starting].max : date
@@ -350,8 +324,6 @@ module Hron
         end
       end
 
-      # Whether date, and every date beyond it in direction, is past the bound the search
-      # moves toward.
       def ends_search?(date, direction)
         if direction.forward?
           !@until.nil? && date > @until
@@ -379,8 +351,6 @@ module Hron
       end
     end
 
-    # The periods (days, weeks, months or years) an expression fires in, numbered from
-    # origin: period k is aligned when k is a multiple of interval.
     class Cadence
       attr_reader :unit
 
@@ -407,7 +377,6 @@ module Hron
         new(unit, origin, interval)
       end
 
-      # A single ISO date has one period, the one holding that date.
       def initialize(unit, origin, interval, single: false)
         @unit = unit
         @origin = origin
@@ -438,9 +407,8 @@ module Hron
         end
       end
 
-      # Yields the first days of the aligned periods from first_period in direction, through
-      # one search horizon beyond whichever of first_period and reach is farther along it
-      # (spec/README.md, "Search horizon"), within the periods a search walks.
+      # Walks one search horizon beyond whichever of first_period and reach is farther along
+      # direction (spec/README.md, "Search horizon").
       def period_starts(first_period, reach, direction)
         return yield @origin if @single
 
@@ -457,7 +425,6 @@ module Hron
 
       private
 
-      # The first aligned period at or beyond period k in direction.
       def align(k, direction)
         direction.forward? ? k + (-k % @interval) : k - (k % @interval)
       end

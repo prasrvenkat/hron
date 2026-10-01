@@ -30,8 +30,10 @@ ruby/             # Native Ruby implementation
 
 A comment is a claim about the code that nothing checks, so every comment must earn its place for the life of the code. Keep one only if it tells a future reader something the code cannot, and is unlikely to go stale:
 
-- **Why**, when the code cannot show it: a spec rule, a platform or library quirk, a workaround and what it works around.
-- **Public API contract**, in a line or two: what it returns, when it returns nothing, what it throws. IDEs and package registries show these.
+- **Why**, when the code cannot show it: a spec rule, a platform or library quirk, a workaround and what it works around, or a fact the reader would otherwise look up, such as the weekday of a date a test asserts.
+- **Public API contract**, in a line or two: what it returns, when it returns nothing, what it throws, and what the signature cannot carry (a numbering, what null means). IDEs and package registries show these. Public means what the package's documentation shows a user, not every symbol a language happens to export.
+
+Non-public functions, types, constants and fields get no doc comment unless it states a why: their names and code say what they do, and a second description of the same thing is the first to go stale.
 
 Everything else goes:
 
@@ -43,6 +45,8 @@ Everything else goes:
 - Copies of the spec. Name the rule in `spec/README.md`, or the `spec/tests.json` case, instead of re-explaining it.
 
 When you change code, fix or delete every comment it makes untrue.
+
+Tool directives (`# frozen_string_literal`, `// biome-ignore`, `# noqa` and the like) are code, not comments. Before committing, run `just comments` and give every line it lists one of the two reasons above, or delete it. A reviewer does the same, line by line, and reports any comment without a reason.
 
 ## Git Workflow
 

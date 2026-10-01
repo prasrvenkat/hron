@@ -14,10 +14,7 @@ import 'src/parser.dart' as parser_impl;
 export 'src/ast.dart';
 export 'src/error.dart';
 
-/// A parsed hron schedule that can compute occurrences and match datetimes.
-///
-/// Use [Schedule.parse] to create a schedule from a hron expression, or
-/// [Schedule.fromCron] to convert from standard cron format.
+/// Built only by [Schedule.parse] or [Schedule.fromCron].
 class Schedule {
   final ScheduleData _data;
 
@@ -37,7 +34,7 @@ class Schedule {
 
   /// Returns `true` if [input] is a valid hron expression.
   ///
-  /// Unlike [parse], this does not throw on invalid input.
+  /// False, rather than throwing, for anything [parse] rejects.
   static bool validate(String input) {
     try {
       parser_impl.parse(input);
@@ -48,8 +45,6 @@ class Schedule {
   }
 
   /// Returns the next occurrence strictly after [now], or `null` if none exists.
-  ///
-  /// For schedules with an `until` clause, returns `null` after the end date.
   TZDateTime? nextFrom(TZDateTime now) => eval_impl.nextFrom(_data, now);
 
   /// Returns the next [n] occurrences strictly after [now].
@@ -77,8 +72,7 @@ class Schedule {
 
   /// Converts this schedule to a standard 5-field cron expression.
   ///
-  /// Throws [HronError] if the schedule cannot be expressed in cron format
-  /// (e.g., schedules with `except`, `until`, or complex patterns).
+  /// Throws [HronError] if the schedule cannot be expressed in cron format.
   String toCron() => cron_impl.toCron(_data);
 
   /// Returns the canonical hron string representation of this schedule.
@@ -87,11 +81,7 @@ class Schedule {
 
   /// The IANA timezone name, in its canonical capitalization, or `null` if not
   /// specified.
-  ///
-  /// When set (via `in America/New_York` clause), all times are interpreted
-  /// in that timezone.
   String? get timezone => _data.timezone;
 
-  /// The underlying schedule expression AST node.
   ScheduleExpr get expression => _data.expr;
 }

@@ -21,8 +21,8 @@ import { HronError, type Span } from "./error.js";
 import { type Token, type TokenKind, tokenize } from "./lexer.js";
 
 /**
- * The IANA capitalization of `name`, or null unless it is `UTC` or a known
- * Area/Location zone or link (spec/README.md, "Parse-time validation").
+ * Null unless `name` is `UTC` or a known Area/Location zone or link
+ * (spec/README.md, "Parse-time validation").
  */
 function canonicalTimezone(name: string): string | null {
   if (name.toLowerCase() === "utc") return "UTC";
@@ -853,7 +853,6 @@ class Parser {
   }
 }
 
-/** Parse an hron expression string into a ScheduleData AST. */
 export function parse(input: string): ScheduleData {
   const tokens = tokenize(input);
 

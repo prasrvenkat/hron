@@ -3,8 +3,8 @@ using Hron.Ast;
 namespace Hron.Eval;
 
 /// <summary>
-/// Wall-clock times on dates in a time zone. A wall time a fall-back repeats takes its first pass
-/// (spec/README.md, "DST fall-back (ambiguous times)").
+/// A wall time a fall-back repeats takes its first pass (spec/README.md, "DST fall-back
+/// (ambiguous times)").
 /// </summary>
 /// <remarks>
 /// Assumes at most one offset change within a day of a wall time, and gaps and overlaps of at most
@@ -16,15 +16,11 @@ internal static class WallClock
 {
     public const int MinutesPerHour = 60;
 
-    /// <summary>
-    /// The offsets in force before and after the one transition a wall time can be near.
-    /// </summary>
     public readonly record struct Offsets(TimeSpan Before, TimeSpan After);
 
     /// <summary>
-    /// The instant <paramref name="time"/> names on <paramref name="date"/>, shifted forward by the
-    /// gap's length when it falls in a spring-forward gap (spec/README.md, "DST spring-forward
-    /// (gaps)"). Null outside the supported range.
+    /// Shifted forward by the gap's length in a spring-forward gap (spec/README.md, "DST
+    /// spring-forward (gaps)"). Null outside the supported range.
     /// </summary>
     public static DateTimeOffset? FixedTimeOn(DateOnly date, TimeOfDay time, TimeZoneInfo zone)
     {
@@ -34,20 +30,12 @@ internal static class WallClock
         return InstantInRange(utcTicks, zone);
     }
 
-    /// <summary>
-    /// The offsets a wall time on <paramref name="date"/> can have: those a day before the date
-    /// begins and a day after it ends.
-    /// </summary>
     public static Offsets OffsetsOn(DateOnly date, TimeZoneInfo zone)
     {
         var midnight = WallTicks(date, 0);
         return new Offsets(OffsetAt(midnight - TimeSpan.TicksPerDay, zone), OffsetAt(midnight + 2 * TimeSpan.TicksPerDay, zone));
     }
 
-    /// <summary>
-    /// The slot <paramref name="minute"/> minutes after midnight on <paramref name="date"/>, whose
-    /// offsets are <paramref name="offsets"/>.
-    /// </summary>
     public static Slot SlotOn(DateOnly date, long minute, Offsets offsets, TimeZoneInfo zone)
     {
         var wallTicks = WallTicks(date, minute);

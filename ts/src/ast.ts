@@ -52,7 +52,12 @@ export type MonthTarget =
   | { type: "days"; specs: DayOfMonthSpec[] }
   | { type: "lastDay" }
   | { type: "lastWeekday" }
-  | { type: "nearestWeekday"; day: number; direction: NearestDirection | null }
+  | {
+      type: "nearestWeekday";
+      day: number;
+      /** Null stays in the month, as cron `W` does; a direction can cross into the adjacent month. */
+      direction: NearestDirection | null;
+    }
   | { type: "ordinalWeekday"; ordinal: OrdinalPosition; weekday: Weekday };
 
 export type YearTarget =
@@ -110,14 +115,15 @@ export type ScheduleExpr =
 
 export interface ScheduleData {
   expr: ScheduleExpr;
+  /** Null means UTC. */
   timezone: string | null;
   except: Exception[];
   until: UntilSpec | null;
-  anchor: string | null; // ISO date string (YYYY-MM-DD)
+  /** The `starting` date, as YYYY-MM-DD. */
+  anchor: string | null;
   during: MonthName[];
 }
 
-/** ISO 8601 day number: Monday=1, Sunday=7. */
 export function weekdayNumber(day: Weekday): number {
   const map: Record<Weekday, number> = {
     monday: 1,
@@ -131,7 +137,6 @@ export function weekdayNumber(day: Weekday): number {
   return map[day];
 }
 
-/** Cron DOW number: Sunday=0, Monday=1, ..., Saturday=6. */
 export function cronDowNumber(day: Weekday): number {
   const map: Record<Weekday, number> = {
     sunday: 0,

@@ -19,7 +19,6 @@ import {
 } from "./ast.js";
 import { HronError } from "./error.js";
 
-/** Convert a Schedule to a 5-field cron expression. */
 export function toCron(schedule: ScheduleData): string {
   if (schedule.except.length > 0) {
     throw HronError.cron(
@@ -163,7 +162,6 @@ function dayFilterToCronDow(filter: DayFilter): string {
   }
 }
 
-/** Parse a 5-field cron expression into a ScheduleData. */
 export function fromCron(cron: string): ScheduleData {
   const trimmed = cron.trim();
 
@@ -383,7 +381,6 @@ function monthFromNumber(n: number): MonthName {
   return result;
 }
 
-/** Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday). */
 function tryParseNthWeekday(
   minuteField: string,
   hourField: string,
@@ -451,7 +448,6 @@ function tryParseNthWeekday(
   return null;
 }
 
-/** Try to parse L (last day) or LW (last weekday) patterns. */
 function tryParseLastDay(
   minuteField: string,
   hourField: string,
@@ -483,7 +479,6 @@ function tryParseLastDay(
   return schedule;
 }
 
-/** Try to parse W (nearest weekday) patterns: 15W, 1W, etc. */
 function tryParseNearestWeekday(
   minuteField: string,
   hourField: string,
@@ -529,7 +524,6 @@ function tryParseNearestWeekday(
   return schedule;
 }
 
-/** Try to parse interval patterns: star/N, range/N in minute or hour fields. */
 function tryParseInterval(
   minuteField: string,
   hourField: string,
@@ -845,13 +839,11 @@ function parseCronDow(field: string): DayFilter {
   return { type: "days", days };
 }
 
-/** Parse a DOW value (number 0-7 or name SUN-SAT), normalizing 7 to 0. */
 function parseDowValue(s: string): number {
   const raw = parseDowValueRaw(s);
   return raw === 7 ? 0 : raw;
 }
 
-/** Parse a DOW value without normalizing 7 to 0 (for range checking). */
 function parseDowValueRaw(s: string): number {
   const n = parseInt(s, 10);
   if (!Number.isNaN(n)) {

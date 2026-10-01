@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/** Date arithmetic on the proleptic Gregorian calendar: no time zones, no schedules. */
 final class CalendarDates {
   private CalendarDates() {}
 
@@ -22,7 +21,6 @@ final class CalendarDates {
     return date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
   }
 
-  /** {@code day} of {@code month} of {@code year}, or empty when that month is shorter. */
   static Optional<LocalDate> dateOf(int year, int month, int day) {
     YearMonth yearMonth = YearMonth.of(year, month);
     return yearMonth.isValidDay(day) ? Optional.of(yearMonth.atDay(day)) : Optional.empty();
@@ -42,7 +40,6 @@ final class CalendarDates {
     return day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
   }
 
-  /** The dates a monthly target names in {@code month}, earliest first. */
   static List<LocalDate> monthTargetDates(YearMonth month, MonthTarget target) {
     return switch (target.kind()) {
       case DAYS -> daysOfMonth(month, target.expandDays());
@@ -56,7 +53,6 @@ final class CalendarDates {
     };
   }
 
-  /** The {@code days} that {@code month} has, earliest first and each once. */
   private static List<LocalDate> daysOfMonth(YearMonth month, List<Integer> days) {
     long named = 0;
     for (int day : days) {
@@ -82,7 +78,6 @@ final class CalendarDates {
     };
   }
 
-  /** The last Monday to Friday of {@code month}. */
   private static LocalDate lastWeekdayOfMonth(YearMonth month) {
     LocalDate last = month.atEndOfMonth();
     int back =
@@ -104,9 +99,8 @@ final class CalendarDates {
   }
 
   /**
-   * The weekday nearest {@code day} of {@code month}, or empty when the month is shorter. Without a
-   * direction it stays in the month, as cron's {@code W} does; with one it can cross into the
-   * adjacent month (spec/README.md, "Nearest weekday and `during`").
+   * Without a direction it stays in the month, as cron's {@code W} does; with one it can cross into
+   * the adjacent month (spec/README.md, "Nearest weekday and `during`").
    */
   private static Optional<LocalDate> nearestWeekday(
       YearMonth month, int day, NearestDirection toward) {

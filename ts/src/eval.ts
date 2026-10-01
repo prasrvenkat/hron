@@ -23,17 +23,13 @@ type IntervalRepeat = Extract<ScheduleExpr, { type: "intervalRepeat" }>;
 /** Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment"). */
 const EPOCH_MONDAY = epochDay(1970, 1, 5);
 
-/** Default anchor for day, month and year intervals. */
 const EPOCH_DATE = epochDay(1970, 1, 1);
 
-/**
- * spec/README.md, "Supported range": in epoch milliseconds, from RANGE_START
- * inclusive to RANGE_END exclusive.
- */
+/** spec/README.md, "Supported range". */
 const RANGE_START = epochDay(1, 1, 2) * DAY_MS;
 const RANGE_END = epochDay(9999, 12, 30) * DAY_MS;
 
-/** The calendar a search walks: no date outside it holds an occurrence in the supported range. */
+/** No date outside these holds an occurrence in the supported range. */
 const FIRST_DATE = epochDay(1, 1, 1);
 const LAST_DATE = epochDay(9999, 12, 31);
 
@@ -85,8 +81,8 @@ function searchFrom(
 }
 
 /**
- * True when the minute containing `datetime` is an occurrence. Defined through
- * the forward search, so the two cannot disagree about what an occurrence is.
+ * Defined through the forward search, so the two cannot disagree about what an
+ * occurrence is.
  */
 export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
   const ms = floorMs(datetime);
@@ -99,10 +95,6 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
   return search.nearest(minute - 1, Direction.Forward)?.instant === minute;
 }
 
-/**
- * Lazily yields occurrences strictly after `from`. Unbounded for repeating
- * schedules unless an `until` clause ends them.
- */
 export function* occurrences(
   schedule: ScheduleData,
   from: ZDT,
@@ -127,7 +119,6 @@ export function nextNFrom(schedule: ScheduleData, now: ZDT, n: number): ZDT[] {
   return results;
 }
 
-/** Yields occurrences where `from < occurrence <= to`. */
 export function* between(
   schedule: ScheduleData,
   from: ZDT,
@@ -147,22 +138,19 @@ class Direction {
 
   private constructor(readonly sign: 1 | -1) {}
 
-  /** Whether `a` comes before `b` in this direction. */
   precedes(a: number, b: number): boolean {
     return this.sign > 0 ? a < b : a > b;
   }
 }
 
-/** An occurrence a search found, in epoch milliseconds, with the local date it lands on. */
 interface Occurrence {
   readonly instant: number;
   readonly landing: number;
 }
 
 /**
- * A schedule prepared for searching: its zone, cadence, times and clauses
- * resolved once, and the instants of the dates it resolves, so that iterator
- * steps resolve each date once.
+ * Keeps the instants of the dates it resolves, so that iterator steps resolve
+ * each date once.
  */
 class Search {
   readonly zone: Zone;
@@ -181,9 +169,8 @@ class Search {
   }
 
   /**
-   * The occurrence nearest `now`, in epoch milliseconds, strictly beyond it in
-   * `direction`. An iterator passes its last occurrence's landing date, now's
-   * wall date, as `nowDate` to spare a zone lookup.
+   * An iterator passes its last occurrence's landing date, now's wall date, as
+   * `nowDate` to spare a zone lookup.
    */
   nearest(
     now: number,
@@ -241,7 +228,6 @@ class Search {
     return month !== null && !this.clauses.allowsMonth(month);
   }
 
-  /** The occurrence on `date` nearest `now` strictly beyond it in `direction`. */
   private nearestOnDate(
     date: number,
     now: number,
@@ -256,7 +242,6 @@ class Search {
     return before > 0 ? instants[before - 1] : null;
   }
 
-  /** The instants of `date`'s times, ascending. */
   private instantsOn(date: number): number[] {
     let instants = this.resolved.get(date);
     if (instants === undefined) {
@@ -291,10 +276,8 @@ function inOrder<T>(items: readonly T[], direction: Direction): readonly T[] {
 }
 
 /**
- * Whether an occurrence scheduled on `date` can precede, in `direction`, the
- * best one, which landed on `landing`. An occurrence lands from its scheduled
- * date to `shift` dates after it, on a first pass, and first passes keep
- * wall-clock order.
+ * An occurrence lands from its scheduled date to `shift` dates after it, on a
+ * first pass, and first passes keep wall-clock order.
  */
 function couldBeat(
   date: number,
@@ -307,10 +290,6 @@ function couldBeat(
     : landing - date <= shift;
 }
 
-/**
- * Whether every occurrence scheduled on `date` lies behind now, whose wall
- * date is `nowDate`, in `direction`.
- */
 function isBehind(
   date: number,
   nowDate: number,
@@ -322,7 +301,7 @@ function isBehind(
     : date - nowDate > MAX_OVERLAP_DAYS;
 }
 
-/** How many leading `items` satisfy `test`, which must hold for a prefix of them. */
+/** `test` must hold for a prefix of `items`. */
 function countLeading<T>(
   items: readonly T[],
   test: (item: T) => boolean,
@@ -358,17 +337,13 @@ function ceilMs(t: ZDT): number {
   return Number(ns % NS_PER_MS > 0n ? ms + 1n : ms);
 }
 
-/** The times of day an expression fires at, in minutes after midnight. */
 type DailyTimes =
   /** Fixed times, each shifted out of a gap. */
   | { kind: "fixed"; minutes: number[] }
   /** Interval slots, each skipped in a gap. */
   | { kind: "slots"; minutes: number[] };
 
-/**
- * How many dates past its scheduled date an occurrence can land: a gap pushes
- * a fixed time forward, and skips a slot.
- */
+/** A gap pushes a fixed time forward, and skips a slot. */
 function maxShiftDays(times: DailyTimes): number {
   return times.kind === "fixed" ? MAX_SHIFT_DAYS : 0;
 }
@@ -380,7 +355,6 @@ function dailyTimes(expr: ScheduleExpr): DailyTimes {
   return { kind: "fixed", minutes: expr.times.map(minuteOfDay) };
 }
 
-/** The slots `from + k × interval` up to and including `to`. */
 function intervalSlots({ interval, unit, from, to }: IntervalRepeat): number[] {
   const step = unit === "min" ? interval : interval * MINUTES_PER_HOUR;
   const last = minuteOfDay(to);
@@ -392,9 +366,9 @@ function intervalSlots({ interval, unit, from, to }: IntervalRepeat): number[] {
 }
 
 /**
- * The trailing clauses, resolved once. `during` applies to a candidate's
- * target month; `except`, `until` and `starting` to its date (spec/README.md,
- * "Nearest weekday and `during`", "The `starting` clause").
+ * `during` applies to a candidate's target month; `except`, `until` and
+ * `starting` to its date (spec/README.md, "Nearest weekday and `during`", "The
+ * `starting` clause").
  */
 class Clauses {
   private readonly during: number[];
@@ -440,7 +414,6 @@ class Clauses {
     return this.during.length === 0 || this.during.includes(month);
   }
 
-  /** Ends the search on `date`: nothing after it is an occurrence. */
   endOn(date: number): void {
     this.until = this.until === null ? date : Math.min(this.until, date);
   }
@@ -455,7 +428,6 @@ class Clauses {
       : this.earliestExceptDate;
   }
 
-  /** The date a search starts from: nothing fires before `starting` or after `until`. */
   clamp(date: number, direction: Direction): number {
     if (direction === Direction.Forward) {
       return this.starting === null ? date : Math.max(date, this.starting);
@@ -463,10 +435,6 @@ class Clauses {
     return this.until === null ? date : Math.min(date, this.until);
   }
 
-  /**
-   * Whether `date`, and every date beyond it in `direction`, is past the bound
-   * the search moves toward.
-   */
   endsSearch(date: number, direction: Direction): boolean {
     if (direction === Direction.Forward) {
       return this.until !== null && date > this.until;
@@ -482,11 +450,9 @@ class Clauses {
 }
 
 /**
- * The last date `until` allows. A named date is the first such date on or
- * after `starting` (spec/README.md, "Named `until`"). The parser requires
- * `starting` for it; schedule data built otherwise counts from the epoch, as
- * the reference evaluator does. Null when there is none, so nothing bounds
- * the schedule.
+ * spec/README.md, "Named `until`". The parser requires `starting` for a named
+ * date; schedule data built otherwise counts from the epoch, as the reference
+ * evaluator does.
  */
 function resolveUntil(until: UntilSpec, starting: number): number | null {
   if (until.type === "iso") return parseIsoDate(until.date);
@@ -507,13 +473,7 @@ const PER_400_YEARS: Record<Unit, number> = {
   year: 400,
 };
 
-/**
- * The periods (days, weeks, months or years) an expression fires in, each
- * numbered by its index in its unit (unitIndex): period `n` is aligned when
- * `n - origin` is a multiple of `interval`.
- */
 class Cadence {
-  /** The first and last periods a search walks. */
   private readonly earliest: number;
   private readonly latest: number;
 
@@ -521,7 +481,6 @@ class Cadence {
     private readonly unit: Unit,
     private readonly origin: number,
     private readonly interval: number,
-    /** A single ISO date has one period, the one holding that date. */
     private readonly single = false,
   ) {
     // A nearest weekday can move a candidate into the calendar from the
@@ -560,9 +519,8 @@ class Cadence {
   }
 
   /**
-   * The aligned periods from `first` in `direction`, through one search
-   * horizon beyond whichever of `first` and `reach` is farther along it
-   * (spec/README.md, "Search horizon"), within the periods a search walks.
+   * Through one search horizon beyond whichever of `first` and `reach` is
+   * farther along `direction` (spec/README.md, "Search horizon").
    */
   *periods(
     first: number,
@@ -594,7 +552,6 @@ class Cadence {
     }
   }
 
-  /** The first aligned period at or beyond `period` in `direction`. */
   private align(period: number, direction: Direction): number {
     return direction === Direction.Forward
       ? period + mod(this.origin - period, this.interval)
@@ -611,7 +568,6 @@ class Cadence {
   }
 }
 
-/** The unit an expression repeats in, and the interval in that unit. */
 function repetition(expr: ScheduleExpr): [Unit, number] {
   switch (expr.type) {
     case "intervalRepeat":
@@ -630,19 +586,14 @@ function repetition(expr: ScheduleExpr): [Unit, number] {
 }
 
 /**
- * A date the expression fires on, with the month whose day it names. They
- * differ only when a directional nearest weekday crosses into the adjacent
- * month.
+ * `targetMonth` differs from the month of `date` only when a directional
+ * nearest weekday crosses into the adjacent month.
  */
 interface Candidate {
   readonly date: number;
   readonly targetMonth: number;
 }
 
-/**
- * Prepares the candidates of `expr` in a period, earliest first. A period is
- * its index in its unit: a date, a week, a month index or a year.
- */
 function candidatesInPeriod(
   expr: ScheduleExpr,
 ): (period: number) => Candidate[] {

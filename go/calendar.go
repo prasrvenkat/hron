@@ -5,13 +5,11 @@ import (
 	"time"
 )
 
-// newDate returns a date on the proleptic Gregorian calendar. Dates are
-// time.Time values at midnight UTC, so they carry no time zone.
+// Dates are time.Time values at midnight UTC, so they carry no time zone.
 func newDate(year int, month time.Month, day int) time.Time {
 	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
-// validDate returns false when the month has no such day.
 func validDate(year int, month time.Month, day int) (time.Time, bool) {
 	if day < 1 || day > daysInMonth(year, month) {
 		return time.Time{}, false
@@ -32,8 +30,8 @@ func daysInMonth(year int, month time.Month) int {
 	return 31
 }
 
-// dateOf returns the date of t's wall clock. It counts Unix seconds, as
-// addDays does: a search takes the date of every occurrence it finds.
+// dateOf counts Unix seconds, as addDays does: a search takes the date of
+// every occurrence it finds.
 func dateOf(t time.Time) time.Time {
 	_, offset := t.Zone()
 	seconds := t.Unix() + int64(offset)
@@ -61,7 +59,6 @@ func daysBetween(a, b time.Time) int {
 	return int((b.Unix() - a.Unix()) / secondsPerDay)
 }
 
-// monthIndex returns the months since January of year 0.
 func monthIndex(date time.Time) int {
 	return date.Year()*12 + int(date.Month()) - 1
 }
@@ -91,8 +88,6 @@ func isWeekend(date time.Time) bool {
 	return date.Weekday() == time.Saturday || date.Weekday() == time.Sunday
 }
 
-// monthTargetDates returns the dates a monthly target names in a month,
-// earliest first.
 func monthTargetDates(year int, month time.Month, target MonthTarget) []time.Time {
 	switch target.Kind {
 	case MonthTargetKindDays:
@@ -120,7 +115,6 @@ func monthTargetDates(year int, month time.Month, target MonthTarget) []time.Tim
 	return nil
 }
 
-// yearTargetDate returns false when the year has no such date.
 func yearTargetDate(year int, target YearTarget) (time.Time, bool) {
 	month := time.Month(target.Month.Number())
 	switch target.Kind {
@@ -138,7 +132,6 @@ func lastDayOfMonth(year int, month time.Month) time.Time {
 	return newDate(year, month, daysInMonth(year, month))
 }
 
-// lastWeekdayOfMonth returns the last Monday to Friday of a month.
 func lastWeekdayOfMonth(year int, month time.Month) time.Time {
 	last := lastDayOfMonth(year, month)
 	switch last.Weekday() {
@@ -150,8 +143,6 @@ func lastWeekdayOfMonth(year int, month time.Month) time.Time {
 	return last
 }
 
-// ordinalWeekday returns false when the month has no such weekday, as with a
-// fifth Monday.
 func ordinalWeekday(year int, month time.Month, ordinal OrdinalPosition, weekday Weekday) (time.Time, bool) {
 	if ordinal == Last {
 		last := lastDayOfMonth(year, month)
@@ -162,13 +153,11 @@ func ordinalWeekday(year int, month time.Month, ordinal OrdinalPosition, weekday
 	return date, date.Month() == month
 }
 
-// daysFrom returns how many days after weekday a the next weekday b falls, 0 to 6.
 func daysFrom(a, b Weekday) int {
 	return (b.Number() - a.Number() + 7) % 7
 }
 
-// nearestWeekday returns the weekday nearest a day of a month, or false when
-// the month is shorter. Without a direction it stays in the month, as cron's W
+// Without a direction the nearest weekday stays in the month, as cron's W
 // does; with one it can cross into the adjacent month (spec/README.md,
 // "Nearest weekday and `during`").
 func nearestWeekday(year int, month time.Month, day int, toward NearestDirection) (time.Time, bool) {

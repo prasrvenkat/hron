@@ -1,7 +1,3 @@
-"""The search's footing: a slot in a spring-forward gap sits at the instant its gap ends, so
-slot keys never decrease in wall-clock order, and one search finds where they part; and
-matches stays within the supported range."""
-
 from __future__ import annotations
 
 from collections.abc import Iterator

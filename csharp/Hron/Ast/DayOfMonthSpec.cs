@@ -1,17 +1,11 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents a single day or range of days within a month.
-/// </summary>
 public sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start, int End)
 {
     public static DayOfMonthSpec Single(int day) => new(DayOfMonthSpecKind.Single, day, 0, 0);
 
     public static DayOfMonthSpec Range(int start, int end) => new(DayOfMonthSpecKind.Range, 0, start, end);
 
-    /// <summary>
-    /// Returns all days in this specification.
-    /// </summary>
     public IReadOnlyList<int> Expand()
     {
         if (Kind == DayOfMonthSpecKind.Single)
@@ -28,9 +22,6 @@ public sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start,
     }
 }
 
-/// <summary>
-/// The type of day-of-month specification.
-/// </summary>
 public enum DayOfMonthSpecKind
 {
     Single,

@@ -6,17 +6,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/** Converts between hron expressions and 5-field cron expressions. */
 public final class CronConverter {
   private CronConverter() {}
 
-  /**
-   * Converts a schedule to a 5-field cron expression.
-   *
-   * @param data the schedule data
-   * @return the cron expression
-   * @throws HronException if the schedule cannot be expressed as cron
-   */
   public static String toCron(ScheduleData data) throws HronException {
     if (!data.except().isEmpty()) {
       throw HronException.cron("not expressible as cron (except clauses not supported)");
@@ -131,13 +123,6 @@ public final class CronConverter {
     return nums.stream().map(String::valueOf).collect(Collectors.joining(","));
   }
 
-  /**
-   * Converts a 5-field cron expression to a ScheduleData.
-   *
-   * @param cron the cron expression
-   * @return the schedule data
-   * @throws HronException if the cron expression is invalid
-   */
   public static ScheduleData fromCron(String cron) throws HronException {
     cron = cron.trim();
 
@@ -156,7 +141,7 @@ public final class CronConverter {
     String monthField = fields[3];
     String dowField = fields[4];
 
-    // Normalize ? to * (they're semantically equivalent for our purposes)
+    // Cron's `?` means the same as `*` here.
     if (domField.equals("?")) {
       domField = "*";
     }
@@ -325,7 +310,6 @@ public final class CronConverter {
     return MonthName.parse(s).orElseThrow(() -> HronException.cron("invalid month: " + s));
   }
 
-  /** Try to parse nth weekday patterns like 1#1 (first Monday) or 5L (last Friday). */
   private static ScheduleData tryParseNthWeekday(
       String minuteField,
       String hourField,
@@ -393,7 +377,6 @@ public final class CronConverter {
     return null;
   }
 
-  /** Try to parse L (last day) or LW (last weekday) patterns. */
   private static ScheduleData tryParseLastDay(
       String minuteField,
       String hourField,
@@ -492,7 +475,7 @@ public final class CronConverter {
           throw HronException.cron("range start must be <= end: " + fromMinute + "-" + toMinute);
         }
       } else {
-        // Single value with step (e.g., 0/15) - treat as starting point
+        // In cron, N/step starts at N and runs to the end of the field.
         try {
           fromMinute = Integer.parseInt(rangePart);
         } catch (NumberFormatException e) {
@@ -592,7 +575,6 @@ public final class CronConverter {
 
       if ((domField.equals("*") || domField.equals("?"))
           && (dowField.equals("*") || dowField.equals("?"))) {
-        // Use :59 only for full day (00:00 to 23:59), otherwise use :00
         int endMinute = (fromHour == 0 && toHour == 23) ? 59 : 0;
 
         ScheduleExpr expr =
@@ -780,11 +762,10 @@ public final class CronConverter {
 
   private static int parseDowValue(String s) throws HronException {
     int raw = parseDowValueRaw(s);
-    // Normalize 7 to 0 (both mean Sunday)
+    // 7 and 0 both mean Sunday.
     return (raw == 7) ? 0 : raw;
   }
 
-  /** Parse a DOW value without normalizing 7 to 0 (for range checking). */
   private static int parseDowValueRaw(String s) throws HronException {
     try {
       int n = Integer.parseInt(s);

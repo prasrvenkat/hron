@@ -1,5 +1,3 @@
-//! Basic hron API walkthrough: parse, evaluate, match, display.
-
 use hron::Schedule;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

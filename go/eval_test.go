@@ -24,8 +24,6 @@ func mustSchedule(t *testing.T, data *ScheduleData) *Schedule {
 	return s
 }
 
-// The parser accepts intervals from 1 to 2147483647; a schedule built by hand
-// treats one below 1 as 1 and one above as 2147483647.
 func TestHandBuiltIntervals(t *testing.T) {
 	nine := []TimeOfDay{{9, 0}}
 	cases := []struct {
@@ -68,8 +66,6 @@ func hoursFromNine(interval int) ScheduleExpr {
 	return NewIntervalRepeat(interval, IntervalHours, TimeOfDay{9, 0}, TimeOfDay{10, 0}, nil)
 }
 
-// Parse requires starting with a named until; a schedule built without one
-// resolves it from the epoch.
 func TestHandBuiltNamedUntilWithoutStarting(t *testing.T) {
 	data := NewScheduleData(NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{9, 0}}))
 	until := NewNamedUntil(Mar, 1)
@@ -80,7 +76,6 @@ func TestHandBuiltNamedUntilWithoutStarting(t *testing.T) {
 	}
 }
 
-// A named until that names no real date bounds nothing.
 func TestHandBuiltNamedUntilWithNoSuchDate(t *testing.T) {
 	data := NewScheduleData(NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{9, 0}}))
 	until := NewNamedUntil(Feb, 30)
@@ -135,7 +130,6 @@ func TestSlotSearchAroundTransitions(t *testing.T) {
 	}
 }
 
-// transitionsIn returns the instants in year where zone's offset changes.
 func transitionsIn(zone *time.Location, year int) []time.Time {
 	var transitions []time.Time
 	end := time.Date(year+1, 1, 1, 0, 0, 0, 0, time.UTC)

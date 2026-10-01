@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// Schedule represents a parsed hron schedule.
 type Schedule struct {
 	data     *ScheduleData
 	tzName   string
@@ -45,6 +44,7 @@ func MustParse(input string) *Schedule {
 }
 
 // ParseSchedule parses an hron expression string into a Schedule.
+// The error is a *HronError.
 func ParseSchedule(input string) (*Schedule, error) {
 	data, err := Parse(input)
 	if err != nil {
@@ -54,6 +54,7 @@ func ParseSchedule(input string) (*Schedule, error) {
 }
 
 // FromCronExpr converts a 5-field cron expression to a Schedule.
+// The error is a *HronError.
 func FromCronExpr(cronExpr string) (*Schedule, error) {
 	data, err := FromCron(cronExpr)
 	if err != nil {
@@ -62,7 +63,7 @@ func FromCronExpr(cronExpr string) (*Schedule, error) {
 	return NewSchedule(data)
 }
 
-// Validate checks if an input string is a valid hron expression.
+// Validate reports false, rather than returning an error, for anything Parse rejects.
 func Validate(input string) bool {
 	_, err := Parse(input)
 	return err == nil
@@ -123,7 +124,6 @@ func (s *Schedule) Timezone() string {
 	return s.tzName
 }
 
-// Data returns the underlying ScheduleData.
 func (s *Schedule) Data() *ScheduleData {
 	return s.data
 }

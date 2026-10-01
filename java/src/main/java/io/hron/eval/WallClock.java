@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Wall-clock times on dates in a time zone. A wall time a fall-back repeats takes its first pass
- * (spec/README.md, "DST fall-back (ambiguous times)"), as {@link ZonedDateTime#of} resolves it.
+ * A wall time a fall-back repeats takes its first pass (spec/README.md, "DST fall-back (ambiguous
+ * times)"), as {@link ZonedDateTime#of} resolves it.
  */
 final class WallClock {
   static final int MINUTES_PER_HOUR = 60;
@@ -21,9 +21,8 @@ final class WallClock {
   private WallClock() {}
 
   /**
-   * The instant {@code time} names on {@code date}, shifted forward by the gap's length when it
-   * falls in a spring-forward gap (spec/README.md, "DST spring-forward (gaps)"), as {@link
-   * ZonedDateTime#of} shifts it.
+   * A time in a spring-forward gap shifts forward by the gap's length (spec/README.md, "DST
+   * spring-forward (gaps)"), as {@link ZonedDateTime#of} shifts it.
    */
   static ZonedDateTime fixedTimeOn(LocalDate date, LocalTime time, ZoneId zone) {
     return ZonedDateTime.of(date.atTime(time), zone);
@@ -37,7 +36,6 @@ final class WallClock {
    */
   record Slot(Instant key, Optional<ZonedDateTime> instant) {}
 
-  /** The slot {@code minute} minutes after midnight on {@code date}. */
   static Slot slotOn(LocalDate date, int minute, ZoneId zone) {
     LocalDateTime wallTime = wallTime(date, minute);
     ZoneRules rules = zone.getRules();

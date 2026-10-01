@@ -27,7 +27,6 @@ module TestHelper
     tz = TZInfo::Timezone.get(tz_name)
     local_time = tz.utc_to_local(time.utc)
 
-    # Get offset for the specific time, not current time
     period = tz.period_for_utc(time.utc)
     offset = period.offset.utc_total_offset
     offset_hours = offset.abs / 3600

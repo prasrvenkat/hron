@@ -3,14 +3,6 @@ package io.hron.ast;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Represents a single day or range of days within a month.
- *
- * @param kind the type of specification
- * @param day the day (for SINGLE)
- * @param start the start day (for RANGE)
- * @param end the end day (for RANGE)
- */
 public record DayOfMonthSpec(Kind kind, int day, int start, int end) {
 
   public enum Kind {
@@ -26,11 +18,6 @@ public record DayOfMonthSpec(Kind kind, int day, int start, int end) {
     return new DayOfMonthSpec(Kind.RANGE, 0, start, end);
   }
 
-  /**
-   * Returns all days in this specification.
-   *
-   * @return a list of all days covered by this specification
-   */
   public List<Integer> expand() {
     if (kind == Kind.SINGLE) {
       return List.of(day);

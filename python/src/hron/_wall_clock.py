@@ -1,5 +1,5 @@
-"""Wall-clock times on dates in a time zone. A wall time a fall-back repeats takes its
-first pass (spec/README.md, "DST fall-back (ambiguous times)").
+"""A wall time a fall-back repeats takes its first pass (spec/README.md, "DST fall-back
+(ambiguous times)").
 
 Instants are UTC datetimes (spec/README.md, "Comparisons use instants"): datetimes sharing
 one ZoneInfo compare by wall clock, which misorders the two passes of a fall-back overlap.
@@ -28,9 +28,8 @@ def resolve_zone(name: str | None) -> ZoneInfo:
 
 
 def fixed_time_on(d: date, t: time, zone: ZoneInfo) -> datetime | None:
-    """The instant `t` names on `d`, shifted forward by the gap's length when it falls in a
-    spring-forward gap (spec/README.md, "DST spring-forward (gaps)"). None beyond the
-    years `datetime` can hold, which is outside the supported range."""
+    """spec/README.md, "DST spring-forward (gaps)". None beyond the years `datetime` can
+    hold, which is outside the supported range."""
     # With fold=0 a wall time in a gap takes the offset from before the gap, which lands
     # it the gap's length later, and one a fall-back repeats takes its first pass.
     try:
@@ -40,20 +39,17 @@ def fixed_time_on(d: date, t: time, zone: ZoneInfo) -> datetime | None:
 
 
 class Slot(NamedTuple):
-    """An interval slot on a date: its zoned wall time, and its instant unless a
-    spring-forward gap skips it (spec/README.md, "Interval slots in a spring-forward
-    gap")."""
+    """`instant` is None when a spring-forward gap skips the slot (spec/README.md,
+    "Interval slots in a spring-forward gap")."""
 
     wall: datetime
     instant: datetime | None
 
     @property
     def key(self) -> datetime:
-        """Where the slot sits in time: its instant, or the instant its gap ends, so keys
-        never decrease in wall-clock order and one binary search finds the slots on either
-        side of an instant. Past the years `datetime` can hold, which is outside the
-        supported range, the slot sits at that end of time. Found on demand: only a
-        search's probes need it, and a gap's end costs a bisection."""
+        """The instant, or the instant its gap ends, so keys never decrease in wall-clock
+        order. Found on demand: only a search's probes need it, and a gap's end costs a
+        bisection."""
         if self.instant is not None:
             return self.instant
         try:
@@ -63,7 +59,6 @@ class Slot(NamedTuple):
 
 
 def slot_on(d: date, minute: int, zone: ZoneInfo) -> Slot:
-    """The slot `minute` minutes after midnight on `d`."""
     wall = datetime.combine(d, time(*divmod(minute, MINUTES_PER_HOUR)), tzinfo=zone)
     try:
         # With fold=0 a wall time takes its first pass, and one in a gap the offset from
@@ -77,10 +72,8 @@ def slot_on(d: date, minute: int, zone: ZoneInfo) -> Slot:
 
 
 def _gap_end(wall: datetime) -> datetime:
-    """The instant the spring-forward gap holding `wall` ends. zoneinfo exposes no
-    transitions, so it is found by bisection over whole seconds since the epoch, on which
-    zone transitions fall: it is later than `wall` read with the offset after the gap
-    (fold=1) and no later than `wall` read with the one before it (fold=0)."""
+    """zoneinfo exposes no transitions, so the gap's end is found by bisection over whole
+    seconds, on which transitions fall."""
     zone = wall.tzinfo
     before, after = wall.utcoffset(), wall.replace(fold=1).utcoffset()
     assert before is not None and after is not None

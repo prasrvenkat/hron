@@ -12,7 +12,6 @@ import io.hron.ast.YearRepeat;
 import java.time.LocalTime;
 import java.util.List;
 
-/** The times of day an expression fires at. */
 sealed interface DailyTimes {
   /**
    * How many dates past its scheduled date a fixed time can land: one shifted out of a gap before
@@ -20,13 +19,9 @@ sealed interface DailyTimes {
    */
   long MAX_SHIFT_DAYS = 1;
 
-  /** Fixed times, each shifted out of a gap. */
   record Fixed(List<LocalTime> times) implements DailyTimes {}
 
-  /**
-   * Interval slots in minutes after midnight, earliest first, each skipped in a gap. An int array
-   * keeps the binary search over them free of boxing.
-   */
+  /** An int array keeps the binary search over the slots free of boxing. */
   record Slots(int[] minutes) implements DailyTimes {}
 
   /**
@@ -55,7 +50,6 @@ sealed interface DailyTimes {
     return new Fixed(times.stream().map(time -> LocalTime.of(time.hour(), time.minute())).toList());
   }
 
-  /** Wall-clock minutes of the slots {@code from + k × interval} up to and including {@code to}. */
   private static int[] intervalSlots(IntervalRepeat ir) {
     long minutesPerUnit = ir.unit() == IntervalUnit.HOURS ? WallClock.MINUTES_PER_HOUR : 1;
     long step = Math.max(ir.interval(), 1) * minutesPerUnit;

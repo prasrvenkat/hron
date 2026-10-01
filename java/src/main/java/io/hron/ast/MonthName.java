@@ -3,7 +3,6 @@ package io.hron.ast;
 import java.util.Map;
 import java.util.Optional;
 
-/** Represents a month of the year. */
 public enum MonthName {
   JANUARY(1, "jan"),
   FEBRUARY(2, "feb"),
@@ -26,11 +25,6 @@ public enum MonthName {
     this.displayName = displayName;
   }
 
-  /**
-   * Returns the month number (January=1, December=12).
-   *
-   * @return the month number
-   */
   public int number() {
     return monthNumber;
   }
@@ -66,12 +60,7 @@ public enum MonthName {
           Map.entry("december", DECEMBER),
           Map.entry("dec", DECEMBER));
 
-  /**
-   * Parses a month name (case insensitive).
-   *
-   * @param s the string to parse
-   * @return the month if valid
-   */
+  /** Case insensitive. */
   public static Optional<MonthName> parse(String s) {
     return Optional.ofNullable(PARSE_MAP.get(s.toLowerCase()));
   }

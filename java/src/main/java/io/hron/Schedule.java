@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-/** The main entry point for parsing and evaluating hron schedule expressions. */
 public final class Schedule {
   private final ScheduleData data;
   private final ZoneId zoneId;
@@ -24,8 +23,6 @@ public final class Schedule {
   /**
    * Parses an hron expression into a Schedule.
    *
-   * @param input the hron expression
-   * @return the parsed schedule
    * @throws HronException if the input is invalid
    */
   public static Schedule parse(String input) throws HronException {
@@ -37,8 +34,6 @@ public final class Schedule {
   /**
    * Converts a 5-field cron expression to a Schedule.
    *
-   * @param cronExpr the cron expression
-   * @return the parsed schedule
    * @throws HronException if the cron expression is invalid
    */
   public static Schedule fromCron(String cronExpr) throws HronException {
@@ -47,12 +42,7 @@ public final class Schedule {
     return new Schedule(data, zoneId);
   }
 
-  /**
-   * Validates an hron expression without throwing.
-   *
-   * @param input the hron expression
-   * @return true if the expression is valid
-   */
+  /** Validates an hron expression without throwing. */
   public static boolean validate(String input) {
     try {
       Parser.parse(input);
@@ -65,7 +55,6 @@ public final class Schedule {
   /**
    * Computes the next occurrence strictly after the given time.
    *
-   * @param now the reference time
    * @return the next occurrence, or empty if none exists or now is outside the supported range
    */
   public Optional<ZonedDateTime> nextFrom(ZonedDateTime now) {
@@ -73,13 +62,7 @@ public final class Schedule {
     return Evaluator.nextFrom(data, nowInTz, zoneId);
   }
 
-  /**
-   * Computes the next n occurrences strictly after the given time.
-   *
-   * @param now the reference time
-   * @param n the number of occurrences to compute
-   * @return a list of the next n occurrences
-   */
+  /** Computes the next n occurrences strictly after the given time. */
   public List<ZonedDateTime> nextNFrom(ZonedDateTime now, int n) {
     ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
     return Evaluator.nextNFrom(data, nowInTz, n, zoneId);
@@ -88,7 +71,6 @@ public final class Schedule {
   /**
    * Computes the most recent occurrence strictly before the given time.
    *
-   * @param now the reference time (exclusive upper bound)
    * @return the previous occurrence, or empty if none exists or now is outside the supported range
    */
   public Optional<ZonedDateTime> previousFrom(ZonedDateTime now) {
@@ -96,22 +78,15 @@ public final class Schedule {
     return Evaluator.previousFrom(data, nowInTz, zoneId);
   }
 
-  /**
-   * Checks if a datetime matches this schedule.
-   *
-   * @param datetime the datetime to check
-   * @return true if the datetime matches
-   */
+  /** Returns whether the minute containing {@code datetime} is an occurrence. */
   public boolean matches(ZonedDateTime datetime) {
     ZonedDateTime dtInTz = datetime.withZoneSameInstant(zoneId);
     return Evaluator.matches(data, dtInTz, zoneId);
   }
 
   /**
-   * Returns a lazy stream of occurrences strictly after the given time.
-   *
-   * @param from the reference time (exclusive)
-   * @return a stream of occurrences
+   * Returns a lazy stream of occurrences strictly after {@code from}, empty if {@code from} is
+   * outside the supported range.
    */
   public Stream<ZonedDateTime> occurrences(ZonedDateTime from) {
     ZonedDateTime fromInTz = from.withZoneSameInstant(zoneId);
@@ -121,9 +96,7 @@ public final class Schedule {
   /**
    * Returns a lazy stream of occurrences where from &lt; occurrence &lt;= to.
    *
-   * @param from the start time (exclusive)
-   * @param to the end time (inclusive)
-   * @return a stream of occurrences in the range, empty if to is outside the supported range
+   * @return the occurrences in the range, empty if either bound is outside the supported range
    */
   public Stream<ZonedDateTime> between(ZonedDateTime from, ZonedDateTime to) {
     ZonedDateTime fromInTz = from.withZoneSameInstant(zoneId);
@@ -134,7 +107,6 @@ public final class Schedule {
   /**
    * Converts this schedule to a 5-field cron expression.
    *
-   * @return the cron expression
    * @throws HronException if the schedule cannot be expressed as cron
    */
   public String toCron() throws HronException {
@@ -143,33 +115,22 @@ public final class Schedule {
 
   /**
    * Returns the IANA timezone name with its canonical capitalization, or empty if not specified.
-   *
-   * @return the timezone name
    */
   public Optional<String> timezone() {
     return Optional.ofNullable(data.timezone()).filter(s -> !s.isEmpty());
   }
 
-  /**
-   * Returns the canonical string representation of this schedule.
-   *
-   * @return the canonical form
-   */
+  /** Returns the canonical string representation of this schedule. */
   @Override
   public String toString() {
     return Display.render(data);
   }
 
-  /**
-   * Returns the underlying schedule data.
-   *
-   * @return the schedule data
-   */
   public ScheduleData data() {
     return data;
   }
 
-  /** Resolve timezone, defaulting to UTC for deterministic behavior. */
+  /** UTC when unset, so results never depend on the host zone. */
   private static ZoneId resolveTimezone(String tzName) {
     if (tzName == null || tzName.isEmpty()) {
       return ZoneId.of("UTC");

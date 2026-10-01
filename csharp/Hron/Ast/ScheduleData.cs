@@ -1,14 +1,7 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Represents the complete parsed schedule with all clauses.
-/// </summary>
-/// <param name="Expr">The schedule expression</param>
-/// <param name="Timezone">The IANA timezone (may be null)</param>
-/// <param name="Except">The exception dates</param>
-/// <param name="Until">The until date (may be null)</param>
-/// <param name="Anchor">The anchor date for interval alignment (ISO string, may be null)</param>
-/// <param name="During">The months during which the schedule applies</param>
+/// <param name="Timezone">The IANA timezone name, or null for UTC</param>
+/// <param name="Anchor">The <c>starting</c> date as an ISO string, or null</param>
 public sealed record ScheduleData(
     IScheduleExpr Expr,
     string? Timezone,

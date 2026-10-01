@@ -62,7 +62,6 @@ describe("parse roundtrip", () => {
           const display = schedule.toString();
           expect(display).toBe(tc.canonical);
 
-          // Idempotency: parse(canonical).toString() === canonical
           const s2 = Schedule.parse(tc.canonical);
           expect(s2.toString()).toBe(tc.canonical);
         });

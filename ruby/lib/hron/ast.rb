@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module Hron
-  # Weekday enumeration (ISO 8601: Monday=1, Sunday=7)
   module Weekday
     MONDAY = :monday
     TUESDAY = :tuesday
@@ -37,10 +36,12 @@ module Hron
       "sunday" => SUNDAY, "sun" => SUNDAY
     }.freeze
 
+    # ISO 8601: Monday=1, Sunday=7.
     def self.number(day)
       NUMBERS[day]
     end
 
+    # Sunday=0 … Saturday=6.
     def self.cron_dow(day)
       CRON_DOW[day]
     end
@@ -134,6 +135,7 @@ module Hron
       FIRST => 1, SECOND => 2, THIRD => 3, FOURTH => 4, FIFTH => 5
     }.freeze
 
+    # 1-5, or nil for last.
     def self.to_n(ord)
       TO_N[ord]
     end
@@ -152,7 +154,7 @@ module Hron
   DayFilterEvery = Data.define
   DayFilterWeekday = Data.define
   DayFilterWeekend = Data.define
-  DayFilterDays = Data.define(:days) # days: Array<Weekday>
+  DayFilterDays = Data.define(:days)
 
   SingleDay = Data.define(:day)
   DayRange = Data.define(:start, :end_day) # end_day to avoid Ruby keyword
@@ -162,10 +164,11 @@ module Hron
     PREVIOUS = :previous
   end
 
-  DaysTarget = Data.define(:specs) # specs: Array<DayOfMonthSpec>
+  DaysTarget = Data.define(:specs)
   LastDayTarget = Data.define
   LastWeekdayTarget = Data.define
-  NearestWeekdayTarget = Data.define(:day, :direction) # day: 1-31, direction: nil or NearestDirection
+  # A nil direction stays in the month, as cron W does; a direction can cross into the adjacent month.
+  NearestWeekdayTarget = Data.define(:day, :direction)
   OrdinalWeekdayTarget = Data.define(:ordinal, :weekday)
 
   YearDateTarget = Data.define(:month, :day)
@@ -174,7 +177,7 @@ module Hron
   YearLastWeekdayTarget = Data.define(:month)
 
   NamedDate = Data.define(:month, :day)
-  IsoDate = Data.define(:date) # date: String (YYYY-MM-DD)
+  IsoDate = Data.define(:date)
 
   NamedException = Data.define(:month, :day)
   IsoException = Data.define(:date)

@@ -3,9 +3,6 @@ using Xunit;
 
 namespace Hron.Tests;
 
-/// <summary>
-/// API conformance tests validating the public API matches spec/api.json.
-/// </summary>
 public class ApiConformanceTest
 {
     private static readonly JsonDocument Spec;
@@ -70,7 +67,6 @@ public class ApiConformanceTest
         var now = new DateTimeOffset(2026, 2, 6, 12, 0, 0, TimeSpan.Zero);
         var result = s.PreviousFrom(now);
         Assert.NotNull(result);
-        // Previous should be today at 09:00
         Assert.Equal(6, result.Value.Day);
         Assert.Equal(9, result.Value.Hour);
     }
@@ -171,13 +167,11 @@ public class ApiConformanceTest
     [Fact]
     public void TestExactTimeBoundary()
     {
-        // If now equals an occurrence exactly, skip it
         var s = Schedule.Parse("every day at 12:00 in UTC");
         var now = new DateTimeOffset(2026, 2, 6, 12, 0, 0, TimeSpan.Zero);
         var next = s.NextFrom(now);
         Assert.NotNull(next);
 
-        // Next should be tomorrow, not today
         Assert.Equal(7, next.Value.Day);
     }
 
@@ -189,8 +183,8 @@ public class ApiConformanceTest
         var next = s.NextFrom(now);
         Assert.NotNull(next);
 
-        // Feb 6 is aligned (day 20490 from epoch, 20490 % 3 = 0)
-        // Since 09:00 has passed, next should be Feb 9
+        // Feb 6, 2026 is day 20490 from the epoch, a multiple of 3, so the next aligned day
+        // after its 09:00 is Feb 9.
         Assert.Equal(9, next.Value.Day);
     }
 

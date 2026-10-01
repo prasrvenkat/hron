@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// Weekday represents a day of the week.
 type Weekday int
 
 const (
@@ -73,7 +72,6 @@ func ParseWeekday(s string) (Weekday, bool) {
 	return w, ok
 }
 
-// MonthName represents a month of the year.
 type MonthName int
 
 const (
@@ -125,7 +123,6 @@ func ParseMonthName(s string) (MonthName, bool) {
 	return m, ok
 }
 
-// IntervalUnit represents the unit of an interval (minutes or hours).
 type IntervalUnit int
 
 const (
@@ -140,7 +137,6 @@ func (u IntervalUnit) String() string {
 	return "hours"
 }
 
-// OrdinalPosition represents an ordinal position (first, second, etc.).
 type OrdinalPosition int
 
 const (
@@ -186,7 +182,6 @@ func ParseOrdinalPosition(s string) (OrdinalPosition, bool) {
 	return o, ok
 }
 
-// TimeOfDay represents a time of day (hour and minute).
 type TimeOfDay struct {
 	Hour   int
 	Minute int
@@ -201,7 +196,6 @@ func (t TimeOfDay) TotalMinutes() int {
 	return t.Hour*60 + t.Minute
 }
 
-// DayFilterKind represents the type of day filter.
 type DayFilterKind int
 
 const (
@@ -211,33 +205,27 @@ const (
 	DayFilterKindDays
 )
 
-// DayFilter represents a filter for which days a schedule applies to.
 type DayFilter struct {
 	Kind DayFilterKind
 	Days []Weekday // Only used when Kind == DayFilterKindDays
 }
 
-// NewDayFilterEvery creates a filter that matches every day.
 func NewDayFilterEvery() DayFilter {
 	return DayFilter{Kind: DayFilterKindEvery}
 }
 
-// NewDayFilterWeekday creates a filter that matches weekdays (Mon-Fri).
 func NewDayFilterWeekday() DayFilter {
 	return DayFilter{Kind: DayFilterKindWeekday}
 }
 
-// NewDayFilterWeekend creates a filter that matches weekends (Sat-Sun).
 func NewDayFilterWeekend() DayFilter {
 	return DayFilter{Kind: DayFilterKindWeekend}
 }
 
-// NewDayFilterDays creates a filter that matches specific days.
 func NewDayFilterDays(days []Weekday) DayFilter {
 	return DayFilter{Kind: DayFilterKindDays, Days: days}
 }
 
-// DayOfMonthSpecKind represents the type of day-of-month specification.
 type DayOfMonthSpecKind int
 
 const (
@@ -245,7 +233,6 @@ const (
 	DayOfMonthSpecKindRange
 )
 
-// DayOfMonthSpec represents a single day or range of days within a month.
 type DayOfMonthSpec struct {
 	Kind  DayOfMonthSpecKind
 	Day   int // Used for single day
@@ -253,17 +240,14 @@ type DayOfMonthSpec struct {
 	End   int // Used for range
 }
 
-// NewSingleDay creates a single day specification.
 func NewSingleDay(day int) DayOfMonthSpec {
 	return DayOfMonthSpec{Kind: DayOfMonthSpecKindSingle, Day: day}
 }
 
-// NewDayRange creates a day range specification.
 func NewDayRange(start, end int) DayOfMonthSpec {
 	return DayOfMonthSpec{Kind: DayOfMonthSpecKindRange, Start: start, End: end}
 }
 
-// Expand returns all days in this specification.
 func (d DayOfMonthSpec) Expand() []int {
 	if d.Kind == DayOfMonthSpecKindSingle {
 		return []int{d.Day}
@@ -275,7 +259,6 @@ func (d DayOfMonthSpec) Expand() []int {
 	return days
 }
 
-// MonthTargetKind represents the type of month target.
 type MonthTargetKind int
 
 const (
@@ -286,7 +269,6 @@ const (
 	MonthTargetKindOrdinalWeekday
 )
 
-// NearestDirection represents the direction for nearest weekday calculations.
 type NearestDirection int
 
 const (
@@ -298,7 +280,6 @@ const (
 	NearestPrevious
 )
 
-// MonthTarget represents which day(s) within a month a schedule fires on.
 type MonthTarget struct {
 	Kind      MonthTargetKind
 	Specs     []DayOfMonthSpec // Only used when Kind == MonthTargetKindDays
@@ -308,32 +289,26 @@ type MonthTarget struct {
 	Weekday   Weekday          // Only used when Kind == MonthTargetKindOrdinalWeekday
 }
 
-// NewDaysTarget creates a month target for specific days.
 func NewDaysTarget(specs []DayOfMonthSpec) MonthTarget {
 	return MonthTarget{Kind: MonthTargetKindDays, Specs: specs}
 }
 
-// NewLastDayTarget creates a month target for the last day of the month.
 func NewLastDayTarget() MonthTarget {
 	return MonthTarget{Kind: MonthTargetKindLastDay}
 }
 
-// NewLastWeekdayTarget creates a month target for the last weekday of the month.
 func NewLastWeekdayTarget() MonthTarget {
 	return MonthTarget{Kind: MonthTargetKindLastWeekday}
 }
 
-// NewNearestWeekdayTarget creates a month target for the nearest weekday to a given day.
 func NewNearestWeekdayTarget(day int, direction NearestDirection) MonthTarget {
 	return MonthTarget{Kind: MonthTargetKindNearestWeekday, Day: day, Direction: direction}
 }
 
-// NewOrdinalWeekdayTarget creates a month target for an ordinal weekday (e.g., first monday, last friday).
 func NewOrdinalWeekdayTarget(ordinal OrdinalPosition, weekday Weekday) MonthTarget {
 	return MonthTarget{Kind: MonthTargetKindOrdinalWeekday, Ordinal: ordinal, Weekday: weekday}
 }
 
-// ExpandDays returns all days specified by this target.
 func (m MonthTarget) ExpandDays() []int {
 	if m.Kind != MonthTargetKindDays {
 		return nil
@@ -345,7 +320,6 @@ func (m MonthTarget) ExpandDays() []int {
 	return days
 }
 
-// YearTargetKind represents the type of year target.
 type YearTargetKind int
 
 const (
@@ -355,7 +329,6 @@ const (
 	YearTargetKindLastWeekday
 )
 
-// YearTarget represents which day within a year a schedule fires on.
 type YearTarget struct {
 	Kind    YearTargetKind
 	Month   MonthName
@@ -364,27 +337,22 @@ type YearTarget struct {
 	Weekday Weekday         // Used for OrdinalWeekday
 }
 
-// NewYearDateTarget creates a year target for a specific month and day.
 func NewYearDateTarget(month MonthName, day int) YearTarget {
 	return YearTarget{Kind: YearTargetKindDate, Month: month, Day: day}
 }
 
-// NewYearOrdinalWeekdayTarget creates a year target for an ordinal weekday in a month.
 func NewYearOrdinalWeekdayTarget(ordinal OrdinalPosition, weekday Weekday, month MonthName) YearTarget {
 	return YearTarget{Kind: YearTargetKindOrdinalWeekday, Ordinal: ordinal, Weekday: weekday, Month: month}
 }
 
-// NewYearDayOfMonthTarget creates a year target for a specific day of a month.
 func NewYearDayOfMonthTarget(day int, month MonthName) YearTarget {
 	return YearTarget{Kind: YearTargetKindDayOfMonth, Day: day, Month: month}
 }
 
-// NewYearLastWeekdayTarget creates a year target for the last weekday of a month.
 func NewYearLastWeekdayTarget(month MonthName) YearTarget {
 	return YearTarget{Kind: YearTargetKindLastWeekday, Month: month}
 }
 
-// DateSpecKind represents the type of date specification.
 type DateSpecKind int
 
 const (
@@ -392,7 +360,6 @@ const (
 	DateSpecKindISO
 )
 
-// DateSpec represents a date (either named like "feb 14" or ISO like "2026-03-15").
 type DateSpec struct {
 	Kind  DateSpecKind
 	Month MonthName // Used for named dates
@@ -400,17 +367,14 @@ type DateSpec struct {
 	Date  string    // Used for ISO dates (YYYY-MM-DD)
 }
 
-// NewNamedDate creates a named date specification.
 func NewNamedDate(month MonthName, day int) DateSpec {
 	return DateSpec{Kind: DateSpecKindNamed, Month: month, Day: day}
 }
 
-// NewISODate creates an ISO date specification.
 func NewISODate(date string) DateSpec {
 	return DateSpec{Kind: DateSpecKindISO, Date: date}
 }
 
-// ExceptionSpecKind represents the type of exception specification.
 type ExceptionSpecKind int
 
 const (
@@ -418,7 +382,6 @@ const (
 	ExceptionSpecKindISO
 )
 
-// ExceptionSpec represents an exception date.
 type ExceptionSpec struct {
 	Kind  ExceptionSpecKind
 	Month MonthName // Used for named exceptions
@@ -426,17 +389,14 @@ type ExceptionSpec struct {
 	Date  string    // Used for ISO exceptions (YYYY-MM-DD)
 }
 
-// NewNamedException creates a named exception specification.
 func NewNamedException(month MonthName, day int) ExceptionSpec {
 	return ExceptionSpec{Kind: ExceptionSpecKindNamed, Month: month, Day: day}
 }
 
-// NewISOException creates an ISO exception specification.
 func NewISOException(date string) ExceptionSpec {
 	return ExceptionSpec{Kind: ExceptionSpecKindISO, Date: date}
 }
 
-// UntilSpecKind represents the type of until specification.
 type UntilSpecKind int
 
 const (
@@ -444,7 +404,6 @@ const (
 	UntilSpecKindNamed
 )
 
-// UntilSpec represents an until date.
 type UntilSpec struct {
 	Kind  UntilSpecKind
 	Date  string    // Used for ISO dates
@@ -452,17 +411,14 @@ type UntilSpec struct {
 	Day   int       // Used for named dates
 }
 
-// NewISOUntil creates an ISO until specification.
 func NewISOUntil(date string) UntilSpec {
 	return UntilSpec{Kind: UntilSpecKindISO, Date: date}
 }
 
-// NewNamedUntil creates a named until specification.
 func NewNamedUntil(month MonthName, day int) UntilSpec {
 	return UntilSpec{Kind: UntilSpecKindNamed, Month: month, Day: day}
 }
 
-// ScheduleExprKind represents the type of schedule expression.
 type ScheduleExprKind int
 
 const (
@@ -474,37 +430,29 @@ const (
 	ScheduleExprKindYear
 )
 
-// ScheduleExpr represents a schedule expression. Kind selects which fields apply.
+// Kind selects which fields apply.
 type ScheduleExpr struct {
 	Kind ScheduleExprKind
 
-	// Common fields
 	Interval int
 	Times    []TimeOfDay
 
-	// IntervalRepeat fields
 	Unit      IntervalUnit
 	FromTime  TimeOfDay
 	ToTime    TimeOfDay
-	DayFilter *DayFilter // Optional for interval
+	DayFilter *DayFilter // nil means every day
 
-	// DayRepeat fields
 	Days DayFilter // Required for day repeat
 
-	// WeekRepeat fields
 	WeekDays []Weekday
 
-	// MonthRepeat fields
 	MonthTarget MonthTarget
 
-	// SingleDateExpr fields
 	DateSpec DateSpec
 
-	// YearRepeat fields
 	YearTarget YearTarget
 }
 
-// NewIntervalRepeat creates an interval repeat expression.
 func NewIntervalRepeat(interval int, unit IntervalUnit, from, to TimeOfDay, dayFilter *DayFilter) ScheduleExpr {
 	return ScheduleExpr{
 		Kind:      ScheduleExprKindInterval,
@@ -516,7 +464,6 @@ func NewIntervalRepeat(interval int, unit IntervalUnit, from, to TimeOfDay, dayF
 	}
 }
 
-// NewDayRepeat creates a day repeat expression.
 func NewDayRepeat(interval int, days DayFilter, times []TimeOfDay) ScheduleExpr {
 	return ScheduleExpr{
 		Kind:     ScheduleExprKindDay,
@@ -526,7 +473,6 @@ func NewDayRepeat(interval int, days DayFilter, times []TimeOfDay) ScheduleExpr 
 	}
 }
 
-// NewWeekRepeat creates a week repeat expression.
 func NewWeekRepeat(interval int, days []Weekday, times []TimeOfDay) ScheduleExpr {
 	return ScheduleExpr{
 		Kind:     ScheduleExprKindWeek,
@@ -536,7 +482,6 @@ func NewWeekRepeat(interval int, days []Weekday, times []TimeOfDay) ScheduleExpr
 	}
 }
 
-// NewMonthRepeat creates a month repeat expression.
 func NewMonthRepeat(interval int, target MonthTarget, times []TimeOfDay) ScheduleExpr {
 	return ScheduleExpr{
 		Kind:        ScheduleExprKindMonth,
@@ -546,7 +491,6 @@ func NewMonthRepeat(interval int, target MonthTarget, times []TimeOfDay) Schedul
 	}
 }
 
-// NewSingleDateExpr creates a single date expression.
 func NewSingleDateExpr(date DateSpec, times []TimeOfDay) ScheduleExpr {
 	return ScheduleExpr{
 		Kind:     ScheduleExprKindSingleDate,
@@ -555,7 +499,6 @@ func NewSingleDateExpr(date DateSpec, times []TimeOfDay) ScheduleExpr {
 	}
 }
 
-// NewYearRepeat creates a year repeat expression.
 func NewYearRepeat(interval int, target YearTarget, times []TimeOfDay) ScheduleExpr {
 	return ScheduleExpr{
 		Kind:       ScheduleExprKindYear,
@@ -565,7 +508,6 @@ func NewYearRepeat(interval int, target YearTarget, times []TimeOfDay) ScheduleE
 	}
 }
 
-// ScheduleData represents the complete parsed schedule with all clauses.
 type ScheduleData struct {
 	Expr     ScheduleExpr
 	Timezone string
@@ -575,7 +517,6 @@ type ScheduleData struct {
 	During   []MonthName
 }
 
-// NewScheduleData creates a new schedule data with just the expression.
 func NewScheduleData(expr ScheduleExpr) *ScheduleData {
 	return &ScheduleData{Expr: expr}
 }

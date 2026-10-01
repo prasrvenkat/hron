@@ -79,7 +79,6 @@ if (cronEl && hronEl) {
       window.setTimeout(cycle, 2200);
     });
   };
-  // Respect reduced-motion: skip the typing, just rotate.
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (reduceMotion) {
     let j = 0;

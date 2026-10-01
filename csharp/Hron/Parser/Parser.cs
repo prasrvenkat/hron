@@ -3,9 +3,6 @@ using Hron.Lexer;
 
 namespace Hron.Parser;
 
-/// <summary>
-/// Recursive descent parser for hron expressions.
-/// </summary>
 public sealed class Parser
 {
     private readonly string _input;
@@ -19,9 +16,6 @@ public sealed class Parser
         _pos = 0;
     }
 
-    /// <summary>
-    /// Parses an hron expression into a ScheduleData.
-    /// </summary>
     public static ScheduleData Parse(string input)
     {
         if (string.IsNullOrWhiteSpace(input))

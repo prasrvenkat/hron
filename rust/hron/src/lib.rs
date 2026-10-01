@@ -39,7 +39,6 @@ impl Schedule {
     /// let schedule = Schedule::parse("every weekday at 09:00").unwrap();
     /// assert_eq!(schedule.to_string(), "every weekday at 09:00");
     ///
-    /// // With timezone modifier
     /// let schedule = Schedule::parse("every day at 12:00 in UTC").unwrap();
     /// assert_eq!(schedule.timezone(), Some("UTC"));
     /// ```
@@ -142,7 +141,6 @@ impl Schedule {
     /// ```
     /// use hron::Schedule;
     ///
-    /// // Every 2 weeks on Monday, anchored to a specific start date
     /// let schedule = Schedule::parse("every 2 weeks on monday at 09:00 in UTC").unwrap()
     ///     .with_anchor(jiff::civil::date(2025, 1, 6));
     /// let now: jiff::Zoned = "2025-01-19T10:00:00+00:00[UTC]".parse().unwrap();
@@ -209,7 +207,6 @@ impl Schedule {
     /// let schedule = Schedule::parse("every day at 09:00").unwrap();
     /// assert_eq!(schedule.to_cron().unwrap(), "0 9 * * *");
     ///
-    /// // Schedules that exceed cron's capabilities return an error
     /// let schedule = Schedule::parse("every 2 weeks on monday at 09:00").unwrap();
     /// assert!(schedule.to_cron().is_err());
     /// ```
@@ -217,8 +214,8 @@ impl Schedule {
         cron::to_cron(self)
     }
 
-    /// Get the IANA timezone name, if specified, with the capitalization the
-    /// timezone database uses.
+    /// The IANA timezone name in the timezone database's capitalization, or
+    /// `None` if the schedule names none.
     ///
     /// # Examples
     ///
@@ -235,27 +232,22 @@ impl Schedule {
         self.timezone.as_deref()
     }
 
-    /// Get the schedule expression.
     pub fn expr(&self) -> &ScheduleExpr {
         &self.expr
     }
 
-    /// Get the exception dates.
     pub fn except(&self) -> &[ast::Exception] {
         &self.except
     }
 
-    /// Get the until spec, if specified.
     pub fn until(&self) -> Option<&ast::UntilSpec> {
         self.until.as_ref()
     }
 
-    /// Get the anchor date, if specified.
     pub fn anchor(&self) -> Option<jiff::civil::Date> {
         self.anchor
     }
 
-    /// Get the during months filter.
     pub fn during(&self) -> &[ast::MonthName] {
         &self.during
     }
@@ -267,7 +259,6 @@ impl Schedule {
         self
     }
 
-    /// Set the exception dates.
     pub fn with_except(mut self, exceptions: Vec<ast::Exception>) -> Self {
         self.except = exceptions;
         self
@@ -280,7 +271,6 @@ impl Schedule {
         self
     }
 
-    /// Set the during months filter.
     pub fn with_during(mut self, months: Vec<ast::MonthName>) -> Self {
         self.during = months;
         self
@@ -298,7 +288,6 @@ impl Schedule {
     /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     /// let from: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
     ///
-    /// // Take first 5 occurrences
     /// let first_5: Vec<_> = schedule.occurrences(&from).take(5).collect::<Result<_, _>>().unwrap();
     /// assert_eq!(first_5.len(), 5);
     /// assert_eq!(first_5[0].to_string(), "2025-06-15T09:00:00+00:00[UTC]");
@@ -454,7 +443,7 @@ impl Serialize for Schedule {
             }
         }
 
-        // Shared modifiers — always present for a consistent JSON shape
+        // Always present, for a consistent JSON shape.
         map.serialize_entry("except", &self.except)?;
         map.serialize_entry("until", &self.until)?;
         map.serialize_entry("starting", &self.anchor.as_ref().map(|a| a.to_string()))?;

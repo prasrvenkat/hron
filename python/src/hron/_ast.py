@@ -160,6 +160,7 @@ class OrdinalPosition(Enum):
     LAST = "last"
 
     def to_n(self) -> int:
+        """1-5, or -1 for LAST."""
         return _ORDINAL_TO_N[self]
 
     def __str__(self) -> str:
@@ -176,10 +177,8 @@ _ORDINAL_TO_N: dict[OrdinalPosition, int] = {
 
 
 class NearestDirection(Enum):
-    """Direction for nearest weekday (hron extension beyond cron W)."""
-
-    NEXT = "next"  # Always prefer following weekday (can cross to next month)
-    PREVIOUS = "previous"  # Always prefer preceding weekday (can cross to prev month)
+    NEXT = "next"
+    PREVIOUS = "previous"
 
     def __str__(self) -> str:
         return self.value
@@ -248,10 +247,8 @@ class LastWeekdayTarget:
 
 @dataclass(frozen=True, slots=True)
 class NearestWeekdayTarget:
-    """Nearest weekday to a given day of month.
-
-    direction=None never crosses the month boundary (cron W); a direction can.
-    """
+    """direction None stays in the month, as cron W does; a direction can cross into the
+    adjacent month."""
 
     day: int
     direction: NearestDirection | None = None

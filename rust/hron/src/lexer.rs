@@ -32,18 +32,18 @@ pub enum TokenKind {
     Weeks,
     Month,
 
-    DayName(String), // lowercase full name: "monday", "tuesday", ...
+    DayName(String),
 
-    MonthName(String), // lowercase short: "jan", "feb", ...
+    MonthName(String),
 
-    Ordinal(String), // "first", "second", "third", "fourth", "fifth"
+    Ordinal(String),
 
-    IntervalUnit(String), // "min", "mins", "minute", "minutes", "hour", "hours", "hr", "hrs"
+    IntervalUnit(String),
 
     Number(u32),
-    OrdinalNumber(u32), // 1st, 2nd, 3rd, 15th — the number part
-    Time(u8, u8),       // HH:MM
-    IsoDate(String),    // 2026-03-15
+    OrdinalNumber(u32),
+    Time(u8, u8),
+    IsoDate(String),
 
     Comma,
 
@@ -180,7 +180,7 @@ impl<'a> Lexer<'a> {
             && self.pos < self.bytes.len()
             && self.bytes[self.pos] == b':'
         {
-            self.pos += 1; // skip ':'
+            self.pos += 1;
             let min_start = self.pos;
             while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
                 self.pos += 1;

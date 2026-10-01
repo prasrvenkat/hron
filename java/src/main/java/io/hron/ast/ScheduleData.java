@@ -3,14 +3,8 @@ package io.hron.ast;
 import java.util.List;
 
 /**
- * Represents the complete parsed schedule with all clauses.
- *
- * @param expr the schedule expression
- * @param timezone the IANA timezone (may be null)
- * @param except the exception dates
- * @param until the until date (may be null)
- * @param anchor the anchor date for interval alignment (ISO string, may be null)
- * @param during the months during which the schedule applies
+ * @param timezone the IANA name, or null for UTC
+ * @param anchor the {@code starting} date as YYYY-MM-DD, or null
  */
 public record ScheduleData(
     ScheduleExpr expr,

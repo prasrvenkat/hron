@@ -164,7 +164,7 @@ class Lexer {
       this.pos < this.input.length &&
       this.input[this.pos] === ":"
     ) {
-      this.pos++; // skip ':'
+      this.pos++;
       const minStart = this.pos;
       while (this.pos < this.input.length && isDigit(this.input[this.pos])) {
         this.pos++;

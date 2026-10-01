@@ -20,7 +20,6 @@ use wall_clock::{civil_time, fixed_time_on, minute_of_day, slot_on, MINUTES_PER_
 /// Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment").
 const EPOCH_MONDAY: Date = date(1970, 1, 5);
 
-/// Default anchor for day, month and year intervals.
 const EPOCH_DATE: Date = date(1970, 1, 1);
 
 /// spec/README.md, "Supported range": from RANGE_START inclusive to RANGE_END exclusive.
@@ -102,12 +101,10 @@ pub fn between<'a>(schedule: &'a Schedule, from: &Zoned, to: &Zoned) -> BoundedO
 /// Lazy iterator over schedule occurrences strictly after a given datetime.
 pub struct Occurrences<'a> {
     search: Result<Search<'a>, ScheduleError>,
-    /// None once the iterator has ended or yielded an error.
     current: Option<Zoned>,
 }
 
 impl<'a> Occurrences<'a> {
-    /// Create a new iterator over occurrences strictly after `from`.
     pub fn new(schedule: &'a Schedule, from: Zoned) -> Self {
         Self {
             search: Search::new(schedule),
@@ -138,7 +135,6 @@ pub struct BoundedOccurrences<'a> {
 }
 
 impl<'a> BoundedOccurrences<'a> {
-    /// Create a new bounded iterator for occurrences in the range (from, to].
     pub fn new(schedule: &'a Schedule, from: Zoned, to: Zoned) -> Self {
         Self {
             inner: Occurrences::new(schedule, from),
@@ -175,7 +171,6 @@ impl Direction {
         }
     }
 
-    /// Whether `a` comes before `b` in this direction.
     fn precedes<T: Ord>(self, a: &T, b: &T) -> bool {
         match self {
             Direction::Forward => a < b,
@@ -184,8 +179,6 @@ impl Direction {
     }
 }
 
-/// A schedule prepared for searching: its zone, cadence, times and clauses
-/// resolved once.
 struct Search<'a> {
     expr: &'a ScheduleExpr,
     zone: TimeZone,
@@ -194,7 +187,6 @@ struct Search<'a> {
     clauses: Clauses,
 }
 
-/// An occurrence a search found, with the local date it lands on.
 struct Occurrence {
     instant: Zoned,
     landing: Date,
@@ -211,7 +203,6 @@ impl<'a> Search<'a> {
         })
     }
 
-    /// The occurrence nearest `now` strictly beyond it in `direction`.
     fn nearest(&self, now: &Zoned, direction: Direction) -> Option<Zoned> {
         let now = &now.with_time_zone(self.zone.clone());
         let first_date = self.clauses.clamp(now.date(), direction);
@@ -262,7 +253,6 @@ impl<'a> Search<'a> {
             && !self.clauses.allows_month(start.month())
     }
 
-    /// The occurrence on `date` nearest `now` strictly beyond it in `direction`.
     fn nearest_on_date(&self, date: Date, now: &Zoned, direction: Direction) -> Option<Zoned> {
         match &self.times {
             // Every time is compared: one shifted out of a gap can land after a
@@ -331,7 +321,6 @@ fn in_supported_range(t: &Zoned) -> bool {
     (*RANGE_START..*RANGE_END).contains(&t.timestamp())
 }
 
-/// The times of day an expression fires at.
 enum DailyTimes {
     /// Fixed times, each shifted out of a gap.
     Fixed(Vec<Time>),
@@ -369,7 +358,6 @@ impl DailyTimes {
     }
 }
 
-/// Wall-clock minutes of the slots `from + k × interval` up to and including `to`.
 fn interval_slots(interval: u32, unit: IntervalUnit, from: &TimeOfDay, to: &TimeOfDay) -> Vec<i64> {
     let step = match unit {
         IntervalUnit::Minutes => interval as i64,
@@ -383,9 +371,9 @@ fn interval_slots(interval: u32, unit: IntervalUnit, from: &TimeOfDay, to: &Time
         .collect()
 }
 
-/// The trailing clauses, resolved once. `during` applies to a candidate's target
-/// month; `except`, `until` and `starting` to its date (spec/README.md, "Nearest
-/// weekday and `during`", "The `starting` clause").
+/// `during` applies to a candidate's target month; `except`, `until` and
+/// `starting` to its date (spec/README.md, "Nearest weekday and `during`",
+/// "The `starting` clause").
 struct Clauses {
     during: Vec<i8>,
     except_month_days: Vec<(i8, i8)>,
@@ -436,7 +424,6 @@ impl Clauses {
         self.during.is_empty() || self.during.contains(&month)
     }
 
-    /// Ends the search on `date`: nothing after it is an occurrence.
     fn end_on(&mut self, date: Date) {
         self.until = Some(self.until.map_or(date, |until| until.min(date)));
     }
@@ -450,7 +437,6 @@ impl Clauses {
         }
     }
 
-    /// The date a search starts from: nothing fires before `starting` or after `until`.
     fn clamp(&self, date: Date, direction: Direction) -> Date {
         match direction {
             Direction::Forward => self.starting.map_or(date, |starting| date.max(starting)),
@@ -458,8 +444,6 @@ impl Clauses {
         }
     }
 
-    /// Whether `date`, and every date beyond it in `direction`, is past the bound
-    /// the search moves toward.
     fn ends_search(&self, date: Date, direction: Direction) -> bool {
         match direction {
             Direction::Forward => self.until.is_some_and(|until| date > until),
@@ -510,13 +494,10 @@ impl Unit {
     }
 }
 
-/// The periods (days, weeks, months or years) an expression fires in, numbered
-/// from `origin`: period `k` is aligned when `k` is a multiple of `interval`.
 struct Cadence {
     unit: Unit,
     origin: Date,
     interval: i64,
-    /// A single ISO date has one period, the one holding that date.
     single: bool,
 }
 
@@ -568,7 +549,6 @@ impl Cadence {
         }
     }
 
-    /// First day of period `k`, or None when jiff cannot represent it.
     fn start_of(&self, k: i64) -> Option<Date> {
         match self.unit {
             Unit::Day => add_days(self.origin, k),
@@ -606,7 +586,6 @@ impl Cadence {
             .map_while(|start| start)
     }
 
-    /// The first aligned period at or beyond period `k` in `direction`.
     fn align(&self, k: i64, direction: Direction) -> i64 {
         match direction {
             Direction::Forward => k + (-k).rem_euclid(self.interval),
@@ -629,7 +608,6 @@ struct Candidate {
     target_month: i8,
 }
 
-/// The candidates in the period starting at `start`, earliest first.
 fn candidates_in_period(expr: &ScheduleExpr, start: Date) -> Vec<Candidate> {
     let target_month = |date: Date| match expr {
         ScheduleExpr::MonthRepeat { .. } => start.month(),

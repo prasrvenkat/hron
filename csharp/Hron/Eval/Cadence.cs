@@ -2,10 +2,6 @@ using Hron.Ast;
 
 namespace Hron.Eval;
 
-/// <summary>
-/// The periods (days, weeks, months or years) an expression fires in, numbered from an origin:
-/// period <c>k</c> is aligned when <c>k</c> is a multiple of the interval.
-/// </summary>
 internal sealed class Cadence
 {
     /// <summary>
@@ -19,9 +15,6 @@ internal sealed class Cadence
     /// </summary>
     private static readonly DateOnly EpochMonday = new(1970, 1, 5);
 
-    /// <summary>
-    /// Default anchor for day, month and year intervals, and for a named until.
-    /// </summary>
     public static readonly DateOnly EpochDate = new(1970, 1, 1);
 
     private enum Unit
@@ -36,9 +29,6 @@ internal sealed class Cadence
     private readonly DateOnly _origin;
     private readonly long _interval;
 
-    /// <summary>
-    /// A single ISO date has one period, the one holding that date.
-    /// </summary>
     private readonly bool _single;
 
     /// <summary>
@@ -94,9 +84,6 @@ internal sealed class Cadence
         _ => date.DayNumber - _origin.DayNumber
     };
 
-    /// <summary>
-    /// First day of period <paramref name="k"/>, or null when DateOnly cannot represent it.
-    /// </summary>
     public DateOnly? StartOf(long k) => _unit switch
     {
         Unit.Week => Calendar.AddDays(_origin, 7 * k),
@@ -105,16 +92,8 @@ internal sealed class Cadence
         _ => Calendar.AddDays(_origin, k)
     };
 
-    /// <summary>
-    /// The month of period <paramref name="k"/> of a monthly cadence, in months since January of
-    /// year 0, which DateOnly may not represent.
-    /// </summary>
     public long MonthIndexOf(long k) => Calendar.MonthIndex(_origin) + k;
 
-    /// <summary>
-    /// The month every date of period <paramref name="k"/> falls in, for a day or month cadence;
-    /// null for a week or year, or a day DateOnly cannot represent.
-    /// </summary>
     public int? MonthOf(long k) => _unit switch
     {
         Unit.Day => StartOf(k)?.Month,
@@ -125,8 +104,7 @@ internal sealed class Cadence
     /// <summary>
     /// The aligned periods from <paramref name="firstPeriod"/> in <paramref name="direction"/>,
     /// through one search horizon beyond whichever of <paramref name="firstPeriod"/> and
-    /// <paramref name="reach"/> is farther along it (spec/README.md, "Search horizon"). The first
-    /// period beyond the calendar ends the walk.
+    /// <paramref name="reach"/> is farther along it (spec/README.md, "Search horizon").
     /// </summary>
     public IEnumerable<long> Periods(long firstPeriod, long reach, Direction direction)
     {
@@ -149,10 +127,6 @@ internal sealed class Cadence
         }
     }
 
-    /// <summary>
-    /// The first aligned period at or beyond period <paramref name="k"/> in
-    /// <paramref name="direction"/>.
-    /// </summary>
     private long Align(long k, Direction direction) => direction switch
     {
         Direction.Forward => k + Calendar.FloorMod(-k, _interval),
@@ -169,9 +143,6 @@ internal sealed class Cadence
         return cycle / Gcd(cycle, _interval);
     }
 
-    /// <summary>
-    /// Units in 400 years, after which the proleptic Gregorian calendar repeats.
-    /// </summary>
     private static long Per400Years(Unit unit) => unit switch
     {
         Unit.Week => Calendar.DaysPer400Years / 7,

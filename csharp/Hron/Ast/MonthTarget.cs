@@ -1,8 +1,5 @@
 namespace Hron.Ast;
 
-/// <summary>
-/// Direction for nearest weekday (hron extension beyond cron W).
-/// </summary>
 public enum NearestDirection
 {
     /// <summary>Always prefer following weekday (can cross to next month).</summary>
@@ -11,9 +8,6 @@ public enum NearestDirection
     Previous
 }
 
-/// <summary>
-/// Represents which day(s) within a month a schedule fires on.
-/// </summary>
 public sealed record MonthTarget(
     MonthTargetKind Kind,
     IReadOnlyList<DayOfMonthSpec> Specs,
@@ -31,9 +25,6 @@ public sealed record MonthTarget(
     public static MonthTarget LastWeekday() =>
         new(MonthTargetKind.LastWeekday, []);
 
-    /// <summary>
-    /// Creates a month target for the nearest weekday to a given day.
-    /// </summary>
     /// <param name="day">The target day of month (1-31).</param>
     /// <param name="direction">Optional direction preference (null for standard cron W behavior).</param>
     public static MonthTarget NearestWeekday(int day, NearestDirection? direction = null) =>
@@ -61,17 +52,11 @@ public sealed record MonthTarget(
     }
 }
 
-/// <summary>
-/// The type of month target.
-/// </summary>
 public enum MonthTargetKind
 {
     Days,
     LastDay,
-    /// <summary>The last weekday (Mon-Fri) of the month.</summary>
     LastWeekday,
-    /// <summary>Nearest weekday to a given day of the month.</summary>
     NearestWeekday,
-    /// <summary>Ordinal weekday of month (e.g., first monday, last friday).</summary>
     OrdinalWeekday
 }

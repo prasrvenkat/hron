@@ -58,10 +58,9 @@ from ._wall_clock import (
 # Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment").
 _EPOCH_MONDAY = date(1970, 1, 5)
 
-# Default anchor for day, month and year intervals.
 _EPOCH_DATE = date(1970, 1, 1)
 
-# spec/README.md, "Supported range": from _RANGE_START inclusive to _RANGE_END exclusive.
+# spec/README.md, "Supported range".
 _RANGE_START = datetime(1, 1, 2, tzinfo=UTC)
 _RANGE_END = datetime(9999, 12, 30, tzinfo=UTC)
 
@@ -84,8 +83,7 @@ _T = TypeVar("_T")
 
 
 class PreparedSchedule:
-    """A schedule's data with its search prepared once. ScheduleData is mutable, so the
-    search is prepared again whenever the data's fields change."""
+    """ScheduleData is mutable, so the search is prepared again whenever its fields change."""
 
     __slots__ = ("data", "_key", "_search")
 
@@ -115,9 +113,8 @@ def previous_from(schedule: PreparedSchedule, now: datetime) -> datetime | None:
 
 
 def matches(schedule: PreparedSchedule, dt: datetime) -> bool:
-    """True when the minute containing `dt`, on the schedule's wall clock, is an occurrence
-    (spec/README.md, "matches is true exactly when the minute containing t is an
-    occurrence"). Defined through the forward search, so the two can never disagree."""
+    """Defined through the forward search, so the two can never disagree (spec/README.md,
+    "matches is true exactly when the minute containing t is an occurrence")."""
     if not _in_supported_range(dt):
         return False
     search = schedule.search()
@@ -169,7 +166,6 @@ class _Direction(Enum):
         self.sign = sign
 
     def precedes(self, a: datetime, b: datetime) -> bool:
-        """Whether `a` comes before `b` in this direction."""
         return a < b if self is _Direction.FORWARD else a > b
 
 
@@ -179,8 +175,7 @@ def _in_order(items: list[_T], direction: _Direction) -> Iterable[_T]:
 
 @dataclass(frozen=True, slots=True)
 class Search:
-    """A schedule prepared for searching: its zone, cadence, times and clauses resolved
-    once. Instants, `now` among them, are UTC datetimes until one is returned (see
+    """Instants, `now` among them, are UTC datetimes until one is returned (see
     _wall_clock); comparing one with a zoned datetime would also cost a zone lookup."""
 
     zone: ZoneInfo
@@ -203,13 +198,11 @@ class Search:
         )
 
     def ending_on(self, d: date) -> Search:
-        """This search ended on `d`: nothing after it is an occurrence. Built directly, as
-        dataclasses.replace costs a microsecond on every call to matches."""
         clauses = self.clauses.end_on(d)
+        # Built directly: dataclasses.replace costs a microsecond on every call to matches.
         return Search(self.zone, self.cadence, self.candidates_in_period, self.times, clauses)
 
     def nearest(self, now: datetime, direction: _Direction) -> datetime | None:
-        """The occurrence nearest `now` strictly beyond it in `direction`."""
         best = self._best(now.astimezone(UTC), direction)
         if best is None or not _in_supported_range(best.instant):
             return None
@@ -248,8 +241,6 @@ class Search:
     def nearest_on_date(
         self, d: date, now: datetime, local: datetime, direction: _Direction
     ) -> datetime | None:
-        """The occurrence on `d` nearest `now`, read on the zone's clock as `local`, strictly
-        beyond it in `direction`."""
         zone = self.zone
         match self.times:
             case _FixedTimes(times=times):
@@ -276,17 +267,14 @@ class Search:
         local: datetime,
         direction: _Direction,
     ) -> datetime | None:
-        """The slot on `d` nearest `now`, read on the zone's clock as `local`, strictly beyond
-        it in `direction`. Slot keys never decrease in wall-clock order, so one search finds
-        where they part around now, and the nearest is the first slot with an instant from
-        there in `direction`. The search starts where now's wall time parts the slots' wall
-        times, which is where their keys part unless a transition is near."""
+        """Slot keys never decrease in wall-clock order, so one search finds where they part
+        around now. It starts where now's wall time parts the slots' wall times, which is
+        where their keys part unless a transition is near."""
         zone = self.zone
         forward = direction is _Direction.FORWARD
         probed: dict[int, Slot] = {}
 
         def earlier(i: int) -> bool:
-            """Whether slot `i`'s key is before now, or equal to it when searching forward."""
             slot = probed[i] = slot_on(d, minutes[i], zone)
             return slot.key <= now if forward else slot.key < now
 
@@ -308,10 +296,8 @@ class Search:
 
 
 def _partition_point(n: int, earlier: Callable[[int], bool], start: int) -> int:
-    """The first index in 0..n where `earlier`, which holds on a prefix of 0..n-1, fails;
-    n when it never does. An exponential search outward from `start`: one or two calls
-    when the answer is `start` or the index after it, and elsewhere at most about twice a
-    binary search's count."""
+    """`earlier` must hold on a prefix of 0..n-1. Searches outward from `start`: one or two
+    calls when the answer is `start` or the index after it."""
     if start < n and earlier(start):
         low, high, step = start + 1, n, 1
         while (probe := low + step - 1) < high:
@@ -338,15 +324,11 @@ def _partition_point(n: int, earlier: Callable[[int], bool], start: int) -> int:
 
 @dataclass(frozen=True, slots=True)
 class _Occurrence:
-    """An occurrence a search found, with the local date it lands on."""
-
     instant: datetime
     landing: date
 
 
 def _could_beat(d: date, landing: date, direction: _Direction, max_shift_days: int) -> bool:
-    """Whether an occurrence scheduled on `d` can precede, in `direction`, the best one,
-    which landed on `landing`."""
     # An occurrence lands from its scheduled date to max_shift_days after it, on a first
     # pass, and first passes keep wall-clock order.
     if direction is _Direction.FORWARD:
@@ -355,8 +337,6 @@ def _could_beat(d: date, landing: date, direction: _Direction, max_shift_days: i
 
 
 def _is_behind(d: date, now_date: date, direction: _Direction, max_shift_days: int) -> bool:
-    """Whether every occurrence scheduled on `d` lies behind now, whose wall date is
-    `now_date`, in `direction`."""
     if direction is _Direction.FORWARD:
         return (now_date - d).days > max_shift_days
     return (d - now_date).days > _MAX_OVERLAP_DAYS
@@ -364,18 +344,14 @@ def _is_behind(d: date, now_date: date, direction: _Direction, max_shift_days: i
 
 @dataclass(frozen=True, slots=True)
 class _FixedTimes:
-    """Fixed times of day, each shifted out of a gap, which can carry it onto the next date."""
-
     times: tuple[time, ...]
     max_shift_days: ClassVar[int] = _MAX_SHIFT_DAYS
 
 
 @dataclass(frozen=True, slots=True)
 class _Slots:
-    """Interval slots in minutes after midnight, each skipped in a gap, so one always lands
-    on its own date."""
-
     minutes: tuple[int, ...]
+    # A slot in a gap is skipped, so one always lands on its own date.
     max_shift_days: ClassVar[int] = 0
 
 
@@ -393,7 +369,6 @@ def _daily_times(expr: ScheduleExpr) -> _DailyTimes:
 def _interval_slots(
     interval: int, unit: IntervalUnit, start: TimeOfDay, end: TimeOfDay
 ) -> tuple[int, ...]:
-    """Wall-clock minutes of the slots `start + k × interval` up to and including `end`."""
     step = max(interval, 1) * (1 if unit == IntervalUnit.MIN else MINUTES_PER_HOUR)
     first = minute_of_day(civil_time(start))
     return tuple(range(first, minute_of_day(civil_time(end)) + 1, step))
@@ -401,8 +376,8 @@ def _interval_slots(
 
 @dataclass(frozen=True, slots=True)
 class _Clauses:
-    """The trailing clauses, resolved once. `during` applies to a candidate's target month;
-    `except`, `until` and `starting` to its date (spec/README.md, "Nearest weekday and
+    """`during` applies to a candidate's target month; `except`, `until` and `starting` to
+    its date (spec/README.md, "Nearest weekday and
     `during`", "The `starting` clause")."""
 
     during: frozenset[int]
@@ -437,7 +412,6 @@ class _Clauses:
         )
 
     def end_on(self, d: date) -> _Clauses:
-        """These clauses with the search ended on `d`: nothing after it is an occurrence."""
         until = d if self.until is None else min(self.until, d)
         # Built directly: dataclasses.replace is slow on matches' path.
         return _Clauses(
@@ -445,31 +419,25 @@ class _Clauses:
         )
 
     def farthest_except_date(self, direction: _Direction) -> date | None:
-        """The one-off except date farthest along `direction`: the calendar repeats only
-        beyond it (spec/README.md, "Search horizon")."""
+        """The calendar repeats only beyond it (spec/README.md, "Search horizon")."""
         if not self.except_dates:
             return None
         return max(self.except_dates) if direction is _Direction.FORWARD else min(self.except_dates)
 
     def clamp(self, d: date, direction: _Direction) -> date:
-        """The date a search starts from: nothing fires before `starting` or after `until`."""
         if direction is _Direction.FORWARD:
             return d if self.starting is None else max(d, self.starting)
         return d if self.until is None else min(d, self.until)
 
     def ends_search(self, d: date, direction: _Direction) -> bool:
-        """Whether `d`, and every date beyond it in `direction`, is past the bound the
-        search moves toward."""
         if direction is _Direction.FORWARD:
             return self.until is not None and d > self.until
         return self.starting is not None and d < self.starting
 
 
 def _resolve_until(until: UntilSpec, starting: date | None) -> date | None:
-    """A named until date is the first such date on or after the starting date
-    (spec/README.md, "Named `until`"). Parse requires `starting`; a schedule built without
-    one resolves from the default anchor, the epoch. None when no such date exists before the
-    calendar ends, so nothing bounds the schedule."""
+    """spec/README.md, "Named `until`". Parse requires `starting`; a schedule built without
+    one resolves from the epoch. None when no such date exists before the calendar ends."""
     match until:
         case IsoUntil(date=iso):
             return date.fromisoformat(iso)
@@ -496,9 +464,6 @@ class _Unit(Enum):
 
 @dataclass(frozen=True, slots=True)
 class _Cadence:
-    """The periods (days, weeks, months or years) an expression fires in, numbered from
-    `origin`: period `k` is aligned when `k` is a multiple of `interval`."""
-
     unit: _Unit
     origin: date
     interval: int
@@ -508,7 +473,6 @@ class _Cadence:
     # true further along, so the result is the same and a schedule that never fires does
     # not walk every day of its horizon.
     months: frozenset[int]
-    # A single ISO date has one period, the one holding that date.
     single: bool
     # Aligned periods in lcm(400 years, interval units), after which both the calendar and
     # the alignment repeat, plus _HORIZON_MARGIN_PERIODS.
@@ -565,8 +529,8 @@ class _Cadence:
                 return d.year - self.origin.year
 
     def start_of(self, k: int) -> date | YearMonth | None:
-        """The first day of period `k`, or the month for a monthly cadence. None beyond
-        what `date` can hold, which for months starts a year earlier, in year 0."""
+        """None beyond what `date` can hold, which for months starts a year earlier, in
+        year 0."""
         match self.unit:
             case _Unit.DAY:
                 return add_days(self.origin, k)
@@ -581,9 +545,8 @@ class _Cadence:
     def period_starts(
         self, first_period: int, reach: int, direction: _Direction
     ) -> Iterator[date | YearMonth]:
-        """The starts of the aligned periods from `first_period` in `direction`, through one
-        search horizon beyond whichever of `first_period` and `reach` is farther along it
-        (spec/README.md, "Search horizon"), in the months the cadence keeps."""
+        """Through one search horizon beyond whichever of `first_period` and `reach` is
+        farther along `direction` (spec/README.md, "Search horizon")."""
         if self.single:
             first, count = 0, 1
         else:
@@ -607,9 +570,6 @@ class _Cadence:
             start = self.start_of(k)
 
     def _to_next_month(self, start: date | YearMonth, direction: _Direction) -> int:
-        """The periods to step along `direction` from `start`, in a month the walk passes
-        over: for a cadence of months to the next month it keeps, for days to the adjacent
-        month."""
         if isinstance(start, YearMonth):
             return direction.sign * min(
                 direction.sign * (m - start.month) % 12 for m in self.months
@@ -619,15 +579,14 @@ class _Cadence:
         return -start.day
 
     def align(self, k: int, direction: _Direction) -> int:
-        """The first aligned period at or beyond period `k` in `direction`."""
         if direction is _Direction.FORWARD:
             return k + -k % self.interval
         return k - k % self.interval
 
 
 class _Candidate(NamedTuple):
-    """A date the expression fires on, with the month whose day it names. They differ only
-    when a directional nearest weekday crosses into the adjacent month."""
+    """`target_month` is the month whose day the expression names. It differs from the
+    date's only when a directional nearest weekday crosses into the adjacent month."""
 
     date: date
     target_month: int
@@ -638,7 +597,6 @@ _CandidatesInPeriod = Callable[[Any], list[_Candidate]]
 
 
 def _candidates_in_period_of(expr: ScheduleExpr) -> _CandidatesInPeriod:
-    """`expr`'s candidates in the period starting at a given start, earliest first."""
     match expr:
         case IntervalRepeat(day_filter=day_filter) | DayRepeat(days=day_filter):
             if day_filter is None or isinstance(day_filter, DayFilterEvery):

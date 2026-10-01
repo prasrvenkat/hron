@@ -68,7 +68,6 @@ _NEXT_FIELDS = {"expression", "now", "next", "next_date", "next_n", "next_n_coun
 
 
 def _checked_fields(section: str) -> set[str]:
-    """The case fields this runner reads or asserts, per section."""
     if section.startswith("parse/"):
         return {"input", "canonical"}
     return {

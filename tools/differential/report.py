@@ -1,5 +1,3 @@
-"""Compares outcomes across languages, and against a saved run."""
-
 import json
 from collections import Counter, defaultdict
 
@@ -35,15 +33,14 @@ def show(outcome: dict, width: int = 160) -> str:
 
 
 def agreed(outcome: dict) -> dict:
-    """The part of an outcome every language must agree on. The spec fixes an
-    error's kind, span and suggestion, but each language words its message."""
+    """The spec fixes an error's kind, span and suggestion, but each language words its
+    message."""
     if outcome["ok"]:
         return outcome
     return {"ok": False, "error": {key: outcome["error"].get(key) for key in ERROR_FIELDS}}
 
 
 def split(case_id: str, outcomes: dict[str, dict]) -> list[list[str]]:
-    """The languages grouped by agreeing outcome, largest group first."""
     groups = defaultdict(list)
     for name, by_id in outcomes.items():
         groups[json.dumps(agreed(by_id[case_id]), sort_keys=True)].append(name)
@@ -51,8 +48,6 @@ def split(case_id: str, outcomes: dict[str, dict]) -> list[list[str]]:
 
 
 def report(cases: list[dict], outcomes: dict[str, dict], examples: int) -> int:
-    """Prints a summary and the divergences grouped by how the languages split.
-    Returns the number of divergent cases."""
     divergent = [(case, groups) for case in cases if len(groups := split(case["id"], outcomes)) > 1]
     print(f"{len(cases) - len(divergent)} cases agree, {len(divergent)} diverge\n")
     print_table(cases, outcomes, divergent)
@@ -70,7 +65,6 @@ def report(cases: list[dict], outcomes: dict[str, dict], examples: int) -> int:
 
 
 def print_table(cases: list[dict], outcomes: dict[str, dict], divergent: list) -> None:
-    """Per language: outcomes by kind, and how often a larger group outvotes it."""
     print(f"{'':8}{'ok':>7}{'error':>7}{'crash':>7}{'timeout':>9}{'outvoted':>10}")
     for name, by_id in outcomes.items():
         kinds = Counter(by_id[case["id"]].get("error", {}).get("kind", "ok") for case in cases)
@@ -102,7 +96,6 @@ def warn_unparsed(cases: list[dict], outcomes: dict[str, dict]) -> None:
 
 
 def comparable_cases(saved: dict, cases: list[dict]) -> list[dict]:
-    """The cases also in the saved run, unchanged."""
     saved_cases = {case["id"]: case for case in saved["cases"]}
     return [case for case in cases if saved_cases.get(case["id"]) == case]
 
@@ -114,9 +107,6 @@ def compare(
     outcomes: dict[str, dict],
     examples: int,
 ) -> int:
-    """Prints each language's outcomes that differ from the saved run. Returns
-    the number of outcomes, one per case and language, that changed or could
-    not be compared."""
     uncompared = len(cases) - len(comparable)
     if uncompared:
         print(f"{uncompared} cases are new or changed since the saved run, so were not compared")
@@ -140,8 +130,7 @@ def compare(
 def compare_times(
     saved: dict, comparable: list[dict], micros: dict[str, dict[str, int]], examples: int
 ) -> None:
-    """Prints each language's evaluation time against the saved run's, and the
-    cases that became much slower. Timings are noisy, so this only informs."""
+    """Timings are noisy, so this only informs."""
     if "micros" not in saved:
         print("\nthe saved run has no timings")
         return
