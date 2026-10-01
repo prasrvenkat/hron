@@ -7320,6 +7320,13 @@
           "expected": "9999-12-26T12:00:00+00:00[UTC]"
         },
         {
+          "name": "previous_nearest_weekday_before_the_calendar_start",
+          "expression": "every month on the previous nearest weekday to 31st at 23:59 in Etc/GMT+12",
+          "description": "Sunday 0000-12-31 moves back to Friday 0000-12-29, before the calendar starts, so nothing comes earlier",
+          "now": "0001-01-03T00:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
           "name": "named_until_same_year",
           "expression": "every day at 09:00 until dec 31 starting 2026-06-01 in UTC",
           "description": "until dec 31 with starting 2026-06-01 resolves to 2026-12-31",
