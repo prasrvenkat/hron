@@ -188,7 +188,7 @@ class _Search:
         for start in self.cadence.period_starts(first_period, reach, direction):
             for candidate in _in_order(_candidates_in_period(self.expr, start), direction):
                 d = candidate.date
-                if best is not None and not _could_beat(d, best.date, direction, max_shift_days):
+                if best is not None and not _could_beat(d, best.landing, direction, max_shift_days):
                     return best
                 if self.clauses.ends_search(d, direction):
                     return best
@@ -198,7 +198,7 @@ class _Search:
                 if instant is not None and (
                     best is None or direction.precedes(instant, best.instant)
                 ):
-                    best = _Occurrence(instant, d)
+                    best = _Occurrence(instant, instant.astimezone(self.zone).date())
         return best
 
     def nearest_on_date(self, d: date, now: datetime, direction: _Direction) -> datetime | None:
@@ -253,16 +253,20 @@ class _Search:
 
 @dataclass(frozen=True, slots=True)
 class _Occurrence:
-    """An occurrence a search found, with the date it is scheduled on."""
+    """An occurrence a search found, with the local date it lands on."""
 
     instant: datetime
-    date: date
+    landing: date
 
 
-def _could_beat(d: date, best: date, direction: _Direction, max_shift_days: int) -> bool:
+def _could_beat(d: date, landing: date, direction: _Direction, max_shift_days: int) -> bool:
     """Whether an occurrence scheduled on `d` can precede, in `direction`, the best one,
-    scheduled on `best`, given that each lands at most `max_shift_days` after its date."""
-    return direction.sign * (d - best).days <= max_shift_days
+    which landed on `landing`."""
+    # An occurrence lands from its own date to max_shift_days after it, always on a first
+    # pass, and first-pass instants keep wall-clock order.
+    if direction is _Direction.FORWARD:
+        return d <= landing
+    return (landing - d).days <= max_shift_days
 
 
 def _behind(d: date, now_date: date, direction: _Direction) -> bool:
