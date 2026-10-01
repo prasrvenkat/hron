@@ -46,7 +46,7 @@ month_repeat   = [ number ] , ( "month" | "months" ) , "on" , "the" , month_targ
 year_repeat    = [ number ] , ( "year" | "years" ) , "on" , year_target , "at" , time_list ;
 
 year_target    = year_date_target | "the" , year_ordinal_target ;
-year_date_target = month_name , number ;
+year_date_target = month_name , ( number | ordinal_day ) ;
 year_ordinal_target = ordinal , day_name , "of" , month_name
                     | ordinal_day , "of" , month_name
                     | "last" , "weekday" , "of" , month_name ;

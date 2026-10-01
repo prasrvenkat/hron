@@ -676,6 +676,11 @@
           "name": "multi_time_iso",
           "input": "on 2026-03-15 at 9:00, 12:00, 17:00",
           "canonical": "on 2026-03-15 at 09:00, 12:00, 17:00"
+        },
+        {
+          "name": "named_date_november",
+          "input": "on November 1 at 9:00",
+          "canonical": "on nov 1 at 09:00"
         }
       ]
     },
@@ -775,6 +780,11 @@
           "name": "every_2_years_last_weekday",
           "input": "every 2 years on the last weekday of december at 17:00",
           "canonical": "every 2 years on the last weekday of dec at 17:00"
+        },
+        {
+          "name": "july_long_month",
+          "input": "every year on july 4 at 12:00",
+          "canonical": "every year on jul 4 at 12:00"
         }
       ]
     },
@@ -5233,6 +5243,18 @@
           ]
         },
         "display": "error: unexpected character U+0027\n  every day at 09:00 'x'\n                     ^"
+      },
+      {
+        "name": "lex_unknown_keyword_with_underscore",
+        "input": "every day at 09:00 ex_cept dec 25",
+        "error": {
+          "kind": "lex",
+          "message": "unknown keyword 'ex_cept'",
+          "span": [
+            19,
+            26
+          ]
+        }
       }
     ]
   },

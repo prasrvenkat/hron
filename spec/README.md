@@ -84,7 +84,7 @@ Each error has:
 2. **message**: exactly the text this spec gives for its condition.
 3. **span** (`lex` and `parse` only): `[start, end)`, counted in Unicode code points of the input, never in bytes or UTF-16 units. A lone surrogate counts as one code point, and so does each byte of invalid UTF-8.
 4. **input** (`lex` and `parse` only): the input as given.
-5. **suggestion** (`parse` only, and only where this spec gives one): text to put in place of the span, with any `YYYY-MM-DD` filled in.
+5. **suggestion** (`parse` only, and only where this spec gives one): text to put in place of the span, where `YYYY-MM-DD` is left for the user to fill in.
 
 Every invalid expression fails in `parse` (and `validate` returns false) with a `lex` or `parse` error; evaluating a parsed schedule never fails, and no input raises any other exception. `eval` is reserved for schedules built in code.
 
@@ -130,7 +130,7 @@ Words match in any ASCII case. Spellings joined by "or", or listed on a row head
 | A time out of range | `time must be 00:00-23:59, got {text}` | the time |
 | A number above 2147483647 | `number must be at most 2147483647` | the digits, without an ordinal suffix |
 
-`{word}`, `{text}` and `{c}` are the input as written. A lone surrogate is reported by its own value (`U+D800`); a byte of invalid UTF-8 as `U+FFFD`. JSON cannot carry these portably, so each implementation whose strings can hold them tests them itself.
+`{word}`, `{text}` and `{c}` are the input as written. A lone surrogate is reported by its own value (`U+D800`), and a byte of invalid UTF-8 as `U+FFFD`; a binding that converts its input to UTF-8 before parsing, as WebAssembly does, sees a lone surrogate as U+FFFD. JSON cannot carry these portably, so each implementation whose strings can hold them tests them itself.
 
 ### Parse errors
 
