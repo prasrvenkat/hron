@@ -84,6 +84,20 @@ export class Zone {
     return null;
   }
 
+  /**
+   * The wall date `instant` lands on, resolved from a time on `date`: `date`,
+   * or the date after it for a time shifted out of a gap before midnight.
+   */
+  landingDate(date: number, instant: number): number {
+    const before = this.offsetAtMidnight(date - 1);
+    const after = this.offsetAtMidnight(date - 1 + TRANSITION_WINDOW_DAYS);
+    const offset =
+      before === after || instant < this.transitionAfter(date - 1, before)
+        ? before
+        : after;
+    return Math.floor((instant + offset) / DAY_MS);
+  }
+
   private offsetAt(ms: number): number {
     return this.zoned(ms).offsetNanoseconds / 1e6;
   }
