@@ -1,6 +1,6 @@
 //! hron — Human-readable cron.
 //!
-//! Human-readable schedule expressions that are a superset of what cron can express.
+//! Human-readable schedule expressions that read like English and convert to and from cron.
 //!
 //! # Examples
 //!
