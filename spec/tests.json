@@ -7342,6 +7342,13 @@
           "expected": null
         },
         {
+          "name": "named_until_with_no_date_left_in_the_calendar",
+          "expression": "every day at 09:00 until feb 29 starting 9997-03-01 in UTC",
+          "description": "no Feb 29 follows 9997-03-01 before the calendar ends, so nothing bounds the schedule",
+          "now": "9999-06-01T00:00:00+00:00[UTC]",
+          "expected": "9999-05-31T09:00:00+00:00[UTC]"
+        },
+        {
           "name": "named_until_same_year",
           "expression": "every day at 09:00 until dec 31 starting 2026-06-01 in UTC",
           "description": "until dec 31 with starting 2026-06-01 resolves to 2026-12-31",
