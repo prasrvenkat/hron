@@ -3,7 +3,7 @@
 
 use jiff::civil::{Date, Time};
 use jiff::tz::{AmbiguousOffset, TimeZone};
-use jiff::Zoned;
+use jiff::{Span, Timestamp, Zoned};
 
 use crate::ast::TimeOfDay;
 
@@ -17,10 +17,19 @@ pub(super) fn fixed_time_on(date: Date, time: Time, zone: &TimeZone) -> Option<Z
     date.to_datetime(time).to_zoned(zone.clone()).ok()
 }
 
-/// The instant of the interval slot `minute` minutes after midnight on `date`,
-/// or None when that wall time falls in a spring-forward gap (spec/README.md,
-/// "Interval slots in a spring-forward gap").
-pub(super) fn slot_on(date: Date, minute: i64, zone: &TimeZone) -> Option<Zoned> {
+/// An interval slot on a date: where it sits in time, and its instant unless a
+/// spring-forward gap skips it (spec/README.md, "Interval slots in a
+/// spring-forward gap"). A skipped slot sits at the instant its gap ends, so
+/// keys never decrease in wall-clock order and one binary search finds the
+/// slots on either side of an instant.
+pub(super) struct Slot {
+    pub(super) key: Timestamp,
+    pub(super) instant: Option<Zoned>,
+}
+
+/// The slot `minute` minutes after midnight on `date`. Past what jiff can
+/// represent, which is outside the supported range, it sits at the end of time.
+pub(super) fn slot_on(date: Date, minute: i64, zone: &TimeZone) -> Slot {
     let time = Time::new(
         (minute / MINUTES_PER_HOUR) as i8,
         (minute % MINUTES_PER_HOUR) as i8,
@@ -28,11 +37,31 @@ pub(super) fn slot_on(date: Date, minute: i64, zone: &TimeZone) -> Option<Zoned>
         0,
     )
     .unwrap();
-    let ambiguous = zone.to_ambiguous_zoned(date.to_datetime(time));
-    if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
-        return None;
+    let wall = date.to_datetime(time);
+    let ambiguous = zone.to_ambiguous_zoned(wall);
+    if let AmbiguousOffset::Gap { before, .. } = ambiguous.offset() {
+        let gap_end = before.to_timestamp(wall).ok().and_then(|in_gap| {
+            let transitions = zone.preceding(in_gap.checked_add(Span::new().nanoseconds(1)).ok()?);
+            transitions
+                .into_iter()
+                .next()
+                .map(|transition| transition.timestamp())
+        });
+        return Slot {
+            key: gap_end.unwrap_or(Timestamp::MAX),
+            instant: None,
+        };
     }
-    ambiguous.earlier().ok()
+    match ambiguous.earlier() {
+        Ok(instant) => Slot {
+            key: instant.timestamp(),
+            instant: Some(instant),
+        },
+        Err(_) => Slot {
+            key: Timestamp::MAX,
+            instant: None,
+        },
+    }
 }
 
 pub(super) fn civil_time(time: &TimeOfDay) -> Time {
