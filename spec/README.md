@@ -55,7 +55,7 @@ A conformance runner must fail any case it cannot check: a section it does not k
 The other sections:
 
 - **`parse.*`** - `input`; asserts that `toString(parse(input))` equals `canonical`, and that parsing `canonical` again gives `canonical`.
-- **`parse_errors`** - `input`; asserts that `parse(input)` fails and that `validate(input)` is false, and when `error_contains` is present, that the error message contains it.
+- **`parse_errors`** - `input` and `error` (`kind`, `message`, `span` as `[start, end]`, and `suggestion` when there is one); asserts that `parse(input)` fails with exactly that kind, message and span, with that suggestion or none, and that `validate(input)` is false. When `display` is present, asserts that `displayRich()` of the error equals it.
 - **`cron.to_cron`** - `hron`; asserts `toCron(parse(hron))` equals `cron`. **`cron.to_cron_errors`** - `hron`, `error`; asserts `toCron(parse(hron))` fails with a `cron` error whose message equals `error`.
 - **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`, `error`; asserts `fromCron(cron)` fails with a `cron` error whose message equals `error`.
 - **`cron.roundtrip`** - `hron`; with `c = toCron(parse(hron))`, asserts `toCron(fromCron(c))` equals `c`.
@@ -78,36 +78,131 @@ All hron implementations should produce error messages with consistent structure
 
 ### Error Structure
 
-Each error should include:
+Each error has:
 
-1. **kind**: One of: lex, parse, eval, cron
-2. **message**: Human-readable description
-3. **span** (lex/parse only): Start and end positions in input
-4. **input** (lex/parse only): The original input string
-5. **suggestion** (optional): a literal replacement for the underlined span, or absent; never prose
+1. **kind**: `lex`, `parse`, `eval` or `cron`.
+2. **message**: exactly the text this spec gives for its condition.
+3. **span** (`lex` and `parse` only): `[start, end)`, counted in Unicode code points of the input, never in bytes or UTF-16 units. A lone surrogate counts as one code point, and so does each byte of invalid UTF-8.
+4. **input** (`lex` and `parse` only): the input as given.
+5. **suggestion** (`parse` only, and only where this spec gives one): text to put in place of the span, with any `YYYY-MM-DD` filled in.
 
-### Message Format Guidelines
+Every invalid expression fails in `parse` (and `validate` returns false) with a `lex` or `parse` error; evaluating a parsed schedule never fails, and no input raises any other exception. `eval` is reserved for schedules built in code.
 
-- Use lowercase for error messages
-- Include what was expected: "expected 'at', got 'in'"
-- Include position context: "at position 15"
-- Be specific: "invalid hour 25, must be 0-23"
+### Words
 
-The message says what is wrong and names the offending value, with a short hint. The `suggestion`, when present, is text that can replace the underlined span as is:
+Words match in any ASCII case. Spellings joined by "or", or listed on a row headed by a word, are the same word:
 
-- Named `until` without `starting`: the suggestion is `until dec 31 starting YYYY-MM-DD`, echoing the input's month and day.
-- Unknown timezone: no suggestion; the hint is in the message.
-- Reversed time range: no suggestion; the message says that a window cannot cross midnight.
-- Oversized number: the message says "number too large" and does not echo the digit string.
+| Word | Spellings |
+|---|---|
+| keywords | `every`, `on`, `at`, `from`, `to`, `in`, `of`, `the`, `last`, `except`, `until`, `starting`, `during`, `nearest`, `next`, `previous` |
+| `day` | `day`, `days` |
+| `weekday` | `weekday`, `weekdays` |
+| `weekend` | `weekend`, `weekends` |
+| `week` | `week`, `weeks` |
+| `month` | `month`, `months` |
+| `year` | `year`, `years` |
+| `min` | `min`, `mins`, `minute`, `minutes` |
+| `hours` | `hour`, `hours`, `hr`, `hrs` |
+| day names | `monday` or `mon`, `tuesday` or `tue`, `wednesday` or `wed`, `thursday` or `thu`, `friday` or `fri`, `saturday` or `sat`, `sunday` or `sun` |
+| month names | `january` or `jan`, `february` or `feb`, `march` or `mar`, `april` or `apr`, `may`, `june` or `jun`, `july` or `jul`, `august` or `aug`, `september` or `sep`, `october` or `oct`, `november` or `nov`, `december` or `dec` |
+| ordinals | `first`, `second`, `third`, `fourth`, `fifth` |
 
-Every invalid expression fails in `parse` (and `validate` returns false) with a `lex` or `parse` error; evaluating a parsed schedule never fails. An out-of-range number is an error of this kind, never a raw overflow exception.
+### Tokens
+
+`parse` first splits the whole input into tokens, then parses them. Splitting stops at the first `lex` error, which wins over any `parse` error. Spaces, tabs, carriage returns and line feeds separate tokens, but tokens need no whitespace between them: `30min` is `30` and `min`. Reading from the start:
+
+- Right after the word `in` and any whitespace, the run of characters up to the next whitespace or the end is a **timezone**, whatever its characters. Only that one run is: in `in UTC UTC`, the second `UTC` is a word.
+- `,` is a token.
+- A **word** is an ASCII letter followed by ASCII letters, digits and `_`. It must be one of the words above.
+- A run of ASCII **digits** is read as follows, in order:
+  - A run of exactly four digits, then `-`, two digits, `-` and two digits, forms an **ISO date** of those ten characters.
+  - A run followed by `:` is a **time**. Its text runs through the `:` and the run of digits after it. It must be one or two digits, `:` and exactly two digits; then the hour must be 0-23 and the minute 0-59.
+  - Otherwise the run is a **number**, which must be at most 2147483647; leading zeros are allowed. When the next two characters are `st`, `nd`, `rd` or `th` in any ASCII case, they join it as an **ordinal day** (`1st`, `15TH`).
+- Any other character is an error.
+
+### Lex errors
+
+| Condition | Message | Span |
+|---|---|---|
+| A character that starts no token | `unexpected character '{c}'` for a character from U+0021 to U+007E other than `'`, `unexpected character U+{XXXX}` for any other, with at least four uppercase hex digits | that character |
+| A word not in the table above | `unknown keyword '{word}'` | the word |
+| A time not written as one or two digits, `:` and two digits | `time must be H:MM or HH:MM, got {text}` | the time |
+| A time out of range | `time must be 00:00-23:59, got {text}` | the time |
+| A number above 2147483647 | `number must be at most 2147483647` | the digits, without an ordinal suffix |
+
+`{word}`, `{text}` and `{c}` are the input as written. A lone surrogate is reported by its own value (`U+D800`); a byte of invalid UTF-8 as `U+FFFD`. JSON cannot carry these portably, so each implementation whose strings can hold them tests them itself.
+
+### Parse errors
+
+When the parser needs one thing and finds another, the message is `expected {what}, got '{found}'`, with `{found}` the text of the token as written, or `expected {what}, got end of input`. The span is that token, or at the end of input the empty span at the end of the last token. `{what}` depends on the position:
+
+| Position | `{what}` |
+|---|---|
+| The first token | `'every' or 'on'` |
+| After `every` | `'day', 'weekday', 'weekend', a day name, 'week', 'month', 'year' or a number` |
+| After `every` and a number | `a unit ('min', 'hours', 'days', 'weeks', 'months' or 'years')` |
+| Before a time list, and after the date of a first-token `on` | `'at'` |
+| A time: after `at`, after `,` in a time list, after `from`, after an interval's `to` | `a time (HH:MM)` |
+| After an interval's unit | `'from'` |
+| After `from` and its time | `'to'` |
+| After an interval window's `on` | `'day', 'weekday', 'weekend' or a day name` |
+| After `week`, `month` or `year` | `'on'` |
+| A day name: in a week's list of day names, after `,` in a list of day names, after `first` to `fifth` | `a day name` |
+| After a month repeat's `on` | `'the'` |
+| After a month repeat's `the` | `a day such as 15th, 'last', an ordinal such as 'first', 'next', 'previous' or 'nearest'` |
+| After a month repeat's `last` | `'day', 'weekday' or a day name` |
+| After `next` or `previous` | `'nearest'` |
+| After `nearest` | `'weekday'` |
+| After `nearest weekday` | `'to'` |
+| A day of the month: after `nearest weekday to`, after `,` in a list of days of the month, after `to` in a day range | `a day such as 15th` |
+| After a year repeat's `on` | `a month name or 'the'` |
+| After a year repeat's `the` | `a day such as 15th, 'last' or an ordinal such as 'first'` |
+| After a year repeat's `last` | `'weekday' or a day name` |
+| After a year repeat's ordinal and day name, its `last` and day name, its `last weekday`, or its day such as 15th | `'of'` |
+| A month name: after `of`, after `during`, after `,` in a `during` list | `a month name` |
+| After a month name in a date | `a day number` |
+| After the first-token `on`, after `except`, after `,` in an `except` list, after `until` | `a date (YYYY-MM-DD, or a month and day)` |
+| After `starting` | `a date (YYYY-MM-DD)` |
+| After `in` | `a timezone` |
+
+The parser checks a value as soon as it reads its token, before it reads the next one; a number right after `every` is the interval. A day that depends on its month is checked once the parser has read both the day and its month. These checks fail with:
+
+| Condition | Message | Span |
+|---|---|---|
+| No tokens | `empty expression` | `[0, 0)` |
+| An interval of 0 | `interval must be 1-2147483647, got {n}` | the number |
+| A day outside 1-31 | `day must be 1-31, got {d}` | the day |
+| A day from 1-31 beyond its month's last (February has 29) | `day must be 1-{max} for {mon}, got {d}` | the day |
+| A day range whose start is after its end | `day range must not run backwards: {a} to {b}` | the start day through the end day |
+| An interval window whose `from` is after its `to` | `time window must not run backwards: {from} to {to} (a window cannot cross midnight)` | the `from` time through the `to` time |
+| An ISO date that is not a calendar date in years 0001-9999 | `date must be a calendar date from 0001-01-01 to 9999-12-31, got {date}` | the date |
+| A timezone other than `UTC` or an `Area/Location` IANA name (see Parse-time validation) | `timezone must be UTC or an Area/Location name such as America/New_York, got {name}` | the timezone |
+
+`{n}`, `{d}`, `{a}`, `{b}`, `{from}`, `{to}`, `{date}` and `{name}` are the input as written, a day with its suffix (`32nd`); `{mon}` is the month's three-letter name in lowercase.
+
+After the expression, its clauses must come in the order `except`, `until`, `starting`, `during`, `in`, each at most once. A token left over after the last clause fails:
+
+| Leftover token | Message | Span |
+|---|---|---|
+| The keyword of a clause already read | `duplicate '{kw}' clause` | the keyword |
+| The keyword of a clause not yet read, which belongs before the last clause read | `'{kw}' must come before '{last}'` | the keyword |
+| Anything else | `unexpected '{found}' after the schedule` | the token |
+
+`{kw}` and `{last}` are the keywords in lowercase.
+
+Only once the whole input has parsed does a named `until` date without `starting` fail, with `until {mon} {day} has no year: add a starting date, or use an ISO date`. The span runs from `until` through the date, and the suggestion is `until {mon} {day} starting YYYY-MM-DD`, with `{mon}` the month's three-letter name in lowercase and `{day}` the day's number without leading zeros or a suffix.
 
 ### Rich Display
 
-Implementations should provide a `displayRich()` method that formats errors with:
-- The error message
-- The input line with position indicator
-- A caret (^) or underline showing the error location
+`displayRich()` renders a `lex` or `parse` error as three lines joined by `\n`:
+
+```
+error: {message}
+  {input}
+  {spaces}{carets}
+```
+
+In `{input}`, each tab, carriage return and line feed shows as one space. `{spaces}` is `start` spaces and `{carets}` is `end - start` carets (`^`), at least one, both counted in code points, so wide characters and combining marks can shift the carets. When there is a suggestion, the last line ends with ` try: "{suggestion}"`. There is no trailing newline. An `eval` or `cron` error renders as `error: {message}` alone.
 
 ## Behavioral Semantics
 
