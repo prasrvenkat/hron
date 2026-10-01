@@ -136,6 +136,7 @@ final class _Search {
   /// The occurrence nearest [now] strictly beyond it in [direction].
   TZDateTime? nearest(TZDateTime now, _Direction direction) {
     final local = TZDateTime.from(now, zone);
+    final nearestOnDate = _times.nearestOnDate(local, direction);
     final firstDate = _clauses.clamp(dateOf(local), direction);
     // A nearest weekday or a DST shift can move an occurrence out of the
     // period it is scheduled in, so the search starts one period back.
@@ -155,26 +156,16 @@ final class _Search {
           break search;
         }
         if (!_clauses.allows(candidate)) continue;
-        final instant = _nearestOnDate(candidate.date, local, direction);
-        if (instant == null || !_inSupportedRange(instant)) continue;
+        final instant = nearestOnDate(candidate.date);
+        if (instant == null) continue;
         if (best == null || direction.precedes(instant, best.instant)) {
           best = (instant: instant, date: candidate.date);
         }
       }
     }
-    return best?.instant;
+    final nearest = best?.instant;
+    return nearest != null && _inSupportedRange(nearest) ? nearest : null;
   }
-
-  /// The occurrence on [date] nearest [now] strictly beyond it in [direction].
-  TZDateTime? _nearestOnDate(
-    DateTime date,
-    TZDateTime now,
-    _Direction direction,
-  ) => switch ((_times, direction)) {
-    (final _FixedTimes times, _) => times.nearestOn(date, now, direction),
-    (final _Slots slots, _Direction.forward) => slots.firstAfter(date, now),
-    (final _Slots slots, _Direction.backward) => slots.lastBefore(date, now),
-  };
 }
 
 /// Whether an occurrence scheduled on [date] can precede, in [direction], the
@@ -190,8 +181,10 @@ final _utc = Location('UTC', [minTime], [0], [TimeZone.UTC]);
 Location _zoneNamed(String? name) =>
     name == null || name == 'UTC' ? _utc : getLocation(name);
 
-/// The times of day an expression fires at. Their searches take `now` in the
-/// schedule's zone, and resolve times in it.
+/// The occurrence on a date nearest a search's `now` strictly beyond it.
+typedef _NearestOnDate = TZDateTime? Function(DateTime date);
+
+/// The times of day an expression fires at.
 sealed class _DailyTimes {
   factory _DailyTimes.of(ScheduleExpr expr) => switch (expr) {
     IntervalRepeat() => _Slots.of(expr),
@@ -201,6 +194,9 @@ sealed class _DailyTimes {
     SingleDate(:final times) ||
     YearRepeat(:final times) => _FixedTimes.of(times),
   };
+
+  /// The search from [now], given in the schedule's zone, in [direction].
+  _NearestOnDate nearestOnDate(TZDateTime now, _Direction direction);
 }
 
 /// Fixed times, each shifted out of a gap.
@@ -210,9 +206,13 @@ final class _FixedTimes implements _DailyTimes {
 
   final List<int> _minutes;
 
+  @override
+  _NearestOnDate nearestOnDate(TZDateTime now, _Direction direction) =>
+      (date) => _nearestOn(date, now, direction);
+
   /// Every time is resolved: one shifted out of a gap can land after a later
   /// wall time.
-  TZDateTime? nearestOn(DateTime date, TZDateTime now, _Direction direction) {
+  TZDateTime? _nearestOn(DateTime date, TZDateTime now, _Direction direction) {
     TZDateTime? nearest;
     for (final minute in _minutes) {
       final instant = fixedTimeOn(date, minute, now.location);
@@ -247,9 +247,20 @@ final class _Slots implements _DailyTimes {
   /// The index of the last slot.
   final int _last;
 
+  @override
+  _NearestOnDate nearestOnDate(TZDateTime now, _Direction direction) {
+    switch (direction) {
+      case _Direction.forward:
+        return (date) => _firstAfter(date, now);
+      case _Direction.backward:
+        final pastFirstPass = minutesPastFirstPass(now);
+        return (date) => _lastBefore(date, now, pastFirstPass);
+    }
+  }
+
   /// Slots resolve in wall-clock order, and one whose wall time is not after
   /// now's has passed, so the scan starts after now's wall time.
-  TZDateTime? firstAfter(DateTime date, TZDateTime now) {
+  TZDateTime? _firstAfter(DateTime date, TZDateTime now) {
     final first = _indexAtOrBefore(minutesAfterMidnight(date, now)) + 1;
     for (var k = max(first, 0); k <= _last; k++) {
       final instant = slotOn(date, _minuteOf(k), now.location);
@@ -259,11 +270,12 @@ final class _Slots implements _DailyTimes {
   }
 
   /// Unlike the forward scan, this one can start at a wall time after now's:
-  /// from the second pass of a fall-back overlap, the first pass of a later
-  /// wall time, even on the next date, is still before now.
-  TZDateTime? lastBefore(DateTime date, TZDateTime now) {
+  /// from the second pass of a fall-back overlap, [pastFirstPass] minutes
+  /// after the first, the first pass of a later wall time, even on the next
+  /// date, is still before now.
+  TZDateTime? _lastBefore(DateTime date, TZDateTime now, int pastFirstPass) {
     final last = _indexAtOrBefore(
-      minutesAfterMidnight(date, now) + minutesPastFirstPass(now),
+      minutesAfterMidnight(date, now) + pastFirstPass,
     );
     for (var k = min(last, _last); k >= 0; k--) {
       final instant = slotOn(date, _minuteOf(k), now.location);
@@ -335,33 +347,30 @@ final class _Clauses {
 
   /// The date a search starts from: nothing fires before `starting` or after
   /// `until`.
-  DateTime clamp(DateTime date, _Direction direction) {
-    return switch ((direction, _starting, _until)) {
-      (_Direction.forward, final starting?, _) when date.isBefore(starting) =>
-        starting,
-      (_Direction.backward, _, final until?) when date.isAfter(until) => until,
-      _ => date,
-    };
-  }
+  DateTime clamp(DateTime date, _Direction direction) => switch (direction) {
+    _Direction.forward when _starting != null && date.isBefore(_starting) =>
+      _starting,
+    _Direction.backward when _until != null && date.isAfter(_until) => _until,
+    _ => date,
+  };
 
   /// Whether [date], and every date beyond it in [direction], is past the
   /// bound the search moves toward.
-  bool endsSearch(DateTime date, _Direction direction) =>
-      switch ((direction, _starting, _until)) {
-        (_Direction.forward, _, final until?) => date.isAfter(until),
-        (_Direction.backward, final starting?, _) => date.isBefore(starting),
-        _ => false,
-      };
+  bool endsSearch(DateTime date, _Direction direction) => switch (direction) {
+    _Direction.forward => _until != null && date.isAfter(_until),
+    _Direction.backward => _starting != null && date.isBefore(_starting),
+  };
 }
 
-/// A named until date is the first such date on or after `starting`, which
-/// the parser requires alongside it (spec/README.md, "Named `until`").
+/// A named until date is the first such date on or after the starting date
+/// (spec/README.md, "Named `until`"). Parse requires `starting`; a schedule
+/// built without one resolves from the default anchor, the epoch.
 DateTime _resolveUntil(UntilSpec until, DateTime? starting) {
   switch (until) {
     case IsoUntil(:final date):
       return parseIsoDate(date);
     case NamedUntil(:final month, :final day):
-      final from = starting!;
+      final from = starting ?? _epochDate;
       return [
         for (var k = 0; k <= _namedUntilMaxYears; k++)
           ?validDate(from.year + k, month.number, day),
@@ -404,31 +413,15 @@ final class _Cadence {
       _Unit.month => DateTime.utc(anchor.year, anchor.month),
       _Unit.year => DateTime.utc(anchor.year),
     };
-    return _Cadence._(
-      unit,
-      origin,
-      interval,
-      floor: starting == null ? null : -interval,
-    );
+    return _Cadence._(unit, origin, interval);
   }
 
-  _Cadence._(
-    this._unit,
-    this._origin,
-    this._interval, {
-    int? floor,
-    bool single = false,
-  }) : _floor = floor,
-       _single = single;
+  _Cadence._(this._unit, this._origin, this._interval, {bool single = false})
+    : _single = single;
 
   final _Unit _unit;
   final DateTime _origin;
   final int _interval;
-
-  /// With `starting`, the aligned period before the anchor's: a nearest
-  /// weekday reaches at most into the next period, so no earlier one holds a
-  /// date on or after `starting`.
-  final int? _floor;
 
   /// A single ISO date has one period, the one holding that date.
   final bool _single;
@@ -450,7 +443,7 @@ final class _Cadence {
   /// The first days of the aligned periods from [firstPeriod] in [direction],
   /// through one search horizon beyond whichever of [firstPeriod] and [reach]
   /// is farther along it (spec/README.md, "Search horizon"), ending early one
-  /// period past the four-digit calendar or, going backward, at [_floor].
+  /// period past the four-digit calendar.
   Iterable<DateTime> periodStarts(
     int firstPeriod,
     int reach,
@@ -472,9 +465,7 @@ final class _Cadence {
     final edge = periodOf(edgeDay) + direction.sign;
     for (var i = 0; i < count; i++) {
       final k = first + i * step;
-      if (direction.precedes(edge, k) || (_floor != null && k < _floor)) {
-        return;
-      }
+      if (direction.precedes(edge, k)) return;
       yield startOf(k);
     }
   }

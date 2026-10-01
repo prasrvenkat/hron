@@ -11,7 +11,7 @@ const minutesPerHour = 60;
 
 const hoursPerDay = 24;
 
-const minutesPerDay = hoursPerDay * minutesPerHour;
+const _minutesPerDay = hoursPerDay * minutesPerHour;
 
 int minuteOfDay(TimeOfDay time) => time.hour * minutesPerHour + time.minute;
 
@@ -21,7 +21,7 @@ DateTime dateOf(TZDateTime t) => DateTime.utc(t.year, t.month, t.day);
 /// [t]'s wall-clock time in minutes after midnight on [date]: negative when
 /// [t] falls on an earlier date, a day or more when on a later one.
 int minutesAfterMidnight(DateTime date, TZDateTime t) =>
-    daysBetween(date, dateOf(t)) * minutesPerDay + _wallMinute(t);
+    daysBetween(date, dateOf(t)) * _minutesPerDay + _wallMinute(t);
 
 TZDateTime startOfMinute(TZDateTime t) => t.subtract(
   Duration(
