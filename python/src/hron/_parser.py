@@ -17,6 +17,7 @@ from ._ast import (
     DaysTarget,
     ExceptionSpec,
     IntervalRepeat,
+    IntervalUnit,
     IsoDate,
     IsoException,
     IsoUntil,
@@ -37,7 +38,6 @@ from ._ast import (
     SingleDateExpr,
     SingleDay,
     TimeOfDay,
-    UntilSpec,
     Weekday,
     WeekRepeat,
     YearDateTarget,
@@ -45,6 +45,7 @@ from ._ast import (
     YearLastWeekdayTarget,
     YearOrdinalWeekdayTarget,
     YearRepeat,
+    YearTarget,
     new_schedule_data,
 )
 from ._error import HronError, Span
@@ -68,7 +69,6 @@ from ._lexer import (
     TNumber,
     TOf,
     Token,
-    TokenKind,
     TOn,
     TOrdinal,
     TOrdinalNumber,
@@ -86,7 +86,55 @@ from ._lexer import (
     tokenize,
 )
 
-_MAX_INTERVAL = 2147483647
+
+class _Expected:
+    """The `{what}` of each `expected {what}, got ...` error, one per phrase in the position
+    table of spec/README.md, "Parse errors"."""
+
+    EVERY_OR_ON = "'every' or 'on'"
+    REPEATER = "'day', 'weekday', 'weekend', a day name, 'week', 'month', 'year' or a number"
+    UNIT = "a unit ('min', 'hours', 'days', 'weeks', 'months' or 'years')"
+    AT = "'at'"
+    TIME = "a time (HH:MM)"
+    FROM = "'from'"
+    TO = "'to'"
+    DAY_TARGET = "'day', 'weekday', 'weekend' or a day name"
+    ON = "'on'"
+    DAY_NAME = "a day name"
+    THE = "'the'"
+    MONTH_TARGET = (
+        "a day such as 15th, 'last', an ordinal such as 'first', 'next', 'previous' or 'nearest'"
+    )
+    MONTH_LAST = "'day', 'weekday' or a day name"
+    NEAREST = "'nearest'"
+    WEEKDAY = "'weekday'"
+    DAY_OF_MONTH = "a day such as 15th"
+    YEAR_TARGET = "a month name or 'the'"
+    YEAR_THE = "a day such as 15th, 'last' or an ordinal such as 'first'"
+    YEAR_LAST = "'weekday' or a day name"
+    OF = "'of'"
+    MONTH_NAME = "a month name"
+    DAY_NUMBER = "a day number"
+    DATE = "a date (YYYY-MM-DD, or a month and day)"
+    ISO_DATE = "a date (YYYY-MM-DD)"
+    TIMEZONE = "a timezone"
+
+
+_CLAUSE_ORDER: tuple[tuple[type, str], ...] = (
+    (TExcept, "except"),
+    (TUntil, "until"),
+    (TStarting, "starting"),
+    (TDuring, "during"),
+    (TIn, "in"),
+)
+
+_MONTH_LENGTHS = {
+    MonthName.FEB: 29,
+    MonthName.APR: 30,
+    MonthName.JUN: 30,
+    MonthName.SEP: 30,
+    MonthName.NOV: 30,
+}
 
 
 @functools.cache
@@ -94,6 +142,7 @@ def _timezones_by_lowercase_name() -> dict[str, str]:
     names = {
         name.lower(): name
         for name in zoneinfo.available_timezones()
+        # System zoneinfo directories that are not IANA names of their own.
         if "/" in name and not name.startswith(("SystemV/", "posix/", "right/"))
     }
     return names | {"utc": "UTC"}
@@ -104,624 +153,464 @@ class _Parser:
         self._tokens = tokens
         self._pos = 0
         self._input = input_text
+        self._until_span: Span | None = None
 
     def peek(self) -> Token | None:
-        if self._pos < len(self._tokens):
-            return self._tokens[self._pos]
-        return None
+        return self._tokens[self._pos] if self._pos < len(self._tokens) else None
 
-    def peek_kind(self) -> TokenKind | None:
-        tok = self.peek()
-        return tok.kind if tok else None
+    def _peek_kind(self) -> object:
+        token = self.peek()
+        return token.kind if token else None
 
-    def advance(self) -> Token | None:
-        tok = self.peek()
-        if tok:
+    def _advance(self) -> Token:
+        token = self._tokens[self._pos]
+        self._pos += 1
+        return token
+
+    def _previous(self) -> Token:
+        return self._tokens[self._pos - 1]
+
+    def _eat(self, kind: type) -> bool:
+        found = isinstance(self._peek_kind(), kind)
+        if found:
             self._pos += 1
-        return tok
+        return found
 
-    def current_span(self) -> Span:
-        tok = self.peek()
-        if tok:
-            return tok.span
-        if self._tokens:
-            last = self._tokens[-1]
-            return Span(last.span.end, last.span.end)
-        return Span(0, 0)
+    def _expect(self, kind: type, what: str) -> None:
+        if not self._eat(kind):
+            raise self._expected(what)
 
-    def _error(self, message: str, span: Span) -> HronError:
-        return HronError.parse(message, span, self._input)
+    def _text(self, token: Token) -> str:
+        return self._input[token.span.start : token.span.end]
 
-    def _error_at_end(self, message: str) -> HronError:
-        if self._tokens:
-            end = self._tokens[-1].span.end
-            span = Span(end, end)
-        else:
-            span = Span(0, 0)
-        return HronError.parse(message, span, self._input)
+    def _error(self, message: str, start: int, end: int) -> HronError:
+        # Python strings index code points, so token offsets are already the spec's unit.
+        return HronError.parse(message, Span(start, end), self._input)
 
-    def _consume(self, expected: str, check: type) -> Token:
-        span = self.current_span()
-        tok = self.peek()
-        if tok and isinstance(tok.kind, check):
-            self._pos += 1
-            return tok
-        if tok:
-            raise self._error(f"expected {expected}, got {type(tok.kind).__name__}", span)
-        raise self._error_at_end(f"expected {expected}")
+    def _expected(self, what: str) -> HronError:
+        token = self.peek()
+        if token is not None:
+            message = f"expected {what}, got '{self._text(token)}'"
+            return self._error(message, token.span.start, token.span.end)
+        end = self._tokens[-1].span.end if self._tokens else 0
+        return self._error(f"expected {what}, got end of input", end, end)
 
-    def parse_expression(self) -> ScheduleData:
-        span = self.current_span()
-        kind = self.peek_kind()
+    def parse_expression(self) -> ScheduleExpr:
+        if self._eat(TEvery):
+            return self._parse_every()
+        if self._eat(TOn):
+            return self._parse_on()
+        raise self._expected(_Expected.EVERY_OR_ON)
 
-        match kind:
-            case TEvery():
-                self.advance()
-                expr = self._parse_every()
-            case TOn():
-                self.advance()
-                expr = self._parse_on()
-            case _:
-                raise self._error("expected 'every' or 'on'", span)
-
-        return self._parse_trailing_clauses(expr)
-
-    def _parse_trailing_clauses(self, expr: ScheduleExpr) -> ScheduleData:
+    def parse_clauses(self, expr: ScheduleExpr) -> ScheduleData:
         schedule = new_schedule_data(expr)
 
-        if isinstance(self.peek_kind(), TExcept):
-            self.advance()
+        if self._eat(TExcept):
             schedule.except_ = tuple(self._parse_exception_list())
 
-        until_span = self.current_span()
-        if isinstance(self.peek_kind(), TUntil):
-            self.advance()
-            schedule.until = self._parse_until_spec()
-            until_span = Span(until_span.start, self._tokens[self._pos - 1].span.end)
+        if isinstance(self._peek_kind(), TUntil):
+            until = self._advance()
+            match self._parse_date():
+                case IsoDate(date=date):
+                    schedule.until = IsoUntil(date)
+                case NamedDate(month=month, day=day):
+                    schedule.until = NamedUntil(month, day)
+            self._until_span = Span(until.span.start, self._previous().span.end)
 
-        if isinstance(self.peek_kind(), TStarting):
-            self.advance()
-            k = self.peek_kind()
-            if isinstance(k, TIsoDate):
-                self._validate_iso_date(k.date)
-                schedule.anchor = k.date
-                self.advance()
-            else:
-                raise self._error(
-                    "expected ISO date (YYYY-MM-DD) after 'starting'", self.current_span()
-                )
+        if self._eat(TStarting):
+            if not isinstance(self._peek_kind(), TIsoDate):
+                raise self._expected(_Expected.ISO_DATE)
+            schedule.anchor = self._iso_date(self._advance())
 
-        if isinstance(schedule.until, NamedUntil) and schedule.anchor is None:
-            until = schedule.until
-            raise HronError.parse(
-                f"'until {until.month.value} {until.day}' has no year: add a starting date,"
-                " or use an ISO date such as 'until YYYY-MM-DD'",
-                until_span,
-                self._input,
-                suggestion=f"until {until.month.value} {until.day} starting YYYY-MM-DD",
-            )
-
-        if isinstance(self.peek_kind(), TDuring):
-            self.advance()
+        if self._eat(TDuring):
             schedule.during = tuple(self._parse_month_list())
 
-        if isinstance(self.peek_kind(), TIn):
-            self.advance()
-            k = self.peek_kind()
-            if isinstance(k, TTimezone):
-                schedule.timezone = self._canonical_timezone(k.tz)
-                self.advance()
-            else:
-                raise self._error("expected timezone after 'in'", self.current_span())
+        if self._eat(TIn):
+            if not isinstance(self._peek_kind(), TTimezone):
+                raise self._expected(_Expected.TIMEZONE)
+            schedule.timezone = self._timezone(self._advance())
 
         return schedule
 
-    def _canonical_timezone(self, name: str) -> str:
-        # Lowercasing non-ASCII can produce ASCII (the Kelvin sign becomes "k").
-        canonical = _timezones_by_lowercase_name().get(name.lower()) if name.isascii() else None
-        if canonical is None:
-            raise self._error(
-                f"unknown timezone '{name}': use UTC or an IANA name such as America/New_York",
-                self.current_span(),
+    def leftover(self, schedule: ScheduleData) -> HronError:
+        token = self._tokens[self._pos]
+        # Every clause holds at least one item, so a clause was read exactly when its field is set.
+        read = [
+            bool(schedule.except_),
+            schedule.until is not None,
+            schedule.anchor is not None,
+            bool(schedule.during),
+            schedule.timezone is not None,
+        ]
+        clause = next(
+            (i for i, (kind, _) in enumerate(_CLAUSE_ORDER) if isinstance(token.kind, kind)), None
+        )
+        last_read = max((i for i, was_read in enumerate(read) if was_read), default=None)
+        if clause is not None and read[clause]:
+            message = f"duplicate '{_CLAUSE_ORDER[clause][1]}' clause"
+        elif clause is not None and last_read is not None:
+            keyword, last = _CLAUSE_ORDER[clause][1], _CLAUSE_ORDER[last_read][1]
+            message = f"'{keyword}' must come before '{last}'"
+        else:
+            message = f"unexpected '{self._text(token)}' after the schedule"
+        return self._error(message, token.span.start, token.span.end)
+
+    def check_named_until(self, schedule: ScheduleData) -> None:
+        until = schedule.until
+        if isinstance(until, NamedUntil) and schedule.anchor is None and self._until_span:
+            month, day = until.month.value, until.day
+            raise HronError.parse(
+                f"until {month} {day} has no year: add a starting date, or use an ISO date",
+                self._until_span,
+                self._input,
+                suggestion=f"until {month} {day} starting YYYY-MM-DD",
             )
-        return canonical
 
     def _parse_exception_list(self) -> list[ExceptionSpec]:
-        exceptions: list[ExceptionSpec] = [self._parse_exception()]
-        while isinstance(self.peek_kind(), TComma):
-            self.advance()
+        exceptions = [self._parse_exception()]
+        while self._eat(TComma):
             exceptions.append(self._parse_exception())
         return exceptions
 
-    def _validate_iso_date(self, date_str: str) -> None:
-        try:
-            datetime.date.fromisoformat(date_str)
-        except ValueError:
-            raise self._error(f"invalid date: {date_str}", self.current_span()) from None
-
     def _parse_exception(self) -> ExceptionSpec:
-        k = self.peek_kind()
-        if isinstance(k, TIsoDate):
-            self._validate_iso_date(k.date)
-            self.advance()
-            return IsoException(k.date)
-        if isinstance(k, TMonthName):
-            month = k.name
-            self.advance()
-            day_pos = self.current_span().start
-            day = self._parse_day_number("expected day number after month name in exception")
-            self._validate_named_date(month, day, day_pos)
-            return NamedException(month, day)
-        raise self._error("expected ISO date or month-day in exception", self.current_span())
+        date = self._parse_date()
+        if isinstance(date, IsoDate):
+            return IsoException(date.date)
+        return NamedException(date.month, date.day)
 
-    def _parse_until_spec(self) -> UntilSpec:
-        k = self.peek_kind()
-        if isinstance(k, TIsoDate):
-            self._validate_iso_date(k.date)
-            self.advance()
-            return IsoUntil(k.date)
-        if isinstance(k, TMonthName):
-            month = k.name
-            self.advance()
-            day_pos = self.current_span().start
-            day = self._parse_day_number("expected day number after month name in until")
-            self._validate_named_date(month, day, day_pos)
-            return NamedUntil(month, day)
-        raise self._error("expected ISO date or month-day after 'until'", self.current_span())
+    def _parse_date(self) -> DateSpec:
+        kind = self._peek_kind()
+        if isinstance(kind, TIsoDate):
+            return IsoDate(self._iso_date(self._advance()))
+        if isinstance(kind, TMonthName):
+            self._advance()
+            return NamedDate(kind.name, self._parse_day_of(kind.name))
+        raise self._expected(_Expected.DATE)
 
-    def _validate_named_date(self, month: MonthName, day: int, pos: int) -> None:
-        max_days = {
-            MonthName.JAN: 31,
-            MonthName.FEB: 29,
-            MonthName.MAR: 31,
-            MonthName.APR: 30,
-            MonthName.MAY: 31,
-            MonthName.JUN: 30,
-            MonthName.JUL: 31,
-            MonthName.AUG: 31,
-            MonthName.SEP: 30,
-            MonthName.OCT: 31,
-            MonthName.NOV: 30,
-            MonthName.DEC: 31,
-        }
-        mx = max_days[month]
-        if day > mx:
+    def _iso_date(self, token: Token) -> str:
+        text = self._text(token)
+        try:
+            datetime.date.fromisoformat(text)
+        except ValueError:
             raise self._error(
-                f"invalid day {day} for {month.value} (max {mx})",
-                Span(pos, pos),
-            )
+                f"date must be a calendar date from 0001-01-01 to 9999-12-31, got {text}",
+                token.span.start,
+                token.span.end,
+            ) from None
+        return text
 
-    def _parse_day_number(self, error_msg: str) -> int:
-        k = self.peek_kind()
-        if isinstance(k, TNumber):
-            if k.value < 1 or k.value > 31:
-                raise self._error(
-                    f"invalid day number {k.value} (must be 1-31)",
-                    self.current_span(),
-                )
-            self.advance()
-            return k.value
-        if isinstance(k, TOrdinalNumber):
-            if k.value < 1 or k.value > 31:
-                raise self._error(
-                    f"invalid day number {k.value} (must be 1-31)",
-                    self.current_span(),
-                )
-            self.advance()
-            return k.value
-        raise self._error(error_msg, self.current_span())
+    def _timezone(self, token: Token) -> str:
+        """spec/README.md, "Parse-time validation": `UTC` or an IANA Area/Location name in any
+        case, stored with the database's capitalization."""
+        name = self._text(token)
+        # The ASCII check comes first: lowercasing non-ASCII can produce ASCII (Kelvin sign to "k").
+        canonical = _timezones_by_lowercase_name().get(name.lower()) if name.isascii() else None
+        if canonical is None:
+            raise self._error(
+                "timezone must be UTC or an Area/Location name such as America/New_York,"
+                f" got {name}",
+                token.span.start,
+                token.span.end,
+            )
+        return canonical
 
     def _parse_every(self) -> ScheduleExpr:
-        if not self.peek():
-            raise self._error_at_end("expected repeater")
-
-        k = self.peek_kind()
-
-        match k:
-            case TYear():
-                self.advance()
-                return self._parse_year_repeat(1)
+        match self._peek_kind():
             case TDay():
+                self._advance()
                 return self._parse_day_repeat(1, DayFilterEvery())
             case TWeekday():
-                self.advance()
+                self._advance()
                 return self._parse_day_repeat(1, DayFilterWeekday())
             case TWeekend():
-                self.advance()
+                self._advance()
                 return self._parse_day_repeat(1, DayFilterWeekend())
             case TDayName():
                 days = self._parse_day_list()
                 return self._parse_day_repeat(1, DayFilterDays(tuple(days)))
             case TWeeks():
-                self.advance()
+                self._advance()
                 return self._parse_week_repeat(1)
             case TMonth():
-                self.advance()
+                self._advance()
                 return self._parse_month_repeat(1)
-            case TNumber():
-                return self._parse_number_repeat()
+            case TYear():
+                self._advance()
+                return self._parse_year_repeat(1)
+            case TNumber(value=interval):
+                return self._parse_number_repeat(interval)
             case _:
-                raise self._error(
-                    "expected day, weekday, weekend, year, week, day name, month,"
-                    " or number after 'every'",
-                    self.current_span(),
-                )
+                raise self._expected(_Expected.REPEATER)
 
     def _parse_day_repeat(self, interval: int, days: DayFilter) -> ScheduleExpr:
-        if isinstance(days, DayFilterEvery):
-            self._consume("'day'", TDay)
-        self._consume("'at'", TAt)
-        times = self._parse_time_list()
-        return DayRepeat(interval, days, tuple(times))
+        self._expect(TAt, _Expected.AT)
+        return DayRepeat(interval, days, tuple(self._parse_time_list()))
 
-    def _parse_number_repeat(self) -> ScheduleExpr:
-        span = self.current_span()
-        k = self.peek_kind()
-        assert isinstance(k, TNumber)
-        num = k.value
-        if num == 0:
-            raise self._error("interval must be at least 1", span)
-        if num > _MAX_INTERVAL:
-            raise self._error(f"interval must be at most {_MAX_INTERVAL}", span)
-        self.advance()
-
-        nk = self.peek_kind()
-        match nk:
-            case TWeeks():
-                self.advance()
-                return self._parse_week_repeat(num)
-            case TIntervalUnit():
-                return self._parse_interval_repeat(num)
-            case TDay():
-                return self._parse_day_repeat(num, DayFilterEvery())
-            case TMonth():
-                self.advance()
-                return self._parse_month_repeat(num)
-            case TYear():
-                self.advance()
-                return self._parse_year_repeat(num)
-            case _:
-                raise self._error(
-                    "expected 'weeks', 'min', 'minutes', 'hour', 'hours',"
-                    " 'day(s)', 'month(s)', or 'year(s)' after number",
-                    self.current_span(),
-                )
-
-    def _parse_interval_repeat(self, interval: int) -> ScheduleExpr:
-        k = self.peek_kind()
-        assert isinstance(k, TIntervalUnit)
-        unit = k.unit
-        self.advance()
-
-        self._consume("'from'", TFrom)
-        from_time = self._parse_time()
-        self._consume("'to'", TTo)
-        to_span = self.current_span()
-        to_time = self._parse_time()
-        if (from_time.hour, from_time.minute) > (to_time.hour, to_time.minute):
+    def _parse_number_repeat(self, interval: int) -> ScheduleExpr:
+        number = self._advance()
+        if interval == 0:
             raise self._error(
-                f"'from' {from_time} is later than 'to' {to_time}: a window cannot cross midnight",
-                to_span,
+                f"interval must be 1-2147483647, got {self._text(number)}",
+                number.span.start,
+                number.span.end,
             )
 
-        day_filter: DayFilter | None = None
-        if isinstance(self.peek_kind(), TOn):
-            self.advance()
-            day_filter = self._parse_day_target()
+        match self._peek_kind():
+            case TWeeks():
+                self._advance()
+                return self._parse_week_repeat(interval)
+            case TIntervalUnit(unit=unit):
+                self._advance()
+                return self._parse_interval_repeat(interval, unit)
+            case TDay():
+                self._advance()
+                return self._parse_day_repeat(interval, DayFilterEvery())
+            case TMonth():
+                self._advance()
+                return self._parse_month_repeat(interval)
+            case TYear():
+                self._advance()
+                return self._parse_year_repeat(interval)
+            case _:
+                raise self._expected(_Expected.UNIT)
 
+    def _parse_interval_repeat(self, interval: int, unit: IntervalUnit) -> ScheduleExpr:
+        self._expect(TFrom, _Expected.FROM)
+        from_time = self._parse_time()
+        from_token = self._previous()
+        self._expect(TTo, _Expected.TO)
+        to_time = self._parse_time()
+        to_token = self._previous()
+        if (from_time.hour, from_time.minute) > (to_time.hour, to_time.minute):
+            raise self._error(
+                f"time window must not run backwards: {self._text(from_token)} to"
+                f" {self._text(to_token)} (a window cannot cross midnight)",
+                from_token.span.start,
+                to_token.span.end,
+            )
+
+        day_filter = self._parse_day_target() if self._eat(TOn) else None
         return IntervalRepeat(interval, unit, from_time, to_time, day_filter)
 
     def _parse_week_repeat(self, interval: int) -> ScheduleExpr:
-        self._consume("'on'", TOn)
+        self._expect(TOn, _Expected.ON)
         days = self._parse_day_list()
-        self._consume("'at'", TAt)
-        times = self._parse_time_list()
-        return WeekRepeat(interval, tuple(days), tuple(times))
+        self._expect(TAt, _Expected.AT)
+        return WeekRepeat(interval, tuple(days), tuple(self._parse_time_list()))
 
     def _parse_month_repeat(self, interval: int) -> ScheduleExpr:
-        self._consume("'on'", TOn)
-        self._consume("'the'", TThe)
+        self._expect(TOn, _Expected.ON)
+        self._expect(TThe, _Expected.THE)
 
-        k = self.peek_kind()
+        target: MonthTarget
+        match self._peek_kind():
+            case TLast():
+                self._advance()
+                match self._peek_kind():
+                    case TDay():
+                        target = LastDayTarget()
+                    case TWeekday():
+                        target = LastWeekdayTarget()
+                    case TDayName(name=weekday):
+                        target = OrdinalWeekdayTarget(OrdinalPosition.LAST, weekday)
+                    case _:
+                        raise self._expected(_Expected.MONTH_LAST)
+                self._advance()
+            case TOrdinal(name=ordinal):
+                self._advance()
+                target = OrdinalWeekdayTarget(ordinal, self._parse_day_name())
+            case TOrdinalNumber():
+                target = DaysTarget(tuple(self._parse_ordinal_day_list()))
+            case TNext() | TPrevious() | TNearest():
+                target = self._parse_nearest_weekday_target()
+            case _:
+                raise self._expected(_Expected.MONTH_TARGET)
 
-        if isinstance(k, TLast):
-            self.advance()
-            nk = self.peek_kind()
-            if isinstance(nk, TDay):
-                self.advance()
-                target: MonthTarget = LastDayTarget()
-            elif isinstance(nk, TWeekday):
-                self.advance()
-                target = LastWeekdayTarget()
-            elif isinstance(nk, TDayName):
-                weekday = nk.name
-                self.advance()
-                target = OrdinalWeekdayTarget(OrdinalPosition.LAST, weekday)
-            else:
-                raise self._error(
-                    "expected 'day', 'weekday', or day name after 'last'", self.current_span()
-                )
-        elif isinstance(k, TOrdinal):
-            ordinal = self._parse_ordinal_position()
-            nk = self.peek_kind()
-            if isinstance(nk, TDayName):
-                weekday = nk.name
-                self.advance()
-                target = OrdinalWeekdayTarget(ordinal, weekday)
-            else:
-                raise self._error("expected day name after ordinal", self.current_span())
-        elif isinstance(k, TOrdinalNumber):
-            specs = self._parse_ordinal_day_list()
-            target = DaysTarget(tuple(specs))
-        elif isinstance(k, (TNext, TPrevious, TNearest)):
-            target = self._parse_nearest_weekday_target()
-        else:
-            raise self._error(
-                "expected ordinal day, ordinal position, 'last',"
-                " or '[next|previous] nearest' after 'the'",
-                self.current_span(),
-            )
-
-        self._consume("'at'", TAt)
-        times = self._parse_time_list()
-        return MonthRepeat(interval, target, tuple(times))
+        self._expect(TAt, _Expected.AT)
+        return MonthRepeat(interval, target, tuple(self._parse_time_list()))
 
     def _parse_nearest_weekday_target(self) -> NearestWeekdayTarget:
-        k = self.peek_kind()
         direction: NearestDirection | None = None
-
-        if isinstance(k, TNext):
-            self.advance()
+        if self._eat(TNext):
             direction = NearestDirection.NEXT
-        elif isinstance(k, TPrevious):
-            self.advance()
+        elif self._eat(TPrevious):
             direction = NearestDirection.PREVIOUS
-
-        self._consume("'nearest'", TNearest)
-        self._consume("'weekday'", TWeekday)
-        self._consume("'to'", TTo)
-
-        day = self._parse_ordinal_day_number()
+        self._expect(TNearest, _Expected.NEAREST)
+        self._expect(TWeekday, _Expected.WEEKDAY)
+        self._expect(TTo, _Expected.TO)
+        day, _ = self._parse_ordinal_day()
         return NearestWeekdayTarget(day, direction)
 
-    def _parse_ordinal_day_number(self) -> int:
-        k = self.peek_kind()
-        if isinstance(k, TOrdinalNumber):
-            if k.value < 1 or k.value > 31:
-                raise self._error(
-                    f"invalid day number {k.value} (must be 1-31)",
-                    self.current_span(),
-                )
-            self.advance()
-            return k.value
-        raise self._error("expected ordinal day number", self.current_span())
-
-    def _parse_year_repeat(self, interval: int) -> ScheduleExpr:
-        self._consume("'on'", TOn)
-
-        k = self.peek_kind()
-
-        if isinstance(k, TThe):
-            self.advance()
-            target = self._parse_year_target_after_the()
-        elif isinstance(k, TMonthName):
-            month = k.name
-            self.advance()
-            day_pos = self.current_span().start
-            day = self._parse_day_number("expected day number after month name")
-            self._validate_named_date(month, day, day_pos)
-            target = YearDateTarget(month, day)
-        else:
-            raise self._error(
-                "expected month name or 'the' after 'every year on'",
-                self.current_span(),
-            )
-
-        self._consume("'at'", TAt)
-        times = self._parse_time_list()
-        return YearRepeat(interval, target, tuple(times))
-
-    def _parse_year_target_after_the(
-        self,
-    ) -> YearDateTarget | YearOrdinalWeekdayTarget | YearDayOfMonthTarget | YearLastWeekdayTarget:
-        k = self.peek_kind()
-
-        if isinstance(k, TLast):
-            self.advance()
-            nk = self.peek_kind()
-            if isinstance(nk, TWeekday):
-                self.advance()
-                self._consume("'of'", TOf)
-                month = self._parse_month_name_token()
-                return YearLastWeekdayTarget(month)
-            if isinstance(nk, TDayName):
-                weekday = nk.name
-                self.advance()
-                self._consume("'of'", TOf)
-                month = self._parse_month_name_token()
-                return YearOrdinalWeekdayTarget(OrdinalPosition.LAST, weekday, month)
-            raise self._error(
-                "expected 'weekday' or day name after 'last' in yearly expression",
-                self.current_span(),
-            )
-
-        if isinstance(k, TOrdinal):
-            ordinal = self._parse_ordinal_position()
-            nk = self.peek_kind()
-            if isinstance(nk, TDayName):
-                weekday = nk.name
-                self.advance()
-                self._consume("'of'", TOf)
-                month = self._parse_month_name_token()
-                return YearOrdinalWeekdayTarget(ordinal, weekday, month)
-            raise self._error(
-                "expected day name after ordinal in yearly expression",
-                self.current_span(),
-            )
-
-        if isinstance(k, TOrdinalNumber):
-            day = k.value
-            if day < 1 or day > 31:
-                raise self._error(f"invalid day number {day} (must be 1-31)", self.current_span())
-            day_pos = self.current_span().start
-            self.advance()
-            self._consume("'of'", TOf)
-            month = self._parse_month_name_token()
-            self._validate_named_date(month, day, day_pos)
-            return YearDayOfMonthTarget(day, month)
-
-        raise self._error(
-            "expected ordinal, day number, or 'last' after 'the' in yearly expression",
-            self.current_span(),
-        )
-
-    def _parse_month_name_token(self) -> MonthName:
-        k = self.peek_kind()
-        if isinstance(k, TMonthName):
-            self.advance()
-            return k.name
-        raise self._error("expected month name", self.current_span())
-
-    def _parse_ordinal_position(self) -> OrdinalPosition:
-        span = self.current_span()
-        k = self.peek_kind()
-        if isinstance(k, TOrdinal):
-            self.advance()
-            return k.name
-        if isinstance(k, TLast):
-            self.advance()
-            return OrdinalPosition.LAST
-        raise self._error("expected ordinal (first, second, third, fourth, fifth, last)", span)
-
-    def _parse_on(self) -> ScheduleExpr:
-        date = self._parse_date_target()
-        self._consume("'at'", TAt)
-        times = self._parse_time_list()
-        return SingleDateExpr(date, tuple(times))
-
-    def _parse_date_target(self) -> DateSpec:
-        k = self.peek_kind()
-        if isinstance(k, TIsoDate):
-            self._validate_iso_date(k.date)
-            self.advance()
-            return IsoDate(k.date)
-        if isinstance(k, TMonthName):
-            month = k.name
-            self.advance()
-            day_pos = self.current_span().start
-            day = self._parse_day_number("expected day number after month name")
-            self._validate_named_date(month, day, day_pos)
-            return NamedDate(month, day)
-        raise self._error("expected date (ISO date or month name)", self.current_span())
-
-    def _parse_day_target(self) -> DayFilter:
-        k = self.peek_kind()
-        match k:
-            case TDay():
-                self.advance()
-                return DayFilterEvery()
-            case TWeekday():
-                self.advance()
-                return DayFilterWeekday()
-            case TWeekend():
-                self.advance()
-                return DayFilterWeekend()
-            case TDayName():
-                days = self._parse_day_list()
-                return DayFilterDays(tuple(days))
-            case _:
-                raise self._error(
-                    "expected 'day', 'weekday', 'weekend', or day name",
-                    self.current_span(),
-                )
-
-    def _parse_day_list(self) -> list[Weekday]:
-        k = self.peek_kind()
-        if not isinstance(k, TDayName):
-            raise self._error("expected day name", self.current_span())
-        days: list[Weekday] = [k.name]
-        self.advance()
-
-        while isinstance(self.peek_kind(), TComma):
-            self.advance()
-            nk = self.peek_kind()
-            if not isinstance(nk, TDayName):
-                raise self._error("expected day name after ','", self.current_span())
-            days.append(nk.name)
-            self.advance()
-        return days
-
     def _parse_ordinal_day_list(self) -> list[DayOfMonthSpec]:
-        specs: list[DayOfMonthSpec] = [self._parse_ordinal_day_spec()]
-        while isinstance(self.peek_kind(), TComma):
-            self.advance()
+        specs = [self._parse_ordinal_day_spec()]
+        while self._eat(TComma):
             specs.append(self._parse_ordinal_day_spec())
         return specs
 
     def _parse_ordinal_day_spec(self) -> DayOfMonthSpec:
-        k = self.peek_kind()
-        if not isinstance(k, TOrdinalNumber):
-            raise self._error("expected ordinal day number", self.current_span())
-        start = k.value
-        if start < 1 or start > 31:
-            raise self._error(f"invalid day number {start} (must be 1-31)", self.current_span())
-        self.advance()
+        start, start_token = self._parse_ordinal_day()
+        if not self._eat(TTo):
+            return SingleDay(start)
+        end, end_token = self._parse_ordinal_day()
+        if start > end:
+            raise self._error(
+                f"day range must not run backwards: {self._text(start_token)} to"
+                f" {self._text(end_token)}",
+                start_token.span.start,
+                end_token.span.end,
+            )
+        return DayRange(start, end)
 
-        if isinstance(self.peek_kind(), TTo):
-            self.advance()
-            nk = self.peek_kind()
-            if not isinstance(nk, TOrdinalNumber):
-                raise self._error("expected ordinal day number after 'to'", self.current_span())
-            end = nk.value
-            if end < 1 or end > 31:
-                raise self._error(f"invalid day number {end} (must be 1-31)", self.current_span())
-            self.advance()
-            if start > end:
-                raise self._error(
-                    f"invalid day range: {start} to {end} (start must be <= end)",
-                    self.current_span(),
-                )
-            return DayRange(start, end)
+    def _parse_ordinal_day(self) -> tuple[int, Token]:
+        kind = self._peek_kind()
+        if not isinstance(kind, TOrdinalNumber):
+            raise self._expected(_Expected.DAY_OF_MONTH)
+        token = self._advance()
+        return self._day_of_month(kind.value, token), token
 
-        return SingleDay(start)
+    def _parse_day_of(self, month: MonthName) -> int:
+        kind = self._peek_kind()
+        if not isinstance(kind, TNumber | TOrdinalNumber):
+            raise self._expected(_Expected.DAY_NUMBER)
+        token = self._advance()
+        day = self._day_of_month(kind.value, token)
+        self._check_day_in_month(day, token, month)
+        return day
+
+    def _day_of_month(self, n: int, token: Token) -> int:
+        if not 1 <= n <= 31:
+            raise self._error(
+                f"day must be 1-31, got {self._text(token)}", token.span.start, token.span.end
+            )
+        return n
+
+    def _check_day_in_month(self, day: int, token: Token, month: MonthName) -> None:
+        length = _MONTH_LENGTHS.get(month, 31)
+        if day > length:
+            raise self._error(
+                f"day must be 1-{length} for {month.value}, got {self._text(token)}",
+                token.span.start,
+                token.span.end,
+            )
+
+    def _parse_year_repeat(self, interval: int) -> ScheduleExpr:
+        self._expect(TOn, _Expected.ON)
+
+        target: YearTarget
+        match self._peek_kind():
+            case TThe():
+                self._advance()
+                target = self._parse_year_target_after_the()
+            case TMonthName(name=month):
+                self._advance()
+                target = YearDateTarget(month, self._parse_day_of(month))
+            case _:
+                raise self._expected(_Expected.YEAR_TARGET)
+
+        self._expect(TAt, _Expected.AT)
+        return YearRepeat(interval, target, tuple(self._parse_time_list()))
+
+    def _parse_year_target_after_the(self) -> YearTarget:
+        match self._peek_kind():
+            case TLast():
+                self._advance()
+                match self._peek_kind():
+                    case TWeekday():
+                        self._advance()
+                        self._expect(TOf, _Expected.OF)
+                        return YearLastWeekdayTarget(self._parse_month_name())
+                    case TDayName(name=weekday):
+                        self._advance()
+                        self._expect(TOf, _Expected.OF)
+                        month = self._parse_month_name()
+                        return YearOrdinalWeekdayTarget(OrdinalPosition.LAST, weekday, month)
+                    case _:
+                        raise self._expected(_Expected.YEAR_LAST)
+            case TOrdinal(name=ordinal):
+                self._advance()
+                weekday = self._parse_day_name()
+                self._expect(TOf, _Expected.OF)
+                month = self._parse_month_name()
+                return YearOrdinalWeekdayTarget(ordinal, weekday, month)
+            case TOrdinalNumber():
+                day, day_token = self._parse_ordinal_day()
+                self._expect(TOf, _Expected.OF)
+                month = self._parse_month_name()
+                self._check_day_in_month(day, day_token, month)
+                return YearDayOfMonthTarget(day, month)
+            case _:
+                raise self._expected(_Expected.YEAR_THE)
+
+    def _parse_month_name(self) -> MonthName:
+        kind = self._peek_kind()
+        if not isinstance(kind, TMonthName):
+            raise self._expected(_Expected.MONTH_NAME)
+        self._advance()
+        return kind.name
 
     def _parse_month_list(self) -> list[MonthName]:
-        months: list[MonthName] = [self._parse_month_name_token()]
-        while isinstance(self.peek_kind(), TComma):
-            self.advance()
-            months.append(self._parse_month_name_token())
+        months = [self._parse_month_name()]
+        while self._eat(TComma):
+            months.append(self._parse_month_name())
         return months
 
+    def _parse_on(self) -> ScheduleExpr:
+        date = self._parse_date()
+        self._expect(TAt, _Expected.AT)
+        return SingleDateExpr(date, tuple(self._parse_time_list()))
+
+    def _parse_day_target(self) -> DayFilter:
+        match self._peek_kind():
+            case TDay():
+                self._advance()
+                return DayFilterEvery()
+            case TWeekday():
+                self._advance()
+                return DayFilterWeekday()
+            case TWeekend():
+                self._advance()
+                return DayFilterWeekend()
+            case TDayName():
+                return DayFilterDays(tuple(self._parse_day_list()))
+            case _:
+                raise self._expected(_Expected.DAY_TARGET)
+
+    def _parse_day_name(self) -> Weekday:
+        kind = self._peek_kind()
+        if not isinstance(kind, TDayName):
+            raise self._expected(_Expected.DAY_NAME)
+        self._advance()
+        return kind.name
+
+    def _parse_day_list(self) -> list[Weekday]:
+        days = [self._parse_day_name()]
+        while self._eat(TComma):
+            days.append(self._parse_day_name())
+        return days
+
     def _parse_time_list(self) -> list[TimeOfDay]:
-        times: list[TimeOfDay] = [self._parse_time()]
-        while isinstance(self.peek_kind(), TComma):
-            self.advance()
+        times = [self._parse_time()]
+        while self._eat(TComma):
             times.append(self._parse_time())
         return times
 
     def _parse_time(self) -> TimeOfDay:
-        span = self.current_span()
-        k = self.peek_kind()
-        if isinstance(k, TTime):
-            self.advance()
-            return TimeOfDay(k.hour, k.minute)
-        raise self._error("expected time (HH:MM)", span)
+        kind = self._peek_kind()
+        if not isinstance(kind, TTime):
+            raise self._expected(_Expected.TIME)
+        self._advance()
+        return TimeOfDay(kind.hour, kind.minute)
 
 
 def parse(input_text: str) -> ScheduleData:
     tokens = tokenize(input_text)
-
     if not tokens:
         raise HronError.parse("empty expression", Span(0, 0), input_text)
 
     parser = _Parser(tokens, input_text)
-    schedule = parser.parse_expression()
-
-    if parser.peek():
-        raise HronError.parse(
-            "unexpected tokens after expression",
-            parser.current_span(),
-            input_text,
-        )
-
+    schedule = parser.parse_clauses(parser.parse_expression())
+    if parser.peek() is not None:
+        raise parser.leftover(schedule)
+    # spec/README.md, "Parse errors": every other error wins over a named until without starting.
+    parser.check_named_until(schedule)
     return schedule

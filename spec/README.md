@@ -216,7 +216,7 @@ These are parse errors, not evaluation errors:
 - **Reversed time range**: `from 17:00 to 09:00`. `from` equal to `to` is valid and gives one slot a day.
 - **Timezone names**: only `UTC` or an `Area/Location` name from the IANA database (`Etc/GMT+5` included). Abbreviations and offsets (`EST`, `GMT`, `Z`, `+05:30`) and unknown names are errors. Names match in any case and display with the IANA capitalization (`in utc` displays `in UTC`, `in america/new_york` displays `in America/New_York`); a link keeps its own name (`in us/eastern` displays `in US/Eastern`). Timezone names are ASCII, so non-ASCII input is rejected (a Kelvin sign is not a `k`), and names under `SystemV/`, `posix/` and `right/` are rejected.
 - **Numbers**: an interval is 1 to 2147483647. Every numeric field rejects values out of its range (including very long digit strings) with a hron error.
-- **ISO dates**: years 0001 to 9999.
+- **ISO dates**: years 0001 to 9999 of the proleptic Gregorian calendar, so `1582-10-10` exists and `1500-02-29` does not.
 
 ### Named `until`
 

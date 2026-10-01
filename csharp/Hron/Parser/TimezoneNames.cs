@@ -20,11 +20,15 @@ internal static class TimezoneNames
     /// </summary>
     public static string? Canonical(string name)
     {
+        if (!Ascii.IsValid(name))
+        {
+            return null;
+        }
         if (name.Equals("UTC", StringComparison.OrdinalIgnoreCase))
         {
             return "UTC";
         }
-        if (!Ascii.IsValid(name) || !name.Contains('/'))
+        if (!name.Contains('/'))
         {
             return null;
         }

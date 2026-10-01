@@ -91,22 +91,46 @@ public class ConformanceTest {
     return tests.stream();
   }
 
+  private static final Set<String> ERROR_FIELDS = Set.of("kind", "message", "span", "suggestion");
+
   @TestFactory
   Stream<DynamicTest> parseErrorTests() {
     return cases(
         SPEC.get("parse_errors"),
         "parse_errors",
-        Set.of("input", "error_contains"),
+        Set.of("input", "error", "display"),
         (tc, label) -> {
           String input = text(tc, "input", label);
+          JsonNode expected = required(tc, "error", label);
+          List<String> unknown = new ArrayList<>();
+          expected
+              .fieldNames()
+              .forEachRemaining(
+                  field -> {
+                    if (!ERROR_FIELDS.contains(field)) unknown.add(field);
+                  });
+          assertEquals(List.of(), unknown, label + ": unknown fields in error");
+          JsonNode span = required(expected, "span", label);
+          assertTrue(
+              span.isArray() && span.size() == 2 && span.get(0).isInt() && span.get(1).isInt(),
+              label + ": span is not [start, end]: " + span);
+
           HronException e =
               assertThrows(HronException.class, () -> Schedule.parse(input), label + ": " + input);
+          assertEquals(text(expected, "kind", label), e.kind().value(), label + ": kind");
+          assertEquals(text(expected, "message", label), e.getMessage(), label + ": message");
+          assertEquals(
+              Optional.of(new Span(span.get(0).asInt(), span.get(1).asInt())),
+              e.span(),
+              label + ": span");
+          Optional<String> suggestion =
+              expected.has("suggestion")
+                  ? Optional.of(expected.get("suggestion").asText())
+                  : Optional.empty();
+          assertEquals(suggestion, e.suggestion(), label + ": suggestion");
           assertFalse(Schedule.validate(input), label + ": validate(" + input + ")");
-          if (tc.has("error_contains")) {
-            String expected = tc.get("error_contains").asText();
-            assertTrue(
-                e.getMessage().contains(expected),
-                label + ": error '" + e.getMessage() + "' does not contain '" + expected + "'");
+          if (tc.has("display")) {
+            assertEquals(text(tc, "display", label), e.displayRich(), label + ": displayRich");
           }
         });
   }

@@ -108,19 +108,36 @@ has the full rules and every error message.
 
 ## Error Handling
 
+`Schedule.Parse` throws a `HronException` of kind `ErrorKind.Lex` or `ErrorKind.Parse` with the
+exact message of the spec, the `Input`, and a `Span` that counts Unicode code points, not UTF-16
+`char`s. A parse error may carry a `Suggestion`. `DisplayRich()` renders the error with carets
+under the span:
+
 ```csharp
 try
 {
-    var schedule = Schedule.Parse("invalid expression");
+    Schedule.Parse("every weekday at 09:00 until dec 31");
 }
 catch (HronException ex)
 {
-    Console.WriteLine(ex.Kind);        // ErrorKind.Parse
-    Console.WriteLine(ex.Message);     // Error description
-    Console.WriteLine(ex.Span);        // Location in input
-    Console.WriteLine(ex.DisplayRich()); // Formatted error with underline
+    Console.WriteLine(ex.Kind);          // Parse
+    Console.WriteLine(ex.Message);       // until dec 31 has no year: add a starting date, or use an ISO date
+    Console.WriteLine(ex.Span);          // Span { Start = 23, End = 35, Length = 12 }
+    Console.WriteLine(ex.Suggestion);    // until dec 31 starting YYYY-MM-DD
+    Console.WriteLine(ex.DisplayRich());
 }
 ```
+
+```text
+error: until dec 31 has no year: add a starting date, or use an ISO date
+  every weekday at 09:00 until dec 31
+                         ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"
+```
+
+A surrogate pair is one code point, and so is a lone surrogate. To turn a span into a `char` index,
+walk the input and step over two `char`s wherever `char.IsSurrogatePair(input, i)` is true.
+`StringInfo` counts graphemes and `EnumerateRunes` turns a lone surrogate into U+FFFD, so neither
+gives the same count.
 
 ## Validation
 

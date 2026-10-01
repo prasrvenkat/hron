@@ -6,11 +6,16 @@ from typing import Literal
 
 @dataclass(frozen=True, slots=True)
 class Span:
+    """The part of the input an error points at: `[start, end)` counted in code points, which
+    is how Python indexes a `str`, so `input_text[span.start:span.end]` is the spanned text."""
+
     start: int
     end: int
 
 
 HronErrorKind = Literal["lex", "parse", "eval", "cron"]
+
+_LINE_BREAKING = str.maketrans("\t\r\n", "   ")
 
 
 class HronError(Exception):
@@ -59,13 +64,15 @@ class HronError(Exception):
         return cls("cron", message)
 
     def display_rich(self) -> str:
-        if self.kind in ("lex", "parse") and self.span and self.input_text:
-            out = f"error: {self}\n"
-            out += f"  {self.input_text}\n"
-            padding = " " * (self.span.start + 2)
-            underline = "^" * max(self.span.end - self.span.start, 1)
-            out += padding + underline
-            if self.suggestion:
-                out += f' try: "{self.suggestion}"'
-            return out
-        return f"error: {self}"
+        """The message, then for lex and parse errors the input and a line of carets under the
+        span, and any suggestion as ` try: "..."`. No trailing newline."""
+        if self.span is None or self.input_text is None:
+            return f"error: {self}"
+        # A tab, CR or LF would move the input off the line the carets are aligned to.
+        shown = self.input_text.translate(_LINE_BREAKING)
+        spaces = " " * self.span.start
+        carets = "^" * max(self.span.end - self.span.start, 1)
+        out = f"error: {self}\n  {shown}\n  {spaces}{carets}"
+        if self.suggestion is not None:
+            out += f' try: "{self.suggestion}"'
+        return out

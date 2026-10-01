@@ -3,33 +3,665 @@ import type {
   DateSpec,
   DayFilter,
   DayOfMonthSpec,
-  Exception,
   IntervalUnit,
   MonthName,
   MonthTarget,
   NearestDirection,
-  OrdinalPosition,
   ScheduleData,
   ScheduleExpr,
   TimeOfDay,
-  UntilSpec,
   Weekday,
   YearTarget,
 } from "./ast.js";
-import { newScheduleData, parseMonthName, parseWeekday } from "./ast.js";
-import { HronError, type Span } from "./error.js";
-import { type Token, type TokenKind, tokenize } from "./lexer.js";
+import { newScheduleData } from "./ast.js";
+import { codePointSpan, HronError } from "./error.js";
+import {
+  asciiLowercase,
+  type Token,
+  type TokenKind,
+  tokenize,
+} from "./lexer.js";
+
+// The `{what}` of each `expected {what}, got ...` error, one per phrase in
+// the position table of spec/README.md, "Parse errors".
+const EXPECTED = {
+  everyOrOn: "'every' or 'on'",
+  repeater:
+    "'day', 'weekday', 'weekend', a day name, 'week', 'month', 'year' or a number",
+  unit: "a unit ('min', 'hours', 'days', 'weeks', 'months' or 'years')",
+  at: "'at'",
+  time: "a time (HH:MM)",
+  from: "'from'",
+  to: "'to'",
+  dayTarget: "'day', 'weekday', 'weekend' or a day name",
+  on: "'on'",
+  dayName: "a day name",
+  the: "'the'",
+  monthTarget:
+    "a day such as 15th, 'last', an ordinal such as 'first', 'next', 'previous' or 'nearest'",
+  monthLast: "'day', 'weekday' or a day name",
+  nearest: "'nearest'",
+  weekday: "'weekday'",
+  dayOfMonth: "a day such as 15th",
+  yearTarget: "a month name or 'the'",
+  yearThe: "a day such as 15th, 'last' or an ordinal such as 'first'",
+  yearLast: "'weekday' or a day name",
+  of: "'of'",
+  monthName: "a month name",
+  dayNumber: "a day number",
+  date: "a date (YYYY-MM-DD, or a month and day)",
+  isoDate: "a date (YYYY-MM-DD)",
+  timezone: "a timezone",
+} as const;
+
+const CLAUSE_ORDER = ["except", "until", "starting", "during", "in"] as const;
+
+const MONTH_LENGTHS: Record<MonthName, number> = {
+  jan: 31,
+  feb: 29,
+  mar: 31,
+  apr: 30,
+  may: 31,
+  jun: 30,
+  jul: 31,
+  aug: 31,
+  sep: 30,
+  oct: 31,
+  nov: 30,
+  dec: 31,
+};
+
+type KindOf<T extends TokenKind["type"]> = Extract<TokenKind, { type: T }>;
+
+class Parser {
+  private tokens: Token[];
+  private input: string;
+  private pos = 0;
+  private untilRange: [number, number] | null = null;
+
+  constructor(tokens: Token[], input: string) {
+    this.tokens = tokens;
+    this.input = input;
+  }
+
+  peek(): Token | undefined {
+    return this.tokens[this.pos];
+  }
+
+  private peekKind(): TokenKind | undefined {
+    return this.tokens[this.pos]?.kind;
+  }
+
+  private peekIs<T extends TokenKind["type"]>(type: T): KindOf<T> | undefined {
+    const kind = this.peekKind();
+    return kind?.type === type ? (kind as KindOf<T>) : undefined;
+  }
+
+  private advance(): Token {
+    return this.tokens[this.pos++];
+  }
+
+  private previous(): Token {
+    return this.tokens[this.pos - 1];
+  }
+
+  private eat(type: TokenKind["type"]): boolean {
+    const found = this.peekKind()?.type === type;
+    if (found) this.pos++;
+    return found;
+  }
+
+  private expect(type: TokenKind["type"], what: string): void {
+    if (!this.eat(type)) throw this.expected(what);
+  }
+
+  private text(token: Token): string {
+    return this.input.slice(token.start, token.end);
+  }
+
+  private error(message: string, start: number, end: number): HronError {
+    const span = codePointSpan(this.input, start, end);
+    return HronError.parse(message, span, this.input);
+  }
+
+  private expected(what: string): HronError {
+    const token = this.peek();
+    if (token !== undefined) {
+      return this.error(
+        `expected ${what}, got '${this.text(token)}'`,
+        token.start,
+        token.end,
+      );
+    }
+    const end = this.tokens.at(-1)?.end ?? 0;
+    return this.error(`expected ${what}, got end of input`, end, end);
+  }
+
+  parseExpression(): ScheduleExpr {
+    if (this.eat("every")) return this.parseEvery();
+    if (this.eat("on")) return this.parseOn();
+    throw this.expected(EXPECTED.everyOrOn);
+  }
+
+  parseClauses(expr: ScheduleExpr): ScheduleData {
+    const schedule = newScheduleData(expr);
+
+    if (this.eat("except")) {
+      schedule.except = this.parseDateList();
+    }
+
+    if (this.peekIs("until")) {
+      const until = this.advance();
+      schedule.until = this.parseDate();
+      this.untilRange = [until.start, this.previous().end];
+    }
+
+    if (this.eat("starting")) {
+      if (!this.peekIs("isoDate")) throw this.expected(EXPECTED.isoDate);
+      schedule.anchor = this.isoDate(this.advance());
+    }
+
+    if (this.eat("during")) {
+      schedule.during = this.parseMonthList();
+    }
+
+    if (this.eat("in")) {
+      if (!this.peekIs("timezone")) throw this.expected(EXPECTED.timezone);
+      schedule.timezone = this.timezone(this.advance());
+    }
+
+    return schedule;
+  }
+
+  leftover(schedule: ScheduleData): HronError {
+    const token = this.tokens[this.pos];
+    // Every clause holds at least one item, so a clause was read exactly when its field is set.
+    const read = [
+      schedule.except.length > 0,
+      schedule.until !== null,
+      schedule.anchor !== null,
+      schedule.during.length > 0,
+      schedule.timezone !== null,
+    ];
+    const clause = CLAUSE_ORDER.indexOf(
+      token.kind.type as (typeof CLAUSE_ORDER)[number],
+    );
+    const lastRead = read.lastIndexOf(true);
+    let message: string;
+    if (clause >= 0 && read[clause]) {
+      message = `duplicate '${CLAUSE_ORDER[clause]}' clause`;
+    } else if (clause >= 0 && lastRead >= 0) {
+      message = `'${CLAUSE_ORDER[clause]}' must come before '${CLAUSE_ORDER[lastRead]}'`;
+    } else {
+      message = `unexpected '${this.text(token)}' after the schedule`;
+    }
+    return this.error(message, token.start, token.end);
+  }
+
+  checkNamedUntil(schedule: ScheduleData): void {
+    const until = schedule.until;
+    if (
+      until?.type !== "named" ||
+      schedule.anchor !== null ||
+      this.untilRange === null
+    ) {
+      return;
+    }
+    const [start, end] = this.untilRange;
+    throw HronError.parse(
+      `until ${until.month} ${until.day} has no year: add a starting date, or use an ISO date`,
+      codePointSpan(this.input, start, end),
+      this.input,
+      `until ${until.month} ${until.day} starting YYYY-MM-DD`,
+    );
+  }
+
+  private parseDateList(): DateSpec[] {
+    const dates = [this.parseDate()];
+    while (this.eat("comma")) {
+      dates.push(this.parseDate());
+    }
+    return dates;
+  }
+
+  private parseDate(): DateSpec {
+    if (this.peekIs("isoDate")) {
+      return { type: "iso", date: this.isoDate(this.advance()) };
+    }
+    const month = this.peekIs("monthName");
+    if (month) {
+      this.advance();
+      return {
+        type: "named",
+        month: month.name,
+        day: this.parseDayOf(month.name),
+      };
+    }
+    throw this.expected(EXPECTED.date);
+  }
+
+  private isoDate(token: Token): string {
+    const date = this.text(token);
+    if (!isCalendarDate(date)) {
+      throw this.error(
+        `date must be a calendar date from 0001-01-01 to 9999-12-31, got ${date}`,
+        token.start,
+        token.end,
+      );
+    }
+    return date;
+  }
+
+  private timezone(token: Token): string {
+    const name = this.text(token);
+    const canonical = canonicalTimezone(name);
+    if (canonical === null) {
+      throw this.error(
+        `timezone must be UTC or an Area/Location name such as America/New_York, got ${name}`,
+        token.start,
+        token.end,
+      );
+    }
+    return canonical;
+  }
+
+  private parseEvery(): ScheduleExpr {
+    const kind = this.peekKind();
+    switch (kind?.type) {
+      case "day":
+        this.advance();
+        return this.parseDayRepeat(1, { type: "every" });
+      case "weekday":
+        this.advance();
+        return this.parseDayRepeat(1, { type: "weekday" });
+      case "weekend":
+        this.advance();
+        return this.parseDayRepeat(1, { type: "weekend" });
+      case "dayName":
+        return this.parseDayRepeat(1, {
+          type: "days",
+          days: this.parseDayList(),
+        });
+      case "weeks":
+        this.advance();
+        return this.parseWeekRepeat(1);
+      case "month":
+        this.advance();
+        return this.parseMonthRepeat(1);
+      case "year":
+        this.advance();
+        return this.parseYearRepeat(1);
+      case "number":
+        return this.parseNumberRepeat(kind.value);
+    }
+    throw this.expected(EXPECTED.repeater);
+  }
+
+  private parseDayRepeat(interval: number, days: DayFilter): ScheduleExpr {
+    this.expect("at", EXPECTED.at);
+    const times = this.parseTimeList();
+    return { type: "dayRepeat", interval, days, times };
+  }
+
+  private parseNumberRepeat(interval: number): ScheduleExpr {
+    const number = this.advance();
+    if (interval === 0) {
+      throw this.error(
+        `interval must be 1-2147483647, got ${this.text(number)}`,
+        number.start,
+        number.end,
+      );
+    }
+
+    const kind = this.peekKind();
+    switch (kind?.type) {
+      case "weeks":
+        this.advance();
+        return this.parseWeekRepeat(interval);
+      case "intervalUnit":
+        this.advance();
+        return this.parseIntervalRepeat(interval, kind.unit);
+      case "day":
+        this.advance();
+        return this.parseDayRepeat(interval, { type: "every" });
+      case "month":
+        this.advance();
+        return this.parseMonthRepeat(interval);
+      case "year":
+        this.advance();
+        return this.parseYearRepeat(interval);
+    }
+    throw this.expected(EXPECTED.unit);
+  }
+
+  private parseIntervalRepeat(
+    interval: number,
+    unit: IntervalUnit,
+  ): ScheduleExpr {
+    this.expect("from", EXPECTED.from);
+    const from = this.parseTime();
+    const fromToken = this.previous();
+    this.expect("to", EXPECTED.to);
+    const to = this.parseTime();
+    const toToken = this.previous();
+    if (from.hour * 60 + from.minute > to.hour * 60 + to.minute) {
+      throw this.error(
+        `time window must not run backwards: ${this.text(fromToken)} to ${this.text(toToken)} (a window cannot cross midnight)`,
+        fromToken.start,
+        toToken.end,
+      );
+    }
+
+    const dayFilter = this.eat("on") ? this.parseDayTarget() : null;
+    return { type: "intervalRepeat", interval, unit, from, to, dayFilter };
+  }
+
+  private parseWeekRepeat(interval: number): ScheduleExpr {
+    this.expect("on", EXPECTED.on);
+    const days = this.parseDayList();
+    this.expect("at", EXPECTED.at);
+    const times = this.parseTimeList();
+    return { type: "weekRepeat", interval, days, times };
+  }
+
+  private parseMonthRepeat(interval: number): ScheduleExpr {
+    this.expect("on", EXPECTED.on);
+    this.expect("the", EXPECTED.the);
+
+    let target: MonthTarget;
+    const kind = this.peekKind();
+    switch (kind?.type) {
+      case "last":
+        this.advance();
+        target = this.parseMonthLast();
+        break;
+      case "ordinal":
+        this.advance();
+        target = {
+          type: "ordinalWeekday",
+          ordinal: kind.name,
+          weekday: this.parseDayName(),
+        };
+        break;
+      case "ordinalNumber":
+        target = { type: "days", specs: this.parseOrdinalDayList() };
+        break;
+      case "next":
+      case "previous":
+      case "nearest":
+        target = this.parseNearestWeekdayTarget();
+        break;
+      default:
+        throw this.expected(EXPECTED.monthTarget);
+    }
+
+    this.expect("at", EXPECTED.at);
+    const times = this.parseTimeList();
+    return { type: "monthRepeat", interval, target, times };
+  }
+
+  private parseMonthLast(): MonthTarget {
+    const kind = this.peekKind();
+    let target: MonthTarget;
+    switch (kind?.type) {
+      case "day":
+        target = { type: "lastDay" };
+        break;
+      case "weekday":
+        target = { type: "lastWeekday" };
+        break;
+      case "dayName":
+        target = {
+          type: "ordinalWeekday",
+          ordinal: "last",
+          weekday: kind.name,
+        };
+        break;
+      default:
+        throw this.expected(EXPECTED.monthLast);
+    }
+    this.advance();
+    return target;
+  }
+
+  private parseNearestWeekdayTarget(): MonthTarget {
+    let direction: NearestDirection | null = null;
+    if (this.eat("next")) {
+      direction = "next";
+    } else if (this.eat("previous")) {
+      direction = "previous";
+    }
+    this.expect("nearest", EXPECTED.nearest);
+    this.expect("weekday", EXPECTED.weekday);
+    this.expect("to", EXPECTED.to);
+    const day = this.parseOrdinalDay();
+    return { type: "nearestWeekday", day, direction };
+  }
+
+  private parseOrdinalDayList(): DayOfMonthSpec[] {
+    const specs = [this.parseOrdinalDaySpec()];
+    while (this.eat("comma")) {
+      specs.push(this.parseOrdinalDaySpec());
+    }
+    return specs;
+  }
+
+  private parseOrdinalDaySpec(): DayOfMonthSpec {
+    const start = this.parseOrdinalDay();
+    const startToken = this.previous();
+    if (!this.eat("to")) {
+      return { type: "single", day: start };
+    }
+    const end = this.parseOrdinalDay();
+    const endToken = this.previous();
+    if (start > end) {
+      throw this.error(
+        `day range must not run backwards: ${this.text(startToken)} to ${this.text(endToken)}`,
+        startToken.start,
+        endToken.end,
+      );
+    }
+    return { type: "range", start, end };
+  }
+
+  private parseOrdinalDay(): number {
+    const kind = this.peekIs("ordinalNumber");
+    if (!kind) throw this.expected(EXPECTED.dayOfMonth);
+    return this.dayOfMonth(kind.value, this.advance());
+  }
+
+  private parseDayOf(month: MonthName): number {
+    const kind = this.peekKind();
+    if (kind?.type !== "number" && kind?.type !== "ordinalNumber") {
+      throw this.expected(EXPECTED.dayNumber);
+    }
+    const token = this.advance();
+    const day = this.dayOfMonth(kind.value, token);
+    this.checkDayInMonth(day, token, month);
+    return day;
+  }
+
+  private dayOfMonth(n: number, token: Token): number {
+    if (n < 1 || n > 31) {
+      throw this.error(
+        `day must be 1-31, got ${this.text(token)}`,
+        token.start,
+        token.end,
+      );
+    }
+    return n;
+  }
+
+  private checkDayInMonth(day: number, token: Token, month: MonthName): void {
+    const max = MONTH_LENGTHS[month];
+    if (day > max) {
+      throw this.error(
+        `day must be 1-${max} for ${month}, got ${this.text(token)}`,
+        token.start,
+        token.end,
+      );
+    }
+  }
+
+  private parseYearRepeat(interval: number): ScheduleExpr {
+    this.expect("on", EXPECTED.on);
+
+    let target: YearTarget;
+    const kind = this.peekKind();
+    if (kind?.type === "the") {
+      this.advance();
+      target = this.parseYearTargetAfterThe();
+    } else if (kind?.type === "monthName") {
+      this.advance();
+      target = {
+        type: "date",
+        month: kind.name,
+        day: this.parseDayOf(kind.name),
+      };
+    } else {
+      throw this.expected(EXPECTED.yearTarget);
+    }
+
+    this.expect("at", EXPECTED.at);
+    const times = this.parseTimeList();
+    return { type: "yearRepeat", interval, target, times };
+  }
+
+  private parseYearTargetAfterThe(): YearTarget {
+    const kind = this.peekKind();
+    switch (kind?.type) {
+      case "last": {
+        this.advance();
+        const next = this.peekKind();
+        if (next?.type === "weekday") {
+          this.advance();
+          this.expect("of", EXPECTED.of);
+          return { type: "lastWeekday", month: this.parseMonthName() };
+        }
+        if (next?.type === "dayName") {
+          this.advance();
+          this.expect("of", EXPECTED.of);
+          const month = this.parseMonthName();
+          return {
+            type: "ordinalWeekday",
+            ordinal: "last",
+            weekday: next.name,
+            month,
+          };
+        }
+        throw this.expected(EXPECTED.yearLast);
+      }
+      case "ordinal": {
+        this.advance();
+        const weekday = this.parseDayName();
+        this.expect("of", EXPECTED.of);
+        const month = this.parseMonthName();
+        return { type: "ordinalWeekday", ordinal: kind.name, weekday, month };
+      }
+      case "ordinalNumber": {
+        const day = this.parseOrdinalDay();
+        const dayToken = this.previous();
+        this.expect("of", EXPECTED.of);
+        const month = this.parseMonthName();
+        this.checkDayInMonth(day, dayToken, month);
+        return { type: "dayOfMonth", day, month };
+      }
+    }
+    throw this.expected(EXPECTED.yearThe);
+  }
+
+  private parseMonthName(): MonthName {
+    const kind = this.peekIs("monthName");
+    if (!kind) throw this.expected(EXPECTED.monthName);
+    this.advance();
+    return kind.name;
+  }
+
+  private parseMonthList(): MonthName[] {
+    const months = [this.parseMonthName()];
+    while (this.eat("comma")) {
+      months.push(this.parseMonthName());
+    }
+    return months;
+  }
+
+  private parseOn(): ScheduleExpr {
+    const date = this.parseDate();
+    this.expect("at", EXPECTED.at);
+    const times = this.parseTimeList();
+    return { type: "singleDate", date, times };
+  }
+
+  private parseDayTarget(): DayFilter {
+    const kind = this.peekKind();
+    switch (kind?.type) {
+      case "day":
+        this.advance();
+        return { type: "every" };
+      case "weekday":
+        this.advance();
+        return { type: "weekday" };
+      case "weekend":
+        this.advance();
+        return { type: "weekend" };
+      case "dayName":
+        return { type: "days", days: this.parseDayList() };
+    }
+    throw this.expected(EXPECTED.dayTarget);
+  }
+
+  private parseDayName(): Weekday {
+    const kind = this.peekIs("dayName");
+    if (!kind) throw this.expected(EXPECTED.dayName);
+    this.advance();
+    return kind.name;
+  }
+
+  private parseDayList(): Weekday[] {
+    const days = [this.parseDayName()];
+    while (this.eat("comma")) {
+      days.push(this.parseDayName());
+    }
+    return days;
+  }
+
+  private parseTimeList(): TimeOfDay[] {
+    const times = [this.parseTime()];
+    while (this.eat("comma")) {
+      times.push(this.parseTime());
+    }
+    return times;
+  }
+
+  private parseTime(): TimeOfDay {
+    const kind = this.peekIs("time");
+    if (!kind) throw this.expected(EXPECTED.time);
+    this.advance();
+    return { hour: kind.hour, minute: kind.minute };
+  }
+}
+
+function isCalendarDate(date: string): boolean {
+  const [year, month, day] = date.split("-").map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= lengths[month - 1];
+}
 
 /**
  * Null unless `name` is `UTC` or a known Area/Location zone or link
  * (spec/README.md, "Parse-time validation").
  */
 function canonicalTimezone(name: string): string | null {
-  if (name.toLowerCase() === "utc") return "UTC";
+  const lower = asciiLowercase(name);
+  if (lower === "utc") return "UTC";
   // Temporal also accepts offsets and bracketed date-time strings as zones,
   // and Intl knows legacy trees that are not IANA names.
   if (!/^[A-Za-z0-9_+-]+(\/[A-Za-z0-9_+-]+)+$/.test(name)) return null;
-  if (/^(systemv|posix|right)\//i.test(name)) return null;
+  if (["systemv/", "posix/", "right/"].some((tree) => lower.startsWith(tree))) {
+    return null;
+  }
   try {
     // For an IANA name Temporal returns the IANA capitalization, and a link
     // keeps its own name.
@@ -39,837 +671,19 @@ function canonicalTimezone(name: string): string | null {
   }
 }
 
-class Parser {
-  private tokens: Token[];
-  private pos: number;
-  private input: string;
-
-  constructor(tokens: Token[], input: string) {
-    this.tokens = tokens;
-    this.pos = 0;
-    this.input = input;
-  }
-
-  peek(): Token | undefined {
-    return this.tokens[this.pos];
-  }
-
-  peekKind(): TokenKind | undefined {
-    return this.tokens[this.pos]?.kind;
-  }
-
-  advance(): Token | undefined {
-    const tok = this.tokens[this.pos];
-    if (tok) this.pos++;
-    return tok;
-  }
-
-  currentSpan(): Span {
-    const tok = this.peek();
-    if (tok) return tok.span;
-    const last = this.tokens[this.tokens.length - 1];
-    if (last) return { start: last.span.end, end: last.span.end };
-    return { start: 0, end: 0 };
-  }
-
-  error(message: string, span: Span): HronError {
-    return HronError.parse(message, span, this.input);
-  }
-
-  errorAtEnd(message: string): HronError {
-    const span =
-      this.tokens.length > 0
-        ? {
-            start: this.tokens[this.tokens.length - 1].span.end,
-            end: this.tokens[this.tokens.length - 1].span.end,
-          }
-        : { start: 0, end: 0 };
-    return HronError.parse(message, span, this.input);
-  }
-
-  consumeKind(expected: string, check: (k: TokenKind) => boolean): Token {
-    const span = this.currentSpan();
-    const tok = this.peek();
-    if (tok && check(tok.kind)) {
-      this.pos++;
-      return tok;
-    }
-    if (tok) {
-      throw this.error(`expected ${expected}, got ${tok.kind.type}`, span);
-    }
-    throw this.errorAtEnd(`expected ${expected}`);
-  }
-
-  parseExpression(): ScheduleData {
-    const span = this.currentSpan();
-    const kind = this.peekKind();
-
-    let expr: ScheduleExpr;
-    if (kind?.type === "every") {
-      this.advance();
-      expr = this.parseEvery();
-    } else if (kind?.type === "on") {
-      this.advance();
-      expr = this.parseOn();
-    } else {
-      throw this.error("expected 'every' or 'on'", span);
-    }
-
-    return this.parseTrailingClauses(expr);
-  }
-
-  private parseTrailingClauses(expr: ScheduleExpr): ScheduleData {
-    const schedule = newScheduleData(expr);
-
-    if (this.peekKind()?.type === "except") {
-      this.advance();
-      schedule.except = this.parseExceptionList();
-    }
-
-    let untilSpan: Span | null = null;
-    if (this.peekKind()?.type === "until") {
-      const start = this.currentSpan().start;
-      this.advance();
-      schedule.until = this.parseUntilSpec();
-      untilSpan = { start, end: this.tokens[this.pos - 1].span.end };
-    }
-
-    if (this.peekKind()?.type === "starting") {
-      this.advance();
-      const k = this.peekKind();
-      if (k?.type === "isoDate") {
-        const startDate = (k as { type: "isoDate"; date: string }).date;
-        this.validateIsoDate(startDate);
-        schedule.anchor = startDate;
-        this.advance();
-      } else {
-        throw this.error(
-          "expected ISO date (YYYY-MM-DD) after 'starting'",
-          this.currentSpan(),
-        );
-      }
-    }
-
-    if (
-      untilSpan !== null &&
-      schedule.until?.type === "named" &&
-      schedule.anchor === null
-    ) {
-      const { month, day } = schedule.until;
-      throw HronError.parse(
-        "a named until date has no year, so it needs a starting date (or use an ISO date such as 'until 2026-12-31')",
-        untilSpan,
-        this.input,
-        `until ${month} ${day} starting YYYY-MM-DD`,
-      );
-    }
-
-    if (this.peekKind()?.type === "during") {
-      this.advance();
-      schedule.during = this.parseMonthList();
-    }
-
-    if (this.peekKind()?.type === "in") {
-      this.advance();
-      const k = this.peekKind();
-      if (k?.type === "timezone") {
-        const name = (k as { type: "timezone"; tz: string }).tz;
-        const timezone = canonicalTimezone(name);
-        if (timezone === null) {
-          throw this.error(
-            `unknown timezone '${name}': use UTC or an IANA Area/Location name such as America/New_York`,
-            this.currentSpan(),
-          );
-        }
-        schedule.timezone = timezone;
-        this.advance();
-      } else {
-        throw this.error("expected timezone after 'in'", this.currentSpan());
-      }
-    }
-
-    return schedule;
-  }
-
-  private parseExceptionList(): Exception[] {
-    const exceptions: Exception[] = [this.parseException()];
-    while (this.peekKind()?.type === "comma") {
-      this.advance();
-      exceptions.push(this.parseException());
-    }
-    return exceptions;
-  }
-
-  private parseException(): Exception {
-    const k = this.peekKind();
-    if (k?.type === "isoDate") {
-      const date = (k as { type: "isoDate"; date: string }).date;
-      this.validateIsoDate(date);
-      this.advance();
-      return { type: "iso", date };
-    }
-    if (k?.type === "monthName") {
-      const month = parseMonthName(
-        (k as { type: "monthName"; name: string }).name,
-      );
-      if (!month) throw this.error("invalid month name", this.currentSpan());
-      this.advance();
-      const dayPos = this.currentSpan().start;
-      const day = this.parseDayNumber(
-        "expected day number after month name in exception",
-      );
-      this.validateNamedDate(month, day, dayPos);
-      return { type: "named", month, day };
-    }
-    throw this.error(
-      "expected ISO date or month-day in exception",
-      this.currentSpan(),
-    );
-  }
-
-  private parseUntilSpec(): UntilSpec {
-    const k = this.peekKind();
-    if (k?.type === "isoDate") {
-      const date = (k as { type: "isoDate"; date: string }).date;
-      this.validateIsoDate(date);
-      this.advance();
-      return { type: "iso", date };
-    }
-    if (k?.type === "monthName") {
-      const month = parseMonthName(
-        (k as { type: "monthName"; name: string }).name,
-      );
-      if (!month) throw this.error("invalid month name", this.currentSpan());
-      this.advance();
-      const dayPos = this.currentSpan().start;
-      const day = this.parseDayNumber(
-        "expected day number after month name in until",
-      );
-      this.validateNamedDate(month, day, dayPos);
-      return { type: "named", month, day };
-    }
-    throw this.error(
-      "expected ISO date or month-day after 'until'",
-      this.currentSpan(),
-    );
-  }
-
-  private parseDayNumber(errorMsg: string): number {
-    const k = this.peekKind();
-    if (k?.type === "number") {
-      const n = (k as { type: "number"; value: number }).value;
-      if (n < 1 || n > 31) {
-        throw this.error(
-          `invalid day number ${n} (must be 1-31)`,
-          this.currentSpan(),
-        );
-      }
-      this.advance();
-      return n;
-    }
-    if (k?.type === "ordinalNumber") {
-      const n = (k as { type: "ordinalNumber"; value: number }).value;
-      if (n < 1 || n > 31) {
-        throw this.error(
-          `invalid day number ${n} (must be 1-31)`,
-          this.currentSpan(),
-        );
-      }
-      this.advance();
-      return n;
-    }
-    throw this.error(errorMsg, this.currentSpan());
-  }
-
-  private parseEvery(): ScheduleExpr {
-    if (!this.peek()) throw this.errorAtEnd("expected repeater");
-
-    const k = this.peekKind();
-    if (!k) throw this.errorAtEnd("expected repeater");
-
-    if (k.type === "year") {
-      this.advance();
-      return this.parseYearRepeat(1);
-    }
-    if (k.type === "day") {
-      return this.parseDayRepeat(1, { type: "every" });
-    }
-    if (k.type === "weekday") {
-      this.advance();
-      return this.parseDayRepeat(1, { type: "weekday" });
-    }
-    if (k.type === "weekend") {
-      this.advance();
-      return this.parseDayRepeat(1, { type: "weekend" });
-    }
-    if (k.type === "dayName") {
-      const days = this.parseDayList();
-      return this.parseDayRepeat(1, { type: "days", days });
-    }
-    if (k.type === "weeks") {
-      this.advance();
-      return this.parseWeekRepeat(1);
-    }
-    if (k.type === "month") {
-      this.advance();
-      return this.parseMonthRepeat(1);
-    }
-    if (k.type === "number") {
-      return this.parseNumberRepeat();
-    }
-
-    throw this.error(
-      "expected day, weekday, weekend, week, year, day name, month, or number after 'every'",
-      this.currentSpan(),
-    );
-  }
-
-  private parseDayRepeat(interval: number, days: DayFilter): ScheduleExpr {
-    if (days.type === "every") {
-      this.consumeKind("'day'", (k) => k.type === "day");
-    }
-    this.consumeKind("'at'", (k) => k.type === "at");
-    const times = this.parseTimeList();
-    return { type: "dayRepeat", interval, days, times };
-  }
-
-  private parseNumberRepeat(): ScheduleExpr {
-    const span = this.currentSpan();
-    const k = this.peekKind();
-    if (!k) throw this.errorAtEnd("expected number");
-    const num = (k as { type: "number"; value: number }).value;
-    if (num === 0) {
-      throw this.error("interval must be at least 1", span);
-    }
-    this.advance();
-
-    const next = this.peekKind();
-    if (next?.type === "weeks") {
-      this.advance();
-      return this.parseWeekRepeat(num);
-    }
-    if (next?.type === "intervalUnit") {
-      return this.parseIntervalRepeat(num);
-    }
-    if (next?.type === "day") {
-      return this.parseDayRepeat(num, { type: "every" });
-    }
-    if (next?.type === "month") {
-      this.advance();
-      return this.parseMonthRepeat(num);
-    }
-    if (next?.type === "year") {
-      this.advance();
-      return this.parseYearRepeat(num);
-    }
-
-    throw this.error(
-      "expected 'weeks', 'min', 'minutes', 'hour', 'hours', 'day(s)', 'month(s)', or 'year(s)' after number",
-      this.currentSpan(),
-    );
-  }
-
-  private parseIntervalRepeat(interval: number): ScheduleExpr {
-    const k = this.peekKind();
-    if (!k) throw this.errorAtEnd("expected interval unit");
-    const unitStr = (k as { type: "intervalUnit"; unit: string }).unit;
-    this.advance();
-
-    const unit: IntervalUnit = unitStr === "min" ? "min" : "hours";
-
-    this.consumeKind("'from'", (k) => k.type === "from");
-    const from = this.parseTime();
-    this.consumeKind("'to'", (k) => k.type === "to");
-    const toSpan = this.currentSpan();
-    const to = this.parseTime();
-    if (to.hour * 60 + to.minute < from.hour * 60 + from.minute) {
-      throw this.error(
-        "invalid time range: 'from' is later than 'to', and a window cannot cross midnight",
-        toSpan,
-      );
-    }
-
-    let dayFilter: DayFilter | null = null;
-    if (this.peekKind()?.type === "on") {
-      this.advance();
-      dayFilter = this.parseDayTarget();
-    }
-
-    return { type: "intervalRepeat", interval, unit, from, to, dayFilter };
-  }
-
-  private parseWeekRepeat(interval: number): ScheduleExpr {
-    this.consumeKind("'on'", (k) => k.type === "on");
-    const days = this.parseDayList();
-    this.consumeKind("'at'", (k) => k.type === "at");
-    const times = this.parseTimeList();
-    return { type: "weekRepeat", interval, days, times };
-  }
-
-  private parseMonthRepeat(interval: number): ScheduleExpr {
-    this.consumeKind("'on'", (k) => k.type === "on");
-    this.consumeKind("'the'", (k) => k.type === "the");
-
-    let target: MonthTarget;
-    const k = this.peekKind();
-
-    if (k?.type === "last") {
-      this.advance();
-      const next = this.peekKind();
-      if (next?.type === "day") {
-        this.advance();
-        target = { type: "lastDay" };
-      } else if (next?.type === "weekday") {
-        this.advance();
-        target = { type: "lastWeekday" };
-      } else if (next?.type === "dayName") {
-        const weekday = parseWeekday(
-          (next as { type: "dayName"; name: string }).name,
-        );
-        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
-        this.advance();
-        target = { type: "ordinalWeekday", ordinal: "last", weekday };
-      } else {
-        throw this.error(
-          "expected 'day', 'weekday', or day name after 'last'",
-          this.currentSpan(),
-        );
-      }
-    } else if (k?.type === "ordinal") {
-      const ordinal = this.parseOrdinalPosition();
-      const next = this.peekKind();
-      if (next?.type === "dayName") {
-        const weekday = parseWeekday(
-          (next as { type: "dayName"; name: string }).name,
-        );
-        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
-        this.advance();
-        target = { type: "ordinalWeekday", ordinal, weekday };
-      } else {
-        throw this.error(
-          "expected day name after ordinal in month expression",
-          this.currentSpan(),
-        );
-      }
-    } else if (k?.type === "ordinalNumber") {
-      const specs = this.parseOrdinalDayList();
-      target = { type: "days", specs };
-    } else if (
-      k?.type === "next" ||
-      k?.type === "previous" ||
-      k?.type === "nearest"
-    ) {
-      target = this.parseNearestWeekdayTarget();
-    } else {
-      throw this.error(
-        "expected ordinal day (1st, 15th), 'last', ordinal weekday, or '[next|previous] nearest' after 'the'",
-        this.currentSpan(),
-      );
-    }
-
-    this.consumeKind("'at'", (k) => k.type === "at");
-    const times = this.parseTimeList();
-    return { type: "monthRepeat", interval, target, times };
-  }
-
-  private parseNearestWeekdayTarget(): MonthTarget {
-    let direction: NearestDirection | null = null;
-    const k = this.peekKind();
-
-    if (k?.type === "next") {
-      this.advance();
-      direction = "next";
-    } else if (k?.type === "previous") {
-      this.advance();
-      direction = "previous";
-    }
-
-    this.consumeKind("'nearest'", (k) => k.type === "nearest");
-    this.consumeKind("'weekday'", (k) => k.type === "weekday");
-    this.consumeKind("'to'", (k) => k.type === "to");
-
-    const day = this.parseOrdinalDayNumber();
-
-    return { type: "nearestWeekday", day, direction };
-  }
-
-  private parseOrdinalDayNumber(): number {
-    const k = this.peekKind();
-    if (k?.type === "ordinalNumber") {
-      const d = (k as { type: "ordinalNumber"; value: number }).value;
-      if (d < 1 || d > 31) {
-        throw this.error(
-          `invalid day number ${d} (must be 1-31)`,
-          this.currentSpan(),
-        );
-      }
-      this.advance();
-      return d;
-    }
-    throw this.error("expected ordinal day number", this.currentSpan());
-  }
-
-  private parseYearRepeat(interval: number): ScheduleExpr {
-    this.consumeKind("'on'", (k) => k.type === "on");
-
-    let target: YearTarget;
-    const k = this.peekKind();
-
-    if (k?.type === "the") {
-      this.advance();
-      target = this.parseYearTargetAfterThe();
-    } else if (k?.type === "monthName") {
-      const month = parseMonthName(
-        (k as { type: "monthName"; name: string }).name,
-      );
-      if (!month) throw this.error("invalid month name", this.currentSpan());
-      this.advance();
-      const dayPos = this.currentSpan().start;
-      const day = this.parseDayNumber("expected day number after month name");
-      this.validateNamedDate(month, day, dayPos);
-      target = { type: "date", month, day };
-    } else {
-      throw this.error(
-        "expected month name or 'the' after 'every year on'",
-        this.currentSpan(),
-      );
-    }
-
-    this.consumeKind("'at'", (k) => k.type === "at");
-    const times = this.parseTimeList();
-    return { type: "yearRepeat", interval, target, times };
-  }
-
-  private parseYearTargetAfterThe(): YearTarget {
-    const k = this.peekKind();
-
-    if (k?.type === "last") {
-      this.advance();
-      const next = this.peekKind();
-      if (next?.type === "weekday") {
-        this.advance();
-        this.consumeKind("'of'", (k) => k.type === "of");
-        const month = this.parseMonthNameToken();
-        return { type: "lastWeekday", month };
-      }
-      if (next?.type === "dayName") {
-        const weekday = parseWeekday(
-          (next as { type: "dayName"; name: string }).name,
-        );
-        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
-        this.advance();
-        this.consumeKind("'of'", (k) => k.type === "of");
-        const month = this.parseMonthNameToken();
-        return { type: "ordinalWeekday", ordinal: "last", weekday, month };
-      }
-      throw this.error(
-        "expected 'weekday' or day name after 'last' in yearly expression",
-        this.currentSpan(),
-      );
-    }
-
-    if (k?.type === "ordinal") {
-      const ordinal = this.parseOrdinalPosition();
-      const next = this.peekKind();
-      if (next?.type === "dayName") {
-        const weekday = parseWeekday(
-          (next as { type: "dayName"; name: string }).name,
-        );
-        if (!weekday) throw this.error("invalid weekday", this.currentSpan());
-        this.advance();
-        this.consumeKind("'of'", (k) => k.type === "of");
-        const month = this.parseMonthNameToken();
-        return { type: "ordinalWeekday", ordinal, weekday, month };
-      }
-      throw this.error(
-        "expected day name after ordinal in yearly expression",
-        this.currentSpan(),
-      );
-    }
-
-    if (k?.type === "ordinalNumber") {
-      const day = (k as { type: "ordinalNumber"; value: number }).value;
-      if (day < 1 || day > 31) {
-        throw this.error(
-          `invalid day number ${day} (must be 1-31)`,
-          this.currentSpan(),
-        );
-      }
-      const dayPos = this.currentSpan().start;
-      this.advance();
-      this.consumeKind("'of'", (k) => k.type === "of");
-      const month = this.parseMonthNameToken();
-      this.validateNamedDate(month, day, dayPos);
-      return { type: "dayOfMonth", day, month };
-    }
-
-    throw this.error(
-      "expected ordinal, day number, or 'last' after 'the' in yearly expression",
-      this.currentSpan(),
-    );
-  }
-
-  private parseMonthNameToken(): MonthName {
-    const k = this.peekKind();
-    if (k?.type === "monthName") {
-      const month = parseMonthName(
-        (k as { type: "monthName"; name: string }).name,
-      );
-      if (!month) throw this.error("invalid month name", this.currentSpan());
-      this.advance();
-      return month;
-    }
-    throw this.error("expected month name", this.currentSpan());
-  }
-
-  private parseOrdinalPosition(): OrdinalPosition {
-    const span = this.currentSpan();
-    const k = this.peekKind();
-
-    if (k?.type === "ordinal") {
-      const name = (k as { type: "ordinal"; name: string }).name;
-      this.advance();
-      return name as OrdinalPosition;
-    }
-    if (k?.type === "last") {
-      this.advance();
-      return "last";
-    }
-    throw this.error(
-      "expected ordinal (first, second, third, fourth, fifth, last)",
-      span,
-    );
-  }
-
-  private parseOn(): ScheduleExpr {
-    const date = this.parseDateTarget();
-    this.consumeKind("'at'", (k) => k.type === "at");
-    const times = this.parseTimeList();
-    return { type: "singleDate", date, times };
-  }
-
-  private validateNamedDate(month: MonthName, day: number, pos: number): void {
-    const maxDays: Record<MonthName, number> = {
-      jan: 31,
-      feb: 29,
-      mar: 31,
-      apr: 30,
-      may: 31,
-      jun: 30,
-      jul: 31,
-      aug: 31,
-      sep: 30,
-      oct: 31,
-      nov: 30,
-      dec: 31,
-    };
-    const max = maxDays[month];
-    if (day > max) {
-      throw this.error(`invalid day ${day} for ${month} (max ${max})`, {
-        start: pos,
-        end: pos,
-      });
-    }
-  }
-
-  private validateIsoDate(dateStr: string): void {
-    const parts = dateStr.split("-");
-    const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10);
-    const day = parseInt(parts[2], 10);
-    if (year < 1 || month < 1 || month > 12 || day < 1) {
-      throw this.error(`invalid date: ${dateStr}`, this.currentSpan());
-    }
-    const daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    if ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0) {
-      daysInMonth[2] = 29;
-    }
-    if (day > daysInMonth[month]) {
-      throw this.error(`invalid date: ${dateStr}`, this.currentSpan());
-    }
-  }
-
-  private parseDateTarget(): DateSpec {
-    const k = this.peekKind();
-
-    if (k?.type === "isoDate") {
-      const date = (k as { type: "isoDate"; date: string }).date;
-      this.validateIsoDate(date);
-      this.advance();
-      return { type: "iso", date };
-    }
-    if (k?.type === "monthName") {
-      const month = parseMonthName(
-        (k as { type: "monthName"; name: string }).name,
-      );
-      if (!month) throw this.error("invalid month name", this.currentSpan());
-      this.advance();
-      const dayPos = this.currentSpan().start;
-      const day = this.parseDayNumber("expected day number after month name");
-      this.validateNamedDate(month, day, dayPos);
-      return { type: "named", month, day };
-    }
-    throw this.error(
-      "expected date (ISO date or month name)",
-      this.currentSpan(),
-    );
-  }
-
-  private parseDayTarget(): DayFilter {
-    const k = this.peekKind();
-    if (k?.type === "day") {
-      this.advance();
-      return { type: "every" };
-    }
-    if (k?.type === "weekday") {
-      this.advance();
-      return { type: "weekday" };
-    }
-    if (k?.type === "weekend") {
-      this.advance();
-      return { type: "weekend" };
-    }
-    if (k?.type === "dayName") {
-      const days = this.parseDayList();
-      return { type: "days", days };
-    }
-    throw this.error(
-      "expected 'day', 'weekday', 'weekend', or day name",
-      this.currentSpan(),
-    );
-  }
-
-  private parseDayList(): Weekday[] {
-    const k = this.peekKind();
-    if (k?.type !== "dayName") {
-      throw this.error("expected day name", this.currentSpan());
-    }
-    const firstDay = parseWeekday(
-      (k as { type: "dayName"; name: string }).name,
-    );
-    if (!firstDay) throw this.error("invalid weekday", this.currentSpan());
-    const days: Weekday[] = [firstDay];
-    this.advance();
-
-    while (this.peekKind()?.type === "comma") {
-      this.advance();
-      const next = this.peekKind();
-      if (next?.type !== "dayName") {
-        throw this.error("expected day name after ','", this.currentSpan());
-      }
-      const day = parseWeekday(
-        (next as { type: "dayName"; name: string }).name,
-      );
-      if (!day) throw this.error("invalid weekday", this.currentSpan());
-      days.push(day);
-      this.advance();
-    }
-    return days;
-  }
-
-  private parseOrdinalDayList(): DayOfMonthSpec[] {
-    const specs: DayOfMonthSpec[] = [this.parseOrdinalDaySpec()];
-    while (this.peekKind()?.type === "comma") {
-      this.advance();
-      specs.push(this.parseOrdinalDaySpec());
-    }
-    return specs;
-  }
-
-  private parseOrdinalDaySpec(): DayOfMonthSpec {
-    const k = this.peekKind();
-    if (k?.type !== "ordinalNumber") {
-      throw this.error("expected ordinal day number", this.currentSpan());
-    }
-    const start = (k as { type: "ordinalNumber"; value: number }).value;
-    if (start < 1 || start > 31) {
-      throw this.error(
-        `invalid day number ${start} (must be 1-31)`,
-        this.currentSpan(),
-      );
-    }
-    this.advance();
-
-    if (this.peekKind()?.type === "to") {
-      this.advance();
-      const next = this.peekKind();
-      if (next?.type !== "ordinalNumber") {
-        throw this.error(
-          "expected ordinal day number after 'to'",
-          this.currentSpan(),
-        );
-      }
-      const end = (next as { type: "ordinalNumber"; value: number }).value;
-      if (end < 1 || end > 31) {
-        throw this.error(
-          `invalid day number ${end} (must be 1-31)`,
-          this.currentSpan(),
-        );
-      }
-      this.advance();
-      if (start > end) {
-        throw this.error(
-          `invalid day range: ${start} to ${end} (start must be <= end)`,
-          this.currentSpan(),
-        );
-      }
-      return { type: "range", start, end };
-    }
-
-    return { type: "single", day: start };
-  }
-
-  private parseMonthList(): MonthName[] {
-    const months: MonthName[] = [this.parseMonthNameToken()];
-    while (this.peekKind()?.type === "comma") {
-      this.advance();
-      months.push(this.parseMonthNameToken());
-    }
-    return months;
-  }
-
-  private parseTimeList(): TimeOfDay[] {
-    const times: TimeOfDay[] = [this.parseTime()];
-    while (this.peekKind()?.type === "comma") {
-      this.advance();
-      times.push(this.parseTime());
-    }
-    return times;
-  }
-
-  private parseTime(): TimeOfDay {
-    const span = this.currentSpan();
-    const k = this.peekKind();
-    if (k?.type === "time") {
-      const { hour, minute } = k as {
-        type: "time";
-        hour: number;
-        minute: number;
-      };
-      this.advance();
-      return { hour, minute };
-    }
-    throw this.error("expected time (HH:MM)", span);
-  }
-}
-
 export function parse(input: string): ScheduleData {
   const tokens = tokenize(input);
-
   if (tokens.length === 0) {
     throw HronError.parse("empty expression", { start: 0, end: 0 }, input);
   }
 
   const parser = new Parser(tokens, input);
-  const schedule = parser.parseExpression();
-
-  if (parser.peek()) {
-    throw HronError.parse(
-      "unexpected tokens after expression",
-      parser.currentSpan(),
-      input,
-    );
+  const expr = parser.parseExpression();
+  const schedule = parser.parseClauses(expr);
+  if (parser.peek() !== undefined) {
+    throw parser.leftover(schedule);
   }
-
+  // spec/README.md, "Parse errors": every other error wins over a named until without starting.
+  parser.checkNamedUntil(schedule);
   return schedule;
 }

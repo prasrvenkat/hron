@@ -126,122 +126,122 @@ module Hron
   class Lexer
     # Every number must fit a 32-bit signed integer, which is also the largest interval.
     MAX_NUMBER = 2_147_483_647
+    ORDINAL_SUFFIXES = %w[st nd rd th].freeze
+    ISO_DATE_TAIL_LENGTH = 6
+    private_constant :ORDINAL_SUFFIXES, :ISO_DATE_TAIL_LENGTH
 
     def initialize(input)
       @input = input
+      @chars = Utf8.convert(input).chars
       @pos = 0
-      @after_in = false
     end
 
     def tokenize
       tokens = []
       loop do
-        skip_whitespace
-        break if @pos >= @input.length
-
-        if @after_in
-          @after_in = false
-          tokens << lex_timezone
-          next
-        end
+        advance_while { |c| separator?(c) }
+        break if @pos >= @chars.length
 
         start = @pos
-        ch = @input[@pos]
-
-        if ch == ","
+        c = @chars[@pos]
+        kind = if tokens.last&.kind == TokenKind::IN
+          advance_while { |ch| !separator?(ch) }
+          TTimezone.new(text(start))
+        elsif c == ","
           @pos += 1
-          tokens << Token.new(TokenKind::COMMA, Span.new(start, @pos))
-          next
+          TokenKind::COMMA
+        elsif c.match?(/[A-Za-z]/)
+          word(start)
+        elsif digit?(c)
+          digits(start)
+        else
+          raise unexpected_character(c, start)
         end
-
-        if ch.match?(/\d/)
-          tokens << lex_number_or_time_or_date
-          next
-        end
-
-        if ch.match?(/[a-zA-Z]/)
-          tokens << lex_word
-          next
-        end
-
-        raise HronError.lex("unexpected character '#{ch}'", Span.new(start, start + 1), @input)
+        tokens << Token.new(kind, Span.new(start, @pos))
       end
       tokens
     end
 
     private
 
-    def skip_whitespace
-      @pos += 1 while @pos < @input.length && @input[@pos].match?(/\s/)
+    # Only these four separate tokens; `\s` and `strip` would also take \v, \f or NUL.
+    def separator?(c)
+      c == " " || c == "\t" || c == "\r" || c == "\n"
     end
 
-    def lex_timezone
-      skip_whitespace
-      start = @pos
-      @pos += 1 while @pos < @input.length && !@input[@pos].match?(/\s/)
-      tz = @input[start...@pos]
-      raise HronError.lex("expected timezone after 'in'", Span.new(start, start + 1), @input) if tz.empty?
-
-      Token.new(TTimezone.new(tz), Span.new(start, @pos))
+    def digit?(c)
+      c&.match?(/[0-9]/)
     end
 
-    def lex_number_or_time_or_date
-      start = @pos
-      @pos += 1 while @pos < @input.length && @input[@pos].match?(/\d/)
-      digits = @input[start...@pos]
-      raise HronError.lex("number too large (maximum #{MAX_NUMBER})", Span.new(start, @pos), @input) if digits.to_i > MAX_NUMBER
-
-      if digits.length == 4 && @pos < @input.length && @input[@pos] == "-"
-        remaining = @input[start..]
-        if remaining.length >= 10 &&
-            remaining[4] == "-" &&
-            remaining[5..6].match?(/\d{2}/) &&
-            remaining[7] == "-" &&
-            remaining[8..9].match?(/\d{2}/)
-          @pos = start + 10
-          return Token.new(TIsoDate.new(@input[start...@pos]), Span.new(start, @pos))
-        end
-      end
-
-      if digits.length.between?(1, 2) && @pos < @input.length && @input[@pos] == ":"
-        @pos += 1
-        min_start = @pos
-        @pos += 1 while @pos < @input.length && @input[@pos].match?(/\d/)
-        min_digits = @input[min_start...@pos]
-        if min_digits.length == 2
-          hour = digits.to_i
-          minute = min_digits.to_i
-          raise HronError.lex("invalid time", Span.new(start, @pos), @input) if hour > 23 || minute > 59
-
-          return Token.new(TTime.new(hour, minute), Span.new(start, @pos))
-        end
-      end
-
-      num = digits.to_i
-
-      if @pos + 1 < @input.length
-        suffix = @input[@pos, 2].downcase
-        if %w[st nd rd th].include?(suffix)
-          @pos += 2
-          return Token.new(TOrdinalNumber.new(num), Span.new(start, @pos))
-        end
-      end
-
-      Token.new(TNumber.new(num), Span.new(start, @pos))
+    def advance_while
+      @pos += 1 while @pos < @chars.length && yield(@chars[@pos])
     end
 
-    def lex_word
-      start = @pos
-      @pos += 1 while @pos < @input.length && @input[@pos].match?(/\w/)
-      word = @input[start...@pos].downcase
-      span = Span.new(start, @pos)
+    def text(start, stop = @pos)
+      @chars[start...stop].join
+    end
 
-      kind = KEYWORD_MAP[word]
-      raise HronError.lex("unknown keyword '#{word}'", span, @input) if kind.nil?
+    def error(message, start)
+      HronError.lex(message, Span.new(start, @pos), @input)
+    end
 
-      @after_in = true if kind == TokenKind::IN
+    def word(start)
+      advance_while { |c| c.match?(/[A-Za-z0-9_]/) }
+      written = text(start)
+      KEYWORD_MAP[written.downcase(:ascii)] or raise error("unknown keyword '#{written}'", start)
+    end
 
-      Token.new(kind, span)
+    def digits(start)
+      advance_while { |c| digit?(c) }
+      if @pos - start == 4 && iso_date_tail?
+        @pos += ISO_DATE_TAIL_LENGTH
+        return TIsoDate.new(text(start))
+      end
+      return time(start) if @chars[@pos] == ":"
+
+      value = number_value(text(start)) or raise error("number must be at most #{MAX_NUMBER}", start)
+      if ORDINAL_SUFFIXES.include?(@chars[@pos, 2].join.downcase(:ascii))
+        @pos += 2
+        return TOrdinalNumber.new(value)
+      end
+      TNumber.new(value)
+    end
+
+    def iso_date_tail?
+      tail = @chars[@pos, ISO_DATE_TAIL_LENGTH]
+      tail.length == ISO_DATE_TAIL_LENGTH && tail[0] == "-" && tail[3] == "-" && [1, 2, 4, 5].all? { |i| digit?(tail[i]) }
+    end
+
+    # Integer() would read a leading zero as octal and accept "_" or a sign, and stopping at the
+    # limit keeps a run of thousands of digits from becoming a huge Integer.
+    def number_value(digits)
+      digits.each_char.reduce(0) do |n, d|
+        n = (n * 10) + d.ord - "0".ord
+        return nil if n > MAX_NUMBER
+
+        n
+      end
+    end
+
+    def time(start)
+      colon = @pos
+      @pos += 1
+      advance_while { |c| digit?(c) }
+      hour = text(start, colon)
+      minute = text(colon + 1)
+      written = text(start)
+      unless hour.length.between?(1, 2) && minute.length == 2
+        raise error("time must be H:MM or HH:MM, got #{written}", start)
+      end
+      raise error("time must be 00:00-23:59, got #{written}", start) if hour.to_i > 23 || minute.to_i > 59
+
+      TTime.new(hour.to_i, minute.to_i)
+    end
+
+    def unexpected_character(c, start)
+      # `'` is excluded because `'''` would not read as a quoted character.
+      shown = (c.ord.between?(0x21, 0x7E) && c != "'") ? "'#{c}'" : format("U+%04X", c.ord)
+      HronError.lex("unexpected character #{shown}", Span.new(start, start + 1), @input)
     end
   end
 

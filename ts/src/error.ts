@@ -1,4 +1,7 @@
-/** Start and end offsets into the input string, in UTF-16 code units. */
+/**
+ * The part of the input an error points at: `[start, end)` counted in code
+ * points, not UTF-16 units. A lone surrogate counts as one code point.
+ */
 export interface Span {
   start: number;
   end: number;
@@ -49,24 +52,41 @@ export class HronError extends Error {
     return new HronError("cron", message);
   }
 
+  /**
+   * The message, then for `lex` and `parse` errors the input and a line of
+   * carets under the span, and any suggestion as ` try: "..."`. No trailing newline.
+   */
   displayRich(): string {
     if (
-      (this.kind === "lex" || this.kind === "parse") &&
-      this.span &&
-      this.input
+      (this.kind !== "lex" && this.kind !== "parse") ||
+      this.span === undefined ||
+      this.input === undefined
     ) {
-      let out = `error: ${this.message}\n`;
-      out += `  ${this.input}\n`;
-      const padding = " ".repeat(this.span.start + 2);
-      const underline = "^".repeat(
-        Math.max(this.span.end - this.span.start, 1),
-      );
-      out += padding + underline;
-      if (this.suggestion) {
-        out += ` try: "${this.suggestion}"`;
-      }
-      return out;
+      return `error: ${this.message}`;
     }
-    return `error: ${this.message}`;
+    // A tab, CR or LF would move the input off the line the carets are aligned to.
+    const shown = this.input.replace(/[\t\r\n]/g, " ");
+    const spaces = " ".repeat(this.span.start);
+    const carets = "^".repeat(Math.max(this.span.end - this.span.start, 1));
+    let out = `error: ${this.message}\n  ${shown}\n  ${spaces}${carets}`;
+    if (this.suggestion !== undefined) {
+      out += ` try: "${this.suggestion}"`;
+    }
+    return out;
   }
+}
+
+// Token offsets are UTF-16 units; spans count code points (spec/README.md, "Error Structure").
+export function codePointSpan(input: string, start: number, end: number): Span {
+  const before = codePointCount(input.slice(0, start));
+  return {
+    start: before,
+    end: before + codePointCount(input.slice(start, end)),
+  };
+}
+
+function codePointCount(text: string): number {
+  let count = 0;
+  for (const _ of text) count++;
+  return count;
 }

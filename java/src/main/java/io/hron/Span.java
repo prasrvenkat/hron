@@ -1,10 +1,10 @@
 package io.hron;
 
 /**
- * Represents a range of character positions in the input.
+ * The part of the input an error points at, counted in Unicode code points, not UTF-16 units.
  *
- * @param start the start position (inclusive)
- * @param end the end position (exclusive)
+ * @param start the first code point (inclusive)
+ * @param end the code point after the last (exclusive)
  */
 public record Span(int start, int end) {
   /**

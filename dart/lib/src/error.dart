@@ -1,9 +1,8 @@
-/// A span of characters in source input, used for error reporting.
+/// The part of the input an error points at: `[start, end)` counted in
+/// Unicode code points (`input.runes`), not UTF-16 code units.
 class Span {
-  /// The start position (inclusive).
   final int start;
 
-  /// The end position (exclusive).
   final int end;
 
   const Span(this.start, this.end);
@@ -69,25 +68,20 @@ class HronError implements Exception {
   factory HronError.cron(String message) =>
       HronError(HronErrorKind.cron, message);
 
-  /// Returns a formatted error message with source context and underline.
+  /// The message, then for lex and parse errors the input and a line of
+  /// carets under the span, and any suggestion as ` try: "..."`. Lines are
+  /// joined by `\n`, with no trailing newline.
   String displayRich() {
-    if ((kind == HronErrorKind.lex || kind == HronErrorKind.parse) &&
-        span != null &&
-        input != null) {
-      final buf = StringBuffer();
-      buf.writeln('error: $message');
-      buf.writeln('  $input');
-      final padding = ' ' * (span!.start + 2);
-      final len = span!.end - span!.start;
-      final underline = '^' * (len < 1 ? 1 : len);
-      buf.write(padding);
-      buf.write(underline);
-      if (suggestion != null) {
-        buf.write(' try: "$suggestion"');
-      }
-      return buf.toString();
-    }
-    return 'error: $message';
+    final span = this.span;
+    final input = this.input;
+    final located = kind == HronErrorKind.lex || kind == HronErrorKind.parse;
+    if (!located || span == null || input == null) return 'error: $message';
+    // A tab, CR or LF would move the input off the line the carets are aligned to.
+    final shown = input.replaceAll(RegExp('[\t\r\n]'), ' ');
+    final width = span.end - span.start;
+    final carets = '^' * (width < 1 ? 1 : width);
+    final hint = suggestion == null ? '' : ' try: "$suggestion"';
+    return 'error: $message\n  $shown\n  ${' ' * span.start}$carets$hint';
   }
 
   @override

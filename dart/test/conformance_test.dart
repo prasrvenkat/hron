@@ -12,6 +12,8 @@ import 'package:timezone/timezone.dart';
 
 import 'package:hron/hron.dart';
 
+import 'support/spec_cases.dart';
+
 late Map<String, dynamic> spec;
 late TZDateTime defaultNow;
 
@@ -80,31 +82,11 @@ String formatDate(TZDateTime t) =>
     '${t.month.toString().padLeft(2, '0')}-'
     '${t.day.toString().padLeft(2, '0')}';
 
-/// Fails a case carrying a field outside [fields] or the labels `name` and
-/// `description`: a field the runner does not check asserts nothing.
-void checkFields(Map<String, dynamic> tc, Set<String> fields) {
-  final unknown = tc.keys.toSet().difference({
-    ...fields,
-    'name',
-    'description',
-  });
-  if (unknown.isNotEmpty) {
-    fail('case has fields this runner does not check: $unknown');
-  }
-}
-
 Matcher throwsCronError(Object? message) => throwsA(
   isA<HronError>()
       .having((e) => e.kind, 'kind', HronErrorKind.cron)
       .having((e) => e.message, 'message', message),
 );
-
-/// Fails a case that carries none of [fields]: a skipped case checks nothing.
-void requireAssertion(Map<String, dynamic> tc, List<String> fields) {
-  if (!fields.any(tc.containsKey)) {
-    fail('case has none of the assertion fields $fields');
-  }
-}
 
 void checkNext(Map<String, dynamic> tc) {
   checkFields(tc, {
@@ -353,21 +335,7 @@ void main() {
     final tests = parseErrors['tests'] as List<dynamic>;
     for (final tc in tests) {
       final name = (tc['name'] ?? tc['input']) as String;
-      test(name, () {
-        checkFields(tc as Map<String, dynamic>, {'input', 'error_contains'});
-        final errorText = tc['error_contains'] as String?;
-        expect(Schedule.validate(tc['input'] as String), isFalse);
-        expect(
-          () => Schedule.parse(tc['input'] as String),
-          throwsA(
-            isA<HronError>().having(
-              (e) => e.message,
-              'message',
-              errorText == null ? anything : contains(errorText),
-            ),
-          ),
-        );
-      });
+      test(name, () => checkParseError(tc as Map<String, dynamic>));
     }
   });
 

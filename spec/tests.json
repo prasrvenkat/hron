@@ -622,6 +622,11 @@
           "name": "ordinal_every_1_month_normalized",
           "input": "every 1 month on the first monday at 10:00",
           "canonical": "every month on the first monday at 10:00"
+        },
+        {
+          "name": "day_range_equal_ends",
+          "input": "every month on the 15th to 15th at 9:00",
+          "canonical": "every month on the 15th to 15th at 09:00"
         }
       ]
     },
@@ -686,6 +691,11 @@
           "name": "iso_date_upper_bound",
           "input": "on 9999-12-31 at 09:00",
           "canonical": "on 9999-12-31 at 09:00"
+        },
+        {
+          "name": "iso_date_in_gregorian_gap",
+          "input": "on 1582-10-10 at 09:00",
+          "canonical": "on 1582-10-10 at 09:00"
         }
       ]
     },
@@ -5347,6 +5357,18 @@
           "span": [
             40,
             45
+          ]
+        }
+      },
+      {
+        "name": "val_iso_feb_29_julian_leap_year",
+        "input": "on 1500-02-29 at 09:00",
+        "error": {
+          "kind": "parse",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 1500-02-29",
+          "span": [
+            3,
+            13
           ]
         }
       }
