@@ -55,7 +55,9 @@ A case is a JSON object:
 | `between` | `from`, `to` | a list of timestamps |
 | `matches` | `datetime` | a boolean |
 
-Timestamps use the spec's form, `2026-03-08T03:30:00-04:00[America/New_York]`.
+Timestamps use the spec's form, `2026-03-08T03:30:00-04:00[America/New_York]`. A runner reads the instant from the date, time and offset, then puts it in the bracketed zone. It writes every timestamp it returns as the wall time in its zone, followed by the zone's exact offset at that instant.
+
+An offset that is not a whole number of minutes, such as local mean time before standard time was adopted (into the 1950s in some zones) or Monrovia's `-00:44:30` until 1972, is written with its seconds (`±HH:MM:SS`), in cases and in answers. Each runner computes the offset from the instant with the tz data its library uses, so a library that keeps offsets in whole minutes, as C#'s `TimeZoneInfo` does, shows its wrong instants as different wall times instead of hiding them behind the formatting. The spec leaves such offsets out (Timezone data in `spec/README.md`), and the languages' tz data disagree about some zones before 1970 too, so divergences there may be about the data rather than hron.
 
 A runner answers each case with one line, `{"id", "ok": true, "result", "micros"}` or `{"id", "ok": false, "error", "micros"}`, where `micros` is how long it took to evaluate the case. For a hron error, `error` is `{"kind", "message", "span", "suggestion"}`, where `kind` is `lex`, `parse`, `eval` or `cron`, `span` is `[start, end]` in code points or `null`, and `suggestion` is a string or `null`. Any other exception is `{"kind": "crash", "message"}`. The driver records `timeout` for a case that hangs and `crash` for one that kills the runner, then restarts the runner from the next case; a runner that hangs or dies on its first two cases stops the run. Each runner's stderr goes to `.build/<lang>.log`.
 

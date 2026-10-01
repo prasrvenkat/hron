@@ -5,15 +5,20 @@ require "time"
 require "tzinfo"
 require "hron"
 
+# Time.iso8601 rejects an offset with seconds.
 def parse_zoned(s)
   iso, zone = s.match(/\A(.+)\[(.+)\]\z/).captures
-  TZInfo::Timezone.get(zone).to_local(Time.iso8601(iso))
+  TZInfo::Timezone.get(zone).to_local(Time.new(iso))
 end
 
 # Time carries no zone, so only the instant returned is compared, written in the
 # schedule's timezone (UTC when none).
 def format_zoned(time, zone)
-  time && "#{TZInfo::Timezone.get(zone).to_local(time).strftime("%Y-%m-%dT%H:%M:%S%:z")}[#{zone}]"
+  return nil unless time
+
+  local = TZInfo::Timezone.get(zone).to_local(time)
+  offset = (local.utc_offset % 60).zero? ? "%:z" : "%::z"
+  "#{local.strftime("%Y-%m-%dT%H:%M:%S#{offset}")}[#{zone}]"
 end
 
 def evaluate(c)

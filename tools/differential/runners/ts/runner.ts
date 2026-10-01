@@ -12,8 +12,15 @@ type Case = {
   n: number;
 };
 
-const zoned = (s: string) => Temporal.ZonedDateTime.from(s);
-const format = (t: Temporal.ZonedDateTime | null) => t?.toString() ?? null;
+// ZonedDateTime.from rejects an offset that Temporal's tz data does not give the wall time, so the
+// instant is read first.
+function zoned(s: string): Temporal.ZonedDateTime {
+  const [, iso, zone] = s.match(/^(.+)\[(.+)\]$/)!;
+  return Temporal.Instant.from(iso).toZonedDateTimeISO(zone);
+}
+// toString() rounds the offset to the nearest minute, since RFC 9557 has no seconds there.
+const format = (t: Temporal.ZonedDateTime | null) =>
+  t ? `${t.toPlainDateTime()}${t.offset}[${t.timeZoneId}]` : null;
 
 function take<T>(items: Iterable<T>, n: number): T[] {
   const out: T[] = [];

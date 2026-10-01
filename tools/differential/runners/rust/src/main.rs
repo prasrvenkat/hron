@@ -3,7 +3,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::time::Instant;
 
 use hron::{Schedule, ScheduleError};
-use jiff::Zoned;
+use jiff::{Timestamp, Zoned};
 use serde_json::{json, Value};
 
 fn main() {
@@ -30,7 +30,15 @@ fn main() {
 
 fn evaluate(case: &Value) -> Result<Value, ScheduleError> {
     let expr = case["expr"].as_str().expect("expr");
-    let time = |field: &str| -> Zoned { case[field].as_str().expect(field).parse().expect(field) };
+    let time = |field: &str| -> Zoned {
+        let (iso, zone) = case[field]
+            .as_str()
+            .expect(field)
+            .split_once('[')
+            .expect(field);
+        let instant: Timestamp = iso.parse().expect(field);
+        instant.in_tz(zone.trim_end_matches(']')).expect(field)
+    };
     let n = || case["n"].as_u64().expect("n") as usize;
     if case["op"] == "fromCron" {
         return Ok(json!(Schedule::from_cron(expr)?.to_string()));
@@ -39,9 +47,9 @@ fn evaluate(case: &Value) -> Result<Value, ScheduleError> {
     Ok(match case["op"].as_str().expect("op") {
         "parse" => json!(schedule.to_string()),
         "toCron" => json!(schedule.to_cron()?),
-        "next" => json!(schedule.next_from(&time("now"))?.map(|t| t.to_string())),
+        "next" => json!(schedule.next_from(&time("now"))?.as_ref().map(format)),
         "nextN" => strings(schedule.next_n_from(&time("now"), n())?),
-        "prev" => json!(schedule.previous_from(&time("now"))?.map(|t| t.to_string())),
+        "prev" => json!(schedule.previous_from(&time("now"))?.as_ref().map(format)),
         "matches" => json!(schedule.matches(&time("datetime"))?),
         "between" => strings(
             schedule
@@ -59,7 +67,12 @@ fn evaluate(case: &Value) -> Result<Value, ScheduleError> {
 }
 
 fn strings(times: Vec<Zoned>) -> Value {
-    json!(times.iter().map(Zoned::to_string).collect::<Vec<_>>())
+    json!(times.iter().map(format).collect::<Vec<_>>())
+}
+
+// Zoned's Display rounds the offset to the nearest minute, since RFC 9557 has no seconds there.
+fn format(t: &Zoned) -> String {
+    t.strftime("%Y-%m-%dT%H:%M:%S%.f%:z[%:Q]").to_string()
 }
 
 fn details(error: &ScheduleError) -> Value {

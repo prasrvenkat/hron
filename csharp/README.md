@@ -76,6 +76,11 @@ directory (Linux, macOS), names match in any case and display with the IANA capi
 `in america/new_york` becomes `in America/New_York`. On Windows, a name must use its exact IANA
 capitalization. Which names are accepted follows the platform's tz data.
 
+`DateTimeOffset` and `TimeZoneInfo` keep offsets in whole minutes, so where a zone's offset had
+seconds (local mean time before standard time was adopted, into the 1950s in some zones) an occurrence can be
+up to a minute off, or skipped when the rounding moves it past `now`. The spec leaves such offsets
+out of scope.
+
 ## Cron Conversion
 
 Conversion is exact in both directions: the result fires at the same times on the same dates, or
