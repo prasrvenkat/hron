@@ -184,7 +184,8 @@ impl Schedule {
         cron::from_cron(cron_expr)
     }
 
-    /// Explain a cron expression in human-readable form.
+    /// Explain a cron expression in human-readable form: the same as
+    /// `Schedule::from_cron(cron_expr)?.to_string()`, with the same errors.
     ///
     /// # Examples
     ///

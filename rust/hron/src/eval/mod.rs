@@ -358,7 +358,12 @@ impl DailyTimes {
     }
 }
 
-fn interval_slots(interval: u32, unit: IntervalUnit, from: &TimeOfDay, to: &TimeOfDay) -> Vec<i64> {
+pub(crate) fn interval_slots(
+    interval: u32,
+    unit: IntervalUnit,
+    from: &TimeOfDay,
+    to: &TimeOfDay,
+) -> Vec<i64> {
     let step = match unit {
         IntervalUnit::Minutes => interval as i64,
         IntervalUnit::Hours => interval as i64 * MINUTES_PER_HOUR,

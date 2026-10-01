@@ -20,7 +20,7 @@ Pipeline: `lexer.rs` → `parser.rs` → `eval/`
 | `lexer.rs` | Tokenizer |
 | `parser.rs` | Hand-rolled recursive descent, follows `spec/grammar.ebnf` |
 | `eval/` | Search for the nearest occurrence, with `calendar.rs` (date arithmetic) and `wall_clock.rs` (time zones); the reference for every implementation's evaluator |
-| `cron.rs` | Bidirectional cron conversion (expressible subset only) |
+| `cron.rs` | Exact cron conversion in both directions (spec/README.md, "Cron Conversion") |
 | `display.rs` | Canonical `Display` impl that roundtrips with parse |
 | `error.rs` | Error types with source spans |
 
@@ -40,7 +40,6 @@ hron = { version = "0.1", default-features = false }
 
 - Searches span the 400-year Gregorian cycle (multiplied by the interval where they do not divide evenly), so sparse schedules such as `every 11 years on the fifth sunday of february` are found and contradictory ones return `None`.
 - `last` in yearly context is ambiguous: `last weekday of <month>` vs `last <day_name> of <month>`. Parser peeks at next token.
-- `from_cron` handles hour ranges like `9-17`, not just `*` or single numbers.
 
 ## Tests
 
@@ -48,4 +47,4 @@ hron = { version = "0.1", default-features = false }
 cargo test --workspace --all-features
 ```
 
-`hron/tests/conformance.rs` drives all cases from `spec/tests.json`. Unit tests live in each module. CLI tests in `hron-cli/tests/cli.rs`.
+`hron/tests/conformance.rs` drives all cases from `spec/tests.json`. `hron/tests/cron.rs` checks cron conversion against an independent cron matcher. Unit tests live in each module. CLI tests in `hron-cli/tests/cli.rs`.

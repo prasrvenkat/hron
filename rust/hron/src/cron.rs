@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::error::ScheduleError;
+use crate::eval::interval_slots;
 
 const MAX_LISTED_TIMES: usize = 24;
 const BOTH_DAYS_RESTRICTED: &str =
@@ -168,33 +169,34 @@ pub fn from_cron(input: &str) -> Result<Schedule, ScheduleError> {
         })
         .collect();
 
-    let expr = match (days, equal_gap(&times)) {
-        (Days::OfWeek(filter), Some(gap)) => interval(&times, gap, filter),
-        (_, gap) if times.len() > MAX_LISTED_TIMES => {
-            return Err(too_many_times(times.len(), gap));
-        }
-        (Days::OfWeek(days), None) => ScheduleExpr::DayRepeat {
+    let gap = equal_gap(&times);
+    let expr = if let (Days::OfWeek(filter), Some(gap)) = (&days, gap) {
+        interval(&times, gap, filter.clone())
+    } else if times.len() > MAX_LISTED_TIMES {
+        return Err(too_many_times(times.len(), gap));
+    } else if let Some(target) = year_target(&days, &months) {
+        ScheduleExpr::YearRepeat {
             interval: 1,
-            days,
+            target,
             times,
-        },
-        (Days::OfMonth(target), _) => {
-            if let Some(target) = year_target(&target, &months) {
-                return Ok(Schedule::new(ScheduleExpr::YearRepeat {
-                    interval: 1,
-                    target,
-                    times,
-                }));
-            }
-            ScheduleExpr::MonthRepeat {
+        }
+    } else {
+        match days {
+            Days::OfWeek(days) => ScheduleExpr::DayRepeat {
+                interval: 1,
+                days,
+                times,
+            },
+            Days::OfMonth(target) => ScheduleExpr::MonthRepeat {
                 interval: 1,
                 target,
                 times,
-            }
+            },
         }
     };
+    let yearly = matches!(expr, ScheduleExpr::YearRepeat { .. });
     let mut schedule = Schedule::new(expr);
-    if months.len() < MONTHS.len() {
+    if !yearly && months.len() < MONTHS.len() {
         schedule.during = months.iter().map(|&m| MONTHS[m as usize - 1]).collect();
     }
     Ok(schedule)
@@ -452,8 +454,8 @@ fn too_many_times(count: usize, gap: Option<u32>) -> ScheduleError {
     }
 }
 
-fn year_target(target: &MonthTarget, months: &[u8]) -> Option<YearTarget> {
-    let &[month] = months else {
+fn year_target(days: &Days, months: &[u8]) -> Option<YearTarget> {
+    let (Days::OfMonth(target), &[month]) = (days, months) else {
         return None;
     };
     let month = MONTHS[month as usize - 1];
@@ -493,6 +495,10 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
         return Err(not_expressible("starting clauses not supported"));
     }
     let (day_of_month, day_of_week) = day_fields(&schedule.expr)?;
+    // Schedule::new can build a schedule with an empty day list, which writes an empty field.
+    if day_of_month.is_empty() || day_of_week.is_empty() {
+        return Err(not_expressible("schedule has no days"));
+    }
     let month = month_field(schedule)?;
     let (minute, hour) = time_fields(&schedule.expr)?;
     Ok(format!(
@@ -611,7 +617,10 @@ fn time_fields(expr: &ScheduleExpr) -> Result<(String, String), ScheduleError> {
     let minutes = sorted_unique(times.iter().map(|t| (t % 60) as u8));
     let hours = sorted_unique(times.iter().map(|t| (t / 60) as u8));
     // Schedule::new can build a schedule with no times, which no cron writes.
-    if times.is_empty() || minutes.len() * hours.len() != times.len() {
+    if times.is_empty() {
+        return Err(not_expressible("schedule has no times"));
+    }
+    if minutes.len() * hours.len() != times.len() {
         return Err(not_expressible(
             "times are not every combination of their minutes and hours",
         ));
@@ -627,23 +636,10 @@ fn daily_times(expr: &ScheduleExpr) -> Vec<u32> {
             from,
             to,
             ..
-        } => {
-            // Schedule::new accepts an interval of 0, which evaluation treats as 1.
-            // In 64 bits the step of any u32 interval in hours fits without overflow.
-            let minutes_per_unit = match unit {
-                IntervalUnit::Minutes => 1,
-                IntervalUnit::Hours => 60,
-            };
-            let step = u64::from((*interval).max(1)) * minutes_per_unit;
-            let end = u64::from(minute_of_day(*to));
-            let mut slot = u64::from(minute_of_day(*from));
-            let mut slots = Vec::new();
-            while slot <= end {
-                slots.push(slot as u32);
-                slot += step;
-            }
-            slots
-        }
+        } => interval_slots(*interval, *unit, from, to)
+            .into_iter()
+            .map(|slot| slot as u32)
+            .collect(),
         ScheduleExpr::DayRepeat { times, .. }
         | ScheduleExpr::WeekRepeat { times, .. }
         | ScheduleExpr::MonthRepeat { times, .. }

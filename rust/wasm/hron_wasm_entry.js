@@ -18,4 +18,4 @@ if (typeof wasmModule.__wbindgen_start === "function") {
   instance.exports.__wbindgen_start();
 }
 
-export { Schedule, fromCron } from "./hron_wasm_bg.js";
+export { Schedule, explainCron, fromCron } from "./hron_wasm_bg.js";

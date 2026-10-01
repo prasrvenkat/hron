@@ -58,7 +58,7 @@ pub struct Schedule {
 #[wasm_bindgen]
 impl Schedule {
     /// Parse an hron expression string.
-    /// Throws on an invalid expression.
+    /// Throws an Error whose `kind` is `lex` or `parse` on an invalid expression.
     #[wasm_bindgen]
     pub fn parse(input: &str) -> Result<Schedule, JsValue> {
         let inner = hron::Schedule::parse(input).map_err(hron_error)?;
@@ -66,7 +66,7 @@ impl Schedule {
     }
 
     /// Compute the next occurrence strictly after `now`.
-    /// Throws on a datetime it cannot parse.
+    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
     #[wasm_bindgen(js_name = "nextFrom")]
     pub fn next_from(&self, now: &str) -> Result<Option<String>, JsValue> {
         let now = parse_zoned(now)?;
@@ -75,7 +75,7 @@ impl Schedule {
     }
 
     /// Compute the next `n` occurrences strictly after `now`.
-    /// Throws on a datetime it cannot parse.
+    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
     #[wasm_bindgen(js_name = "nextNFrom")]
     pub fn next_n_from(&self, now: &str, n: u32) -> Result<JsValue, JsValue> {
         let now = parse_zoned(now)?;
@@ -88,7 +88,7 @@ impl Schedule {
     }
 
     /// Compute the most recent occurrence strictly before `now`.
-    /// Throws on a datetime it cannot parse.
+    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
     #[wasm_bindgen(js_name = "previousFrom")]
     pub fn previous_from(&self, now: &str) -> Result<Option<String>, JsValue> {
         let now = parse_zoned(now)?;
@@ -97,7 +97,7 @@ impl Schedule {
     }
 
     /// Check whether the minute containing `datetime` is an occurrence (seconds are ignored).
-    /// Throws on a datetime it cannot parse.
+    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
     pub fn matches(&self, datetime: &str) -> Result<bool, JsValue> {
         let dt = parse_zoned(datetime)?;
         self.inner.matches(&dt).map_err(hron_error)
@@ -134,7 +134,7 @@ impl Schedule {
 
     /// Returns occurrences strictly after `from`, limited to `limit` results.
     /// Returns an array of datetime strings.
-    /// Throws on a datetime it cannot parse.
+    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
     pub fn occurrences(&self, from: &str, limit: u32) -> Result<JsValue, JsValue> {
         let from = parse_zoned(from)?;
         let results: Vec<String> = self
@@ -149,7 +149,7 @@ impl Schedule {
 
     /// Returns occurrences in the range (from, to], where from is exclusive and to is inclusive.
     /// Returns an array of datetime strings.
-    /// Throws on a datetime it cannot parse.
+    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
     pub fn between(&self, from: &str, to: &str) -> Result<JsValue, JsValue> {
         let from = parse_zoned(from)?;
         let to = parse_zoned(to)?;
@@ -163,7 +163,8 @@ impl Schedule {
     }
 }
 
-/// Explain a cron expression in human-readable form.
+/// Explain a cron expression in human-readable form: the same as
+/// `fromCron(cron).toString()`, with the same errors.
 #[wasm_bindgen(js_name = "explainCron")]
 pub fn explain_cron(cron_expr: &str) -> Result<String, JsValue> {
     hron::Schedule::explain_cron(cron_expr).map_err(hron_error)
