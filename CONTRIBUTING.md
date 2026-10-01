@@ -102,6 +102,36 @@ CI enforces all of these. Run them locally before pushing.
 
 Comments follow the rule in [AGENTS.md](AGENTS.md#comments).
 
+## Evaluator Structure
+
+Every evaluator has the same design, written in its language's idiom. Rust ([rust/hron/src/eval/](rust/hron/src/eval/)) is the reference. One search finds the occurrence nearest an instant, in either direction:
+
+1. Clamp the instant's local date by `starting` (forward) or `until` (backward), and start one period against the search direction: a nearest weekday or a DST shift can move an occurrence out of the period it is scheduled in.
+2. Walk the cadence's aligned periods in the search direction: `per_400_years / gcd(per_400_years, interval)` of them plus `HORIZON_MARGIN_PERIODS`, extended to the farthest ISO `except` date (spec/README.md, "Search horizon"), and ending early at the edge of the calendar the platform can represent.
+3. Take each period's candidate dates in direction order. Stop once a candidate's date is more than `MAX_SHIFT_DAYS` beyond the best occurrence's scheduled date (`could_beat`), or past the clause bound the search moves toward (`ends_search`). Skip a candidate the clauses reject. Otherwise find its occurrence nearest the instant (`nearest_on_date`), and replace the best only when it is strictly nearer.
+
+Each concept has one name, in the language's casing:
+
+| Concept | Name |
+|---|---|
+| Search direction | `Direction` (`Forward`, `Backward`) with `sign` and `precedes` |
+| A schedule prepared for searching | `Search`, with `nearest(now, direction)` and `nearest_on_date` |
+| The periods an expression fires in | `Cadence`: `period_of`, `start_of`, `period_starts` |
+| A date it fires on, with the month whose day it names | `Candidate` (`date`, `target_month`), from `candidates_in_period` |
+| The times of day it fires at | `DailyTimes`: fixed times or interval slots |
+| Trailing clauses | `Clauses`: `allows`, `clamp`, `ends_search`, `farthest_except_date` |
+| A found occurrence | `Occurrence` (`instant`, and the `date` it is scheduled on), kept while `could_beat` holds |
+| Wall time on a date | `fixed_time_on` (shifted out of a gap), `slot_on` (none in a gap); both take a repeated time's first pass |
+| Supported range | `RANGE_START`, `RANGE_END`, `in_supported_range` |
+
+And it follows these rules:
+
+- Direction enters only through `Direction` and the clause and cadence primitives. The one mirrored algorithm is the interval-slot scan on a date, because a fall-back overlap is not symmetric.
+- A search prepares its schedule once: zone, cadence, times and clauses, with ISO dates parsed once.
+- Numbers that bound a loop are named constants with their reason: `HORIZON_MARGIN_PERIODS`, `MAX_SHIFT_DAYS`, `NAMED_UNTIL_MAX_YEARS`. There are no fixed scan spans.
+- Calendar arithmetic and wall-clock resolution live in their own units, apart from the search.
+- `matches` is defined through the forward search, so the two cannot disagree.
+
 ## Pull Requests
 
 - Create a branch from `main`
