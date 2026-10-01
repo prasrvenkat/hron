@@ -7811,7 +7811,7 @@
         {
           "name": "1hr_full_day",
           "hron": "every 1 hour from 00:00 to 23:59",
-          "cron": "0 */1 * * *"
+          "cron": "0 * * * *"
         },
         {
           "name": "month_1st",
@@ -7836,147 +7836,407 @@
         {
           "name": "day_range_1_to_5",
           "hron": "every month on the 1st to 5th at 9:00",
-          "cron": "0 9 1,2,3,4,5 * *"
+          "cron": "0 9 1-5 * *"
         },
         {
           "name": "day_range_mixed",
           "hron": "every month on the 1st to 3rd, 15th at 9:00",
-          "cron": "0 9 1,2,3,15 * *"
+          "cron": "0 9 1-3,15 * *"
         },
         {
           "name": "day_range_10_to_15",
           "hron": "every month on the 10th to 15th at 12:00",
-          "cron": "0 12 10,11,12,13,14,15 * *"
+          "cron": "0 12 10-15 * *"
         },
         {
           "name": "nearest_weekday",
           "hron": "every month on the nearest weekday to 15th at 09:00",
           "cron": "0 9 15W * *"
-        }
-      ]
-    },
-    "to_cron_errors": {
-      "description": "Expressions that cannot be converted to cron.",
-      "tests": [
-        {
-          "name": "partial_day_interval",
-          "hron": "every 45 min from 09:00 to 17:00",
-          "description": "partial-day interval"
-        },
-        {
-          "name": "interval_with_day_filter",
-          "hron": "every 45 min from 09:00 to 17:00 on weekdays",
-          "description": "interval with day filter"
-        },
-        {
-          "name": "multi_week",
-          "hron": "every 2 weeks on monday at 9:00",
-          "description": "multi-week interval"
         },
         {
           "name": "last_day",
           "hron": "every month on the last day at 17:00",
-          "description": "last day of month"
+          "cron": "0 17 L * *"
         },
         {
           "name": "last_weekday",
           "hron": "every month on the last weekday at 15:00",
-          "description": "last weekday"
+          "cron": "0 15 LW * *"
         },
         {
           "name": "ordinal",
           "hron": "every month on the first monday at 10:00",
-          "description": "ordinal weekday"
+          "cron": "0 10 * * 1#1"
         },
         {
           "name": "ordinal_last",
           "hron": "every month on the last friday at 16:00",
-          "description": "ordinal last"
+          "cron": "0 16 * * 5L"
         },
         {
           "name": "yearly",
           "hron": "every year on dec 25 at 00:00",
-          "description": "yearly"
-        },
-        {
-          "name": "single_date",
-          "hron": "on 2026-03-15 at 14:30",
-          "description": "single date"
-        },
-        {
-          "name": "except_clause",
-          "hron": "every weekday at 9:00 except dec 25",
-          "description": "except clause"
-        },
-        {
-          "name": "until_clause",
-          "hron": "every day at 9:00 until 2026-12-31",
-          "description": "until clause"
+          "cron": "0 0 25 12 *"
         },
         {
           "name": "multi_time_day",
           "hron": "every day at 9:00, 17:00",
-          "description": "multi-time day repeat"
+          "cron": "0 9,17 * * *"
         },
         {
           "name": "multi_time_weekday",
           "hron": "every weekday at 9:00, 17:00",
-          "description": "multi-time weekday repeat"
+          "cron": "0 9,17 * * 1-5"
         },
         {
           "name": "multi_time_month",
           "hron": "every month on the 1st at 9:00, 17:00",
-          "description": "multi-time month repeat"
+          "cron": "0 9,17 1 * *"
         },
         {
           "name": "during_single",
           "hron": "every day at 9:00 during jan",
-          "description": "during clause single"
+          "cron": "0 9 * 1 *"
         },
         {
           "name": "during_multiple",
           "hron": "every weekday at 9:00 during jan, jun",
-          "description": "during clause multiple"
+          "cron": "0 9 * 1,6 1-5"
         },
         {
           "name": "day_range_multi_time",
           "hron": "every month on the 1st to 5th at 9:00, 17:00",
-          "description": "day range + multi-time"
+          "cron": "0 9,17 1-5 * *"
         },
         {
           "name": "day_range_during",
           "hron": "every month on the 1st to 5th at 9:00 during jan",
-          "description": "day range + during"
+          "cron": "0 9 1-5 1 *"
+        },
+        {
+          "name": "every_minute",
+          "hron": "every 1 minute from 00:00 to 23:59",
+          "cron": "* * * * *"
+        },
+        {
+          "name": "partial_day_minute_step",
+          "hron": "every 30 min from 09:00 to 17:30",
+          "cron": "*/30 9-17 * * *"
+        },
+        {
+          "name": "minute_step_within_one_hour",
+          "hron": "every 20 min from 09:00 to 09:40",
+          "cron": "*/20 9 * * *"
+        },
+        {
+          "name": "hour_range_step",
+          "hron": "every 3 hours from 06:00 to 18:00",
+          "cron": "0 6-18/3 * * *"
+        },
+        {
+          "name": "hour_step_dividing_day",
+          "hron": "every 8 hours from 00:00 to 23:59",
+          "cron": "0 */8 * * *"
+        },
+        {
+          "name": "hour_step_not_dividing_day",
+          "hron": "every 7 hours from 00:00 to 23:59",
+          "cron": "0 0-21/7 * * *"
+        },
+        {
+          "name": "interval_of_whole_day",
+          "hron": "every 24 hours from 00:00 to 23:59",
+          "cron": "0 0 * * *"
+        },
+        {
+          "name": "huge_interval_does_not_overflow",
+          "hron": "every 2147483647 hours from 00:00 to 23:59",
+          "cron": "0 0 * * *"
+        },
+        {
+          "name": "interval_with_one_time",
+          "hron": "every 30 min from 09:00 to 09:00",
+          "cron": "0 9 * * *"
+        },
+        {
+          "name": "interval_longer_than_window",
+          "hron": "every 1 hour from 09:00 to 09:30",
+          "cron": "0 9 * * *"
+        },
+        {
+          "name": "times_sorted_and_deduplicated",
+          "hron": "every day at 17:00, 09:00, 09:00",
+          "cron": "0 9,17 * * *"
+        },
+        {
+          "name": "two_hours_dividing_day",
+          "hron": "every day at 00:00, 12:00",
+          "cron": "0 */12 * * *"
+        },
+        {
+          "name": "two_consecutive_hours",
+          "hron": "every day at 09:00, 10:00",
+          "cron": "0 9-10 * * *"
+        },
+        {
+          "name": "hours_run_and_single",
+          "hron": "every day at 09:00, 10:00, 11:00, 15:00",
+          "cron": "0 9-11,15 * * *"
+        },
+        {
+          "name": "hours_with_equal_gaps",
+          "hron": "every day at 09:00, 13:00, 17:00",
+          "cron": "0 9-17/4 * * *"
+        },
+        {
+          "name": "two_minutes_not_dividing_hour",
+          "hron": "every day at 00:00, 00:45",
+          "cron": "0,45 0 * * *"
+        },
+        {
+          "name": "two_minutes_offset",
+          "hron": "every day at 00:05, 00:35",
+          "cron": "5,35 0 * * *"
+        },
+        {
+          "name": "minutes_run_and_single",
+          "hron": "every day at 00:00, 00:01, 00:02, 00:30",
+          "cron": "0-2,30 0 * * *"
+        },
+        {
+          "name": "interval_on_weekday",
+          "hron": "every 15 min from 09:00 to 17:45 on weekday",
+          "cron": "*/15 9-17 * * 1-5"
+        },
+        {
+          "name": "interval_on_day_during",
+          "hron": "every 30 min from 09:00 to 17:30 on monday during jan",
+          "cron": "*/30 9-17 * 1 1"
+        },
+        {
+          "name": "sunday_and_saturday",
+          "hron": "every sunday, saturday at 09:00",
+          "cron": "0 9 * * 0,6"
+        },
+        {
+          "name": "days_run_with_sunday",
+          "hron": "every friday, saturday, sunday at 09:00",
+          "cron": "0 9 * * 0,5-6"
+        },
+        {
+          "name": "two_consecutive_days",
+          "hron": "every monday, tuesday at 09:00",
+          "cron": "0 9 * * 1-2"
+        },
+        {
+          "name": "repeated_day",
+          "hron": "every monday, monday at 09:00",
+          "cron": "0 9 * * 1"
+        },
+        {
+          "name": "all_seven_days",
+          "hron": "every sunday, monday, tuesday, wednesday, thursday, friday, saturday at 09:00",
+          "cron": "0 9 * * *"
+        },
+        {
+          "name": "week_repeat_of_one",
+          "hron": "every week on monday at 09:00",
+          "cron": "0 9 * * 1"
+        },
+        {
+          "name": "month_days_sorted",
+          "hron": "every month on the 15th, 1st at 09:00",
+          "cron": "0 9 1,15 * *"
+        },
+        {
+          "name": "all_month_days",
+          "hron": "every month on the 1st to 31st at 09:00",
+          "cron": "0 9 * * *"
+        },
+        {
+          "name": "day_the_month_lacks",
+          "hron": "every month on the 31st at 09:00 during feb",
+          "cron": "0 9 31 2 *"
+        },
+        {
+          "name": "yearly_day_of_month",
+          "hron": "every year on the 15th of march at 09:00",
+          "cron": "0 9 15 3 *"
+        },
+        {
+          "name": "yearly_nth_weekday",
+          "hron": "every year on the first monday of march at 10:00",
+          "cron": "0 10 * 3 1#1"
+        },
+        {
+          "name": "yearly_last_weekday_of_week",
+          "hron": "every year on the last friday of december at 17:00",
+          "cron": "0 17 * 12 5L"
+        },
+        {
+          "name": "yearly_last_weekday",
+          "hron": "every year on the last weekday of december at 17:00",
+          "cron": "0 17 LW 12 *"
+        },
+        {
+          "name": "yearly_feb_29",
+          "hron": "every year on feb 29 at 09:00",
+          "cron": "0 9 29 2 *"
+        },
+        {
+          "name": "year_repeat_of_one",
+          "hron": "every 1 year on dec 25 at 00:00",
+          "cron": "0 0 25 12 *"
+        },
+        {
+          "name": "yearly_writes_own_month_despite_during",
+          "hron": "every year on dec 25 at 09:00 during dec, jan",
+          "cron": "0 9 25 12 *"
+        },
+        {
+          "name": "named_date",
+          "hron": "on feb 14 at 09:00",
+          "cron": "0 9 14 2 *"
+        },
+        {
+          "name": "during_sorted_run",
+          "hron": "every day at 09:00 during mar, jan, feb",
+          "cron": "0 9 * 1-3 *"
+        },
+        {
+          "name": "during_quarters",
+          "hron": "every day at 09:00 during jan, apr, jul, oct",
+          "cron": "0 9 * 1,4,7,10 *"
+        },
+        {
+          "name": "during_all_months",
+          "hron": "every day at 09:00 during jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec",
+          "cron": "0 9 * * *"
+        },
+        {
+          "name": "timezone_dropped",
+          "hron": "every day at 09:00 in America/New_York",
+          "cron": "0 9 * * *"
+        }
+      ]
+    },
+    "to_cron_errors": {
+      "description": "hron expressions toCron rejects, with the exact error message.",
+      "tests": [
+        {
+          "name": "partial_day_interval",
+          "hron": "every 45 min from 09:00 to 17:00",
+          "error": "not expressible as cron: times are not every combination of their minutes and hours"
+        },
+        {
+          "name": "interval_with_day_filter",
+          "hron": "every 45 min from 09:00 to 17:00 on weekdays",
+          "error": "not expressible as cron: times are not every combination of their minutes and hours"
+        },
+        {
+          "name": "multi_week",
+          "hron": "every 2 weeks on monday at 9:00",
+          "error": "not expressible as cron: multi-week repeats not supported"
+        },
+        {
+          "name": "single_date",
+          "hron": "on 2026-03-15 at 14:30",
+          "error": "not expressible as cron: ISO dates do not repeat"
+        },
+        {
+          "name": "except_clause",
+          "hron": "every weekday at 9:00 except dec 25",
+          "error": "not expressible as cron: except clauses not supported"
+        },
+        {
+          "name": "until_clause",
+          "hron": "every day at 9:00 until 2026-12-31",
+          "error": "not expressible as cron: until clauses not supported"
         },
         {
           "name": "multi_day_interval",
           "hron": "every 3 days at 09:00",
-          "description": "multi-day interval"
+          "error": "not expressible as cron: multi-day repeats not supported"
         },
         {
           "name": "multi_month_interval",
           "hron": "every 2 months on the 1st at 09:00",
-          "description": "multi-month interval"
+          "error": "not expressible as cron: multi-month repeats not supported"
         },
         {
           "name": "ordinal_interval",
           "hron": "every 2 months on the first monday at 10:00",
-          "description": "ordinal with month interval"
+          "error": "not expressible as cron: multi-month repeats not supported"
         },
         {
           "name": "yearly_interval",
           "hron": "every 2 years on dec 25 at 00:00",
-          "description": "yearly interval"
+          "error": "not expressible as cron: multi-year repeats not supported"
         },
         {
           "name": "next_nearest_weekday_unsupported",
           "hron": "every month on the next nearest weekday to 15th at 09:00",
-          "description": "directional nearest weekday not supported in cron"
+          "error": "not expressible as cron: directional nearest weekday not supported"
         },
         {
           "name": "previous_nearest_weekday_unsupported",
           "hron": "every month on the previous nearest weekday to 1st at 09:00",
-          "description": "directional nearest weekday not supported in cron"
+          "error": "not expressible as cron: directional nearest weekday not supported"
+        },
+        {
+          "name": "starting_clause",
+          "hron": "every day at 09:00 starting 2026-01-01",
+          "error": "not expressible as cron: starting clauses not supported"
+        },
+        {
+          "name": "during_excludes_yearly_month",
+          "hron": "every year on dec 25 at 09:00 during jan",
+          "error": "not expressible as cron: during excludes the schedule's month"
+        },
+        {
+          "name": "during_excludes_named_date_month",
+          "hron": "on feb 14 at 09:00 during mar",
+          "error": "not expressible as cron: during excludes the schedule's month"
+        },
+        {
+          "name": "half_hour_ending_on_the_hour",
+          "hron": "every 30 min from 09:00 to 17:00",
+          "error": "not expressible as cron: times are not every combination of their minutes and hours"
+        },
+        {
+          "name": "interval_crossing_hours_unevenly",
+          "hron": "every 90 min from 00:00 to 23:59",
+          "error": "not expressible as cron: times are not every combination of their minutes and hours"
+        },
+        {
+          "name": "times_with_different_minutes",
+          "hron": "every day at 09:00, 17:30",
+          "error": "not expressible as cron: times are not every combination of their minutes and hours"
+        },
+        {
+          "name": "except_before_multi_day",
+          "hron": "every 2 days at 09:00 except dec 25",
+          "error": "not expressible as cron: except clauses not supported"
+        },
+        {
+          "name": "until_before_iso_date",
+          "hron": "on 2026-03-15 at 14:30 until 2026-12-31",
+          "error": "not expressible as cron: until clauses not supported"
+        },
+        {
+          "name": "multi_day_before_times",
+          "hron": "every 2 days at 09:00, 17:30",
+          "error": "not expressible as cron: multi-day repeats not supported"
+        },
+        {
+          "name": "multi_month_before_directional",
+          "hron": "every 2 months on the next nearest weekday to 15th at 09:00",
+          "error": "not expressible as cron: multi-month repeats not supported"
+        },
+        {
+          "name": "during_before_times",
+          "hron": "every year on dec 25 at 09:00, 17:30 during jan",
+          "error": "not expressible as cron: during excludes the schedule's month"
         }
       ]
     },
@@ -8036,7 +8296,7 @@
         {
           "name": "interval_with_hour_range",
           "cron": "*/15 9-17 * * *",
-          "hron": "every 15 min from 09:00 to 17:00"
+          "hron": "every 15 min from 09:00 to 17:45"
         },
         {
           "name": "multiple_weekdays",
@@ -8096,7 +8356,7 @@
         {
           "name": "month_single",
           "cron": "0 9 1 3 *",
-          "hron": "every month on the 1st at 09:00 during mar"
+          "hron": "every year on mar 1 at 09:00"
         },
         {
           "name": "month_multiple",
@@ -8116,7 +8376,7 @@
         {
           "name": "month_with_dom",
           "cron": "0 9 15 12 *",
-          "hron": "every month on the 15th at 09:00 during dec"
+          "hron": "every year on dec 15 at 09:00"
         },
         {
           "name": "month_with_dow",
@@ -8126,7 +8386,7 @@
         {
           "name": "month_named_single",
           "cron": "0 9 1 JAN *",
-          "hron": "every month on the 1st at 09:00 during jan"
+          "hron": "every year on jan 1 at 09:00"
         },
         {
           "name": "month_named_multiple",
@@ -8392,101 +8652,696 @@
           "name": "nearest_weekday_with_month",
           "cron": "0 9 15W 3 *",
           "hron": "every month on the nearest weekday to 15th at 09:00 during mar"
+        },
+        {
+          "name": "single_time_with_minute",
+          "cron": "30 9 * * *",
+          "hron": "every day at 09:30"
+        },
+        {
+          "name": "two_times_list",
+          "cron": "0,30 9 * * *",
+          "hron": "every day at 09:00, 09:30"
+        },
+        {
+          "name": "three_equal_gaps_interval",
+          "cron": "0 9,13,17 * * *",
+          "hron": "every 4 hours from 09:00 to 17:00"
+        },
+        {
+          "name": "hour_range_step_interval",
+          "cron": "0 0-12/2 * * *",
+          "hron": "every 2 hours from 00:00 to 12:00"
+        },
+        {
+          "name": "interval_reaching_midnight_ends_2359",
+          "cron": "0 0-20/4 * * *",
+          "hron": "every 4 hours from 00:00 to 23:59"
+        },
+        {
+          "name": "hour_step_not_dividing_day",
+          "cron": "0 */5 * * *",
+          "hron": "every 5 hours from 00:00 to 23:59"
+        },
+        {
+          "name": "interval_not_from_midnight_keeps_last",
+          "cron": "*/30 9-23 * * *",
+          "hron": "every 30 min from 09:00 to 23:30"
+        },
+        {
+          "name": "hourly_from_1am",
+          "cron": "0 1-23 * * *",
+          "hron": "every 1 hour from 01:00 to 23:00"
+        },
+        {
+          "name": "every_minute",
+          "cron": "* * * * *",
+          "hron": "every 1 minute from 00:00 to 23:59"
+        },
+        {
+          "name": "every_minute_of_one_hour",
+          "cron": "* 9 * * *",
+          "hron": "every 1 minute from 09:00 to 09:59"
+        },
+        {
+          "name": "hour_step_one",
+          "cron": "0 */1 * * *",
+          "hron": "every 1 hour from 00:00 to 23:59"
+        },
+        {
+          "name": "hourly_at_minute_5",
+          "cron": "5 * * * *",
+          "hron": "every 1 hour from 00:05 to 23:05"
+        },
+        {
+          "name": "hour_step_7",
+          "cron": "0 */7 * * *",
+          "hron": "every 7 hours from 00:00 to 23:59"
+        },
+        {
+          "name": "minutes_across_hours_interval",
+          "cron": "0,20,40 9,10 * * *",
+          "hron": "every 20 min from 09:00 to 10:40"
+        },
+        {
+          "name": "unequal_gaps_list_ascending",
+          "cron": "0 22,0,2 * * *",
+          "hron": "every day at 00:00, 02:00, 22:00"
+        },
+        {
+          "name": "two_times_unsorted",
+          "cron": "0 17,9 * * *",
+          "hron": "every day at 09:00, 17:00"
+        },
+        {
+          "name": "twenty_four_times_list",
+          "cron": "0,10 0-11 * * *",
+          "hron": "every day at 00:00, 00:10, 01:00, 01:10, 02:00, 02:10, 03:00, 03:10, 04:00, 04:10, 05:00, 05:10, 06:00, 06:10, 07:00, 07:10, 08:00, 08:10, 09:00, 09:10, 10:00, 10:10, 11:00, 11:10"
+        },
+        {
+          "name": "monthly_times_list",
+          "cron": "0 9,13,17 1 * *",
+          "hron": "every month on the 1st at 09:00, 13:00, 17:00"
+        },
+        {
+          "name": "huge_step_selects_start",
+          "cron": "*/99999999999999999999 9 * * *",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "interval_on_weekday",
+          "cron": "*/15 9-17 * * 1-5",
+          "hron": "every 15 min from 09:00 to 17:45 on weekday"
+        },
+        {
+          "name": "interval_on_weekend",
+          "cron": "*/15 9-17 * * 0,6",
+          "hron": "every 15 min from 09:00 to 17:45 on weekend"
+        },
+        {
+          "name": "interval_on_listed_days",
+          "cron": "*/15 9-17 * * 3,1",
+          "hron": "every 15 min from 09:00 to 17:45 on wednesday, monday"
+        },
+        {
+          "name": "interval_on_all_days_of_week",
+          "cron": "*/15 9-17 * * 0-6",
+          "hron": "every 15 min from 09:00 to 17:45"
+        },
+        {
+          "name": "interval_on_all_days_of_month",
+          "cron": "*/15 9-17 1-31 * *",
+          "hron": "every 15 min from 09:00 to 17:45"
+        },
+        {
+          "name": "interval_during_month",
+          "cron": "*/15 9-17 * 1 *",
+          "hron": "every 15 min from 09:00 to 17:45 during jan"
+        },
+        {
+          "name": "dow_weekdays_unordered",
+          "cron": "0 9 * * 5,4,3,2,1",
+          "hron": "every weekday at 09:00"
+        },
+        {
+          "name": "dow_weekend_with_7",
+          "cron": "0 9 * * 6,7",
+          "hron": "every weekend at 09:00"
+        },
+        {
+          "name": "dow_0_and_7_one_sunday",
+          "cron": "0 9 * * 0,7",
+          "hron": "every sunday at 09:00"
+        },
+        {
+          "name": "dow_repeat_dropped",
+          "cron": "0 9 * * 1,1,3",
+          "hron": "every monday, wednesday at 09:00"
+        },
+        {
+          "name": "dow_7_first_keeps_order",
+          "cron": "0 9 * * 7,1",
+          "hron": "every sunday, monday at 09:00"
+        },
+        {
+          "name": "dow_0_to_7_every_day",
+          "cron": "0 9 * * 0-7",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "dow_star_step_one",
+          "cron": "0 9 * * */1",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "dow_named_range_step",
+          "cron": "0 9 * * mon-fri/2",
+          "hron": "every monday, wednesday, friday at 09:00"
+        },
+        {
+          "name": "dow_named_open_step",
+          "cron": "0 9 * * mon/2",
+          "hron": "every monday, wednesday, friday at 09:00"
+        },
+        {
+          "name": "nth_weekday_named_lowercase",
+          "cron": "0 9 * * fri#2",
+          "hron": "every month on the second friday at 09:00"
+        },
+        {
+          "name": "nth_weekday_7_sunday",
+          "cron": "0 9 * * 7#1",
+          "hron": "every month on the first sunday at 09:00"
+        },
+        {
+          "name": "last_weekday_of_week_lowercase",
+          "cron": "0 9 * * 5l",
+          "hron": "every month on the last friday at 09:00"
+        },
+        {
+          "name": "dom_unsorted",
+          "cron": "0 9 15,1 * *",
+          "hron": "every month on the 1st, 15th at 09:00"
+        },
+        {
+          "name": "dom_run_of_two",
+          "cron": "0 9 1,2 * *",
+          "hron": "every month on the 1st to 2nd at 09:00"
+        },
+        {
+          "name": "dom_repeat_dropped",
+          "cron": "0 9 1,1,3 * *",
+          "hron": "every month on the 1st, 3rd at 09:00"
+        },
+        {
+          "name": "dom_all_days_every_day",
+          "cron": "0 9 1-31 * *",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "dom_star_step",
+          "cron": "0 9 */2 * *",
+          "hron": "every month on the 1st, 3rd, 5th, 7th, 9th, 11th, 13th, 15th, 17th, 19th, 21st, 23rd, 25th, 27th, 29th, 31st at 09:00"
+        },
+        {
+          "name": "last_day_lowercase",
+          "cron": "0 9 l * *",
+          "hron": "every month on the last day at 09:00"
+        },
+        {
+          "name": "last_weekday_lowercase",
+          "cron": "0 9 lw * *",
+          "hron": "every month on the last weekday at 09:00"
+        },
+        {
+          "name": "nearest_weekday_lowercase",
+          "cron": "0 9 15w * *",
+          "hron": "every month on the nearest weekday to 15th at 09:00"
+        },
+        {
+          "name": "all_months_no_during",
+          "cron": "0 9 * 1-12 *",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "months_sorted_and_deduplicated",
+          "cron": "0 9 * 12,1,1 *",
+          "hron": "every day at 09:00 during jan, dec"
+        },
+        {
+          "name": "month_step_beyond_range",
+          "cron": "0 9 * */12 *",
+          "hron": "every day at 09:00 during jan"
+        },
+        {
+          "name": "yearly_date",
+          "cron": "0 9 25 12 *",
+          "hron": "every year on dec 25 at 09:00"
+        },
+        {
+          "name": "yearly_from_single_ranges",
+          "cron": "0 9 25-25 dec *",
+          "hron": "every year on dec 25 at 09:00"
+        },
+        {
+          "name": "yearly_with_two_times",
+          "cron": "0 9,17 25 12 *",
+          "hron": "every year on dec 25 at 09:00, 17:00"
+        },
+        {
+          "name": "yearly_feb_29",
+          "cron": "0 9 29 2 *",
+          "hron": "every year on feb 29 at 09:00"
+        },
+        {
+          "name": "feb_30_stays_monthly",
+          "cron": "0 9 30 2 *",
+          "hron": "every month on the 30th at 09:00 during feb"
+        },
+        {
+          "name": "apr_31_stays_monthly",
+          "cron": "0 9 31 4 *",
+          "hron": "every month on the 31st at 09:00 during apr"
+        },
+        {
+          "name": "yearly_nth_weekday",
+          "cron": "0 9 * 3 1#1",
+          "hron": "every year on the first monday of mar at 09:00"
+        },
+        {
+          "name": "yearly_fifth_weekday",
+          "cron": "0 9 * 2 1#5",
+          "hron": "every year on the fifth monday of feb at 09:00"
+        },
+        {
+          "name": "yearly_last_weekday_of_week",
+          "cron": "0 9 * 3 5L",
+          "hron": "every year on the last friday of mar at 09:00"
+        },
+        {
+          "name": "yearly_last_weekday",
+          "cron": "0 9 LW 12 *",
+          "hron": "every year on the last weekday of dec at 09:00"
+        },
+        {
+          "name": "last_day_single_month_stays_monthly",
+          "cron": "0 9 L 2 *",
+          "hron": "every month on the last day at 09:00 during feb"
+        },
+        {
+          "name": "two_days_single_month_stays_monthly",
+          "cron": "0 9 1,15 12 *",
+          "hron": "every month on the 1st, 15th at 09:00 during dec"
+        },
+        {
+          "name": "one_day_two_months_stays_monthly",
+          "cron": "0 9 25 12,1 *",
+          "hron": "every month on the 25th at 09:00 during jan, dec"
+        },
+        {
+          "name": "weekday_single_month",
+          "cron": "0 9 * 12 1",
+          "hron": "every monday at 09:00 during dec"
+        },
+        {
+          "name": "tab_separates_fields",
+          "cron": "0\t9 * * *",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "surrounding_spaces_trimmed",
+          "cron": "  0 9 * * *  ",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "trailing_newline_trimmed",
+          "cron": "0 9 * * *\r\n",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "leading_zeros",
+          "cron": "000 009 * * *",
+          "hron": "every day at 09:00"
+        },
+        {
+          "name": "shortcut_uppercase",
+          "cron": "@DAILY",
+          "hron": "every day at 00:00"
         }
       ]
     },
     "from_cron_errors": {
-      "description": "Invalid cron expressions that must fail.",
+      "description": "Cron expressions fromCron rejects, with the exact error message.",
       "tests": [
         {
           "name": "too_few_fields",
           "cron": "0 9 * *",
-          "description": "expected 5 fields, got 4"
+          "error": "expected 5 cron fields, got 4"
         },
         {
           "name": "too_many_fields",
           "cron": "0 9 * * * *",
-          "description": "expected 5 fields, got 6 (seconds not supported)"
+          "error": "expected 5 cron fields, got 6"
         },
         {
           "name": "seven_fields",
           "cron": "0 0 9 * * * *",
-          "description": "expected 5 fields, got 7 (seconds+year not supported)"
+          "error": "expected 5 cron fields, got 7"
         },
         {
           "name": "invalid_dow_number",
           "cron": "0 9 * * 8",
-          "description": "DOW must be 0-7"
+          "error": "day of week must be 0-7, got 8"
         },
         {
           "name": "invalid_dom_number",
           "cron": "0 9 32 * *",
-          "description": "DOM must be 1-31"
+          "error": "day of month must be 1-31, got 32"
         },
         {
           "name": "invalid_dom_zero",
           "cron": "0 9 0 * *",
-          "description": "DOM must be 1-31"
+          "error": "day of month must be 1-31, got 0"
         },
         {
           "name": "invalid_hour",
           "cron": "0 25 * * *",
-          "description": "hour must be 0-23"
+          "error": "hour must be 0-23, got 25"
         },
         {
           "name": "invalid_minute",
           "cron": "60 9 * * *",
-          "description": "minute must be 0-59"
+          "error": "minute must be 0-59, got 60"
         },
         {
           "name": "invalid_month_number",
           "cron": "0 9 1 13 *",
-          "description": "month must be 1-12"
+          "error": "month must be 1-12, got 13"
         },
         {
           "name": "invalid_month_zero",
           "cron": "0 9 1 0 *",
-          "description": "month must be 1-12"
+          "error": "month must be 1-12, got 0"
         },
         {
           "name": "invalid_month_name",
           "cron": "0 9 1 FOO *",
-          "description": "invalid month name"
+          "error": "invalid month: FOO"
         },
         {
           "name": "invalid_dow_name",
           "cron": "0 9 * * FOO",
-          "description": "invalid day name"
+          "error": "invalid day of week: FOO"
         },
         {
           "name": "invalid_at_shortcut",
           "cron": "@invalid",
-          "description": "unknown @ shortcut"
+          "error": "unknown cron shortcut: @invalid"
         },
         {
           "name": "invalid_nth_weekday_zero",
           "cron": "0 9 * * 1#0",
-          "description": "nth must be 1-5"
+          "error": "day of week ordinal must be 1-5, got 0"
         },
         {
           "name": "invalid_nth_weekday_six",
           "cron": "0 9 * * 1#6",
-          "description": "nth must be 1-5"
+          "error": "day of week ordinal must be 1-5, got 6"
         },
         {
           "name": "invalid_step_zero",
           "cron": "*/0 * * * *",
-          "description": "step cannot be 0"
+          "error": "minute step must be at least 1"
         },
         {
           "name": "invalid_range_reversed",
           "cron": "0 9 5-1 * *",
-          "description": "range start must be <= end"
+          "error": "day of month range must not run backwards: 5-1"
         },
         {
           "name": "invalid_dow_range_reversed",
           "cron": "0 9 * * 5-1",
-          "description": "range start must be <= end"
+          "error": "day of week range must not run backwards: 5-1"
+        },
+        {
+          "name": "shortcut_reboot",
+          "cron": "@reboot",
+          "error": "unknown cron shortcut: @reboot"
+        },
+        {
+          "name": "shortcut_with_fields",
+          "cron": "@daily * * * *",
+          "error": "unknown cron shortcut: @daily * * * *"
+        },
+        {
+          "name": "shortcut_text_is_trimmed",
+          "cron": "  @every 5m\n",
+          "error": "unknown cron shortcut: @every 5m"
+        },
+        {
+          "name": "empty",
+          "cron": "",
+          "error": "expected 5 cron fields, got 0"
+        },
+        {
+          "name": "whitespace_only",
+          "cron": " \t\r\n",
+          "error": "expected 5 cron fields, got 0"
+        },
+        {
+          "name": "non_breaking_space_is_not_a_separator",
+          "cron": "0 9 * *\u00a0*",
+          "error": "expected 5 cron fields, got 4"
+        },
+        {
+          "name": "newline_is_not_a_separator",
+          "cron": "0 9 *\n* *",
+          "error": "expected 5 cron fields, got 4"
+        },
+        {
+          "name": "minute_letters",
+          "cron": "x 9 * * *",
+          "error": "invalid minute: x"
+        },
+        {
+          "name": "minute_plus_sign",
+          "cron": "+5 9 * * *",
+          "error": "invalid minute: +5"
+        },
+        {
+          "name": "minute_month_name",
+          "cron": "jan 9 * * *",
+          "error": "invalid minute: jan"
+        },
+        {
+          "name": "minute_question_mark",
+          "cron": "? 9 * * *",
+          "error": "invalid minute: ?"
+        },
+        {
+          "name": "minute_non_ascii_digit",
+          "cron": "\u0669 9 * * *",
+          "error": "invalid minute: \u0669"
+        },
+        {
+          "name": "hour_empty_item",
+          "cron": "0 9,,17 * * *",
+          "error": "invalid hour: 9,,17"
+        },
+        {
+          "name": "dom_trailing_comma",
+          "cron": "0 9 1, * *",
+          "error": "invalid day of month: 1,"
+        },
+        {
+          "name": "dom_letter_form_in_list",
+          "cron": "0 9 1,L * *",
+          "error": "invalid day of month: 1,L"
+        },
+        {
+          "name": "dom_question_mark_step",
+          "cron": "0 9 ?/2 * *",
+          "error": "invalid day of month: ?/2"
+        },
+        {
+          "name": "dom_weekday_name",
+          "cron": "0 9 mon * *",
+          "error": "invalid day of month: mon"
+        },
+        {
+          "name": "dom_negative_step",
+          "cron": "0 9 1-31/-1 * *",
+          "error": "invalid day of month: 1-31/-1"
+        },
+        {
+          "name": "month_four_letter_name",
+          "cron": "0 9 * sept *",
+          "error": "invalid month: sept"
+        },
+        {
+          "name": "month_non_ascii_name",
+          "cron": "0 9 * \u017fep *",
+          "error": "invalid month: \u017fep"
+        },
+        {
+          "name": "dow_bare_l",
+          "cron": "0 9 * * L",
+          "error": "invalid day of week: L"
+        },
+        {
+          "name": "dow_ordinal_in_list",
+          "cron": "0 9 * * 1#1,2#2",
+          "error": "invalid day of week: 1#1,2#2"
+        },
+        {
+          "name": "dow_ordinal_missing",
+          "cron": "0 9 * * 1#",
+          "error": "invalid day of week: 1#"
+        },
+        {
+          "name": "dow_month_name",
+          "cron": "0 9 * * jan",
+          "error": "invalid day of week: jan"
+        },
+        {
+          "name": "minute_60_leading_zero",
+          "cron": "060 9 * * *",
+          "error": "minute must be 0-59, got 060"
+        },
+        {
+          "name": "minute_huge",
+          "cron": "99999999999999999999 9 * * *",
+          "error": "minute must be 0-59, got 99999999999999999999"
+        },
+        {
+          "name": "minute_checked_before_hour",
+          "cron": "60 24 * * *",
+          "error": "minute must be 0-59, got 60"
+        },
+        {
+          "name": "hour_24",
+          "cron": "0 24 * * *",
+          "error": "hour must be 0-23, got 24"
+        },
+        {
+          "name": "hour_out_of_range_after_valid_minute",
+          "cron": "*/15 25 * * *",
+          "error": "hour must be 0-23, got 25"
+        },
+        {
+          "name": "nearest_weekday_zero",
+          "cron": "0 9 0W * *",
+          "error": "day of month must be 1-31, got 0"
+        },
+        {
+          "name": "nearest_weekday_32",
+          "cron": "0 9 32W * *",
+          "error": "day of month must be 1-31, got 32"
+        },
+        {
+          "name": "dow_range_end_8",
+          "cron": "0 9 * * 1-8",
+          "error": "day of week must be 0-7, got 8"
+        },
+        {
+          "name": "dow_value_before_ordinal",
+          "cron": "0 9 * * 8#6",
+          "error": "day of week must be 0-7, got 8"
+        },
+        {
+          "name": "hour_range_backwards",
+          "cron": "*/15 17-9 * * *",
+          "error": "hour range must not run backwards: 17-9"
+        },
+        {
+          "name": "range_before_step",
+          "cron": "0 9 5-1/0 * *",
+          "error": "day of month range must not run backwards: 5-1"
+        },
+        {
+          "name": "month_named_range_backwards",
+          "cron": "0 9 * dec-jan *",
+          "error": "month range must not run backwards: dec-jan"
+        },
+        {
+          "name": "dow_named_range_backwards",
+          "cron": "0 9 * * fri-sun",
+          "error": "day of week range must not run backwards: fri-sun"
+        },
+        {
+          "name": "dow_range_from_7_backwards",
+          "cron": "0 9 * * 7-1",
+          "error": "day of week range must not run backwards: 7-1"
+        },
+        {
+          "name": "month_step_zero",
+          "cron": "0 9 * 1-12/0 *",
+          "error": "month step must be at least 1"
+        },
+        {
+          "name": "ordinal_leading_zero_echoed",
+          "cron": "0 9 * * 1#06",
+          "error": "day of week ordinal must be 1-5, got 06"
+        },
+        {
+          "name": "ordinal_before_both_days",
+          "cron": "0 9 15 * 1#9",
+          "error": "day of week ordinal must be 1-5, got 9"
+        },
+        {
+          "name": "both_days_restricted",
+          "cron": "0 9 15 * 1",
+          "error": "not expressible in hron: cron fires on either the day of month or the day of week"
+        },
+        {
+          "name": "both_days_step_one",
+          "cron": "0 9 */1 * 1",
+          "error": "not expressible in hron: cron fires on either the day of month or the day of week"
+        },
+        {
+          "name": "both_days_full_ranges",
+          "cron": "0 9 1-31 * 0-6",
+          "error": "not expressible in hron: cron fires on either the day of month or the day of week"
+        },
+        {
+          "name": "both_days_last_day",
+          "cron": "0 9 L * 1",
+          "error": "not expressible in hron: cron fires on either the day of month or the day of week"
+        },
+        {
+          "name": "both_days_letter_forms",
+          "cron": "0 9 15W * 1#1",
+          "error": "not expressible in hron: cron fires on either the day of month or the day of week"
+        },
+        {
+          "name": "interval_on_day_of_month",
+          "cron": "*/15 9-17 1 * *",
+          "error": "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days"
+        },
+        {
+          "name": "interval_on_last_day",
+          "cron": "*/15 9-17 L * *",
+          "error": "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days"
+        },
+        {
+          "name": "interval_on_last_weekday_of_week",
+          "cron": "*/15 9-17 * * 5L",
+          "error": "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days"
+        },
+        {
+          "name": "unequal_gaps_216_times",
+          "cron": "*/7 * * * *",
+          "error": "not expressible in hron: 216 times a day are too many to list"
+        },
+        {
+          "name": "unequal_gaps_48_times",
+          "cron": "5-10/5 * * * *",
+          "error": "not expressible in hron: 48 times a day are too many to list"
+        },
+        {
+          "name": "unequal_gaps_26_times",
+          "cron": "0,10 0-12 * * *",
+          "error": "not expressible in hron: 26 times a day are too many to list"
         }
       ]
     },
@@ -8528,6 +9383,66 @@
         {
           "name": "day_range_mixed",
           "hron": "every month on the 1st to 3rd, 15th at 9:00"
+        },
+        {
+          "name": "two_times",
+          "hron": "every day at 09:00, 17:00"
+        },
+        {
+          "name": "monthly_times_list",
+          "hron": "every month on the 1st at 09:00, 13:00, 17:00"
+        },
+        {
+          "name": "interval_on_weekday",
+          "hron": "every 15 min from 09:00 to 17:45 on weekday"
+        },
+        {
+          "name": "hour_step_not_dividing_day",
+          "hron": "every 7 hours from 00:00 to 23:59"
+        },
+        {
+          "name": "every_minute",
+          "hron": "every 1 minute from 00:00 to 23:59"
+        },
+        {
+          "name": "two_minutes",
+          "hron": "every day at 00:00, 00:45"
+        },
+        {
+          "name": "days_run_with_sunday",
+          "hron": "every friday, saturday, sunday at 09:00"
+        },
+        {
+          "name": "yearly_date",
+          "hron": "every year on dec 25 at 09:00"
+        },
+        {
+          "name": "yearly_nth_weekday",
+          "hron": "every year on the first monday of mar at 09:00"
+        },
+        {
+          "name": "last_weekday",
+          "hron": "every month on the last weekday at 15:00"
+        },
+        {
+          "name": "nearest_weekday",
+          "hron": "every month on the nearest weekday to 15th at 09:00"
+        },
+        {
+          "name": "day_the_month_lacks",
+          "hron": "every month on the 30th at 09:00 during feb"
+        },
+        {
+          "name": "during_quarters",
+          "hron": "every day at 09:00 during jan, apr, jul, oct"
+        },
+        {
+          "name": "named_date",
+          "hron": "on feb 29 at 09:00"
+        },
+        {
+          "name": "interval_of_more_than_24_times",
+          "hron": "every 20 min from 09:00 to 17:40 on weekend"
         }
       ]
     }
