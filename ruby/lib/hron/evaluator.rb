@@ -23,9 +23,13 @@ module Hron
     # search starts, and for a horizon that starts mid-period.
     HORIZON_MARGIN_PERIODS = 2
 
-    # How many dates past its scheduled date an occurrence can land: a fixed time
-    # shifted out of a gap before midnight lands on the next date.
+    # How many dates past its scheduled date a fixed time can land: one shifted out of a gap
+    # before midnight lands on the next date.
     MAX_SHIFT_DAYS = 1
+
+    # How many dates behind a date that has begun now's wall date can read: from the second
+    # pass of a fall-back overlap that crosses midnight, one.
+    MAX_OVERLAP_DAYS = 1
 
     # Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
     NAMED_UNTIL_MAX_YEARS = 8
@@ -83,6 +87,9 @@ module Hron
       minute = dt - local.sec - local.subsec
       # Occurrences fall on whole seconds, so none lies between this and the minute.
       just_before = minute - 1
+      # An occurrence never lands before the date it is scheduled on, so one at this minute
+      # is scheduled on or before the minute's wall date.
+      search.clauses.end_on(local.to_date.gregorian)
       search.nearest(just_before, Direction::FORWARD) == minute
     end
 
@@ -115,7 +122,7 @@ module Hron
 
     # A schedule prepared for searching: its zone, cadence, times and clauses resolved once.
     class Search
-      attr_reader :zone
+      attr_reader :zone, :clauses
 
       def initialize(schedule)
         name = schedule.timezone
@@ -129,21 +136,23 @@ module Hron
       # The occurrence nearest now strictly beyond it in direction, or nil.
       def nearest(now, direction)
         now = @zone.utc_to_local(now.utc)
-        first_date = @clauses.clamp(now.to_date.gregorian, direction)
+        now_date = now.to_date.gregorian
+        first_date = @clauses.clamp(now_date, direction)
         # A nearest weekday or a DST shift can move an occurrence out of the period it is
         # scheduled in, so the search starts one period back.
         first_period = @cadence.period_of(first_date) - direction.sign
         farthest = @clauses.farthest_except_date(direction)
         reach = farthest ? @cadence.period_of(farthest) : first_period
+        shift = @times.max_shift_days
         best = nil
         each_candidate(first_period, reach, direction) do |candidate|
           date = candidate.date
-          break if best && !could_beat?(date, best.date, direction)
+          break if best && !could_beat?(date, best.landing, direction, shift)
           break if @clauses.ends_search?(date, direction)
-          next unless @clauses.allows?(candidate)
+          next if behind?(date, now_date, direction, shift) || !@clauses.allows?(candidate)
 
-          instant = nearest_on_date(date, now, direction)
-          best = Occurrence.new(instant, date) if instant && (best.nil? || direction.precedes?(instant, best.instant))
+          occurrence = nearest_on_date(date, now, direction)
+          best = occurrence if occurrence && (best.nil? || direction.precedes?(occurrence.instant, best.instant))
         end
         best.instant if best && SUPPORTED_RANGE.cover?(best.instant)
       end
@@ -153,8 +162,15 @@ module Hron
       # Yields each period's candidates, in direction order.
       def each_candidate(first_period, reach, direction, &)
         @cadence.period_starts(first_period, reach, direction) do |start|
-          direction.in_order(candidates_in_period(start)).each(&)
+          direction.in_order(candidates_in_period(start)).each(&) unless rejects_period?(start)
         end
+      end
+
+      # A day or month period's candidates all target its own month, so one whose month
+      # during rejects holds nothing.
+      def rejects_period?(start)
+        unit = @cadence.unit
+        (unit == :day || unit == :month) && !@clauses.allows_month?(start.month)
       end
 
       # The candidates in the period starting at start, earliest first.
@@ -177,53 +193,78 @@ module Hron
         end
       end
 
-      # Whether an occurrence scheduled on date can precede, in direction, the best one,
-      # scheduled on best, given how many dates past its own an occurrence can land.
-      def could_beat?(date, best, direction)
-        direction.sign * Calendar.days_between(best, date) <= @times.max_shift_days
+      # Whether an occurrence scheduled on date can precede, in direction, the best one, which
+      # landed on landing. An occurrence lands from its scheduled date to shift dates after
+      # it, on a first pass, and first passes keep wall-clock order.
+      def could_beat?(date, landing, direction, shift)
+        direction.forward? ? date <= landing : Calendar.days_between(date, landing) <= shift
+      end
+
+      # Whether every occurrence scheduled on date lies behind now, whose wall date is
+      # now_date, in direction.
+      def behind?(date, now_date, direction, shift)
+        if direction.forward?
+          Calendar.days_between(date, now_date) > shift
+        else
+          Calendar.days_between(now_date, date) > MAX_OVERLAP_DAYS
+        end
       end
 
       # The occurrence on date nearest now strictly beyond it in direction.
       def nearest_on_date(date, now, direction)
         case @times
         when DailyTimes::Fixed
-          # A time shifted out of a gap can land after a later wall time.
-          instants = @times.times.map { |time| WallClock.fixed_time_on(date, time, @zone) }.sort!
-          direction.in_order(instants).find { |instant| direction.precedes?(now, instant) }
-        when DailyTimes::Slots
-          if direction.forward?
-            first_slot_after(@times.minutes, date, now)
-          else
-            last_slot_before(@times.minutes, date, now)
+          # Every time is compared: one shifted out of a gap can land after a later wall time.
+          nearest = landing = nil
+          @times.times.each do |time|
+            instant, lands_on = WallClock.fixed_time_on(date, time, @zone)
+            next if !direction.precedes?(now, instant) || (nearest && !direction.precedes?(instant, nearest))
+
+            nearest = instant
+            landing = lands_on
           end
+          Occurrence.new(nearest, landing) if nearest
+        when DailyTimes::Slots
+          instant = nearest_slot(date, now, direction)
+          # A slot outside a gap is the first pass of its wall time, so it lands on its date.
+          Occurrence.new(instant, date) if instant
         end
       end
 
-      # Each slot on a date before now's had its first pass before now's date began.
-      def first_slot_after(minutes, date, now)
-        return if date < now.to_date
+      # The instant of the slot on date nearest now strictly beyond it in direction. Slot keys
+      # never decrease in wall-clock order, so one binary search finds where the slots past now
+      # begin, and the scan starts from the slot beside that boundary that the search resolved.
+      def nearest_slot(date, now, direction)
+        minutes = @times.minutes
+        forward = direction.forward?
+        low = 0
+        high = minutes.size
+        below = above = nil
+        while low < high
+          middle = (low + high) / 2
+          slot = WallClock.slot_on(date, minutes[middle], @zone)
+          if forward ? slot.key > now : slot.key >= now
+            high = middle
+            above = slot
+          else
+            low = middle + 1
+            below = slot
+          end
+        end
+        index, slot = forward ? [low, above] : [low - 1, below]
+        while index >= 0 && index < minutes.size
+          slot ||= WallClock.slot_on(date, minutes[index], @zone)
+          return slot.instant if slot.instant
 
-        first = minutes.bsearch_index { |minute| WallClock.slot_position(date, minute, @zone) > now }
-        first_existing_slot(minutes[first..], date) if first
-      end
-
-      def last_slot_before(minutes, date, now)
-        stop = minutes.bsearch_index { |minute| WallClock.slot_position(date, minute, @zone) >= now } || minutes.size
-        first_existing_slot(minutes[0...stop].reverse, date)
-      end
-
-      # The instant of the first of minutes whose slot on date is not in a gap.
-      def first_existing_slot(minutes, date)
-        minutes.each do |minute|
-          instant = WallClock.slot_on(date, minute, @zone)
-          return instant if instant
+          slot = nil
+          index += direction.sign
         end
         nil
       end
     end
 
-    # An occurrence a search found, with the date it is scheduled on.
-    Occurrence = Data.define(:instant, :date)
+    # An occurrence a search found, with the local date it lands on.
+    Occurrence = Data.define(:instant, :landing)
 
     # A date the expression fires on, with the month whose day it names. They differ only
     # when a directional nearest weekday crosses into the adjacent month. A Struct, as one is
@@ -278,11 +319,20 @@ module Hron
 
       def allows?(candidate)
         date = candidate.date
-        (@during.empty? || @during.include?(candidate.target_month)) &&
+        allows_month?(candidate.target_month) &&
           @except_month_days.none? { |month, day| date.month == month && date.day == day } &&
           !@except_dates.include?(date) &&
           (@until.nil? || date <= @until) &&
           (@starting.nil? || date >= @starting)
+      end
+
+      def allows_month?(month)
+        @during.empty? || @during.include?(month)
+      end
+
+      # Ends the search on date: nothing after it is an occurrence.
+      def end_on(date)
+        @until = date if @until.nil? || date < @until
       end
 
       # The one-off except date farthest along direction: the calendar repeats only beyond
@@ -332,6 +382,8 @@ module Hron
     # The periods (days, weeks, months or years) an expression fires in, numbered from
     # origin: period k is aligned when k is a multiple of interval.
     class Cadence
+      attr_reader :unit
+
       # Units in 400 years, after which the proleptic Gregorian calendar repeats.
       PER_400_YEARS = {day: 146_097, week: 20_871, month: 4800, year: 400}.freeze
 

@@ -44,10 +44,16 @@ const LAST_DATE = epochDay(9999, 12, 31);
 const HORIZON_MARGIN_PERIODS = 2;
 
 /**
- * How many dates past its scheduled date an occurrence can land: a fixed time
- * shifted out of a gap before midnight lands on the next date.
+ * How many dates past its scheduled date a fixed time can land: one shifted
+ * out of a gap before midnight lands on the next date.
  */
 const MAX_SHIFT_DAYS = 1;
+
+/**
+ * How many dates behind a date that has begun now's wall date can read: from
+ * the second pass of a fall-back overlap that crosses midnight, one.
+ */
+const MAX_OVERLAP_DAYS = 1;
 
 /** Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29. */
 const NAMED_UNTIL_MAX_YEARS = 8;
@@ -87,6 +93,9 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
   if (!inSupportedRange(ms)) return false;
   const search = new Search(schedule);
   const minute = search.zone.minuteStart(ms);
+  // An occurrence never lands before the date it is scheduled on, so one at
+  // this minute is scheduled on or before the minute's wall date.
+  search.clauses.endOn(search.zone.localDate(minute));
   return search.nearest(minute - 1, Direction.Forward)?.instant === minute;
 }
 
@@ -104,7 +113,7 @@ export function* occurrences(
   let next = search.nearest(fromMs, Direction.Forward);
   while (next !== null) {
     yield search.zone.zoned(next.instant);
-    next = search.nearest(next.instant, Direction.Forward, next.date);
+    next = search.nearest(next.instant, Direction.Forward, next.landing);
   }
 }
 
@@ -144,10 +153,10 @@ class Direction {
   }
 }
 
-/** An occurrence a search found, in epoch milliseconds, with the date it is scheduled on. */
+/** An occurrence a search found, in epoch milliseconds, with the local date it lands on. */
 interface Occurrence {
   readonly instant: number;
-  readonly date: number;
+  readonly landing: number;
 }
 
 /**
@@ -160,7 +169,7 @@ class Search {
   private readonly cadence: Cadence;
   private readonly candidatesInPeriod: (period: number) => Candidate[];
   private readonly times: DailyTimes;
-  private readonly clauses: Clauses;
+  readonly clauses: Clauses;
   private readonly resolved = new Map<number, number[]>();
 
   constructor(schedule: ScheduleData) {
@@ -168,57 +177,68 @@ class Search {
     this.cadence = Cadence.of(schedule);
     this.times = dailyTimes(schedule.expr);
     this.clauses = new Clauses(schedule);
-    this.candidatesInPeriod = candidatesInPeriod(schedule.expr, this.clauses);
+    this.candidatesInPeriod = candidatesInPeriod(schedule.expr);
   }
 
   /**
    * The occurrence nearest `now`, in epoch milliseconds, strictly beyond it in
-   * `direction`. An iterator passes its last occurrence's scheduled date as
-   * `nowDate`, which is no later than now's local date, to spare a zone lookup.
+   * `direction`. An iterator passes its last occurrence's landing date, now's
+   * wall date, as `nowDate` to spare a zone lookup.
    */
   nearest(
     now: number,
     direction: Direction,
     nowDate = this.zone.localDate(now),
   ): Occurrence | null {
-    // One date behind now's: a time shifted out of a gap lands on the date
-    // after its own, and after a fall-back across midnight, now's date can be
-    // the one before a date that has already begun.
-    const behind = this.clauses.clamp(nowDate - direction.sign, direction);
-    const first = Math.min(Math.max(behind, FIRST_DATE), LAST_DATE);
-    // A directional nearest weekday can land in the period before or after
-    // its own, so the search starts one period back.
-    const firstPeriod = this.cadence.periodOf(first) - direction.sign;
+    const clamped = this.clauses.clamp(nowDate, direction);
+    const firstDate = Math.min(Math.max(clamped, FIRST_DATE), LAST_DATE);
+    // A nearest weekday or a DST shift can move an occurrence out of the
+    // period it is scheduled in, so the search starts one period back.
+    const firstPeriod = this.cadence.periodOf(firstDate) - direction.sign;
     const farthest = this.clauses.farthestExceptDate(direction);
     const reach =
       farthest === null ? firstPeriod : this.cadence.periodOf(farthest);
+    const shift = maxShiftDays(this.times);
     let best: Occurrence | null = null;
     search: for (const period of this.cadence.periods(
       firstPeriod,
       reach,
       direction,
     )) {
+      if (this.rejectsPeriod(period)) continue;
       for (const candidate of inOrder(
         this.candidatesInPeriod(period),
         direction,
       )) {
         const { date } = candidate;
-        // Dates behind the first hold nothing beyond now, and skipping them
-        // spares resolving their times.
-        if (direction.precedes(date, first)) continue;
-        const beaten = best !== null && !couldBeat(date, best.date, direction);
+        const beaten =
+          best !== null && !couldBeat(date, best.landing, direction, shift);
         if (beaten || this.clauses.endsSearch(date, direction)) break search;
-        if (!this.clauses.allows(candidate)) continue;
+        if (
+          isBehind(date, nowDate, direction, shift) ||
+          !this.clauses.allows(candidate)
+        ) {
+          continue;
+        }
         const instant = this.nearestOnDate(date, now, direction);
         if (
           instant !== null &&
           (best === null || direction.precedes(instant, best.instant))
         ) {
-          best = { instant, date };
+          best = { instant, landing: this.zone.landingDate(date, instant) };
         }
       }
     }
     return best !== null && inSupportedRange(best.instant) ? best : null;
+  }
+
+  /**
+   * A day or month period's candidates all target its own month, so one whose
+   * month `during` rejects holds nothing.
+   */
+  private rejectsPeriod(period: number): boolean {
+    const month = this.cadence.monthOf(period);
+    return month !== null && !this.clauses.allowsMonth(month);
   }
 
   /** The occurrence on `date` nearest `now` strictly beyond it in `direction`. */
@@ -272,11 +292,34 @@ function inOrder<T>(items: readonly T[], direction: Direction): readonly T[] {
 
 /**
  * Whether an occurrence scheduled on `date` can precede, in `direction`, the
- * best one, scheduled on `best`, given that each lands at most MAX_SHIFT_DAYS
- * after its date.
+ * best one, which landed on `landing`. An occurrence lands from its scheduled
+ * date to `shift` dates after it, on a first pass, and first passes keep
+ * wall-clock order.
  */
-function couldBeat(date: number, best: number, direction: Direction): boolean {
-  return direction.sign * (date - best) <= MAX_SHIFT_DAYS;
+function couldBeat(
+  date: number,
+  landing: number,
+  direction: Direction,
+  shift: number,
+): boolean {
+  return direction === Direction.Forward
+    ? date <= landing
+    : landing - date <= shift;
+}
+
+/**
+ * Whether every occurrence scheduled on `date` lies behind now, whose wall
+ * date is `nowDate`, in `direction`.
+ */
+function isBehind(
+  date: number,
+  nowDate: number,
+  direction: Direction,
+  shift: number,
+): boolean {
+  return direction === Direction.Forward
+    ? nowDate - date > shift
+    : date - nowDate > MAX_OVERLAP_DAYS;
 }
 
 /** How many leading `items` satisfy `test`, which must hold for a prefix of them. */
@@ -322,6 +365,14 @@ type DailyTimes =
   /** Interval slots, each skipped in a gap. */
   | { kind: "slots"; minutes: number[] };
 
+/**
+ * How many dates past its scheduled date an occurrence can land: a gap pushes
+ * a fixed time forward, and skips a slot.
+ */
+function maxShiftDays(times: DailyTimes): number {
+  return times.kind === "fixed" ? MAX_SHIFT_DAYS : 0;
+}
+
 function dailyTimes(expr: ScheduleExpr): DailyTimes {
   if (expr.type === "intervalRepeat") {
     return { kind: "slots", minutes: intervalSlots(expr) };
@@ -351,7 +402,7 @@ class Clauses {
   private readonly exceptDates: number[] = [];
   private readonly earliestExceptDate: number | null;
   private readonly latestExceptDate: number | null;
-  private readonly until: number | null;
+  private until: number | null;
   private readonly starting: number | null;
 
   constructor(schedule: ScheduleData) {
@@ -377,7 +428,7 @@ class Clauses {
 
   allows({ date, targetMonth }: Candidate): boolean {
     return (
-      this.allowsTargetMonth(targetMonth) &&
+      this.allowsMonth(targetMonth) &&
       !this.exceptDates.includes(date) &&
       !this.isExceptMonthDay(date) &&
       (this.until === null || date <= this.until) &&
@@ -385,8 +436,13 @@ class Clauses {
     );
   }
 
-  allowsTargetMonth(month: number): boolean {
+  allowsMonth(month: number): boolean {
     return this.during.length === 0 || this.during.includes(month);
+  }
+
+  /** Ends the search on `date`: nothing after it is an occurrence. */
+  endOn(date: number): void {
+    this.until = this.until === null ? date : Math.min(this.until, date);
   }
 
   /**
@@ -489,6 +545,21 @@ class Cadence {
   }
 
   /**
+   * The month of a day or month period, which all its candidates target; null
+   * for a week or year, whose candidates need not fall in its first month.
+   */
+  monthOf(period: number): number | null {
+    switch (this.unit) {
+      case "day":
+        return civil(period).month;
+      case "month":
+        return yearAndMonth(period).month;
+      default:
+        return null;
+    }
+  }
+
+  /**
    * The aligned periods from `first` in `direction`, through one search
    * horizon beyond whichever of `first` and `reach` is farther along it
    * (spec/README.md, "Search horizon"), within the periods a search walks.
@@ -574,7 +645,6 @@ interface Candidate {
  */
 function candidatesInPeriod(
   expr: ScheduleExpr,
-  clauses: Clauses,
 ): (period: number) => Candidate[] {
   switch (expr.type) {
     case "intervalRepeat": {
@@ -598,9 +668,6 @@ function candidatesInPeriod(
     case "monthRepeat":
       return (index) => {
         const { year, month } = yearAndMonth(index);
-        // Every candidate names a day of the period's month, so a month the
-        // clauses reject needs none of its dates computed.
-        if (!clauses.allowsTargetMonth(month)) return [];
         return monthTargetDates(year, month, expr.target).map((date) =>
           candidateOn(date, month),
         );

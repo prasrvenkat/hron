@@ -3,7 +3,6 @@ mod calendar;
 mod tests;
 mod wall_clock;
 
-use std::cmp::Ordering;
 use std::sync::LazyLock;
 
 use jiff::civil::{date, Date, Time};
@@ -32,9 +31,13 @@ static RANGE_END: LazyLock<Timestamp> = LazyLock::new(|| "9999-12-30T00:00:00Z".
 /// search starts, and for a horizon that starts mid-period.
 const HORIZON_MARGIN_PERIODS: i64 = 2;
 
-/// How many dates past its scheduled date an occurrence can land: a fixed time
-/// shifted out of a gap before midnight lands on the next date.
+/// How many dates past its scheduled date a fixed time can land: one shifted out
+/// of a gap before midnight lands on the next date. No gap in tzdb exceeds 24 hours.
 const MAX_SHIFT_DAYS: i64 = 1;
+
+/// How far now's wall date can trail a date that has begun: one, on the second
+/// pass of a fall-back across midnight. No overlap in tzdb exceeds 24 hours.
+const MAX_OVERLAP_DAYS: i64 = 1;
 
 /// Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 const NAMED_UNTIL_MAX_YEARS: i16 = 8;
@@ -65,7 +68,7 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
     if !in_supported_range(datetime) {
         return Ok(false);
     }
-    let search = Search::new(schedule)?;
+    let mut search = Search::new(schedule)?;
     let local = datetime.with_time_zone(search.zone.clone());
     let time = local.time();
     let minute = local
@@ -78,6 +81,9 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
     let just_before = minute
         .checked_sub(Span::new().nanoseconds(1))
         .map_err(eval_error)?;
+    // An occurrence never lands before the date it is scheduled on, so one at
+    // this minute is scheduled on or before the minute's wall date.
+    search.clauses.end_on(minute.date());
     Ok(search.nearest(&just_before, Direction::Forward) == Some(minute))
 }
 
@@ -188,10 +194,10 @@ struct Search<'a> {
     clauses: Clauses,
 }
 
-/// An occurrence a search found, with the date it is scheduled on.
+/// An occurrence a search found, with the local date it lands on.
 struct Occurrence {
     instant: Zoned,
-    date: Date,
+    landing: Date,
 }
 
 impl<'a> Search<'a> {
@@ -216,16 +222,22 @@ impl<'a> Search<'a> {
             .clauses
             .farthest_except_date(direction)
             .map_or(first_period, |date| self.cadence.period_of(date));
+        let shift = self.times.max_shift_days();
         let mut best: Option<Occurrence> = None;
         'search: for start in self.cadence.period_starts(first_period, reach, direction) {
+            if self.rejects_period(start) {
+                continue;
+            }
             for candidate in in_order(candidates_in_period(self.expr, start), direction) {
-                let beaten = best
-                    .as_ref()
-                    .is_some_and(|best| !could_beat(candidate.date, best.date, direction));
+                let beaten = best.as_ref().is_some_and(|best| {
+                    !could_beat(candidate.date, best.landing, direction, shift)
+                });
                 if beaten || self.clauses.ends_search(candidate.date, direction) {
                     break 'search;
                 }
-                if !self.clauses.allows(&candidate) {
+                if is_behind(candidate.date, now.date(), direction, shift)
+                    || !self.clauses.allows(&candidate)
+                {
                     continue;
                 }
                 let Some(instant) = self.nearest_on_date(candidate.date, now, direction) else {
@@ -235,66 +247,57 @@ impl<'a> Search<'a> {
                     .as_ref()
                     .is_none_or(|best| direction.precedes(&instant, &best.instant))
                 {
-                    best = Some(Occurrence {
-                        instant,
-                        date: candidate.date,
-                    });
+                    let landing = instant.date();
+                    best = Some(Occurrence { instant, landing });
                 }
             }
         }
         best.map(|best| best.instant).filter(in_supported_range)
     }
 
+    /// A day or month period's candidates all target its own month, so one whose
+    /// month `during` rejects holds nothing.
+    fn rejects_period(&self, start: Date) -> bool {
+        matches!(self.cadence.unit, Unit::Day | Unit::Month)
+            && !self.clauses.allows_month(start.month())
+    }
+
     /// The occurrence on `date` nearest `now` strictly beyond it in `direction`.
     fn nearest_on_date(&self, date: Date, now: &Zoned, direction: Direction) -> Option<Zoned> {
-        match (&self.times, direction) {
-            (DailyTimes::Fixed(times), _) => {
-                // A time shifted out of a gap can land after a later wall time.
-                let mut instants: Vec<Zoned> = times
-                    .iter()
-                    .filter_map(|time| fixed_time_on(date, *time, &self.zone))
-                    .collect();
-                instants.sort();
-                in_order(instants, direction)
-                    .into_iter()
-                    .find(|t| direction.precedes(now, t))
-            }
-            (DailyTimes::Slots(slots), Direction::Forward) => {
-                self.first_slot_after(slots, date, now)
-            }
-            (DailyTimes::Slots(slots), Direction::Backward) => {
-                self.last_slot_before(slots, date, now)
+        match &self.times {
+            // Every time is compared: one shifted out of a gap can land after a
+            // later wall time.
+            DailyTimes::Fixed(times) => times
+                .iter()
+                .filter_map(|time| fixed_time_on(date, *time, &self.zone))
+                .filter(|t| direction.precedes(now, t))
+                .reduce(|nearest, t| {
+                    if direction.precedes(&t, &nearest) {
+                        t
+                    } else {
+                        nearest
+                    }
+                }),
+            DailyTimes::Slots(slots) => {
+                let now = now.timestamp();
+                let slot = |minute: &i64| slot_on(date, *minute, &self.zone);
+                match direction {
+                    Direction::Forward => {
+                        let first = slots.partition_point(|minute| slot(minute).key <= now);
+                        slots[first..]
+                            .iter()
+                            .find_map(|minute| slot(minute).instant)
+                    }
+                    Direction::Backward => {
+                        let end = slots.partition_point(|minute| slot(minute).key < now);
+                        slots[..end]
+                            .iter()
+                            .rev()
+                            .find_map(|minute| slot(minute).instant)
+                    }
+                }
             }
         }
-    }
-
-    /// Slots resolve in wall-clock order, and one whose wall time is before
-    /// now's has passed, so the scan can start at now's wall time.
-    fn first_slot_after(&self, slots: &[i64], date: Date, now: &Zoned) -> Option<Zoned> {
-        let earliest = match date.cmp(&now.date()) {
-            Ordering::Less => return None,
-            Ordering::Equal => minute_of_day(now.time()),
-            Ordering::Greater => 0,
-        };
-        slots
-            .iter()
-            .filter(|&&minute| minute >= earliest)
-            .filter_map(|&minute| slot_on(date, minute, &self.zone))
-            .find(|t| t > now)
-    }
-
-    /// Unlike the forward scan, this one checks every slot, and slots on the date
-    /// after now's: from the second pass of a fall-back overlap, a slot with a
-    /// later wall time, even on the next date, can be earlier than now.
-    fn last_slot_before(&self, slots: &[i64], date: Date, now: &Zoned) -> Option<Zoned> {
-        if add_days(now.date(), 1).is_some_and(|latest| date > latest) {
-            return None;
-        }
-        slots
-            .iter()
-            .rev()
-            .filter_map(|&minute| slot_on(date, minute, &self.zone))
-            .find(|t| t < now)
     }
 }
 
@@ -306,9 +309,22 @@ fn in_order<T>(mut items: Vec<T>, direction: Direction) -> Vec<T> {
 }
 
 /// Whether an occurrence scheduled on `date` can precede, in `direction`, the best
-/// one, scheduled on `best`, given that each lands at most MAX_SHIFT_DAYS after its date.
-fn could_beat(date: Date, best: Date, direction: Direction) -> bool {
-    direction.sign() * days_between(best, date) <= MAX_SHIFT_DAYS
+/// one, which landed on `landing`. An occurrence lands from its scheduled date to
+/// `shift` dates after it, on a first pass, and first passes keep wall-clock order.
+fn could_beat(date: Date, landing: Date, direction: Direction, shift: i64) -> bool {
+    match direction {
+        Direction::Forward => date <= landing,
+        Direction::Backward => days_between(date, landing) <= shift,
+    }
+}
+
+/// True only when every occurrence scheduled on `date` lies behind `now`, whose
+/// wall date is `now_date`, in `direction`; false proves nothing.
+fn is_behind(date: Date, now_date: Date, direction: Direction, shift: i64) -> bool {
+    match direction {
+        Direction::Forward => days_between(date, now_date) > shift,
+        Direction::Backward => days_between(now_date, date) > MAX_OVERLAP_DAYS,
+    }
 }
 
 fn in_supported_range(t: &Zoned) -> bool {
@@ -324,6 +340,15 @@ enum DailyTimes {
 }
 
 impl DailyTimes {
+    /// How many dates past its scheduled date an occurrence can land: a gap
+    /// pushes a fixed time forward, and skips a slot.
+    fn max_shift_days(&self) -> i64 {
+        match self {
+            DailyTimes::Fixed(_) => MAX_SHIFT_DAYS,
+            DailyTimes::Slots(_) => 0,
+        }
+    }
+
     fn of(expr: &ScheduleExpr) -> DailyTimes {
         match expr {
             ScheduleExpr::IntervalRepeat {
@@ -400,11 +425,20 @@ impl Clauses {
 
     fn allows(&self, candidate: &Candidate) -> bool {
         let date = candidate.date;
-        (self.during.is_empty() || self.during.contains(&candidate.target_month))
+        self.allows_month(candidate.target_month)
             && !self.except_month_days.contains(&(date.month(), date.day()))
             && !self.except_dates.contains(&date)
             && self.until.is_none_or(|until| date <= until)
             && self.starting.is_none_or(|starting| date >= starting)
+    }
+
+    fn allows_month(&self, month: i8) -> bool {
+        self.during.is_empty() || self.during.contains(&month)
+    }
+
+    /// Ends the search on `date`: nothing after it is an occurrence.
+    fn end_on(&mut self, date: Date) {
+        self.until = Some(self.until.map_or(date, |until| until.min(date)));
     }
 
     /// The one-off except date farthest along `direction`: the calendar repeats

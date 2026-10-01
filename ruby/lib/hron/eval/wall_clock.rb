@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "date"
 require "time"
 
 module Hron
@@ -13,25 +14,34 @@ module Hron
       module_function
 
       # The instant time names on date, shifted forward by the gap's length when it falls
-      # in a spring-forward gap (spec/README.md, "DST spring-forward (gaps)").
+      # in a spring-forward gap (spec/README.md, "DST spring-forward (gaps)"), and the date
+      # it lands on. A Time carries no zone, so the date comes from here: only a shifted time
+      # can land on a date other than its own.
       def fixed_time_on(date, time, zone)
-        first_pass(wall_time(date, time.hour, time.minute), zone) do |wall|
-          # Read with the offset in force before the gap, a wall time in it lands past it.
-          wall - gap_transition(wall, zone).previous_offset.utc_total_offset
-        end
+        wall = wall_time(date, time.hour, time.minute)
+        instant = first_pass(wall, zone) { nil }
+        return instant, date if instant
+
+        # Read with the offset in force before the gap, a wall time in it lands past it, where
+        # the offset after the gap reads it.
+        transition = gap_transition(wall, zone)
+        instant = wall - transition.previous_offset.utc_total_offset
+        local = instant + transition.offset.utc_total_offset
+        [instant, Date.new(local.year, local.month, local.day, Date::GREGORIAN)]
       end
 
-      # The instant of the interval slot minute minutes after midnight on date, or nil when
-      # that wall time falls in a spring-forward gap (spec/README.md, "Interval slots in a
-      # spring-forward gap").
+      # An interval slot on a date: where it sits in time, and its instant unless a
+      # spring-forward gap skips it (spec/README.md, "Interval slots in a spring-forward gap").
+      # A skipped slot sits at the instant its gap ends, so keys never decrease in wall-clock
+      # order and one binary search finds the slots on either side of an instant. A Struct, as
+      # a binary search makes several for every date.
+      Slot = Struct.new(:key, :instant)
+
+      # The slot minute minutes after midnight on date.
       def slot_on(date, minute, zone)
-        first_pass(slot_wall_time(date, minute), zone) { nil }
-      end
-
-      # The slot's instant, or for a slot in a gap the gap's transition: slots in wall-clock
-      # order are in this order, so it can be binary searched.
-      def slot_position(date, minute, zone)
-        first_pass(slot_wall_time(date, minute), zone) { |wall| gap_transition(wall, zone).at.to_time }
+        wall = wall_time(date, *minute.divmod(MINUTES_PER_HOUR))
+        instant = first_pass(wall, zone) { nil }
+        Slot.new(instant || gap_transition(wall, zone).at.to_time, instant)
       end
 
       def minute_of_day(time)
@@ -43,10 +53,6 @@ module Hron
       def first_pass(wall, zone)
         offset = zone.periods_for_local(wall).first&.offset&.utc_total_offset
         offset ? wall - offset : yield(wall)
-      end
-
-      def slot_wall_time(date, minute)
-        wall_time(date, *minute.divmod(MINUTES_PER_HOUR))
       end
 
       # The wall time as a UTC Time, so the system time zone never interferes.

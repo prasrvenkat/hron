@@ -22,27 +22,16 @@ internal abstract record DailyTimes
     /// </summary>
     public sealed record Slots(long From, long To, long Step) : DailyTimes
     {
-        /// <summary>
-        /// The slots from <paramref name="earliest"/> to <paramref name="latest"/> inclusive, in
-        /// <paramref name="direction"/> order.
-        /// </summary>
-        public IEnumerable<long> Within(long earliest, long latest, Direction direction)
-        {
-            var low = Math.Max(From, earliest);
-            var high = Math.Min(To, latest);
-            if (low > high)
-            {
-                yield break;
-            }
-            var first = From + (low - From + Step - 1) / Step * Step;
-            var last = From + (high - From) / Step * Step;
-            var step = direction.Sign() * Step;
-            for (var minute = direction == Direction.Forward ? first : last; minute >= first && minute <= last; minute += step)
-            {
-                yield return minute;
-            }
-        }
+        public long Count => Math.Max(Calendar.FloorDiv(To - From, Step) + 1, 0);
+
+        public long MinuteAt(long index) => From + index * Step;
     }
+
+    /// <summary>
+    /// How many dates past its scheduled date an occurrence can land: a gap pushes a fixed time
+    /// forward, and skips a slot.
+    /// </summary>
+    public int MaxShiftDays => this is Fixed ? Occurrence.MaxShiftDays : 0;
 
     public static DailyTimes Of(IScheduleExpr expr) => expr switch
     {

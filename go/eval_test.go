@@ -104,3 +104,105 @@ func TestMatchesDropsSecondsOnTheWallClock(t *testing.T) {
 		t.Error("Matches(1900-06-01 09:00:10 local) = false, want true")
 	}
 }
+
+// Slot keys never decrease in wall-clock order, a slot a gap skips is keyed
+// at the instant its gap ends, and the bounded binary search finds what a scan
+// of every slot finds, on the dates around transitions: a spring-forward gap,
+// a fall-back overlap, at midnight (Sao Paulo), of half an hour (Lord Howe),
+// of a whole day (Apia, 2011), of 28 seconds, from an offset that carries
+// seconds (Amsterdam, 1937), and after the date ends in UTC, in a zone west of
+// it (Nuuk, 2022).
+func TestSlotSearchAroundTransitions(t *testing.T) {
+	zones := map[string]int{
+		"America/New_York":    2026,
+		"America/Sao_Paulo":   2018,
+		"Australia/Lord_Howe": 2026,
+		"Pacific/Apia":        2011,
+		"Europe/Amsterdam":    1937,
+		"America/Nuuk":        2022,
+	}
+	for name, year := range zones {
+		zone, err := time.LoadLocation(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, transition := range transitionsIn(zone, year) {
+			for _, step := range []int{7, 30, 90} {
+				s := search{zone: zone, times: dailyTimes{slots: slots{from: 0, step: step, count: (minutesPerDay-1)/step + 1}}}
+				checkSlotSearch(t, &s, transition)
+			}
+		}
+	}
+}
+
+// transitionsIn returns the instants in year where zone's offset changes.
+func transitionsIn(zone *time.Location, year int) []time.Time {
+	var transitions []time.Time
+	end := time.Date(year+1, 1, 1, 0, 0, 0, 0, time.UTC)
+	for t := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC); t.Before(end); t = t.Add(time.Hour) {
+		if offsetAt(t, zone) != offsetAt(t.Add(time.Hour), zone) {
+			lo, hi := t.Unix(), t.Add(time.Hour).Unix()
+			for hi-lo > 1 {
+				mid := lo + (hi-lo)/2
+				if offsetAt(time.Unix(mid, 0), zone) == offsetAt(t, zone) {
+					lo = mid
+				} else {
+					hi = mid
+				}
+			}
+			transitions = append(transitions, time.Unix(hi, 0))
+		}
+	}
+	return transitions
+}
+
+func checkSlotSearch(t *testing.T, s *search, transition time.Time) {
+	t.Helper()
+	slots := s.times.slots
+	nowDate := dateOf(transition.In(s.zone))
+	for day := -2; day <= 2; day++ {
+		date := addDays(nowDate, day)
+		all := make([]slot, slots.count)
+		for k := range all {
+			all[k] = slotOn(date, slots.minute(k), s.zone)
+			if k > 0 && all[k].key.Before(all[k-1].key) {
+				t.Fatalf("%s %s step %d: key of slot %d (%s) before slot %d's (%s)", s.zone, date.Format(time.DateOnly), slots.step, k, all[k].key, k-1, all[k-1].key)
+			}
+			if all[k].skipped && (!all[k].key.Equal(transition) || !all[k].instant.IsZero()) {
+				t.Fatalf("%s %s step %d: skipped slot %d keyed %s, want %s", s.zone, date.Format(time.DateOnly), slots.step, k, all[k].key, transition)
+			}
+		}
+		for now := transition.Add(-30 * time.Hour); now.Before(transition.Add(30 * time.Hour)); now = now.Add(13 * time.Minute) {
+			now := now.In(s.zone)
+			for _, d := range []direction{forward, backward} {
+				var want time.Time
+				found := false
+				for _, slot := range all {
+					if !slot.skipped && d.precedes(now, slot.instant) && (!found || d.precedes(slot.instant, want)) {
+						want, found = slot.instant, true
+					}
+				}
+				got, ok := s.nearestSlot(date, now, d)
+				if ok != found || !got.Equal(want) {
+					t.Fatalf("%s %s step %d from %s direction %d: got %s %v, want %s %v", s.zone, date.Format(time.DateOnly), slots.step, now, d, got, ok, want, found)
+				}
+			}
+		}
+	}
+}
+
+// Before 1970 Unix seconds are negative, so a date must floor them.
+func TestSearchesBeforeTheUnixEpoch(t *testing.T) {
+	s := MustParse("every 30 min from 00:00 to 23:59")
+	for _, now := range []time.Time{
+		time.Date(1969, 12, 31, 12, 10, 0, 0, time.UTC),
+		time.Date(1900, 6, 1, 12, 10, 0, 0, time.UTC),
+	} {
+		if next := s.NextFrom(now); next == nil || !next.Equal(now.Add(20*time.Minute)) {
+			t.Errorf("NextFrom(%v) = %v, want %v", now, next, now.Add(20*time.Minute))
+		}
+		if prev := s.PreviousFrom(now); prev == nil || !prev.Equal(now.Add(-10*time.Minute)) {
+			t.Errorf("PreviousFrom(%v) = %v, want %v", now, prev, now.Add(-10*time.Minute))
+		}
+	}
+}

@@ -14,6 +14,12 @@ import java.util.List;
 
 /** The times of day an expression fires at. */
 sealed interface DailyTimes {
+  /**
+   * How many dates past its scheduled date a fixed time can land: one shifted out of a gap before
+   * midnight lands on the next date.
+   */
+  long MAX_SHIFT_DAYS = 1;
+
   /** Fixed times, each shifted out of a gap. */
   record Fixed(List<LocalTime> times) implements DailyTimes {}
 
@@ -22,6 +28,17 @@ sealed interface DailyTimes {
    * keeps the binary search over them free of boxing.
    */
   record Slots(int[] minutes) implements DailyTimes {}
+
+  /**
+   * How many dates past its scheduled date an occurrence can land: a gap pushes a fixed time
+   * forward, and skips a slot.
+   */
+  default long maxShiftDays() {
+    return switch (this) {
+      case Fixed _ -> MAX_SHIFT_DAYS;
+      case Slots _ -> 0;
+    };
+  }
 
   static DailyTimes of(ScheduleExpr expr) {
     return switch (expr) {

@@ -113,7 +113,10 @@ public final class Evaluator {
       return false;
     }
     ZonedDateTime minute = datetime.withZoneSameInstant(zone).truncatedTo(ChronoUnit.MINUTES);
+    // An occurrence never lands before the date it is scheduled on, so one at this minute is
+    // scheduled on or before the minute's wall date.
     return Search.of(data, zone)
+        .endOn(minute.toLocalDate())
         .nearest(minute.minusNanos(1), Direction.FORWARD)
         .filter(minute::isEqual)
         .isPresent();

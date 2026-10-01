@@ -4,19 +4,39 @@ import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 
-/** An occurrence a search found, with the date it is scheduled on. */
-record Occurrence(ZonedDateTime instant, LocalDate date) {
+/**
+ * An occurrence a search found, with the local date it lands on.
+ *
+ * <p>{@link #couldBeat} and {@link #isBehind} rest on one fact: an occurrence lands on a first
+ * pass, from its scheduled date to {@code shift} dates after it ({@link DailyTimes#maxShiftDays}),
+ * and first passes keep wall-clock order.
+ */
+record Occurrence(ZonedDateTime instant, LocalDate landing) {
   /**
-   * How many dates past its scheduled date an occurrence can land: a fixed time shifted out of a
-   * gap before midnight lands on the next date.
+   * How many dates behind a date that has begun now's wall date can read: from the second pass of a
+   * fall-back overlap that crosses midnight, one.
    */
-  static final long MAX_SHIFT_DAYS = 1;
+  static final long MAX_OVERLAP_DAYS = 1;
 
   /**
    * Whether an occurrence scheduled on {@code date} can precede, in {@code direction}, the best
-   * one, scheduled on {@code best}, given that each lands at most MAX_SHIFT_DAYS after its date.
+   * one, which landed on {@code landing}.
    */
-  static boolean couldBeat(LocalDate date, LocalDate best, Direction direction) {
-    return direction.sign() * ChronoUnit.DAYS.between(best, date) <= MAX_SHIFT_DAYS;
+  static boolean couldBeat(LocalDate date, LocalDate landing, Direction direction, long shift) {
+    return switch (direction) {
+      case FORWARD -> !date.isAfter(landing);
+      case BACKWARD -> ChronoUnit.DAYS.between(date, landing) <= shift;
+    };
+  }
+
+  /**
+   * Whether every occurrence scheduled on {@code date} lies behind now, whose wall date is {@code
+   * nowDate}, in {@code direction}.
+   */
+  static boolean isBehind(LocalDate date, LocalDate nowDate, Direction direction, long shift) {
+    return switch (direction) {
+      case FORWARD -> ChronoUnit.DAYS.between(date, nowDate) > shift;
+      case BACKWARD -> ChronoUnit.DAYS.between(nowDate, date) > MAX_OVERLAP_DAYS;
+    };
   }
 }

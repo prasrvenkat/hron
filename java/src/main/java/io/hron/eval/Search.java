@@ -22,35 +22,56 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
         Clauses.of(data, starting));
   }
 
+  /** This search, ended on {@code date}: nothing after it is an occurrence. */
+  Search endOn(LocalDate date) {
+    return new Search(expr, zone, cadence, times, clauses.endOn(date));
+  }
+
   /** The occurrence nearest {@code now} strictly beyond it in {@code direction}. */
   Optional<ZonedDateTime> nearest(ZonedDateTime now, Direction direction) {
     ZonedDateTime local = now.withZoneSameInstant(zone);
-    LocalDate firstDate = clauses.clamp(local.toLocalDate(), direction);
+    LocalDate nowDate = local.toLocalDate();
+    LocalDate firstDate = clauses.clamp(nowDate, direction);
     // A nearest weekday or a DST shift can move an occurrence out of the period it is scheduled
     // in, so the search starts one period back.
     long firstPeriod = cadence.periodOf(firstDate) - direction.sign();
     long reach = clauses.farthestExceptDate(direction).map(cadence::periodOf).orElse(firstPeriod);
+    long shift = times.maxShiftDays();
     Occurrence best = null;
     search:
     for (LocalDate start : cadence.periodStarts(firstPeriod, reach, direction)) {
+      if (rejectsPeriod(start)) {
+        continue;
+      }
       List<Candidate> candidates = Candidate.candidatesInPeriod(expr, start);
       for (Candidate candidate : direction.inOrder(candidates)) {
         boolean beaten =
-            best != null && !Occurrence.couldBeat(candidate.date(), best.date(), direction);
+            best != null
+                && !Occurrence.couldBeat(candidate.date(), best.landing(), direction, shift);
         if (beaten || clauses.endsSearch(candidate.date(), direction)) {
           break search;
         }
-        if (!clauses.allows(candidate)) {
+        if (Occurrence.isBehind(candidate.date(), nowDate, direction, shift)
+            || !clauses.allows(candidate)) {
           continue;
         }
         Optional<ZonedDateTime> instant = nearestOnDate(candidate.date(), local, direction);
         if (instant.isPresent()
             && (best == null || direction.precedes(instant.get(), best.instant()))) {
-          best = new Occurrence(instant.get(), candidate.date());
+          best = new Occurrence(instant.get(), instant.get().toLocalDate());
         }
       }
     }
     return Optional.ofNullable(best).map(Occurrence::instant).filter(Evaluator::inSupportedRange);
+  }
+
+  /**
+   * A day or month period's candidates all target its own month, so one whose month {@code during}
+   * rejects holds nothing.
+   */
+  private boolean rejectsPeriod(LocalDate start) {
+    return (cadence.unit() == Cadence.Unit.DAY || cadence.unit() == Cadence.Unit.MONTH)
+        && !clauses.allowsMonth(start.getMonth());
   }
 
   /** The occurrence on {@code date} nearest {@code now} strictly beyond it in {@code direction}. */
@@ -77,7 +98,7 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
   }
 
   /**
-   * Ordered by {@link WallClock#slotOrGapEnd}, a date's slots never go back in time, so a binary
+   * A date's slot keys never decrease in wall-clock order ({@link WallClock.Slot}), so one binary
    * search finds where {@code now} falls among them; a scan in {@code direction} then steps past
    * slots a gap skips.
    */
@@ -90,9 +111,9 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
     int high = slots.length;
     while (low < high) {
       int mid = (low + high) >>> 1;
-      Instant slot = WallClock.slotOrGapEnd(date, slots[mid], zone);
+      Instant key = WallClock.slotOn(date, slots[mid], zone).key();
       boolean inUpperPart =
-          direction == Direction.FORWARD ? slot.isAfter(target) : !slot.isBefore(target);
+          direction == Direction.FORWARD ? key.isAfter(target) : !key.isBefore(target);
       if (inUpperPart) {
         high = mid;
       } else {
@@ -103,9 +124,9 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
     for (int i = direction == Direction.FORWARD ? low : low - 1;
         i >= 0 && i < slots.length;
         i += step) {
-      Optional<ZonedDateTime> slot = WallClock.slotOn(date, slots[i], zone);
-      if (slot.isPresent()) {
-        return slot;
+      Optional<ZonedDateTime> instant = WallClock.slotOn(date, slots[i], zone).instant();
+      if (instant.isPresent()) {
+        return instant;
       }
     }
     return Optional.empty();

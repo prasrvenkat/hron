@@ -34,12 +34,9 @@ internal sealed class Search
     }
 
     /// <summary>
-    /// This search with nothing scheduled after <paramref name="date"/>, as an until would end it.
+    /// Ends the search on <paramref name="date"/>: nothing after it is an occurrence.
     /// </summary>
-    public Search EndingOn(DateOnly date)
-    {
-        return new Search(_expr, _zone, _cadence, _times, _clauses.EndingOn(date));
-    }
+    public void EndOn(DateOnly date) => _clauses.EndOn(date);
 
     /// <summary>
     /// The occurrence nearest <paramref name="now"/> strictly beyond it in
@@ -47,34 +44,46 @@ internal sealed class Search
     /// </summary>
     public DateTimeOffset? Nearest(DateTimeOffset now, Direction direction)
     {
-        var firstDate = _clauses.Clamp(WallClock.LocalDate(now, _zone), direction);
+        var nowDate = WallClock.LocalDate(now, _zone);
+        var firstDate = _clauses.Clamp(nowDate, direction);
         // A nearest weekday or a DST shift can move an occurrence out of the period it is
         // scheduled in, so the search starts one period back.
         var firstPeriod = _cadence.PeriodOf(firstDate) - direction.Sign();
         var reach = _clauses.FarthestExceptDate(direction) is { } except ? _cadence.PeriodOf(except) : firstPeriod;
+        var shift = _times.MaxShiftDays;
         Occurrence? best = null;
         foreach (var period in _cadence.Periods(firstPeriod, reach, direction))
         {
+            if (RejectsPeriod(period))
+            {
+                continue;
+            }
             foreach (var candidate in InOrder(CandidatesInPeriod(period), direction))
             {
-                var beaten = best is { } found && !Occurrence.CouldBeat(candidate.Date, found, direction);
+                var beaten = best is { } found && !found.CouldBeat(candidate.Date, direction, shift);
                 if (beaten || _clauses.EndsSearch(candidate.Date, direction))
                 {
                     return best?.Instant;
                 }
-                if (!_clauses.Allows(candidate))
+                if (Occurrence.IsBehind(candidate.Date, nowDate, direction, shift) || !_clauses.Allows(candidate))
                 {
                     continue;
                 }
                 if (NearestOnDate(candidate.Date, now, direction) is { } instant &&
                     (best is not { } current || direction.Precedes(instant, current.Instant)))
                 {
-                    best = new Occurrence(instant, candidate.Date);
+                    best = Occurrence.At(instant);
                 }
             }
         }
         return best?.Instant;
     }
+
+    /// <summary>
+    /// A day or month period's candidates all target its own month, so one whose month
+    /// <c>during</c> rejects holds nothing.
+    /// </summary>
+    private bool RejectsPeriod(long period) => _cadence.MonthOf(period) is { } month && !_clauses.AllowsMonth(month);
 
     /// <summary>
     /// The occurrence on <paramref name="date"/> nearest <paramref name="now"/> strictly beyond it
@@ -105,15 +114,32 @@ internal sealed class Search
     }
 
     /// <summary>
-    /// Slots resolve in wall-clock order, so the first beyond <paramref name="now"/> is the
-    /// nearest.
+    /// One binary search on the slots' keys, which never decrease in wall-clock order, splits them
+    /// at <paramref name="now"/>: forward, the slots from the first whose key is after it; backward,
+    /// those before the first whose key is not before it. The nearest beyond now is the first of
+    /// these, in <paramref name="direction"/>, with an instant.
     /// </summary>
     private DateTimeOffset? NearestSlot(DailyTimes.Slots slots, DateOnly date, DateTimeOffset now, Direction direction)
     {
-        var (earliest, latest) = WallClock.MinutesWorthResolving(date, now, _zone, direction);
-        foreach (var minute in slots.Within(earliest, latest, direction))
+        var offsets = WallClock.OffsetsOn(date, _zone);
+        Slot SlotAt(long index) => WallClock.SlotOn(date, slots.MinuteAt(index), offsets, _zone);
+        var (low, high) = (0L, slots.Count);
+        while (low < high)
         {
-            if (WallClock.SlotOn(date, minute, _zone) is { } instant && direction.Precedes(now, instant))
+            var mid = low + (high - low) / 2;
+            var key = SlotAt(mid).Key;
+            if (key < now.UtcTicks || (direction == Direction.Forward && key == now.UtcTicks))
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+        for (var index = direction == Direction.Forward ? low : low - 1; index >= 0 && index < slots.Count; index += direction.Sign())
+        {
+            if (SlotAt(index).Instant is { } instant)
             {
                 return instant;
             }
@@ -130,12 +156,6 @@ internal sealed class Search
         {
             var month = _cadence.MonthIndexOf(period);
             var targetMonth = Calendar.MonthOf(month);
-            // Every date in the period has this target month, so a month the clauses reject need
-            // not be resolved.
-            if (!_clauses.AllowsTargetMonth(targetMonth))
-            {
-                return [];
-            }
             return Calendar.MonthTargetDates(month, mr.Target).Select(date => new Candidate(date, targetMonth)).ToArray();
         }
         if (_cadence.StartOf(period) is not { } start)

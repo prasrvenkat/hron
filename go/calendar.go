@@ -32,10 +32,16 @@ func daysInMonth(year int, month time.Month) int {
 	return 31
 }
 
-// dateOf returns the date of t's wall clock.
+// dateOf returns the date of t's wall clock. It counts Unix seconds, as
+// addDays does: a search takes the date of every occurrence it finds.
 func dateOf(t time.Time) time.Time {
-	year, month, day := t.Date()
-	return newDate(year, month, day)
+	_, offset := t.Zone()
+	seconds := t.Unix() + int64(offset)
+	days := seconds / secondsPerDay
+	if seconds%secondsPerDay < 0 {
+		days--
+	}
+	return time.Unix(days*secondsPerDay, 0).UTC()
 }
 
 func parseISODate(s string) (time.Time, error) {

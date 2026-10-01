@@ -107,39 +107,45 @@ Comments follow the rule in [AGENTS.md](AGENTS.md#comments).
 Every evaluator has the same design, written in its language's idiom. Rust ([rust/hron/src/eval/](rust/hron/src/eval/)) is the reference. One search finds the occurrence nearest an instant, in either direction:
 
 1. Clamp the instant's local date by `starting` (forward) or `until` (backward), and start one period against the search direction: a nearest weekday or a DST shift can move an occurrence out of the period it is scheduled in.
-2. Walk the cadence's aligned periods in the search direction: `per_400_years / gcd(per_400_years, interval)` of them plus `HORIZON_MARGIN_PERIODS`, extended to the farthest ISO `except` date (spec/README.md, "Search horizon"). The walk ends early at the calendar's edge: the first period past years 1 to 9999, with one period of slack on each side (a nearest weekday in December of year 0 lands on 0001-01-01), or sooner where the platform's dates end.
-3. Take each period's candidate dates in direction order. Stop once a candidate's date is more than `MAX_SHIFT_DAYS` beyond the best occurrence's scheduled date (`could_beat`), or past the clause bound the search moves toward (`ends_search`). Skip a candidate the clauses reject. Otherwise find its occurrence nearest the instant (`nearest_on_date`), and replace the best only when it is strictly nearer.
+2. Walk the cadence's aligned periods in the search direction: `per_400_years / gcd(per_400_years, interval)` of them plus `HORIZON_MARGIN_PERIODS`, extended to the farthest ISO `except` date (spec/README.md, "Search horizon"). Skip a day or month period whose month `during` rejects (`rejects_period`). The walk ends early at the calendar's edge: the first period past years 1 to 9999, with one period of slack on each side (a nearest weekday in December of year 0 lands on 0001-01-01), or sooner where the platform's dates end.
+3. Take each period's candidate dates in direction order. Stop once a candidate can no longer beat the best occurrence found (`could_beat`), or is past the clause bound the search moves toward (`ends_search`). Skip a candidate that lies wholly behind the instant (`is_behind`) or that the clauses reject. Otherwise find its occurrence nearest the instant (`nearest_on_date`), and replace the best only when it is strictly nearer.
+
+`could_beat` and `is_behind` rest on two facts about tzdb, which no gap or overlap longer than 24 hours breaks (the longest are Apia's skipped day in 2011 and Alaska's repeated day in 1867). An occurrence lands on a first pass, from its scheduled date to `max_shift_days` after it (one for fixed times, which a gap pushes forward; none for interval slots, which a gap skips), and first passes keep wall-clock order. And on the second pass of a fall-back, the wall date trails a date that has begun by at most `MAX_OVERLAP_DAYS`. Forward, a candidate can beat the best only on or before the best's landing date; backward, only within `max_shift_days` of it. A candidate is behind the instant forward when its dates end before the instant's wall date, and backward when it is more than `MAX_OVERLAP_DAYS` after it. `is_behind` is one-way: true proves the candidate cannot matter, false proves nothing.
 
 Each concept has one name, in the language's casing:
 
 | Concept | Name |
 |---|---|
 | Search direction | `Direction` (`Forward`, `Backward`) with `sign` and `precedes` |
-| A schedule prepared for searching | `Search`, with `nearest(now, direction)` and `nearest_on_date` |
+| A schedule prepared for searching | `Search`, with `nearest(now, direction)`, `rejects_period` and `nearest_on_date` |
 | The periods an expression fires in | `Cadence`: `period_of`, `start_of`, `period_starts` |
 | A date it fires on, with the month whose day it names | `Candidate` (`date`, `target_month`), from `candidates_in_period` |
-| The times of day it fires at | `DailyTimes`: fixed times or interval slots |
-| Trailing clauses | `Clauses`: `allows`, `clamp`, `ends_search`, `farthest_except_date` |
-| A found occurrence | `Occurrence` (`instant`, and the `date` it is scheduled on), kept while `could_beat` holds |
-| Wall time on a date | `fixed_time_on` (shifted out of a gap), `slot_on` (none in a gap); both take a repeated time's first pass |
+| The times of day it fires at | `DailyTimes`: fixed times or interval slots, with `max_shift_days` |
+| Trailing clauses | `Clauses`: `allows`, `allows_month`, `clamp`, `ends_search`, `end_on`, `farthest_except_date` |
+| A found occurrence | `Occurrence` (`instant`, and the `landing` date it falls on) |
+| Whether a candidate can matter | `could_beat`, `is_behind` |
+| Wall time on a date | `fixed_time_on` (shifted out of a gap), `slot_on` (a `Slot` with its `key` and, outside a gap, its `instant`); both take a repeated time's first pass |
 | Supported range | `RANGE_START`, `RANGE_END`, `in_supported_range` |
 
 And it follows these rules:
 
-- Direction enters only through `Direction` and the clause and cadence primitives. Only the interval-slot scan on a date may be mirrored, because a fall-back overlap is not symmetric; a scan that keeps a date's slots in instant order (each slot's first-pass instant, or its gap's end) and searches them needs no mirror.
+- Direction enters only through `Direction` and the clause and cadence primitives. A date's slots are found by one binary search on their keys, which never decrease in wall-clock order (a slot's instant, or the instant its gap ends), so nothing is mirrored (but see the index scan below).
+- A date's fixed times are all compared, in one pass or sorted once: a time shifted out of a gap can land after a later wall time.
 - A search prepares its schedule once: zone, cadence, times and clauses, with ISO dates parsed once.
-- Numbers that bound a loop are named constants with their reason: `HORIZON_MARGIN_PERIODS`, `MAX_SHIFT_DAYS`, `NAMED_UNTIL_MAX_YEARS`. There are no fixed scan spans.
+- Numbers that bound a loop are named constants with their reason: `HORIZON_MARGIN_PERIODS`, `MAX_SHIFT_DAYS`, `MAX_OVERLAP_DAYS`, `NAMED_UNTIL_MAX_YEARS`. There are no fixed scan spans.
 - Calendar arithmetic and wall-clock resolution live in their own units, apart from the search.
-- `matches` is defined through the forward search, so the two cannot disagree.
+- `matches` is the forward search from just before the minute, so the two cannot disagree. It ends that search on the minute's wall date (`end_on`): an occurrence never lands before the date it is scheduled on.
 
-Implementations may also take these shortcuts, each proven not to change a result:
+Where a platform needs it, an implementation may also:
 
 - Number periods by their calendar index instead of their first date, where a date type cannot hold December of year 0 or building dates is costly.
-- Skip a candidate more than `MAX_SHIFT_DAYS` behind the instant's local date, and a month `during` rejects before computing its dates.
-- Bound `could_beat` by the times' own shift: `MAX_SHIFT_DAYS` for fixed times, which a gap pushes forward, and 0 for interval slots, which a gap skips.
-- Bound `could_beat` by the best occurrence's landing date instead of its scheduled date: stop forward once a candidate's date is past it, and backward once the candidate's date plus the times' shift is before it. An occurrence lands on or after its scheduled date, on a first pass, and first passes keep wall-clock order. The `Occurrence` then keeps that landing date.
-- End `matches`' forward search on the minute's wall date: an occurrence never lands before the date it is scheduled on.
 - Drop an instant outside the supported range where it is resolved instead of filtering the result: the nearest instant is out of range only when every farther one is.
+- Find a date's slots from the index of the instant's wall minute instead of a binary search on keys, where resolving a slot is costly: forward from the slot after the instant's wall minute; backward from that minute plus, when the instant is on the second pass of a fall-back, the overlap's length, since slots up to the end of the repeated hour have already passed. These two scans may be mirrored.
+- Resolve a date's times once into an ascending list of instants (fixed times sorted, gap slots dropped) and binary-search that list: it needs no gap keys.
+- Find a gap's end without a transition API by binary-searching whole seconds between the wall time read with the offsets after and before the gap: every slot instant is a whole second, so the first second at or after the transition is as good a key.
+- Narrow a date's binary search with the UTC offsets a day either side of it, where offset changes are days apart: on a date without a change, the keys follow from the wall minutes.
+- Start the slot search at the slot holding the instant's wall minute and search outward, where each key is costly to resolve: it finds the boundary in one or two probes when the wall minute is right.
+- Skip the months `during` rejects inside the cadence, jumping to the next month it allows, instead of testing each period.
 
 ## Pull Requests
 

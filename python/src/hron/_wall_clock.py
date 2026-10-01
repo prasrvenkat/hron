@@ -7,12 +7,20 @@ one ZoneInfo compare by wall clock, which misorders the two passes of a fall-bac
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+from datetime import MINYEAR, UTC, date, datetime, time, timedelta
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from ._ast import TimeOfDay
 
 MINUTES_PER_HOUR = 60
+
+_SECOND = timedelta(seconds=1)
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+_START_OF_TIME = datetime.min.replace(tzinfo=UTC)
+_END_OF_TIME = datetime.max.replace(tzinfo=UTC)
 
 
 def resolve_zone(name: str | None) -> ZoneInfo:
@@ -31,26 +39,62 @@ def fixed_time_on(d: date, t: time, zone: ZoneInfo) -> datetime | None:
         return None
 
 
-def slot_on(d: date, minute: int, zone: ZoneInfo) -> datetime | None:
-    """The instant of the interval slot `minute` minutes after midnight on `d`, or None
-    when that wall time falls in a spring-forward gap (spec/README.md, "Interval slots
-    in a spring-forward gap")."""
-    wall = datetime.combine(d, time(*divmod(minute, MINUTES_PER_HOUR)))
+class Slot(NamedTuple):
+    """An interval slot on a date: its zoned wall time, and its instant unless a
+    spring-forward gap skips it (spec/README.md, "Interval slots in a spring-forward
+    gap")."""
+
+    wall: datetime
+    instant: datetime | None
+
+    @property
+    def key(self) -> datetime:
+        """Where the slot sits in time: its instant, or the instant its gap ends, so keys
+        never decrease in wall-clock order and one binary search finds the slots on either
+        side of an instant. Past the years `datetime` can hold, which is outside the
+        supported range, the slot sits at that end of time. Found on demand: only a
+        search's probes need it, and a gap's end costs a bisection."""
+        if self.instant is not None:
+            return self.instant
+        try:
+            return _gap_end(self.wall)
+        except OverflowError:
+            return _START_OF_TIME if self.wall.year == MINYEAR else _END_OF_TIME
+
+
+def slot_on(d: date, minute: int, zone: ZoneInfo) -> Slot:
+    """The slot `minute` minutes after midnight on `d`."""
+    wall = datetime.combine(d, time(*divmod(minute, MINUTES_PER_HOUR)), tzinfo=zone)
     try:
-        instant = wall.replace(tzinfo=zone).astimezone(UTC)
-        # A wall time in a gap comes back shifted by the gap's length.
-        exists = instant.astimezone(zone).replace(tzinfo=None) == wall
+        # With fold=0 a wall time takes its first pass, and one in a gap the offset from
+        # before the gap, which lands it past the gap, where the offset differs.
+        instant = wall.astimezone(UTC)
+        if instant.astimezone(zone).utcoffset() == wall.utcoffset():
+            return Slot(wall, instant)
     except OverflowError:
-        return None
-    return instant if exists else None
+        pass
+    return Slot(wall, None)
 
 
-def first_pass_wall_time(t: datetime) -> datetime:
-    """`t`'s wall time read on the clock of a fall-back's first pass: later than its own
-    by the overlap's length when `t` is in the second pass. A wall time's first pass is
-    before `t` only when the wall time is before this."""
-    first_pass = t.replace(fold=0).astimezone(UTC)
-    return t.replace(tzinfo=None) + (t.astimezone(UTC) - first_pass)
+def _gap_end(wall: datetime) -> datetime:
+    """The instant the spring-forward gap holding `wall` ends. zoneinfo exposes no
+    transitions, so it is found by bisection over whole seconds since the epoch, on which
+    zone transitions fall: it is later than `wall` read with the offset after the gap
+    (fold=1) and no later than `wall` read with the one before it (fold=0)."""
+    zone = wall.tzinfo
+    before, after = wall.utcoffset(), wall.replace(fold=1).utcoffset()
+    assert before is not None and after is not None
+    seconds = (wall.replace(tzinfo=UTC) - _EPOCH) // _SECOND
+    behind = seconds - after // _SECOND
+    ended = seconds - before // _SECOND
+    while ended - behind > 1:
+        middle = (behind + ended) // 2
+        # Not datetime.fromtimestamp, which fails before 1970 on some platforms.
+        if (_EPOCH + middle * _SECOND).astimezone(zone).utcoffset() == after:
+            ended = middle
+        else:
+            behind = middle
+    return _EPOCH + ended * _SECOND
 
 
 def civil_time(t: TimeOfDay) -> time:

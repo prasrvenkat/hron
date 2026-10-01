@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 
-from cases import generate
+from cases import generate, generate_stress
 from languages import LANGUAGES, Answers, RunnerError, build, run
 from report import comparable_cases, compare, compare_times, report, warn_unparsed
 
@@ -26,7 +26,9 @@ def json_file(path: str) -> object:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", help="comma-separated languages, e.g. rust,go")
-    parser.add_argument("--cases", type=json_file, help="run the cases in this JSON file instead")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--cases", type=json_file, help="run the cases in this JSON file instead")
+    source.add_argument("--stress", action="store_true", help="run the DST stress cases instead")
     parser.add_argument("--save", type=Path, help="write the cases and every outcome to this file")
     parser.add_argument("--compare", type=json_file, help="report outcomes changed since --save")
     parser.add_argument("--no-build", action="store_true", help="skip building the runners")
@@ -42,7 +44,7 @@ def parse_args() -> argparse.Namespace:
         parser.error("--compare needs fresh builds, so it cannot be used with --no-build")
     args.generated = args.cases is None
     if args.generated:
-        args.cases = generate()
+        args.cases = generate_stress() if args.stress else generate()
     ids = Counter(case["id"] for case in args.cases)
     if duplicates := [case_id for case_id, count in ids.items() if count > 1]:
         parser.error(f"duplicate case ids: {', '.join(duplicates[:5])}")
