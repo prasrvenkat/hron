@@ -280,7 +280,7 @@ func isExcepted(d time.Time, exceptions []ExceptionSpec) bool {
 }
 
 // isoExceptBounds returns the earliest and latest of d and the ISO except
-// dates, which a search runs one horizon beyond (spec/README.md, "Search horizon").
+// dates, which a search runs one span beyond (spec/README.md, "Search horizon").
 func isoExceptBounds(exceptions []ExceptionSpec, d time.Time) (first, last time.Time) {
 	first, last = d, d
 	for _, exc := range exceptions {

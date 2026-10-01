@@ -322,7 +322,7 @@ const LAST_DAY = epochDay(9999, 12, 31);
 
 /**
  * Candidate days from `from` (inclusive) in `direction`, over one full
- * calendar cycle of aligned periods past `from`, or past `horizon` when that
+ * calendar cycle of aligned periods past `from`, or past `reach` when that
  * lies further in `direction` (spec/README.md, "Search horizon"), and never
  * outside years 1-9999.
  */
@@ -330,7 +330,7 @@ function* candidateDays(
   plan: Plan,
   from: number,
   direction: Direction,
-  horizon: number | null,
+  reach: number | null,
 ): Generator<number> {
   const { unit, interval } = plan;
   const start = Math.min(Math.max(from, FIRST_DAY), LAST_DAY);
@@ -339,8 +339,8 @@ function* candidateDays(
   let period = unit.periodOf(start) - direction;
   period += direction * mod(direction * (plan.anchor - period), interval);
   let periods = unit.cycle / gcd(unit.cycle, interval);
-  if (horizon !== null && direction * (horizon - start) > 0) {
-    const beyond = direction * (unit.periodOf(horizon) - unit.periodOf(start));
+  if (reach !== null && direction * (reach - start) > 0) {
+    const beyond = direction * (unit.periodOf(reach) - unit.periodOf(start));
     periods += Math.ceil(beyond / interval);
   }
   for (let i = 0; i <= periods; i++, period += direction * interval) {

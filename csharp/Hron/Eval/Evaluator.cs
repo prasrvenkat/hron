@@ -155,7 +155,7 @@ public static class Evaluator
     /// <paramref name="from"/> and every ISO except date, per "Search horizon" in spec/README.md.
     /// The Gregorian calendar repeats every 400 years, so a schedule with an interval of n days,
     /// weeks, months or years repeats after lcm(400 years, n of those units), always a whole
-    /// number of years. An ISO date is searched for wherever it is.
+    /// number of years. A single ISO date is searched for wherever it is.
     /// </summary>
     private static DateOnly SearchLimit(IScheduleExpr expr, DateOnly from, DateOnly[] isoExcepts, int direction)
     {

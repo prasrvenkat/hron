@@ -322,9 +322,9 @@ module Hron
           end
         end
       when MonthRepeat
-        # One extra month on the side the search comes from catches a nearest weekday that
-        # crosses into from's month.
-        each_period(month_number(from) - dir, reach && month_number(reach), month_number(starting || EPOCH_DATE), expr.interval, CYCLE_MONTHS, dir) do |number|
+        # A nearest weekday can land in the month next to its target's, so the walk takes one
+        # extra month on each side: before from, and past reach.
+        each_period(month_number(from) - dir, reach && (month_number(reach) + dir), month_number(starting || EPOCH_DATE), expr.interval, CYCLE_MONTHS, dir) do |number|
           year, month = number.divmod(12)
           target = EvalHelpers.date(year, month + 1, 1)
           days = month_target_days(expr.target, year, month + 1)

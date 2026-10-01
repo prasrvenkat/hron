@@ -2814,6 +2814,20 @@
           "description": "three excepted 400-year day steps in a row: next is 3570-01-01",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "3570-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exception_before_the_start_is_not_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 1600-01-01 starting 1200-01-01 in UTC",
+          "description": "the span runs past the later of the search start and the last ISO exception: from 2026, not from 1600",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2400-01-01T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exception_on_a_nearest_weekday_beyond_the_horizon",
+          "expression": "every 4800 months on the previous nearest weekday to 1st at 09:00 except 2426-02-27 starting 2026-03-01 in UTC",
+          "description": "the excepted occurrence for March 2426 lands on Friday Feb 27; the span runs past its target month, finding 2826-02-27",
+          "now": "2026-04-15T12:00:00+00:00[UTC]",
+          "next": "2826-02-27T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -7332,6 +7346,34 @@
           "now": "9990-01-01T00:00:00+00:00[UTC]",
           "expected": "8400-01-01T00:00:00+00:00[UTC]",
           "description": "three excepted occurrences in a row: previous is 8400"
+        },
+        {
+          "name": "iso_exception_before_the_horizon_days",
+          "expression": "every 146097 days at 09:00 except 2370-01-01 in UTC",
+          "now": "2769-12-31T12:00:00+00:00[UTC]",
+          "expected": "1970-01-01T09:00:00+00:00[UTC]",
+          "description": "backward over 400-year day steps, 2370-01-01 excepted: previous is 1970-01-01"
+        },
+        {
+          "name": "iso_exception_before_the_horizon_weeks",
+          "expression": "every 20871 weeks on thursday at 09:00 except 2370-01-08 in UTC",
+          "now": "2770-01-01T12:00:00+00:00[UTC]",
+          "expected": "1970-01-08T09:00:00+00:00[UTC]",
+          "description": "backward over 400-year week steps, 2370-01-08 excepted: previous is 1970-01-08"
+        },
+        {
+          "name": "iso_exception_before_the_horizon_months",
+          "expression": "every 4800 months on the 1st at 09:00 except 2370-01-01 in UTC",
+          "now": "2769-12-31T12:00:00+00:00[UTC]",
+          "expected": "1970-01-01T09:00:00+00:00[UTC]",
+          "description": "backward over 400-year month steps, 2370-01-01 excepted: previous is 1970-01-01"
+        },
+        {
+          "name": "iso_exception_on_a_nearest_weekday_before_the_horizon",
+          "expression": "every 4800 months on the next nearest weekday to 31st at 09:00 except 2370-02-02 in UTC",
+          "now": "2769-12-15T12:00:00+00:00[UTC]",
+          "expected": "1970-02-02T09:00:00+00:00[UTC]",
+          "description": "the excepted occurrence for January 2370 lands on Monday Feb 2; backward, the span runs past its target month, finding 1970-02-02"
         }
       ]
     },
