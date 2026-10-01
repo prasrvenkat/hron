@@ -8,12 +8,18 @@ namespace Hron.Eval;
 /// </summary>
 /// <remarks>
 /// Assumes at most one offset change within a day of a wall time, and gaps and overlaps of at most
-/// a day (tzdata 2026c has no transitions closer than about 95 hours), so the offsets a day before
-/// and a day after it are the only ones it can have.
+/// a day (tzdata 2026c has no transitions closer than about 95 hours, longer than the three days
+/// from a day before a date to a day after it), so the offsets a day before and a day after it, or
+/// a day before and after its date, are the only ones it can have.
 /// </remarks>
 internal static class WallClock
 {
     public const int MinutesPerHour = 60;
+
+    /// <summary>
+    /// The offsets in force before and after the one transition a wall time can be near.
+    /// </summary>
+    public readonly record struct Offsets(TimeSpan Before, TimeSpan After);
 
     /// <summary>
     /// The instant <paramref name="time"/> names on <paramref name="date"/>, shifted forward by the
@@ -22,36 +28,31 @@ internal static class WallClock
     /// </summary>
     public static DateTimeOffset? FixedTimeOn(DateOnly date, TimeOfDay time, TimeZoneInfo zone)
     {
-        var (utcTicks, _) = Resolve(WallTicks(date, time.TotalMinutes), zone);
+        var wallTicks = WallTicks(date, time.TotalMinutes);
+        var offsets = new Offsets(OffsetAt(wallTicks - TimeSpan.TicksPerDay, zone), OffsetAt(wallTicks + TimeSpan.TicksPerDay, zone));
+        var (utcTicks, _) = Resolve(wallTicks, offsets, zone);
         return InstantInRange(utcTicks, zone);
     }
 
     /// <summary>
-    /// The instant of the interval slot <paramref name="minute"/> minutes after midnight on
-    /// <paramref name="date"/>, or null when that wall time falls in a spring-forward gap
-    /// (spec/README.md, "Interval slots in a spring-forward gap") or outside the supported range.
+    /// The offsets a wall time on <paramref name="date"/> can have: those a day before the date
+    /// begins and a day after it ends.
     /// </summary>
-    public static DateTimeOffset? SlotOn(DateOnly date, long minute, TimeZoneInfo zone)
+    public static Offsets OffsetsOn(DateOnly date, TimeZoneInfo zone)
     {
-        var (utcTicks, inGap) = Resolve(WallTicks(date, minute), zone);
-        return inGap ? null : InstantInRange(utcTicks, zone);
+        var midnight = WallTicks(date, 0);
+        return new Offsets(OffsetAt(midnight - TimeSpan.TicksPerDay, zone), OffsetAt(midnight + 2 * TimeSpan.TicksPerDay, zone));
     }
 
     /// <summary>
-    /// The wall-clock minutes of <paramref name="date"/> that can hold an instant beyond
-    /// <paramref name="now"/> in <paramref name="direction"/>. A wall time w fires at w − o for one
-    /// of the date's offsets o, so it is after now only if w &gt; now + min(o) and before now only
-    /// if w &lt; now + max(o); resolving the other minutes, the costly part, can be skipped.
+    /// The slot <paramref name="minute"/> minutes after midnight on <paramref name="date"/>, whose
+    /// offsets are <paramref name="offsets"/>.
     /// </summary>
-    public static (long Earliest, long Latest) MinutesWorthResolving(DateOnly date, DateTimeOffset now, TimeZoneInfo zone, Direction direction)
+    public static Slot SlotOn(DateOnly date, long minute, Offsets offsets, TimeZoneInfo zone)
     {
-        var midnight = WallTicks(date, 0);
-        var before = OffsetAt(midnight - TimeSpan.TicksPerDay, zone).Ticks;
-        var after = OffsetAt(midnight + 2 * TimeSpan.TicksPerDay, zone).Ticks;
-        var sinceMidnight = now.UtcTicks - midnight;
-        return direction == Direction.Forward
-            ? (Calendar.FloorDiv(sinceMidnight + Math.Min(before, after), TimeSpan.TicksPerMinute), long.MaxValue)
-            : (long.MinValue, -Calendar.FloorDiv(-(sinceMidnight + Math.Max(before, after)), TimeSpan.TicksPerMinute));
+        var wallTicks = WallTicks(date, minute);
+        var (utcTicks, inGap) = Resolve(wallTicks, offsets, zone);
+        return inGap ? Slot.Skipped(GapEnd(wallTicks, offsets, zone)) : Slot.At(utcTicks, zone);
     }
 
     public static DateOnly LocalDate(DateTimeOffset t, TimeZoneInfo zone)
@@ -74,12 +75,16 @@ internal static class WallClock
     /// Resolves a wall time from UTC offsets, which TimeZoneInfo reports correctly even where
     /// IsInvalidTime and its adjustment rules do not (base-offset changes such as Pyongyang 2018
     /// and Caracas 2016). The wall time exists at wall − o for each offset o around it that is in
-    /// force at that instant; with none it is in a gap, shifted by the offset from before it.
+    /// force at that instant, so with one offset around it, at wall − o; with none it is in a gap,
+    /// shifted by the offset from before it.
     /// </summary>
-    private static (long UtcTicks, bool InGap) Resolve(long wallTicks, TimeZoneInfo zone)
+    private static (long UtcTicks, bool InGap) Resolve(long wallTicks, Offsets offsets, TimeZoneInfo zone)
     {
-        var before = OffsetAt(wallTicks - TimeSpan.TicksPerDay, zone);
-        var after = OffsetAt(wallTicks + TimeSpan.TicksPerDay, zone);
+        var (before, after) = offsets;
+        if (before == after)
+        {
+            return (wallTicks - before.Ticks, false);
+        }
         long? firstPass = null;
         foreach (var offset in new[] { before, after })
         {
@@ -92,7 +97,32 @@ internal static class WallClock
         return firstPass is { } ticks ? (ticks, false) : (wallTicks - before.Ticks, true);
     }
 
-    private static DateTimeOffset? InstantInRange(long utcTicks, TimeZoneInfo zone)
+    /// <summary>
+    /// The instant the gap holding a wall time ends, rounded up to a whole second: the gap's
+    /// transition lies after wall − after and at or before wall − before, where the offset leaves
+    /// before. Offsets are whole seconds, so no instant a slot resolves to lies between the
+    /// transition and the second it is rounded to.
+    /// </summary>
+    private static long GapEnd(long wallTicks, Offsets offsets, TimeZoneInfo zone)
+    {
+        var low = Calendar.FloorDiv(wallTicks - offsets.After.Ticks, TimeSpan.TicksPerSecond);
+        var high = -Calendar.FloorDiv(offsets.Before.Ticks - wallTicks, TimeSpan.TicksPerSecond);
+        while (high - low > 1)
+        {
+            var mid = low + (high - low) / 2;
+            if (OffsetAt(mid * TimeSpan.TicksPerSecond, zone) == offsets.Before)
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+        return high * TimeSpan.TicksPerSecond;
+    }
+
+    public static DateTimeOffset? InstantInRange(long utcTicks, TimeZoneInfo zone)
     {
         if (!SupportedRange.InSupportedRange(utcTicks))
         {

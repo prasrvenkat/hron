@@ -112,6 +112,17 @@ internal sealed class Cadence
     public long MonthIndexOf(long k) => Calendar.MonthIndex(_origin) + k;
 
     /// <summary>
+    /// The month every date of period <paramref name="k"/> falls in, for a day or month cadence;
+    /// null for a week or year, or a day DateOnly cannot represent.
+    /// </summary>
+    public int? MonthOf(long k) => _unit switch
+    {
+        Unit.Day => StartOf(k)?.Month,
+        Unit.Month => Calendar.MonthOf(MonthIndexOf(k)),
+        _ => null
+    };
+
+    /// <summary>
     /// The aligned periods from <paramref name="firstPeriod"/> in <paramref name="direction"/>,
     /// through one search horizon beyond whichever of <paramref name="firstPeriod"/> and
     /// <paramref name="reach"/> is farther along it (spec/README.md, "Search horizon"). The first

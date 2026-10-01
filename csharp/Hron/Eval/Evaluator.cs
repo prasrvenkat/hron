@@ -81,8 +81,9 @@ public static class Evaluator
         var minute = dt.AddTicks(-(wall.Ticks % TimeSpan.TicksPerMinute));
         var justBefore = minute.AddTicks(-1);
         // An occurrence never lands before the date it is scheduled on, so one at this minute is
-        // scheduled on or before its wall date.
-        var search = Search.Of(data, location).EndingOn(DateOnly.FromDateTime(wall));
+        // scheduled on or before the minute's wall date.
+        var search = Search.Of(data, location);
+        search.EndOn(DateOnly.FromDateTime(wall));
         return search.Nearest(justBefore, Direction.Forward) == minute;
     }
 

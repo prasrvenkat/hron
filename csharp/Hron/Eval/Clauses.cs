@@ -17,7 +17,7 @@ internal sealed class Clauses
     private readonly int[] _during;
     private readonly (int Month, int Day)[] _exceptMonthDays;
     private readonly DateOnly[] _exceptDates;
-    private readonly DateOnly? _until;
+    private DateOnly? _until;
     private readonly DateOnly? _starting;
 
     private Clauses(int[] during, (int Month, int Day)[] exceptMonthDays, DateOnly[] exceptDates, DateOnly? until, DateOnly? starting)
@@ -51,25 +51,27 @@ internal sealed class Clauses
     }
 
     /// <summary>
-    /// These clauses with <c>until</c> at most <paramref name="date"/>.
+    /// Ends the search on <paramref name="date"/>: nothing after it is an occurrence.
     /// </summary>
-    public Clauses EndingOn(DateOnly date)
+    public void EndOn(DateOnly date)
     {
-        var until = _until is { } current && current < date ? current : date;
-        return new Clauses(_during, _exceptMonthDays, _exceptDates, until, _starting);
+        if (_until is not { } until || date < until)
+        {
+            _until = date;
+        }
     }
 
     public bool Allows(Candidate candidate)
     {
         var date = candidate.Date;
-        return AllowsTargetMonth(candidate.TargetMonth)
+        return AllowsMonth(candidate.TargetMonth)
             && !_exceptMonthDays.Contains((date.Month, date.Day))
             && Array.BinarySearch(_exceptDates, date) < 0
             && (_until is not { } until || date <= until)
             && (_starting is not { } starting || date >= starting);
     }
 
-    public bool AllowsTargetMonth(int month) => _during.Length == 0 || _during.Contains(month);
+    public bool AllowsMonth(int month) => _during.Length == 0 || _during.Contains(month);
 
     /// <summary>
     /// The one-off except date farthest along <paramref name="direction"/>: the calendar repeats
