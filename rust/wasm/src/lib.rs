@@ -35,6 +35,20 @@ fn parse_zoned(s: &str) -> Result<jiff::Zoned, JsError> {
     Ok(extreme.to_zoned(jiff::tz::TimeZone::UTC))
 }
 
+fn hron_error(error: hron::ScheduleError) -> JsValue {
+    let kind = match error {
+        hron::ScheduleError::Lex { .. } => "lex",
+        hron::ScheduleError::Parse { .. } => "parse",
+        hron::ScheduleError::Eval { .. } => "eval",
+        hron::ScheduleError::Cron { .. } => "cron",
+        _ => "unknown",
+    };
+    let js_error = js_sys::Error::new(&error.to_string());
+    js_sys::Reflect::set(&js_error, &"kind".into(), &kind.into())
+        .expect("a new Error accepts properties");
+    js_error.into()
+}
+
 /// A parsed hron schedule, usable from JavaScript.
 #[wasm_bindgen]
 pub struct Schedule {
@@ -46,55 +60,47 @@ impl Schedule {
     /// Parse an hron expression string.
     /// Throws on an invalid expression.
     #[wasm_bindgen]
-    pub fn parse(input: &str) -> Result<Schedule, JsError> {
-        let inner = hron::Schedule::parse(input).map_err(|e| JsError::new(&e.to_string()))?;
+    pub fn parse(input: &str) -> Result<Schedule, JsValue> {
+        let inner = hron::Schedule::parse(input).map_err(hron_error)?;
         Ok(Schedule { inner })
     }
 
     /// Compute the next occurrence strictly after `now`.
     /// Throws on a datetime it cannot parse.
     #[wasm_bindgen(js_name = "nextFrom")]
-    pub fn next_from(&self, now: &str) -> Result<Option<String>, JsError> {
+    pub fn next_from(&self, now: &str) -> Result<Option<String>, JsValue> {
         let now = parse_zoned(now)?;
-        let result = self
-            .inner
-            .next_from(&now)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+        let result = self.inner.next_from(&now).map_err(hron_error)?;
         Ok(result.map(|z| z.to_string()))
     }
 
     /// Compute the next `n` occurrences strictly after `now`.
     /// Throws on a datetime it cannot parse.
     #[wasm_bindgen(js_name = "nextNFrom")]
-    pub fn next_n_from(&self, now: &str, n: u32) -> Result<JsValue, JsError> {
+    pub fn next_n_from(&self, now: &str, n: u32) -> Result<JsValue, JsValue> {
         let now = parse_zoned(now)?;
         let results = self
             .inner
             .next_n_from(&now, n as usize)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+            .map_err(hron_error)?;
         let strings: Vec<String> = results.iter().map(|z| z.to_string()).collect();
-        serde_wasm_bindgen::to_value(&strings).map_err(|e| JsError::new(&e.to_string()))
+        serde_wasm_bindgen::to_value(&strings).map_err(|e| JsError::new(&e.to_string()).into())
     }
 
     /// Compute the most recent occurrence strictly before `now`.
     /// Throws on a datetime it cannot parse.
     #[wasm_bindgen(js_name = "previousFrom")]
-    pub fn previous_from(&self, now: &str) -> Result<Option<String>, JsError> {
+    pub fn previous_from(&self, now: &str) -> Result<Option<String>, JsValue> {
         let now = parse_zoned(now)?;
-        let result = self
-            .inner
-            .previous_from(&now)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+        let result = self.inner.previous_from(&now).map_err(hron_error)?;
         Ok(result.map(|z| z.to_string()))
     }
 
     /// Check whether the minute containing `datetime` is an occurrence (seconds are ignored).
     /// Throws on a datetime it cannot parse.
-    pub fn matches(&self, datetime: &str) -> Result<bool, JsError> {
+    pub fn matches(&self, datetime: &str) -> Result<bool, JsValue> {
         let dt = parse_zoned(datetime)?;
-        self.inner
-            .matches(&dt)
-            .map_err(|e| JsError::new(&e.to_string()))
+        self.inner.matches(&dt).map_err(hron_error)
     }
 
     /// Get the structured JSON representation.
@@ -103,13 +109,11 @@ impl Schedule {
         serde_wasm_bindgen::to_value(&self.inner).map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Convert this schedule to a cron expression.
-    /// Throws when the schedule has no cron equivalent.
+    /// Convert this schedule to a cron expression that fires at the same times.
+    /// Throws an Error whose `kind` is `cron` when no cron does.
     #[wasm_bindgen(js_name = "toCron")]
-    pub fn to_cron(&self) -> Result<String, JsError> {
-        self.inner
-            .to_cron()
-            .map_err(|e| JsError::new(&e.to_string()))
+    pub fn to_cron(&self) -> Result<String, JsValue> {
+        self.inner.to_cron().map_err(hron_error)
     }
 
     #[wasm_bindgen(js_name = "toString")]
@@ -131,7 +135,7 @@ impl Schedule {
     /// Returns occurrences strictly after `from`, limited to `limit` results.
     /// Returns an array of datetime strings.
     /// Throws on a datetime it cannot parse.
-    pub fn occurrences(&self, from: &str, limit: u32) -> Result<JsValue, JsError> {
+    pub fn occurrences(&self, from: &str, limit: u32) -> Result<JsValue, JsValue> {
         let from = parse_zoned(from)?;
         let results: Vec<String> = self
             .inner
@@ -139,14 +143,14 @@ impl Schedule {
             .take(limit as usize)
             .map(|r| r.map(|z| z.to_string()))
             .collect::<Result<_, _>>()
-            .map_err(|e| JsError::new(&e.to_string()))?;
-        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()))
+            .map_err(hron_error)?;
+        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()).into())
     }
 
     /// Returns occurrences in the range (from, to], where from is exclusive and to is inclusive.
     /// Returns an array of datetime strings.
     /// Throws on a datetime it cannot parse.
-    pub fn between(&self, from: &str, to: &str) -> Result<JsValue, JsError> {
+    pub fn between(&self, from: &str, to: &str) -> Result<JsValue, JsValue> {
         let from = parse_zoned(from)?;
         let to = parse_zoned(to)?;
         let results: Vec<String> = self
@@ -154,21 +158,21 @@ impl Schedule {
             .between(&from, &to)
             .map(|r| r.map(|z| z.to_string()))
             .collect::<Result<_, _>>()
-            .map_err(|e| JsError::new(&e.to_string()))?;
-        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()))
+            .map_err(hron_error)?;
+        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()).into())
     }
 }
 
 /// Explain a cron expression in human-readable form.
 #[wasm_bindgen(js_name = "explainCron")]
-pub fn explain_cron(cron_expr: &str) -> Result<String, JsError> {
-    hron::Schedule::explain_cron(cron_expr).map_err(|e| JsError::new(&e.to_string()))
+pub fn explain_cron(cron_expr: &str) -> Result<String, JsValue> {
+    hron::Schedule::explain_cron(cron_expr).map_err(hron_error)
 }
 
-/// Parse a cron expression and return an hron Schedule.
-/// Throws on an invalid expression.
+/// Parse a cron expression and return an hron Schedule that fires at the same times.
+/// Throws an Error whose `kind` is `cron` on invalid cron or cron that hron cannot express exactly.
 #[wasm_bindgen(js_name = "fromCron")]
-pub fn from_cron(cron_expr: &str) -> Result<Schedule, JsError> {
-    let inner = hron::Schedule::from_cron(cron_expr).map_err(|e| JsError::new(&e.to_string()))?;
+pub fn from_cron(cron_expr: &str) -> Result<Schedule, JsValue> {
+    let inner = hron::Schedule::from_cron(cron_expr).map_err(hron_error)?;
     Ok(Schedule { inner })
 }

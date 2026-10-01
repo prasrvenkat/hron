@@ -177,12 +177,12 @@ fn test_to_cron_not_expressible() {
 }
 
 #[test]
-fn test_to_cron_yearly_fails() {
+fn test_to_cron_yearly() {
     hron()
         .args(["--to-cron", "every year on dec 25 at 00:00"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("not expressible"));
+        .success()
+        .stdout("0 0 25 12 *\n");
 }
 
 #[test]
@@ -255,21 +255,21 @@ fn test_parse_json_during() {
 }
 
 #[test]
-fn test_to_cron_multi_time_fails() {
+fn test_to_cron_multi_time() {
     hron()
         .args(["--to-cron", "every day at 9:00, 17:00"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("not expressible"));
+        .success()
+        .stdout("0 9,17 * * *\n");
 }
 
 #[test]
-fn test_to_cron_during_fails() {
+fn test_to_cron_during() {
     hron()
         .args(["--to-cron", "every day at 9:00 during jan"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("not expressible"));
+        .success()
+        .stdout("0 9 * 1 *\n");
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn test_to_cron_day_range() {
         .args(["--to-cron", "every month on the 1st to 5th at 9:00"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("0 9 1,2,3,4,5 * *"));
+        .stdout("0 9 1-5 * *\n");
 }
 
 #[test]

@@ -21,8 +21,8 @@ fn parse_zoned(s: &str) -> jiff::Zoned {
 }
 
 /// Fails on a field this runner does not check, and on a case with none of the
-/// section's assertion fields (spec/README.md, "Writing a runner"). Error
-/// sections pass no assertion fields: the section itself asserts the error.
+/// section's assertion fields (spec/README.md, "Writing a runner").
+/// `parse_errors` passes no assertion fields: the section itself asserts the error.
 fn check_fields(case: &Value, inputs: &[&str], assertions: &[&str]) {
     let name = case["name"].as_str().unwrap_or("<unnamed>");
     let fields = case.as_object().expect("a case should be an object");
@@ -329,13 +329,26 @@ fn run_cron_to_cron(section: &str, index: usize) {
 
 fn run_cron_to_cron_error(section: &str, index: usize) {
     let case = &SPEC["cron"][section]["tests"][index];
-    check_fields(case, &["hron"], &[]);
+    check_fields(case, &["hron"], &["error"]);
     let hron_expr = case["hron"].as_str().unwrap();
 
     let schedule = Schedule::parse(hron_expr)
         .unwrap_or_else(|e| panic!("parse failed for '{hron_expr}': {e}"));
-    if let Ok(got) = schedule.to_cron() {
-        panic!("expected to_cron error for '{hron_expr}', got '{got}'");
+    assert_cron_error(schedule.to_cron(), case, hron_expr);
+}
+
+fn assert_cron_error<T: std::fmt::Debug>(
+    result: Result<T, hron::ScheduleError>,
+    case: &Value,
+    input: &str,
+) {
+    let expected = case["error"].as_str().unwrap();
+    match result {
+        Ok(got) => panic!("expected cron error for '{input}', got {got:?}"),
+        Err(hron::ScheduleError::Cron { message }) => {
+            assert_eq!(message, expected, "cron error message for '{input}'")
+        }
+        Err(e) => panic!("expected a cron error for '{input}', got {e:?}"),
     }
 }
 
@@ -353,12 +366,13 @@ fn run_cron_from_cron(section: &str, index: usize) {
 
 fn run_cron_from_cron_error(section: &str, index: usize) {
     let case = &SPEC["cron"][section]["tests"][index];
-    check_fields(case, &["cron"], &[]);
+    check_fields(case, &["cron"], &["error"]);
     let cron_expr = case["cron"].as_str().unwrap();
-
-    if let Ok(s) = Schedule::from_cron(cron_expr) {
-        panic!("expected from_cron error for '{cron_expr}', got: {s}");
-    }
+    assert_cron_error(
+        Schedule::from_cron(cron_expr).map(|s| s.to_string()),
+        case,
+        cron_expr,
+    );
 }
 
 fn run_cron_roundtrip(section: &str, index: usize) {

@@ -1,1078 +1,743 @@
 use crate::ast::*;
 use crate::error::ScheduleError;
 
-pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
-    if !schedule.except.is_empty() {
-        return Err(ScheduleError::cron(
-            "not expressible as cron (except clauses not supported)",
-        ));
-    }
-    if schedule.until.is_some() {
-        return Err(ScheduleError::cron(
-            "not expressible as cron (until clauses not supported)",
-        ));
-    }
-    if !schedule.during.is_empty() {
-        return Err(ScheduleError::cron(
-            "not expressible as cron (during clauses not supported)",
-        ));
-    }
-    match &schedule.expr {
-        ScheduleExpr::DayRepeat {
-            interval,
-            days,
-            times,
-        } => {
-            if *interval > 1 {
-                return Err(ScheduleError::cron(
-                    "not expressible as cron (multi-day intervals not supported)",
-                ));
-            }
-            if times.len() != 1 {
-                return Err(ScheduleError::cron(
-                    "not expressible as cron (multiple times not supported)",
-                ));
-            }
-            let time = &times[0];
-            let dow = day_filter_to_cron_dow(days)?;
-            Ok(format!("{} {} * * {}", time.minute, time.hour, dow))
-        }
+const MAX_LISTED_TIMES: usize = 24;
+const BOTH_DAYS_RESTRICTED: &str =
+    "not expressible in hron: cron fires on either the day of month or the day of week";
+const INTERVAL_DAYS: &str =
+    "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days";
+const MINUTES_PER_DAY: u32 = 24 * 60;
+const MIDNIGHT: TimeOfDay = TimeOfDay { hour: 0, minute: 0 };
+const END_OF_DAY: TimeOfDay = TimeOfDay {
+    hour: 23,
+    minute: 59,
+};
 
-        ScheduleExpr::IntervalRepeat {
-            interval,
-            unit,
-            from,
-            to,
-            day_filter,
-        } => {
-            let full_day = from.hour == 0 && from.minute == 0 && to.hour == 23 && to.minute == 59;
-            if !full_day {
-                return Err(ScheduleError::cron(
-                    "not expressible as cron (partial-day interval windows not supported)",
-                ));
-            }
-            if day_filter.is_some() {
-                return Err(ScheduleError::cron(
-                    "not expressible as cron (interval with day filter not supported)",
-                ));
-            }
+// Digit strings may be of any length. Every number at or above this cap is out
+// of every field's range and steps past every range's end, so saturating at it
+// keeps each comparison exact without overflow.
+const NUMBER_CAP: u32 = 1000;
 
-            match unit {
-                IntervalUnit::Minutes => {
-                    if 60 % interval != 0 {
-                        return Err(ScheduleError::cron(format!(
-                            "not expressible as cron (*/{interval} breaks at hour boundaries)"
-                        )));
-                    }
-                    Ok(format!("*/{interval} * * * *"))
-                }
-                IntervalUnit::Hours => Ok(format!("0 */{interval} * * *")),
-            }
-        }
+const MONTH_NAMES: [&str; 12] = [
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+];
+const DAY_NAMES: [&str; 7] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const MONTHS: [MonthName; 12] = [
+    MonthName::January,
+    MonthName::February,
+    MonthName::March,
+    MonthName::April,
+    MonthName::May,
+    MonthName::June,
+    MonthName::July,
+    MonthName::August,
+    MonthName::September,
+    MonthName::October,
+    MonthName::November,
+    MonthName::December,
+];
+const WEEKDAYS: [Weekday; 7] = [
+    Weekday::Sunday,
+    Weekday::Monday,
+    Weekday::Tuesday,
+    Weekday::Wednesday,
+    Weekday::Thursday,
+    Weekday::Friday,
+    Weekday::Saturday,
+];
+const ORDINALS: [OrdinalPosition; 5] = [
+    OrdinalPosition::First,
+    OrdinalPosition::Second,
+    OrdinalPosition::Third,
+    OrdinalPosition::Fourth,
+    OrdinalPosition::Fifth,
+];
 
-        ScheduleExpr::WeekRepeat { .. } => Err(ScheduleError::cron(
-            "not expressible as cron (multi-week intervals not supported)",
-        )),
-
-        ScheduleExpr::MonthRepeat {
-            interval,
-            target,
-            times,
-        } => {
-            if *interval > 1 {
-                return Err(ScheduleError::cron(
-                    "not expressible as cron (multi-month intervals not supported)",
-                ));
-            }
-            if times.len() != 1 {
-                return Err(ScheduleError::cron(
-                    "not expressible as cron (multiple times not supported)",
-                ));
-            }
-            let time = &times[0];
-            match target {
-                MonthTarget::Days(_) => {
-                    let expanded = target.expand_days();
-                    let dom = expanded
-                        .iter()
-                        .map(|d| d.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    Ok(format!("{} {} {} * *", time.minute, time.hour, dom))
-                }
-                MonthTarget::LastDay => Err(ScheduleError::cron(
-                    "not expressible as cron (last day of month not supported)",
-                )),
-                MonthTarget::LastWeekday => Err(ScheduleError::cron(
-                    "not expressible as cron (last weekday of month not supported)",
-                )),
-                MonthTarget::NearestWeekday { day, direction } => {
-                    if direction.is_some() {
-                        return Err(ScheduleError::cron(
-                            "not expressible as cron (directional nearest weekday not supported)",
-                        ));
-                    }
-                    Ok(format!("{} {} {}W * *", time.minute, time.hour, day))
-                }
-                MonthTarget::OrdinalWeekday { .. } => Err(ScheduleError::cron(
-                    "not expressible as cron (ordinal weekday of month not supported)",
-                )),
-            }
-        }
-
-        ScheduleExpr::SingleDate { .. } => Err(ScheduleError::cron(
-            "not expressible as cron (single dates are not repeating)",
-        )),
-
-        ScheduleExpr::YearRepeat { .. } => Err(ScheduleError::cron(
-            "not expressible as cron (yearly schedules not supported in 5-field cron)",
-        )),
-    }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Field {
+    Minute,
+    Hour,
+    DayOfMonth,
+    Month,
+    DayOfWeek,
 }
 
-fn day_filter_to_cron_dow(filter: &DayFilter) -> Result<String, ScheduleError> {
-    match filter {
-        DayFilter::Every => Ok("*".to_string()),
-        DayFilter::Weekday => Ok("1-5".to_string()),
-        DayFilter::Weekend => Ok("0,6".to_string()),
-        DayFilter::Days(days) => {
-            let mut nums: Vec<u8> = days.iter().map(|d| cron_dow_number(*d)).collect();
-            nums.sort();
-            Ok(nums
-                .iter()
-                .map(|n| n.to_string())
-                .collect::<Vec<_>>()
-                .join(","))
+impl Field {
+    fn name(self) -> &'static str {
+        match self {
+            Field::Minute => "minute",
+            Field::Hour => "hour",
+            Field::DayOfMonth => "day of month",
+            Field::Month => "month",
+            Field::DayOfWeek => "day of week",
+        }
+    }
+
+    fn min(self) -> u32 {
+        match self {
+            Field::Minute | Field::Hour | Field::DayOfWeek => 0,
+            Field::DayOfMonth | Field::Month => 1,
+        }
+    }
+
+    fn max(self) -> u32 {
+        match self {
+            Field::Minute => 59,
+            Field::Hour => 23,
+            Field::DayOfMonth => 31,
+            Field::Month => 12,
+            Field::DayOfWeek => 7,
+        }
+    }
+
+    // In the day of week, 7 is Sunday only where written: `*` and `a/n` end at 6.
+    fn star_end(self) -> u32 {
+        match self {
+            Field::DayOfWeek => 6,
+            _ => self.max(),
+        }
+    }
+
+    fn names(self) -> &'static [&'static str] {
+        match self {
+            Field::Month => &MONTH_NAMES,
+            Field::DayOfWeek => &DAY_NAMES,
+            _ => &[],
         }
     }
 }
 
-fn cron_dow_number(day: Weekday) -> u8 {
-    match day {
-        Weekday::Sunday => 0,
-        Weekday::Monday => 1,
-        Weekday::Tuesday => 2,
-        Weekday::Wednesday => 3,
-        Weekday::Thursday => 4,
-        Weekday::Friday => 5,
-        Weekday::Saturday => 6,
-    }
+enum Bounds<'a> {
+    Star,
+    Value(&'a str),
+    Range(&'a str, &'a str),
 }
 
-pub fn from_cron(cron: &str) -> Result<Schedule, ScheduleError> {
-    let cron = cron.trim();
+struct Item<'a> {
+    bounds: Bounds<'a>,
+    step: Option<&'a str>,
+}
 
-    if cron.starts_with('@') {
-        return parse_cron_shortcut(cron);
-    }
+enum MonthDays {
+    Any,
+    Days(Vec<u8>),
+    Last,
+    LastWeekday,
+    Nearest(u8),
+}
 
-    let fields: Vec<&str> = cron.split_whitespace().collect();
-    if fields.len() != 5 {
+enum WeekDays {
+    Any,
+    Days(Vec<u8>),
+    Nth(Weekday, u8),
+    Last(Weekday),
+}
+
+enum Days {
+    OfWeek(DayFilter),
+    OfMonth(MonthTarget),
+}
+
+pub fn from_cron(input: &str) -> Result<Schedule, ScheduleError> {
+    let input = input.trim_matches([' ', '\t', '\r', '\n']);
+    let text = if input.starts_with('@') {
+        shortcut(input)?
+    } else {
+        input
+    };
+    let fields: Vec<&str> = text.split([' ', '\t']).filter(|f| !f.is_empty()).collect();
+    let [minute, hour, day_of_month, month, day_of_week] = fields[..] else {
         return Err(ScheduleError::cron(format!(
             "expected 5 cron fields, got {}",
             fields.len()
         )));
-    }
+    };
 
-    let minute_field = fields[0];
-    let hour_field = fields[1];
-    let dom_field = fields[2];
-    let month_field = fields[3];
-    let dow_field = fields[4];
+    let minutes = sorted(values(minute, Field::Minute)?);
+    let hours = sorted(values(hour, Field::Hour)?);
+    let month_days = parse_day_of_month(day_of_month)?;
+    let months = sorted(values(month, Field::Month)?);
+    let week_days = parse_day_of_week(day_of_week)?;
+    let days = day_expression(month_days, week_days)?;
+    let times: Vec<TimeOfDay> = hours
+        .iter()
+        .flat_map(|&hour| {
+            minutes
+                .iter()
+                .map(move |&minute| TimeOfDay { hour, minute })
+        })
+        .collect();
 
-    // Cron's `?` means the same as `*` here.
-    let dom_field = if dom_field == "?" { "*" } else { dom_field };
-    let dow_field = if dow_field == "?" { "*" } else { dow_field };
-
-    let during = parse_month_field(month_field)?;
-
-    if let Some(schedule) =
-        try_parse_nth_weekday(minute_field, hour_field, dom_field, dow_field, &during)?
-    {
-        return Ok(schedule);
-    }
-
-    if let Some(schedule) =
-        try_parse_last_day(minute_field, hour_field, dom_field, dow_field, &during)?
-    {
-        return Ok(schedule);
-    }
-
-    if dom_field.ends_with('W') && dom_field != "LW" {
-        if let Some(schedule) =
-            try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, &during)?
-        {
-            return Ok(schedule);
+    let expr = match (days, equal_gap(&times)) {
+        (Days::OfWeek(filter), Some(gap)) => interval(&times, gap, filter),
+        (_, gap) if times.len() > MAX_LISTED_TIMES => {
+            return Err(too_many_times(times.len(), gap));
         }
-    }
-
-    if let Some(schedule) =
-        try_parse_interval(minute_field, hour_field, dom_field, dow_field, &during)?
-    {
-        return Ok(schedule);
-    }
-
-    let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
-    let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
-    let time = TimeOfDay { hour, minute };
-
-    if dom_field != "*" && dow_field == "*" {
-        let target = parse_dom_field(dom_field)?;
-        let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
+        (Days::OfWeek(days), None) => ScheduleExpr::DayRepeat {
             interval: 1,
-            target,
-            times: vec![time],
-        });
-        schedule.during = during;
-        return Ok(schedule);
+            days,
+            times,
+        },
+        (Days::OfMonth(target), _) => {
+            if let Some(target) = year_target(&target, &months) {
+                return Ok(Schedule::new(ScheduleExpr::YearRepeat {
+                    interval: 1,
+                    target,
+                    times,
+                }));
+            }
+            ScheduleExpr::MonthRepeat {
+                interval: 1,
+                target,
+                times,
+            }
+        }
+    };
+    let mut schedule = Schedule::new(expr);
+    if months.len() < MONTHS.len() {
+        schedule.during = months.iter().map(|&m| MONTHS[m as usize - 1]).collect();
     }
-
-    let days = parse_cron_dow(dow_field)?;
-    let mut schedule = Schedule::new(ScheduleExpr::DayRepeat {
-        interval: 1,
-        days,
-        times: vec![time],
-    });
-    schedule.during = during;
     Ok(schedule)
 }
 
-fn parse_cron_shortcut(cron: &str) -> Result<Schedule, ScheduleError> {
-    match cron.to_lowercase().as_str() {
-        "@yearly" | "@annually" => Ok(Schedule::new(ScheduleExpr::YearRepeat {
-            interval: 1,
-            target: YearTarget::Date {
-                month: MonthName::January,
-                day: 1,
-            },
-            times: vec![TimeOfDay { hour: 0, minute: 0 }],
-        })),
-        "@monthly" => Ok(Schedule::new(ScheduleExpr::MonthRepeat {
-            interval: 1,
-            target: MonthTarget::Days(vec![DayOfMonthSpec::Single(1)]),
-            times: vec![TimeOfDay { hour: 0, minute: 0 }],
-        })),
-        "@weekly" => Ok(Schedule::new(ScheduleExpr::DayRepeat {
-            interval: 1,
-            days: DayFilter::Days(vec![Weekday::Sunday]),
-            times: vec![TimeOfDay { hour: 0, minute: 0 }],
-        })),
-        "@daily" | "@midnight" => Ok(Schedule::new(ScheduleExpr::DayRepeat {
-            interval: 1,
-            days: DayFilter::Every,
-            times: vec![TimeOfDay { hour: 0, minute: 0 }],
-        })),
-        "@hourly" => Ok(Schedule::new(ScheduleExpr::IntervalRepeat {
-            interval: 1,
-            unit: IntervalUnit::Hours,
-            from: TimeOfDay { hour: 0, minute: 0 },
-            to: TimeOfDay {
-                hour: 23,
-                minute: 59,
-            },
-            day_filter: None,
-        })),
-        _ => Err(ScheduleError::cron(format!("unknown @ shortcut: {cron}"))),
+fn shortcut(input: &str) -> Result<&'static str, ScheduleError> {
+    match input.to_ascii_lowercase().as_str() {
+        "@yearly" | "@annually" => Ok("0 0 1 1 *"),
+        "@monthly" => Ok("0 0 1 * *"),
+        "@weekly" => Ok("0 0 * * 0"),
+        "@daily" | "@midnight" => Ok("0 0 * * *"),
+        "@hourly" => Ok("0 * * * *"),
+        _ => Err(ScheduleError::cron(format!(
+            "unknown cron shortcut: {input}"
+        ))),
     }
 }
 
-fn parse_month_field(field: &str) -> Result<Vec<MonthName>, ScheduleError> {
-    if field == "*" {
-        return Ok(vec![]);
+fn parse_day_of_month(text: &str) -> Result<MonthDays, ScheduleError> {
+    if text == "*" || text == "?" {
+        return Ok(MonthDays::Any);
     }
-
-    let mut months = Vec::new();
-    for part in field.split(',') {
-        // Steps first: a step such as 1-12/3 also contains a range.
-        if let Some((range, step)) = part.split_once('/') {
-            let (start, end) = if range == "*" {
-                (1u8, 12u8)
-            } else if let Some((s, e)) = range.split_once('-') {
-                let start_month = parse_month_value(s)?;
-                let end_month = parse_month_value(e)?;
-                (start_month.number(), end_month.number())
-            } else {
-                return Err(ScheduleError::cron(format!(
-                    "invalid month step expression: {}",
-                    part
-                )));
-            };
-            let step: u8 = step
-                .parse()
-                .map_err(|_| ScheduleError::cron(format!("invalid month step value: {}", step)))?;
-            if step == 0 {
-                return Err(ScheduleError::cron("step cannot be 0"));
-            }
-            let mut n = start;
-            while n <= end {
-                months.push(month_from_number(n)?);
-                n += step;
-            }
-        } else if let Some((start, end)) = part.split_once('-') {
-            let start_month = parse_month_value(start)?;
-            let end_month = parse_month_value(end)?;
-            let start_num = start_month.number();
-            let end_num = end_month.number();
-            if start_num > end_num {
-                return Err(ScheduleError::cron(format!(
-                    "invalid month range: {} > {}",
-                    start, end
-                )));
-            }
-            for n in start_num..=end_num {
-                months.push(month_from_number(n)?);
-            }
-        } else {
-            months.push(parse_month_value(part)?);
-        }
+    if text.eq_ignore_ascii_case("L") {
+        return Ok(MonthDays::Last);
     }
-
-    Ok(months)
-}
-
-fn parse_month_value(s: &str) -> Result<MonthName, ScheduleError> {
-    if let Ok(n) = s.parse::<u8>() {
-        return month_from_number(n);
+    if text.eq_ignore_ascii_case("LW") {
+        return Ok(MonthDays::LastWeekday);
     }
-    parse_month_name(s).ok_or_else(|| ScheduleError::cron(format!("invalid month: {}", s)))
-}
-
-fn month_from_number(n: u8) -> Result<MonthName, ScheduleError> {
-    match n {
-        1 => Ok(MonthName::January),
-        2 => Ok(MonthName::February),
-        3 => Ok(MonthName::March),
-        4 => Ok(MonthName::April),
-        5 => Ok(MonthName::May),
-        6 => Ok(MonthName::June),
-        7 => Ok(MonthName::July),
-        8 => Ok(MonthName::August),
-        9 => Ok(MonthName::September),
-        10 => Ok(MonthName::October),
-        11 => Ok(MonthName::November),
-        12 => Ok(MonthName::December),
-        _ => Err(ScheduleError::cron(format!("invalid month number: {}", n))),
-    }
-}
-
-fn try_parse_nth_weekday(
-    minute_field: &str,
-    hour_field: &str,
-    dom_field: &str,
-    dow_field: &str,
-    during: &[MonthName],
-) -> Result<Option<Schedule>, ScheduleError> {
-    if let Some((dow_str, nth_str)) = dow_field.split_once('#') {
-        let dow_num = parse_dow_value(dow_str)?;
-        let weekday = cron_dow_to_weekday(dow_num)?;
-        let nth: u8 = nth_str
-            .parse()
-            .map_err(|_| ScheduleError::cron(format!("invalid nth value: {}", nth_str)))?;
-        if nth == 0 || nth > 5 {
-            return Err(ScheduleError::cron(format!("nth must be 1-5, got {}", nth)));
-        }
-        let ordinal = match nth {
-            1 => OrdinalPosition::First,
-            2 => OrdinalPosition::Second,
-            3 => OrdinalPosition::Third,
-            4 => OrdinalPosition::Fourth,
-            5 => OrdinalPosition::Fifth,
-            _ => unreachable!(),
-        };
-
-        if dom_field != "*" && dom_field != "?" {
-            return Err(ScheduleError::cron(
-                "DOM must be * when using # for nth weekday",
-            ));
-        }
-
-        let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
-        let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
-
-        let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
-            interval: 1,
-            target: MonthTarget::OrdinalWeekday { ordinal, weekday },
-            times: vec![TimeOfDay { hour, minute }],
-        });
-        schedule.during = during.to_vec();
-        return Ok(Some(schedule));
-    }
-
-    if dow_field.ends_with('L') && dow_field.len() > 1 {
-        let dow_str = &dow_field[..dow_field.len() - 1];
-        let dow_num = parse_dow_value(dow_str)?;
-        let weekday = cron_dow_to_weekday(dow_num)?;
-
-        if dom_field != "*" && dom_field != "?" {
-            return Err(ScheduleError::cron(
-                "DOM must be * when using nL for last weekday",
-            ));
-        }
-
-        let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
-        let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
-
-        let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
-            interval: 1,
-            target: MonthTarget::OrdinalWeekday {
-                ordinal: OrdinalPosition::Last,
-                weekday,
-            },
-            times: vec![TimeOfDay { hour, minute }],
-        });
-        schedule.during = during.to_vec();
-        return Ok(Some(schedule));
-    }
-
-    Ok(None)
-}
-
-fn try_parse_last_day(
-    minute_field: &str,
-    hour_field: &str,
-    dom_field: &str,
-    dow_field: &str,
-    during: &[MonthName],
-) -> Result<Option<Schedule>, ScheduleError> {
-    if dom_field != "L" && dom_field != "LW" {
-        return Ok(None);
-    }
-
-    if dow_field != "*" && dow_field != "?" {
-        return Err(ScheduleError::cron(
-            "DOW must be * when using L or LW in DOM",
+    if let Some(day) = text.strip_suffix(['W', 'w']).filter(|day| is_number(day)) {
+        return Ok(MonthDays::Nearest(
+            field_value(day, Field::DayOfMonth)? as u8
         ));
     }
-
-    let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
-    let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
-
-    let target = if dom_field == "LW" {
-        MonthTarget::LastWeekday
-    } else {
-        MonthTarget::LastDay
-    };
-
-    let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
-        interval: 1,
-        target,
-        times: vec![TimeOfDay { hour, minute }],
-    });
-    schedule.during = during.to_vec();
-    Ok(Some(schedule))
+    Ok(MonthDays::Days(values(text, Field::DayOfMonth)?))
 }
 
-fn try_parse_nearest_weekday(
-    minute_field: &str,
-    hour_field: &str,
-    dom_field: &str,
-    dow_field: &str,
-    during: &[MonthName],
-) -> Result<Option<Schedule>, ScheduleError> {
-    if !dom_field.ends_with('W') || dom_field == "LW" {
-        return Ok(None);
+fn parse_day_of_week(text: &str) -> Result<WeekDays, ScheduleError> {
+    let field = Field::DayOfWeek;
+    if text == "*" || text == "?" {
+        return Ok(WeekDays::Any);
     }
-
-    if dow_field != "*" && dow_field != "?" {
-        return Err(ScheduleError::cron("DOW must be * when using W in DOM"));
-    }
-
-    let day_str = &dom_field[..dom_field.len() - 1];
-    let day: u8 = day_str
-        .parse()
-        .map_err(|_| ScheduleError::cron(format!("invalid W day: {}", day_str)))?;
-
-    if !(1..=31).contains(&day) {
-        return Err(ScheduleError::cron(format!(
-            "W day must be 1-31, got {}",
-            day
-        )));
-    }
-
-    let minute: u8 = parse_single_value(minute_field, "minute", 0, 59)?;
-    let hour: u8 = parse_single_value(hour_field, "hour", 0, 23)?;
-
-    let target = MonthTarget::NearestWeekday {
-        day,
-        direction: None,
-    };
-
-    let mut schedule = Schedule::new(ScheduleExpr::MonthRepeat {
-        interval: 1,
-        target,
-        times: vec![TimeOfDay { hour, minute }],
-    });
-    schedule.during = during.to_vec();
-    Ok(Some(schedule))
-}
-
-fn try_parse_interval(
-    minute_field: &str,
-    hour_field: &str,
-    dom_field: &str,
-    dow_field: &str,
-    during: &[MonthName],
-) -> Result<Option<Schedule>, ScheduleError> {
-    if minute_field.contains('/') {
-        let (range_part, step_str) = minute_field
-            .split_once('/')
-            .ok_or_else(|| ScheduleError::cron("invalid minute interval"))?;
-
-        let interval: u32 = step_str
-            .parse()
-            .map_err(|_| ScheduleError::cron("invalid minute interval value"))?;
-
-        if interval == 0 {
-            return Err(ScheduleError::cron("step cannot be 0"));
+    if let Some((day, nth)) = text
+        .split_once('#')
+        .filter(|(day, nth)| is_value(day, field) && is_number(nth))
+    {
+        let weekday = WEEKDAYS[field_value(day, field)? as usize % 7];
+        let n = number(nth);
+        if !(1..=5).contains(&n) {
+            return Err(ScheduleError::cron(format!(
+                "day of week ordinal must be 1-5, got {nth}"
+            )));
         }
+        return Ok(WeekDays::Nth(weekday, n as u8));
+    }
+    if let Some(day) = text
+        .strip_suffix(['L', 'l'])
+        .filter(|day| is_value(day, field))
+    {
+        return Ok(WeekDays::Last(
+            WEEKDAYS[field_value(day, field)? as usize % 7],
+        ));
+    }
+    Ok(WeekDays::Days(values(text, field)?))
+}
 
-        let (from_minute, to_minute) = if range_part == "*" {
-            (0u8, 59u8)
-        } else if let Some((start, end)) = range_part.split_once('-') {
-            let s: u8 = start
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid minute range"))?;
-            let e: u8 = end
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid minute range"))?;
-            if s > e {
-                return Err(ScheduleError::cron(format!(
-                    "range start must be <= end: {}-{}",
-                    s, e
-                )));
+// Keeps the order of first appearance, in which fromCron lists days of the week.
+fn values(text: &str, field: Field) -> Result<Vec<u8>, ScheduleError> {
+    let items = items(text, field)
+        .ok_or_else(|| ScheduleError::cron(format!("invalid {}: {text}", field.name())))?;
+    let mut values = Vec::new();
+    for item in items {
+        let (first, last) = match item.bounds {
+            Bounds::Star => (field.min(), field.star_end()),
+            Bounds::Value(a) => {
+                let first = field_value(a, field)?;
+                let last = match item.step {
+                    // `7/n` starts past the end of `*`, so it is Sunday alone.
+                    Some(_) => first.max(field.star_end()),
+                    None => first,
+                };
+                (first, last)
             }
-            (s, e)
-        } else {
-            // Cron reads `0/15` as `0-59/15`.
-            let s: u8 = range_part
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid minute value"))?;
-            (s, 59)
-        };
-
-        let (from_hour, to_hour) = if hour_field == "*" {
-            (0u8, 23u8)
-        } else if let Some((start, end)) = hour_field.split_once('-') {
-            let s: u8 = start
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid hour range"))?;
-            let e: u8 = end
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid hour range"))?;
-            (s, e)
-        } else if hour_field.contains('/') {
-            // Steps in both minute and hour are not supported.
-            return Ok(None);
-        } else {
-            let h: u8 = hour_field
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid hour"))?;
-            (h, h)
-        };
-
-        let day_filter = if dow_field == "*" {
-            None
-        } else {
-            Some(parse_cron_dow(dow_field)?)
-        };
-
-        if dom_field == "*" || dom_field == "?" {
-            let end_minute = if from_minute == 0 && to_minute == 59 && to_hour == 23 {
-                59
-            } else if from_minute == 0 && to_minute == 59 {
-                // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
-                0
-            } else {
-                to_minute
-            };
-
-            let mut schedule = Schedule::new(ScheduleExpr::IntervalRepeat {
-                interval,
-                unit: IntervalUnit::Minutes,
-                from: TimeOfDay {
-                    hour: from_hour,
-                    minute: from_minute,
-                },
-                to: TimeOfDay {
-                    hour: to_hour,
-                    minute: end_minute,
-                },
-                day_filter,
-            });
-            schedule.during = during.to_vec();
-            return Ok(Some(schedule));
-        }
-    }
-
-    if hour_field.contains('/') && (minute_field == "0" || minute_field == "00") {
-        let (range_part, step_str) = hour_field
-            .split_once('/')
-            .ok_or_else(|| ScheduleError::cron("invalid hour interval"))?;
-
-        let interval: u32 = step_str
-            .parse()
-            .map_err(|_| ScheduleError::cron("invalid hour interval value"))?;
-
-        if interval == 0 {
-            return Err(ScheduleError::cron("step cannot be 0"));
-        }
-
-        let (from_hour, to_hour) = if range_part == "*" {
-            (0u8, 23u8)
-        } else if let Some((start, end)) = range_part.split_once('-') {
-            let s: u8 = start
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid hour range"))?;
-            let e: u8 = end
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid hour range"))?;
-            if s > e {
-                return Err(ScheduleError::cron(format!(
-                    "range start must be <= end: {}-{}",
-                    s, e
-                )));
-            }
-            (s, e)
-        } else {
-            let h: u8 = range_part
-                .parse()
-                .map_err(|_| ScheduleError::cron("invalid hour value"))?;
-            (h, 23)
-        };
-
-        if (dom_field == "*" || dom_field == "?") && (dow_field == "*" || dow_field == "?") {
-            let end_minute = if from_hour == 0 && to_hour == 23 {
-                59
-            } else {
-                0
-            };
-
-            let mut schedule = Schedule::new(ScheduleExpr::IntervalRepeat {
-                interval,
-                unit: IntervalUnit::Hours,
-                from: TimeOfDay {
-                    hour: from_hour,
-                    minute: 0,
-                },
-                to: TimeOfDay {
-                    hour: to_hour,
-                    minute: end_minute,
-                },
-                day_filter: None,
-            });
-            schedule.during = during.to_vec();
-            return Ok(Some(schedule));
-        }
-    }
-
-    Ok(None)
-}
-
-fn parse_dom_field(field: &str) -> Result<MonthTarget, ScheduleError> {
-    let mut specs = Vec::new();
-
-    for part in field.split(',') {
-        if let Some((range_part, step_str)) = part.split_once('/') {
-            let (start, end) = if range_part == "*" {
-                (1u8, 31u8)
-            } else if let Some((s, e)) = range_part.split_once('-') {
-                let start: u8 = s
-                    .parse()
-                    .map_err(|_| ScheduleError::cron(format!("invalid DOM range start: {}", s)))?;
-                let end: u8 = e
-                    .parse()
-                    .map_err(|_| ScheduleError::cron(format!("invalid DOM range end: {}", e)))?;
-                if start > end {
+            Bounds::Range(a, b) => {
+                let (first, last) = (field_value(a, field)?, field_value(b, field)?);
+                if first > last {
                     return Err(ScheduleError::cron(format!(
-                        "range start must be <= end: {}-{}",
-                        start, end
+                        "{} range must not run backwards: {a}-{b}",
+                        field.name()
                     )));
                 }
-                (start, end)
+                (first, last)
+            }
+        };
+        let step = item.step.map_or(1, number);
+        if step == 0 {
+            return Err(ScheduleError::cron(format!(
+                "{} step must be at least 1",
+                field.name()
+            )));
+        }
+        for value in (first..=last).step_by(step as usize) {
+            let value = (if field == Field::DayOfWeek {
+                value % 7
             } else {
-                let start: u8 = range_part.parse().map_err(|_| {
-                    ScheduleError::cron(format!("invalid DOM value: {}", range_part))
-                })?;
-                (start, 31)
+                value
+            }) as u8;
+            if !values.contains(&value) {
+                values.push(value);
+            }
+        }
+    }
+    Ok(values)
+}
+
+fn items(text: &str, field: Field) -> Option<Vec<Item<'_>>> {
+    text.split(',')
+        .map(|item| {
+            let (range, step) = match item.split_once('/') {
+                Some((range, step)) => (range, Some(step)),
+                None => (item, None),
             };
-
-            let step: u8 = step_str
-                .parse()
-                .map_err(|_| ScheduleError::cron(format!("invalid DOM step: {}", step_str)))?;
-            if step == 0 {
-                return Err(ScheduleError::cron("step cannot be 0"));
-            }
-
-            validate_dom(start)?;
-            validate_dom(end)?;
-
-            let mut d = start;
-            while d <= end {
-                specs.push(DayOfMonthSpec::Single(d));
-                d += step;
-            }
-        } else if let Some((start_str, end_str)) = part.split_once('-') {
-            let start: u8 = start_str.parse().map_err(|_| {
-                ScheduleError::cron(format!("invalid DOM range start: {}", start_str))
-            })?;
-            let end: u8 = end_str
-                .parse()
-                .map_err(|_| ScheduleError::cron(format!("invalid DOM range end: {}", end_str)))?;
-            if start > end {
-                return Err(ScheduleError::cron(format!(
-                    "range start must be <= end: {}-{}",
-                    start, end
-                )));
-            }
-            validate_dom(start)?;
-            validate_dom(end)?;
-            specs.push(DayOfMonthSpec::Range(start, end));
-        } else {
-            let day: u8 = part
-                .parse()
-                .map_err(|_| ScheduleError::cron(format!("invalid DOM value: {}", part)))?;
-            validate_dom(day)?;
-            specs.push(DayOfMonthSpec::Single(day));
-        }
-    }
-
-    Ok(MonthTarget::Days(specs))
-}
-
-fn validate_dom(day: u8) -> Result<(), ScheduleError> {
-    if !(1..=31).contains(&day) {
-        return Err(ScheduleError::cron(format!(
-            "DOM must be 1-31, got {}",
-            day
-        )));
-    }
-    Ok(())
-}
-
-fn parse_cron_dow(field: &str) -> Result<DayFilter, ScheduleError> {
-    if field == "*" {
-        return Ok(DayFilter::Every);
-    }
-
-    let mut days = Vec::new();
-
-    for part in field.split(',') {
-        if let Some((range_part, step_str)) = part.split_once('/') {
-            let (start, end) = if range_part == "*" {
-                (0u8, 6u8)
-            } else if let Some((s, e)) = range_part.split_once('-') {
-                let start = parse_dow_value_raw(s)?;
-                let end = parse_dow_value_raw(e)?;
-                if start > end {
-                    return Err(ScheduleError::cron(format!(
-                        "range start must be <= end: {}-{}",
-                        s, e
-                    )));
-                }
-                (start, end)
-            } else {
-                let start = parse_dow_value_raw(range_part)?;
-                (start, 6)
+            let bounds = match range.split_once('-') {
+                _ if range == "*" => Bounds::Star,
+                Some((a, b)) => Bounds::Range(a, b),
+                None => Bounds::Value(range),
             };
-
-            let step: u8 = step_str
-                .parse()
-                .map_err(|_| ScheduleError::cron(format!("invalid DOW step: {}", step_str)))?;
-            if step == 0 {
-                return Err(ScheduleError::cron("step cannot be 0"));
-            }
-
-            let mut d = start;
-            while d <= end {
-                days.push(cron_dow_to_weekday(d)?);
-                d += step;
-            }
-        } else if let Some((start_str, end_str)) = part.split_once('-') {
-            // Unnormalized, so a range can end at 7 (Sunday).
-            let start = parse_dow_value_raw(start_str)?;
-            let end = parse_dow_value_raw(end_str)?;
-            if start > end {
-                return Err(ScheduleError::cron(format!(
-                    "range start must be <= end: {}-{}",
-                    start_str, end_str
-                )));
-            }
-            for d in start..=end {
-                let normalized = if d == 7 { 0 } else { d };
-                days.push(cron_dow_to_weekday(normalized)?);
-            }
-        } else {
-            let dow = parse_dow_value(part)?;
-            days.push(cron_dow_to_weekday(dow)?);
-        }
-    }
-
-    if days.len() == 5 {
-        let mut sorted = days.clone();
-        sorted.sort_by_key(|d| d.number());
-        if sorted == Weekday::all_weekdays() {
-            return Ok(DayFilter::Weekday);
-        }
-    }
-    if days.len() == 2 {
-        let mut sorted = days.clone();
-        sorted.sort_by_key(|d| d.number());
-        if sorted == vec![Weekday::Saturday, Weekday::Sunday] {
-            return Ok(DayFilter::Weekend);
-        }
-    }
-
-    Ok(DayFilter::Days(days))
+            let valid = step.is_none_or(is_number)
+                && match bounds {
+                    Bounds::Star => true,
+                    Bounds::Value(a) => is_value(a, field),
+                    Bounds::Range(a, b) => is_value(a, field) && is_value(b, field),
+                };
+            valid.then_some(Item { bounds, step })
+        })
+        .collect()
 }
 
-fn parse_dow_value(s: &str) -> Result<u8, ScheduleError> {
-    let raw = parse_dow_value_raw(s)?;
-    // Normalize 7 to 0 (both mean Sunday)
-    Ok(if raw == 7 { 0 } else { raw })
+fn is_number(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
 }
 
-fn parse_dow_value_raw(s: &str) -> Result<u8, ScheduleError> {
-    if let Ok(n) = s.parse::<u8>() {
-        if n > 7 {
-            return Err(ScheduleError::cron(format!("DOW must be 0-7, got {}", n)));
-        }
-        return Ok(n);
-    }
-    match s.to_uppercase().as_str() {
-        "SUN" => Ok(0),
-        "MON" => Ok(1),
-        "TUE" => Ok(2),
-        "WED" => Ok(3),
-        "THU" => Ok(4),
-        "FRI" => Ok(5),
-        "SAT" => Ok(6),
-        _ => Err(ScheduleError::cron(format!("invalid DOW: {}", s))),
-    }
+fn is_value(text: &str, field: Field) -> bool {
+    is_number(text) || name_value(text, field).is_some()
 }
 
-fn cron_dow_to_weekday(n: u8) -> Result<Weekday, ScheduleError> {
-    match n {
-        0 | 7 => Ok(Weekday::Sunday),
-        1 => Ok(Weekday::Monday),
-        2 => Ok(Weekday::Tuesday),
-        3 => Ok(Weekday::Wednesday),
-        4 => Ok(Weekday::Thursday),
-        5 => Ok(Weekday::Friday),
-        6 => Ok(Weekday::Saturday),
-        _ => Err(ScheduleError::cron(format!("invalid DOW number: {n}"))),
-    }
+fn name_value(text: &str, field: Field) -> Option<u32> {
+    let index = field
+        .names()
+        .iter()
+        .position(|name| name.eq_ignore_ascii_case(text))?;
+    Some(index as u32 + field.min())
 }
 
-fn parse_single_value(field: &str, name: &str, min: u8, max: u8) -> Result<u8, ScheduleError> {
-    let value: u8 = field
-        .parse()
-        .map_err(|_| ScheduleError::cron(format!("invalid {} field: {}", name, field)))?;
-    if value < min || value > max {
+fn number(digits: &str) -> u32 {
+    digits.bytes().fold(0, |n, digit| {
+        (n * 10 + u32::from(digit - b'0')).min(NUMBER_CAP)
+    })
+}
+
+fn field_value(text: &str, field: Field) -> Result<u32, ScheduleError> {
+    let value = name_value(text, field).unwrap_or_else(|| number(text));
+    if value < field.min() || value > field.max() {
         return Err(ScheduleError::cron(format!(
-            "{} must be {}-{}, got {}",
-            name, min, max, value
+            "{} must be {}-{}, got {text}",
+            field.name(),
+            field.min(),
+            field.max()
         )));
     }
     Ok(value)
 }
 
-pub fn explain_cron(cron: &str) -> Result<String, ScheduleError> {
-    let schedule = from_cron(cron)?;
-    let mut explanation = schedule.to_string();
-
-    let fields: Vec<&str> = cron.split_whitespace().collect();
-    if fields.len() == 5 {
-        if let Some(minute_field) = fields.first() {
-            if let Some(interval_str) = minute_field.strip_prefix("*/") {
-                if let Ok(interval) = interval_str.parse::<u32>() {
-                    if 60 % interval != 0 {
-                        explanation.push_str(&format!(
-                            "\nnote: cron */{interval} actually fires at {} each hour, not true {interval}-min intervals",
-                            generate_cron_minute_fires(interval)
-                        ));
+fn day_expression(month_days: MonthDays, week_days: WeekDays) -> Result<Days, ScheduleError> {
+    Ok(match (month_days, week_days) {
+        (MonthDays::Any, WeekDays::Any) => Days::OfWeek(DayFilter::Every),
+        (MonthDays::Any, WeekDays::Days(days)) => Days::OfWeek(weekday_filter(&days)),
+        (MonthDays::Any, WeekDays::Nth(weekday, n)) => Days::OfMonth(MonthTarget::OrdinalWeekday {
+            ordinal: ORDINALS[n as usize - 1],
+            weekday,
+        }),
+        (MonthDays::Any, WeekDays::Last(weekday)) => Days::OfMonth(MonthTarget::OrdinalWeekday {
+            ordinal: OrdinalPosition::Last,
+            weekday,
+        }),
+        (MonthDays::Days(days), WeekDays::Any) if days.len() == 31 => {
+            Days::OfWeek(DayFilter::Every)
+        }
+        (MonthDays::Days(days), WeekDays::Any) => {
+            let specs = runs(&sorted(days))
+                .into_iter()
+                .map(|(first, last)| {
+                    if first == last {
+                        DayOfMonthSpec::Single(first)
+                    } else {
+                        DayOfMonthSpec::Range(first, last)
                     }
+                })
+                .collect();
+            Days::OfMonth(MonthTarget::Days(specs))
+        }
+        (MonthDays::Last, WeekDays::Any) => Days::OfMonth(MonthTarget::LastDay),
+        (MonthDays::LastWeekday, WeekDays::Any) => Days::OfMonth(MonthTarget::LastWeekday),
+        (MonthDays::Nearest(day), WeekDays::Any) => Days::OfMonth(MonthTarget::NearestWeekday {
+            day,
+            direction: None,
+        }),
+        _ => return Err(ScheduleError::cron(BOTH_DAYS_RESTRICTED)),
+    })
+}
+
+fn weekday_filter(days: &[u8]) -> DayFilter {
+    match sorted(days.to_vec()).as_slice() {
+        [0, 1, 2, 3, 4, 5, 6] => DayFilter::Every,
+        [1, 2, 3, 4, 5] => DayFilter::Weekday,
+        [0, 6] => DayFilter::Weekend,
+        _ => DayFilter::Days(days.iter().map(|&d| WEEKDAYS[d as usize]).collect()),
+    }
+}
+
+fn equal_gap(times: &[TimeOfDay]) -> Option<u32> {
+    let minutes: Vec<u32> = times.iter().map(|&t| minute_of_day(t)).collect();
+    let gap = minutes.get(1)? - minutes[0];
+    let equal = minutes.len() >= 3 && minutes.windows(2).all(|w| w[1] - w[0] == gap);
+    equal.then_some(gap)
+}
+
+fn interval(times: &[TimeOfDay], gap: u32, days: DayFilter) -> ScheduleExpr {
+    let from = times[0];
+    let last = times[times.len() - 1];
+    let to = if from == MIDNIGHT && minute_of_day(last) + gap >= MINUTES_PER_DAY {
+        END_OF_DAY
+    } else {
+        last
+    };
+    let (interval, unit) = if gap.is_multiple_of(60) {
+        (gap / 60, IntervalUnit::Hours)
+    } else {
+        (gap, IntervalUnit::Minutes)
+    };
+    ScheduleExpr::IntervalRepeat {
+        interval,
+        unit,
+        from,
+        to,
+        day_filter: (days != DayFilter::Every).then_some(days),
+    }
+}
+
+fn too_many_times(count: usize, gap: Option<u32>) -> ScheduleError {
+    match gap {
+        Some(_) => ScheduleError::cron(INTERVAL_DAYS),
+        None => ScheduleError::cron(format!(
+            "not expressible in hron: {count} times a day are too many to list"
+        )),
+    }
+}
+
+fn year_target(target: &MonthTarget, months: &[u8]) -> Option<YearTarget> {
+    let &[month] = months else {
+        return None;
+    };
+    let month = MONTHS[month as usize - 1];
+    match target {
+        MonthTarget::Days(specs) => match specs.as_slice() {
+            [DayOfMonthSpec::Single(day)] if *day <= max_day(month) => {
+                Some(YearTarget::Date { month, day: *day })
+            }
+            _ => None,
+        },
+        MonthTarget::LastWeekday => Some(YearTarget::LastWeekday { month }),
+        MonthTarget::OrdinalWeekday { ordinal, weekday } => Some(YearTarget::OrdinalWeekday {
+            ordinal: *ordinal,
+            weekday: *weekday,
+            month,
+        }),
+        _ => None,
+    }
+}
+
+fn max_day(month: MonthName) -> u8 {
+    match month {
+        MonthName::February => 29,
+        MonthName::April | MonthName::June | MonthName::September | MonthName::November => 30,
+        _ => 31,
+    }
+}
+
+pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
+    if !schedule.except.is_empty() {
+        return Err(not_expressible("except clauses not supported"));
+    }
+    if schedule.until.is_some() {
+        return Err(not_expressible("until clauses not supported"));
+    }
+    if schedule.anchor.is_some() {
+        return Err(not_expressible("starting clauses not supported"));
+    }
+    let (day_of_month, day_of_week) = day_fields(&schedule.expr)?;
+    let month = month_field(schedule)?;
+    let (minute, hour) = time_fields(&schedule.expr)?;
+    Ok(format!(
+        "{minute} {hour} {day_of_month} {month} {day_of_week}"
+    ))
+}
+
+fn not_expressible(reason: &str) -> ScheduleError {
+    ScheduleError::cron(format!("not expressible as cron: {reason}"))
+}
+
+fn repeats_once(interval: u32, unit: &str) -> Result<(), ScheduleError> {
+    if interval > 1 {
+        return Err(not_expressible(&format!(
+            "multi-{unit} repeats not supported"
+        )));
+    }
+    Ok(())
+}
+
+fn day_fields(expr: &ScheduleExpr) -> Result<(String, String), ScheduleError> {
+    let any = || "*".to_string();
+    match expr {
+        ScheduleExpr::IntervalRepeat { day_filter, .. } => {
+            Ok((any(), day_filter.as_ref().map_or_else(any, filter_field)))
+        }
+        ScheduleExpr::DayRepeat { interval, days, .. } => {
+            repeats_once(*interval, "day")?;
+            Ok((any(), filter_field(days)))
+        }
+        ScheduleExpr::WeekRepeat { interval, days, .. } => {
+            repeats_once(*interval, "week")?;
+            Ok((any(), weekdays_field(days)))
+        }
+        ScheduleExpr::MonthRepeat {
+            interval, target, ..
+        } => {
+            repeats_once(*interval, "month")?;
+            match target {
+                MonthTarget::Days(_) => {
+                    let days = sorted_unique(target.expand_days());
+                    Ok((list_field(&days, 31), any()))
+                }
+                MonthTarget::LastDay => Ok(("L".into(), any())),
+                MonthTarget::LastWeekday => Ok(("LW".into(), any())),
+                MonthTarget::NearestWeekday {
+                    direction: Some(_), ..
+                } => Err(not_expressible("directional nearest weekday not supported")),
+                MonthTarget::NearestWeekday {
+                    day,
+                    direction: None,
+                } => Ok((format!("{day}W"), any())),
+                MonthTarget::OrdinalWeekday { ordinal, weekday } => {
+                    Ok((any(), ordinal_field(*ordinal, *weekday)))
                 }
             }
         }
+        ScheduleExpr::YearRepeat {
+            interval, target, ..
+        } => {
+            repeats_once(*interval, "year")?;
+            match target {
+                YearTarget::Date { day, .. } | YearTarget::DayOfMonth { day, .. } => {
+                    Ok((day.to_string(), any()))
+                }
+                YearTarget::OrdinalWeekday {
+                    ordinal, weekday, ..
+                } => Ok((any(), ordinal_field(*ordinal, *weekday))),
+                YearTarget::LastWeekday { .. } => Ok(("LW".into(), any())),
+            }
+        }
+        ScheduleExpr::SingleDate {
+            date: DateSpec::Iso(_),
+            ..
+        } => Err(not_expressible("ISO dates do not repeat")),
+        ScheduleExpr::SingleDate {
+            date: DateSpec::Named { day, .. },
+            ..
+        } => Ok((day.to_string(), any())),
     }
-
-    Ok(explanation)
 }
 
-fn generate_cron_minute_fires(interval: u32) -> String {
-    let mut minutes = Vec::new();
-    let mut m = 0;
-    while m < 60 {
-        minutes.push(format!(":{:02}", m));
-        m += interval;
+fn month_field(schedule: &Schedule) -> Result<String, ScheduleError> {
+    let during = &schedule.during;
+    match own_month(&schedule.expr) {
+        Some(month) if !during.is_empty() && !during.contains(&month) => {
+            Err(not_expressible("during excludes the schedule's month"))
+        }
+        Some(month) => Ok(month.number().to_string()),
+        None if during.is_empty() => Ok("*".into()),
+        None => Ok(list_field(
+            &sorted_unique(during.iter().map(|m| m.number())),
+            12,
+        )),
     }
-    minutes.join(" and ")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parser::parse;
-
-    #[test]
-    fn test_to_cron_every_day() {
-        let s = parse("every day at 9:00").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "0 9 * * *");
+fn own_month(expr: &ScheduleExpr) -> Option<MonthName> {
+    match expr {
+        ScheduleExpr::YearRepeat { target, .. } => Some(match target {
+            YearTarget::Date { month, .. }
+            | YearTarget::DayOfMonth { month, .. }
+            | YearTarget::OrdinalWeekday { month, .. }
+            | YearTarget::LastWeekday { month } => *month,
+        }),
+        ScheduleExpr::SingleDate {
+            date: DateSpec::Named { month, .. },
+            ..
+        } => Some(*month),
+        _ => None,
     }
+}
 
-    #[test]
-    fn test_to_cron_weekday() {
-        let s = parse("every weekday at 9:00").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "0 9 * * 1-5");
+fn time_fields(expr: &ScheduleExpr) -> Result<(String, String), ScheduleError> {
+    let times = daily_times(expr);
+    let minutes = sorted_unique(times.iter().map(|t| (t % 60) as u8));
+    let hours = sorted_unique(times.iter().map(|t| (t / 60) as u8));
+    // Schedule::new can build a schedule with no times, which no cron writes.
+    if times.is_empty() || minutes.len() * hours.len() != times.len() {
+        return Err(not_expressible(
+            "times are not every combination of their minutes and hours",
+        ));
     }
+    Ok((step_field(&minutes, 60), step_field(&hours, 24)))
+}
 
-    #[test]
-    fn test_to_cron_weekend() {
-        let s = parse("every weekend at 10:00").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "0 10 * * 0,6");
-    }
+fn daily_times(expr: &ScheduleExpr) -> Vec<u32> {
+    let mut times: Vec<u32> = match expr {
+        ScheduleExpr::IntervalRepeat {
+            interval,
+            unit,
+            from,
+            to,
+            ..
+        } => {
+            // Schedule::new accepts an interval of 0, which evaluation treats as 1.
+            // In 64 bits the step of any u32 interval in hours fits without overflow.
+            let minutes_per_unit = match unit {
+                IntervalUnit::Minutes => 1,
+                IntervalUnit::Hours => 60,
+            };
+            let step = u64::from((*interval).max(1)) * minutes_per_unit;
+            let end = u64::from(minute_of_day(*to));
+            let mut slot = u64::from(minute_of_day(*from));
+            let mut slots = Vec::new();
+            while slot <= end {
+                slots.push(slot as u32);
+                slot += step;
+            }
+            slots
+        }
+        ScheduleExpr::DayRepeat { times, .. }
+        | ScheduleExpr::WeekRepeat { times, .. }
+        | ScheduleExpr::MonthRepeat { times, .. }
+        | ScheduleExpr::YearRepeat { times, .. }
+        | ScheduleExpr::SingleDate { times, .. } => {
+            times.iter().map(|&t| minute_of_day(t)).collect()
+        }
+    };
+    times.sort_unstable();
+    times.dedup();
+    times
+}
 
-    #[test]
-    fn test_to_cron_specific_days() {
-        let s = parse("every mon, wed, fri at 9:00").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "0 9 * * 1,3,5");
+fn filter_field(filter: &DayFilter) -> String {
+    match filter {
+        DayFilter::Every => "*".into(),
+        DayFilter::Weekday => weekdays_field(&Weekday::all_weekdays()),
+        DayFilter::Weekend => weekdays_field(&Weekday::all_weekend()),
+        DayFilter::Days(days) => weekdays_field(days),
     }
+}
 
-    #[test]
-    fn test_to_cron_interval_minutes() {
-        let s = parse("every 30 min from 00:00 to 23:59").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "*/30 * * * *");
-    }
+fn weekdays_field(days: &[Weekday]) -> String {
+    list_field(&sorted_unique(days.iter().map(|&d| cron_day(d))), 7)
+}
 
-    #[test]
-    fn test_to_cron_interval_hours() {
-        let s = parse("every 2 hours from 00:00 to 23:59").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "0 */2 * * *");
+fn ordinal_field(ordinal: OrdinalPosition, weekday: Weekday) -> String {
+    let day = cron_day(weekday);
+    match ORDINALS.iter().position(|&o| o == ordinal) {
+        Some(index) => format!("{day}#{}", index + 1),
+        None => format!("{day}L"),
     }
+}
 
-    #[test]
-    fn test_to_cron_month_single_day() {
-        let s = parse("every month on the 1st at 9:00").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "0 9 1 * *");
-    }
+// ISO numbers Sunday 7; cron numbers it 0.
+fn cron_day(weekday: Weekday) -> u8 {
+    weekday.number() % 7
+}
 
-    #[test]
-    fn test_to_cron_month_multiple_days() {
-        let s = parse("every month on the 1st, 15th at 9:00").unwrap();
-        assert_eq!(to_cron(&s).unwrap(), "0 9 1,15 * *");
+fn step_field(values: &[u8], size: u8) -> String {
+    let first = values[0];
+    let last = values[values.len() - 1];
+    let gap = values.get(1).map(|second| second - first);
+    let equal_gaps = gap.is_some_and(|gap| values.windows(2).all(|w| w[1] - w[0] == gap));
+    match gap {
+        _ if values.len() == size as usize => "*".into(),
+        None => first.to_string(),
+        Some(gap) if equal_gaps && first == 0 && last + gap == size => format!("*/{gap}"),
+        Some(1) if equal_gaps => format!("{first}-{last}"),
+        Some(gap) if equal_gaps && values.len() >= 3 => format!("{first}-{last}/{gap}"),
+        _ => list_field(values, size),
     }
+}
 
-    #[test]
-    fn test_to_cron_not_expressible_45min() {
-        let s = parse("every 45 min from 09:00 to 17:00").unwrap();
-        assert!(to_cron(&s).is_err());
+fn list_field(values: &[u8], size: u8) -> String {
+    if values.len() == size as usize {
+        return "*".into();
     }
+    runs(values)
+        .iter()
+        .map(|&(first, last)| {
+            if first == last {
+                first.to_string()
+            } else {
+                format!("{first}-{last}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
 
-    #[test]
-    fn test_to_cron_not_expressible_week() {
-        let s = parse("every 2 weeks on monday at 9:00").unwrap();
-        assert!(to_cron(&s).is_err());
+fn runs(sorted_values: &[u8]) -> Vec<(u8, u8)> {
+    let mut runs: Vec<(u8, u8)> = Vec::new();
+    for &value in sorted_values {
+        match runs.last_mut() {
+            Some((_, last)) if *last + 1 == value => *last = value,
+            _ => runs.push((value, value)),
+        }
     }
+    runs
+}
 
-    #[test]
-    fn test_to_cron_not_expressible_last_day() {
-        let s = parse("every month on the last day at 17:00").unwrap();
-        assert!(to_cron(&s).is_err());
-    }
+fn minute_of_day(time: TimeOfDay) -> u32 {
+    u32::from(time.hour) * 60 + u32::from(time.minute)
+}
 
-    #[test]
-    fn test_to_cron_not_expressible_ordinal() {
-        let s = parse("every month on the first monday at 10:00").unwrap();
-        assert!(to_cron(&s).is_err());
-    }
+fn sorted(mut values: Vec<u8>) -> Vec<u8> {
+    values.sort_unstable();
+    values
+}
 
-    #[test]
-    fn test_to_cron_not_expressible_yearly() {
-        let s = parse("every year on dec 25 at 00:00").unwrap();
-        assert!(to_cron(&s).is_err());
-    }
-
-    #[test]
-    fn test_from_cron_every_day() {
-        let s = from_cron("0 9 * * *").unwrap();
-        assert_eq!(s.to_string(), "every day at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_weekday() {
-        let s = from_cron("0 9 * * 1-5").unwrap();
-        assert_eq!(s.to_string(), "every weekday at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_monthly() {
-        let s = from_cron("0 9 1 * *").unwrap();
-        assert_eq!(s.to_string(), "every month on the 1st at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_interval_minutes() {
-        let s = from_cron("*/30 * * * *").unwrap();
-        assert_eq!(s.to_string(), "every 30 min from 00:00 to 23:59");
-    }
-
-    #[test]
-    fn test_from_cron_dom_range() {
-        let s = from_cron("0 9 1-5 * *").unwrap();
-        assert_eq!(s.to_string(), "every month on the 1st to 5th at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_dow_range() {
-        let s = from_cron("0 9 * * 2-4").unwrap();
-        assert_eq!(s.to_string(), "every tuesday, wednesday, thursday at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_month_field() {
-        let s = from_cron("0 9 1 1,7 *").unwrap();
-        assert_eq!(
-            s.to_string(),
-            "every month on the 1st at 09:00 during jan, jul"
-        );
-    }
-
-    #[test]
-    fn test_from_cron_at_daily() {
-        let s = from_cron("@daily").unwrap();
-        assert_eq!(s.to_string(), "every day at 00:00");
-    }
-
-    #[test]
-    fn test_from_cron_last_day() {
-        let s = from_cron("0 9 L * *").unwrap();
-        assert_eq!(s.to_string(), "every month on the last day at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_nth_weekday() {
-        let s = from_cron("0 9 * * 1#1").unwrap();
-        assert_eq!(s.to_string(), "every month on the first monday at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_question_mark() {
-        let s = from_cron("0 9 ? * 1").unwrap();
-        assert_eq!(s.to_string(), "every monday at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_named_dow() {
-        let s = from_cron("0 9 * * MON,WED,FRI").unwrap();
-        assert_eq!(s.to_string(), "every monday, wednesday, friday at 09:00");
-    }
-
-    #[test]
-    fn test_from_cron_named_month() {
-        let s = from_cron("0 9 1 JAN,JUL *").unwrap();
-        assert_eq!(
-            s.to_string(),
-            "every month on the 1st at 09:00 during jan, jul"
-        );
-    }
+fn sorted_unique(values: impl IntoIterator<Item = u8>) -> Vec<u8> {
+    let mut values: Vec<u8> = values.into_iter().collect();
+    values.sort_unstable();
+    values.dedup();
+    values
 }

@@ -38,7 +38,7 @@ it("spec has no section this runner does not know", () => {
   expect(unknown).toEqual([]);
 });
 
-// Error sections pass no assertion fields: the section itself asserts the error.
+// `parse_errors` passes no assertion fields: the section itself asserts the error.
 function checkFields(tc: Record<string, unknown>, inputs: string[], assertions: string[]) {
   for (const key of Object.keys(tc)) {
     const known = ["name", "description", ...inputs, ...assertions].includes(key);
@@ -210,6 +210,18 @@ describe("eval between", () => {
   }
 });
 
+function expectCronError(convert: () => unknown, message: string) {
+  let thrown: unknown;
+  try {
+    convert();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(Error);
+  expect((thrown as Error & { kind?: string }).kind).toBe("cron");
+  expect((thrown as Error).message).toBe(message);
+}
+
 describe("cron", () => {
   describe("to_cron", () => {
     const tests = spec.cron.to_cron.tests;
@@ -228,9 +240,9 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.hron;
       it(name, () => {
-        checkFields(tc, ["hron"], []);
+        checkFields(tc, ["hron"], ["error"]);
         const schedule = Schedule.parse(tc.hron);
-        expect(() => schedule.toCron()).toThrow();
+        expectCronError(() => schedule.toCron(), tc.error);
       });
     }
   });
@@ -252,8 +264,8 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.cron;
       it(name, () => {
-        checkFields(tc, ["cron"], []);
-        expect(() => fromCron(tc.cron)).toThrow();
+        checkFields(tc, ["cron"], ["error"]);
+        expectCronError(() => fromCron(tc.cron), tc.error);
       });
     }
   });
