@@ -681,6 +681,11 @@
           "name": "named_date_november",
           "input": "on November 1 at 9:00",
           "canonical": "on nov 1 at 09:00"
+        },
+        {
+          "name": "iso_date_upper_bound",
+          "input": "on 9999-12-31 at 09:00",
+          "canonical": "on 9999-12-31 at 09:00"
         }
       ]
     },
@@ -854,6 +859,11 @@
           "name": "day_range_with_except",
           "input": "every month on the 1st to 5th at 9:00 except jan 1",
           "canonical": "every month on the 1st to 5th at 09:00 except jan 1"
+        },
+        {
+          "name": "day_31_in_every_31_day_month",
+          "input": "every day at 09:00 except jan 31, mar 31, may 31, jul 31, aug 31, oct 31, dec 31",
+          "canonical": "every day at 09:00 except jan 31, mar 31, may 31, jul 31, aug 31, oct 31, dec 31"
         }
       ]
     },
@@ -5253,6 +5263,78 @@
           "span": [
             19,
             26
+          ]
+        }
+      },
+      {
+        "name": "val_day_nov_31",
+        "input": "on nov 31 at 09:00",
+        "error": {
+          "kind": "parse",
+          "message": "day must be 1-30 for nov, got 31",
+          "span": [
+            7,
+            9
+          ]
+        }
+      },
+      {
+        "name": "val_day_31st_of_november",
+        "input": "every year on the 31st of november at 09:00",
+        "error": {
+          "kind": "parse",
+          "message": "day must be 1-30 for nov, got 31st",
+          "span": [
+            18,
+            22
+          ]
+        }
+      },
+      {
+        "name": "pos_iso_date_is_ten_characters",
+        "input": "on 2026-03-155 at 09:00",
+        "error": {
+          "kind": "parse",
+          "message": "expected 'at', got '5'",
+          "span": [
+            13,
+            14
+          ]
+        }
+      },
+      {
+        "name": "lex_ordinal_suffix_is_ascii_only",
+        "input": "every month on the 1\u017ft at 09:00",
+        "error": {
+          "kind": "lex",
+          "message": "unexpected character U+017F",
+          "span": [
+            20,
+            21
+          ]
+        }
+      },
+      {
+        "name": "lex_unknown_keyword_sept",
+        "input": "every year on sept 1 at 09:00",
+        "error": {
+          "kind": "lex",
+          "message": "unknown keyword 'sept'",
+          "span": [
+            14,
+            18
+          ]
+        }
+      },
+      {
+        "name": "lex_unknown_keyword_tues",
+        "input": "every tues at 09:00",
+        "error": {
+          "kind": "lex",
+          "message": "unknown keyword 'tues'",
+          "span": [
+            6,
+            10
           ]
         }
       }
