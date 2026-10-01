@@ -110,7 +110,7 @@ const index = (n) => [...input].slice(0, n).join("").length;
 const text = input.slice(index(error.span.start), index(error.span.end));
 ```
 
-Strings reach WebAssembly as UTF-8, so a lone surrogate arrives as U+FFFD and is reported as `unexpected character U+FFFD`, one code point wide.
+Strings reach WebAssembly as UTF-8, so a lone surrogate arrives as U+FFFD: it is reported as `unexpected character U+FFFD`, one code point wide, and U+FFFD also stands in its place in `error.input`, in any text the message echoes (such as a timezone) and in `displayRich()`.
 
 A datetime argument that cannot be parsed throws a plain `Error` with no `kind`.
 

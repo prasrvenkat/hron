@@ -27,6 +27,7 @@ describe("errors", () => {
     expect(error.kind).toBe("lex");
     expect(error.message).toBe("unexpected character U+FFFD");
     expect(error.span).toEqual({ start: 19, end: 20 });
+    expect(error.input).toBe("every day at 09:00 \uFFFD x");
   });
 
   it("gives a lex error no suggestion", () => {

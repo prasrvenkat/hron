@@ -5337,6 +5337,18 @@
             10
           ]
         }
+      },
+      {
+        "name": "left_before_names_last_clause_read",
+        "input": "every day at 09:00 except dec 25 in UTC until 2026-12-31",
+        "error": {
+          "kind": "parse",
+          "message": "'until' must come before 'in'",
+          "span": [
+            40,
+            45
+          ]
+        }
       }
     ]
   },
