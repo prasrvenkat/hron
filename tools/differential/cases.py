@@ -391,7 +391,9 @@ def add_dst(cases: Cases) -> None:
             for expr, wall in dst_schedules(start, end):
                 # The wall time read with each offset: in a gap the shifted
                 # occurrence, in an overlap the first and the second pass.
-                readings = [(wall - utc_offset).replace(tzinfo=UTC) for utc_offset in (before, after)]
+                readings = [
+                    (wall - utc_offset).replace(tzinfo=UTC) for utc_offset in (before, after)
+                ]
                 add_dst_evaluations(cases, f"{expr} in {zone}", zone, change, readings)
 
 
