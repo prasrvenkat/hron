@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import MAXYEAR, MINYEAR, UTC, date, datetime, time, timedelta
@@ -47,8 +47,8 @@ from ._calendar import (
 )
 from ._wall_clock import (
     MINUTES_PER_HOUR,
+    Slot,
     civil_time,
-    first_pass_wall_time,
     fixed_time_on,
     minute_of_day,
     resolve_zone,
@@ -69,11 +69,13 @@ _RANGE_END = datetime(9999, 12, 30, tzinfo=UTC)
 # starts, and for a horizon that starts mid-period.
 _HORIZON_MARGIN_PERIODS = 2
 
-# How many dates apart the two sides of a date bound can be, for two reasons: a fixed time
-# shifted out of a gap before midnight lands on the date after its scheduled date, and from
-# the second pass of a fall-back across midnight, now's date is one behind a date that has
-# begun (_behind).
+# How many dates past its scheduled date a fixed time can land: one shifted out of a gap
+# before midnight lands on the next date.
 _MAX_SHIFT_DAYS = 1
+
+# How many dates behind a date that has begun now's wall date can read: from the second
+# pass of a fall-back overlap that crosses midnight, one.
+_MAX_OVERLAP_DAYS = 1
 
 # Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 _NAMED_UNTIL_MAX_YEARS = 8
@@ -119,9 +121,13 @@ def matches(schedule: PreparedSchedule, dt: datetime) -> bool:
     if not _in_supported_range(dt):
         return False
     search = schedule.search()
-    minute = dt.astimezone(search.zone).replace(second=0, microsecond=0).astimezone(UTC)
-    found = search.nearest(minute - timedelta(microseconds=1), _Direction.FORWARD)
-    return found is not None and found.astimezone(UTC) == minute
+    local = dt.astimezone(search.zone).replace(second=0, microsecond=0)
+    minute = local.astimezone(UTC)
+    # An occurrence never lands before the date it is scheduled on, so one at this minute
+    # is scheduled on or before the minute's wall date.
+    clauses = search.clauses.end_on(local.date())
+    best = search.best(minute - timedelta(microseconds=1), _Direction.FORWARD, clauses)
+    return best is not None and best.instant == minute and _in_supported_range(minute)
 
 
 def next_n_from(schedule: PreparedSchedule, now: datetime, n: int) -> list[datetime]:
@@ -195,18 +201,21 @@ class Search:
 
     def nearest(self, now: datetime, direction: _Direction) -> datetime | None:
         """The occurrence nearest `now` strictly beyond it in `direction`."""
-        best = self._best(now.astimezone(UTC), direction)
+        best = self.best(now.astimezone(UTC), direction, self.clauses)
         if best is None or not _in_supported_range(best.instant):
             return None
         return best.instant.astimezone(self.zone)
 
-    def _best(self, now: datetime, direction: _Direction) -> _Occurrence | None:
-        now_date = now.astimezone(self.zone).date()
-        first_date = self.clauses.clamp(now_date, direction)
+    def best(self, now: datetime, direction: _Direction, clauses: _Clauses) -> _Occurrence | None:
+        """The occurrence nearest `now`, a UTC instant, strictly beyond it in `direction`
+        under `clauses`, in or out of the supported range."""
+        local = now.astimezone(self.zone)
+        now_date = local.date()
+        first_date = clauses.clamp(now_date, direction)
         # A nearest weekday or a DST shift can move an occurrence out of the period it is
         # scheduled in, so the search starts one period back.
         first_period = self.cadence.period_of(first_date) - direction.sign
-        farthest = self.clauses.farthest_except_date(direction)
+        farthest = clauses.farthest_except_date(direction)
         reach = first_period if farthest is None else self.cadence.period_of(farthest)
         max_shift_days = self.times.max_shift_days
         best: _Occurrence | None = None
@@ -215,64 +224,110 @@ class Search:
                 d = candidate.date
                 if best is not None and not _could_beat(d, best.landing, direction, max_shift_days):
                     return best
-                if self.clauses.ends_search(d, direction):
+                if clauses.ends_search(d, direction):
                     return best
-                if _behind(d, now_date, direction) or not self.clauses.allows(candidate):
+                if _is_behind(d, now_date, direction, max_shift_days) or not clauses.allows(
+                    candidate
+                ):
                     continue
-                instant = self.nearest_on_date(d, now, direction)
+                instant = self.nearest_on_date(d, now, local, direction)
                 if instant is not None and (
                     best is None or direction.precedes(instant, best.instant)
                 ):
                     best = _Occurrence(instant, instant.astimezone(self.zone).date())
         return best
 
-    def nearest_on_date(self, d: date, now: datetime, direction: _Direction) -> datetime | None:
-        """The occurrence on `d` nearest `now` strictly beyond it in `direction`."""
+    def nearest_on_date(
+        self, d: date, now: datetime, local: datetime, direction: _Direction
+    ) -> datetime | None:
+        """The occurrence on `d` nearest `now`, read on the zone's clock as `local`, strictly
+        beyond it in `direction`."""
+        zone = self.zone
         match self.times:
             case _FixedTimes(times=times):
-                resolved = [fixed_time_on(d, t, self.zone) for t in times]
-                # A time shifted out of a gap can land after a later wall time.
-                instants = sorted([t for t in resolved if t is not None])
-                if direction is _Direction.FORWARD:
-                    return next((t for t in instants if t > now), None)
-                return next((t for t in reversed(instants) if t < now), None)
-            case _Slots(minutes=minutes) if direction is _Direction.FORWARD:
-                return self._first_slot_after(minutes, d, now)
+                # Every time is compared: one shifted out of a gap can land after a later
+                # wall time.
+                nearest = None
+                for t in times:
+                    instant = fixed_time_on(d, t, zone)
+                    if (
+                        instant is not None
+                        and direction.precedes(now, instant)
+                        and (nearest is None or direction.precedes(instant, nearest))
+                    ):
+                        nearest = instant
+                return nearest
             case _Slots(minutes=minutes):
-                return self._last_slot_before(minutes, d, now)
+                return self._nearest_slot(minutes, d, now, local, direction)
 
-    def _first_slot_after(
-        self, minutes: tuple[int, ...], d: date, now: datetime
+    def _nearest_slot(
+        self,
+        minutes: tuple[int, ...],
+        d: date,
+        now: datetime,
+        local: datetime,
+        direction: _Direction,
     ) -> datetime | None:
-        """Slots resolve in wall-clock order, and one whose wall time is not after now's has
-        passed, so the scan can start after now's wall time."""
-        local = now.astimezone(self.zone)
-        if d < local.date():
-            return None
+        """The slot on `d` nearest `now`, read on the zone's clock as `local`, strictly beyond
+        it in `direction`. Slot keys never decrease in wall-clock order, so one search finds
+        where they part around now, and the nearest is the first slot with an instant from
+        there in `direction`. Each key costs a zone lookup, so the search starts where now's
+        wall time parts the slots' wall times, which is where their keys part unless a
+        transition is near."""
+        zone = self.zone
+        forward = direction is _Direction.FORWARD
+        probed: dict[int, Slot] = {}
+
+        def earlier(i: int) -> bool:
+            """Whether slot `i` is on now's earlier side, where a key equal to now's falls
+            when the search moves away from it."""
+            slot = probed[i] = slot_on(d, minutes[i], zone)
+            return slot.key <= now if forward else slot.key < now
+
         if d == local.date():
-            minutes = minutes[bisect_right(minutes, minute_of_day(local.time())) :]
-        for minute in minutes:
-            instant = slot_on(d, minute, self.zone)
-            if instant is not None and instant > now:
+            # Wall times part by the same rule: a slot at now's minute is at or before now's
+            # wall time, and before it once now is past the minute's start.
+            minute = minute_of_day(local.time())
+            past = forward or local.second or local.microsecond
+            start = (bisect_right if past else bisect_left)(minutes, minute)
+        else:
+            start = 0 if d > local.date() else len(minutes)
+        parting = _partition_point(len(minutes), earlier, start)
+        indices = range(parting, len(minutes)) if forward else range(parting - 1, -1, -1)
+        for i in indices:
+            instant = (probed.get(i) or slot_on(d, minutes[i], zone)).instant
+            if instant is not None:
                 return instant
         return None
 
-    def _last_slot_before(
-        self, minutes: tuple[int, ...], d: date, now: datetime
-    ) -> datetime | None:
-        """Unlike the forward scan, this one cannot start at now's wall time: from the
-        second pass of a fall-back overlap, a slot with a later wall time, even on the next
-        date, can be earlier than now. It starts at now's first-pass wall time instead."""
-        latest = first_pass_wall_time(now.astimezone(self.zone))
-        if d > latest.date():
-            return None
-        if d == latest.date():
-            minutes = minutes[: bisect_right(minutes, minute_of_day(latest.time()))]
-        for minute in reversed(minutes):
-            instant = slot_on(d, minute, self.zone)
-            if instant is not None and instant < now:
-                return instant
-        return None
+
+def _partition_point(n: int, earlier: Callable[[int], bool], start: int) -> int:
+    """The first index in 0..n where `earlier`, which holds on a prefix of 0..n-1, fails;
+    n when it never does. An exponential search outward from `start`: one or two calls
+    when the answer is `start` or the index after it, and elsewhere at most about twice a
+    binary search's count."""
+    if start < n and earlier(start):
+        low, high, step = start + 1, n, 1
+        while (probe := low + step - 1) < high:
+            if not earlier(probe):
+                high = probe
+                break
+            low, step = probe + 1, step * 2
+    else:
+        low, high, step = 0, start, 1
+        while (probe := high - step) >= low:
+            if earlier(probe):
+                low = probe + 1
+                break
+            high, step = probe, step * 2
+    # earlier(low - 1) holds unless low is 0, and earlier(high) fails unless high is n.
+    while low < high:
+        middle = (low + high) // 2
+        if earlier(middle):
+            low = middle + 1
+        else:
+            high = middle
+    return low
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,18 +341,19 @@ class _Occurrence:
 def _could_beat(d: date, landing: date, direction: _Direction, max_shift_days: int) -> bool:
     """Whether an occurrence scheduled on `d` can precede, in `direction`, the best one,
     which landed on `landing`."""
-    # An occurrence lands from its own date to max_shift_days after it, always on a first
-    # pass, and first-pass instants keep wall-clock order.
+    # An occurrence lands from its scheduled date to max_shift_days after it, on a first
+    # pass, and first passes keep wall-clock order.
     if direction is _Direction.FORWARD:
         return d <= landing
     return (landing - d).days <= max_shift_days
 
 
-def _behind(d: date, now_date: date, direction: _Direction) -> bool:
-    """Whether no occurrence scheduled on `d` can be beyond now in `direction`: a shifted
-    time lands at most _MAX_SHIFT_DAYS after its date, and from the second pass of a
-    fall-back across midnight, now's date is at most one behind a date that has begun."""
-    return direction.sign * (now_date - d).days > _MAX_SHIFT_DAYS
+def _is_behind(d: date, now_date: date, direction: _Direction, max_shift_days: int) -> bool:
+    """Whether every occurrence scheduled on `d` lies behind now, whose wall date is
+    `now_date`, in `direction`."""
+    if direction is _Direction.FORWARD:
+        return (now_date - d).days > max_shift_days
+    return (d - now_date).days > _MAX_OVERLAP_DAYS
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,6 +428,13 @@ class _Clauses:
             and d not in self.except_dates
             and (self.until is None or d <= self.until)
             and (self.starting is None or d >= self.starting)
+        )
+
+    def end_on(self, d: date) -> _Clauses:
+        """These clauses with the search ended on `d`: nothing after it is an occurrence."""
+        until = d if self.until is None else min(self.until, d)
+        return _Clauses(
+            self.during, self.except_month_days, self.except_dates, until, self.starting
         )
 
     def farthest_except_date(self, direction: _Direction) -> date | None:
