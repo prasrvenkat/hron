@@ -1,3 +1,7 @@
+// Reads spec/tests.json through dart:io, which the web platforms lack.
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

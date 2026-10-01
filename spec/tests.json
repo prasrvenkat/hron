@@ -2243,6 +2243,13 @@
           "description": "now is Feb 2 08:00; Feb 2 09:00 (target Jan 31) is still ahead",
           "now": "2026-02-02T08:00:00+00:00[UTC]",
           "next": "2026-02-02T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "unsorted_days_earliest_first",
+          "expression": "every month on the 15th, 20th, 1st at 09:00 in UTC",
+          "description": "days listed out of order still fire earliest first: the 1st comes before the 15th",
+          "now": "2026-01-31T12:00:00+00:00[UTC]",
+          "next": "2026-02-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -2384,6 +2391,13 @@
             "2026-02-27T09:00:00+00:00[UTC]",
             "2026-03-09T09:00:00+00:00[UTC]"
           ]
+        },
+        {
+          "name": "unsorted_days_earliest_first",
+          "expression": "every week on wednesday, friday, monday at 09:00 in UTC",
+          "description": "days listed out of order still fire earliest first: Monday comes before Wednesday",
+          "now": "2026-01-31T12:00:00+00:00[UTC]",
+          "next": "2026-02-02T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -5291,6 +5305,13 @@
             "2010-11-08T00:00:00-03:30[America/St_Johns]",
             "2010-11-08T00:30:00-03:30[America/St_Johns]"
           ]
+        },
+        {
+          "name": "interval_slots_overlap_first_pass_next",
+          "expression": "every 15 min from 00:00 to 23:59 in America/New_York",
+          "description": "now 01:05 EST (second pass): the 01:15 to 01:45 slots fired at their first pass (EDT), so next is 02:00 EST",
+          "now": "2026-11-01T01:05:00-05:00[America/New_York]",
+          "next": "2026-11-01T02:00:00-05:00[America/New_York]"
         }
       ]
     },
@@ -7381,6 +7402,13 @@
           "now": "2769-12-15T12:00:00+00:00[UTC]",
           "expected": "1970-02-02T09:00:00+00:00[UTC]",
           "description": "the excepted occurrence for January 2370 lands on Monday Feb 2; backward, the span runs past its target month, finding 1970-02-02"
+        },
+        {
+          "name": "dst_fall_back_interval_slots_overlap_first_pass",
+          "expression": "every 15 min from 00:00 to 23:59 in America/New_York",
+          "now": "2026-11-01T01:05:00-05:00[America/New_York]",
+          "expected": "2026-11-01T01:45:00-04:00[America/New_York]",
+          "description": "now 01:05 EST (second pass): the latest slot before it is 01:45 EDT; 01:00 EST repeats the 01:00 slot, so it is not one"
         }
       ]
     },
@@ -7469,6 +7497,20 @@
     "edge_cases": {
       "description": "Edge cases for midnight boundaries, large intervals, and end-of-month cascading. These stress interactions between skip logic, interval alignment, and day boundaries.",
       "tests": [
+        {
+          "name": "last_supported_date_in_kiritimati",
+          "expression": "every day at 13:00 in Pacific/Kiritimati",
+          "description": "13:00 on 9999-12-30 at +14:00 is 9999-12-29T23:00Z, inside the supported range, though no instant of 9999-12-30 in UTC is",
+          "now": "9999-12-29T22:00:00+00:00[UTC]",
+          "next": "9999-12-30T13:00:00+14:00[Pacific/Kiritimati]"
+        },
+        {
+          "name": "interval_beyond_the_calendar",
+          "expression": "every 1000000000 years on jan 1 at 00:00 in UTC",
+          "description": "the next aligned year is far past the supported range, so there is no occurrence (and no error)",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": null
+        },
         {
           "name": "midnight_exact_boundary",
           "expression": "every day at 00:00 in UTC",
@@ -7633,6 +7675,20 @@
           "expression": "every day at 09:00 during jan in UTC",
           "description": "the next january is in year 10000, outside the supported range",
           "now": "9999-11-30T00:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "week_past_calendar_end",
+          "expression": "every week on saturday at 09:00 in UTC",
+          "description": "the week's saturday is 10000-01-01, past the calendar's end",
+          "now": "9999-12-29T12:00:00+00:00[UTC]",
+          "next": null
+        },
+        {
+          "name": "horizon_past_calendar_end",
+          "expression": "every 999999 years on jan 1 at 09:00 in UTC",
+          "description": "the next aligned year, 1001969, is far past the calendar any platform represents: the search ends there instead of failing",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": null
         }
       ]

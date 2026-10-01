@@ -5,221 +5,55 @@ require "time"
 require "tzinfo"
 require_relative "ast"
 require_relative "error"
+require_relative "eval/calendar"
+require_relative "eval/wall_clock"
 
 module Hron
-  EPOCH_DATE = Date.new(1970, 1, 1)
-  EPOCH_MONDAY = Date.new(1970, 1, 5)
-
-  module TzResolver
-    def self.resolve(tz_name)
-      if tz_name && !tz_name.empty?
-        TZInfo::Timezone.get(tz_name)
-      else
-        # Default to UTC for deterministic, portable behavior
-        TZInfo::Timezone.get("UTC")
-      end
-    end
-  end
-
-  module EvalHelpers
-    DAY_SECONDS = 86_400
-
-    # Dates are proleptic Gregorian, so searches that reach back before 1582 stay on the same calendar.
-    def self.date(year, month, day)
-      Date.new(year, month, day, Date::GREGORIAN)
-    end
-
-    def self.parse_date(iso)
-      Date.iso8601(iso, Date::GREGORIAN)
-    end
-
-    # Resolves a fixed time per spec/README.md "DST spring-forward (gaps)" and "DST fall-back (ambiguous times)".
-    def self.at_time_on_date(d, tod, tz)
-      local = wall_time(d, tod)
-      local - (utc_offset_at(local, tz) || offset_before_gap(local, tz))
-    end
-
-    # The wall-clock time as a UTC Time, so the system timezone never interferes.
-    def self.wall_time(d, tod)
-      Time.utc(d.year, d.month, d.day, tod.hour, tod.minute)
-    end
-
-    def self.utc_offset_at(local, tz)
-      tz.periods_for_local(local).first&.offset&.utc_total_offset
-    end
-
-    # Interpreting a gap time with the offset in force before the gap is what shifts it forward.
-    def self.offset_before_gap(local, tz)
-      gap_transition(local, tz).previous_offset.utc_total_offset
-    end
-
-    # The spring-forward transition whose gap contains the wall time local.
-    def self.gap_transition(local, tz)
-      tz.transitions_up_to(local + DAY_SECONDS, local - DAY_SECONDS).rfind do |t|
-        t.at.to_time + t.previous_offset.utc_total_offset <= local
-      end
-    end
-
-    def self.matches_day_filter(d, filter)
-      dow = d.cwday # Monday=1 ... Sunday=7
-      case filter
-      when DayFilterEvery
-        true
-      when DayFilterWeekday
-        dow.between?(1, 5)
-      when DayFilterWeekend
-        [6, 7].include?(dow)
-      when DayFilterDays
-        filter.days.any? { |wd| Weekday.number(wd) == dow }
-      else
-        false
-      end
-    end
-
-    def self.last_day_of_month(year, month)
-      Date.new(year, month, -1, Date::GREGORIAN)
-    end
-
-    def self.last_weekday_of_month(year, month)
-      d = last_day_of_month(year, month)
-      d -= 1 while d.cwday >= 6
-      d
-    end
-
-    # Returns nil if target_day does not exist in the month. A nil direction never
-    # leaves the month (cron W); a direction may cross it.
-    def self.nearest_weekday(year, month, target_day, direction)
-      last = last_day_of_month(year, month)
-      last_day_num = last.day
-
-      return nil if target_day > last_day_num
-
-      date = date(year, month, target_day)
-      dow = date.cwday # Monday=1 ... Sunday=7
-
-      return date if dow.between?(1, 5)
-
-      case direction
-      when nil
-        # Standard cron W behavior: never cross month boundary
-        if dow == 6 && target_day == 1
-          date + 2
-        elsif dow == 6
-          date - 1
-        elsif target_day >= last_day_num
-          date - 2
-        else
-          date + 1
-        end
-
-      when NearestDirection::NEXT
-        if dow == 6 # Saturday -> Monday
-          date + 2
-        else # Sunday -> Monday
-          date + 1
-        end
-
-      when NearestDirection::PREVIOUS
-        if dow == 6 # Saturday -> Friday
-          date - 1
-        else # Sunday -> Friday (go back 2 days)
-          date - 2
-        end
-      end
-    end
-
-    def self.nth_weekday_of_month(year, month, weekday, n)
-      target_dow = Weekday.number(weekday)
-      d = date(year, month, 1)
-      d += 1 while d.cwday != target_dow
-      (n - 1).times { d += 7 }
-      return nil if d.month != month
-
-      d
-    end
-
-    def self.last_weekday_in_month(year, month, weekday)
-      target_dow = Weekday.number(weekday)
-      d = last_day_of_month(year, month)
-      d -= 1 while d.cwday != target_dow
-      d
-    end
-
-    def self.is_excepted(d, named, iso_dates)
-      iso_dates.include?(d) || named.any? { |exc| d.month == MonthName.number(exc.month) && d.day == exc.day }
-    end
-
-    def self.matches_during(d, during)
-      return true if during.empty?
-
-      during.any? { |mn| MonthName.number(mn) == d.month }
-    end
-
-    # A named until is the first such date on or after starting (spec/README.md "Named until").
-    # Parse requires starting and a real month day; a hand-built schedule falls back to the epoch
-    # anchor, and a day that never occurs gives nil (no bound).
-    def self.resolve_until(until_spec, starting)
-      case until_spec
-      when IsoUntil
-        parse_date(until_spec.date)
-      when NamedUntil
-        starting ||= EPOCH_DATE.gregorian
-        month = MonthName.number(until_spec.month)
-        (starting.year..starting.year + 8).each do |year|
-          next unless Date.valid_date?(year, month, until_spec.day, Date::GREGORIAN)
-
-          day = date(year, month, until_spec.day)
-          return day if day >= starting
-        end
-        nil
-      end
-    end
-  end
-
   class Evaluator
-    # The proleptic Gregorian calendar repeats every 400 years: this many days, weeks, months and years.
-    CYCLE_DAYS = 146_097
-    CYCLE_WEEKS = 20_871
-    CYCLE_MONTHS = 4800
-    CYCLE_YEARS = 400
-    # Supported range: MIN_INSTANT <= t < MAX_INSTANT (spec/README.md "Supported range").
-    MIN_INSTANT = Time.utc(1, 1, 2)
-    MAX_INSTANT = Time.utc(9999, 12, 30)
+    # Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment").
+    EPOCH_MONDAY = Date.new(1970, 1, 5, Date::GREGORIAN)
+
+    # Default anchor for day, month and year intervals.
+    EPOCH_DATE = Date.new(1970, 1, 1, Date::GREGORIAN)
+
+    # spec/README.md, "Supported range".
+    SUPPORTED_RANGE = Time.utc(1, 1, 2)...Time.utc(9999, 12, 30)
+
+    # Slack beyond the horizon for the period one behind the first date's, where a
+    # search starts, and for a horizon that starts mid-period.
+    HORIZON_MARGIN_PERIODS = 2
+
+    # How many dates past its scheduled date an occurrence can land: a fixed time
+    # shifted out of a gap before midnight lands on the next date.
+    MAX_SHIFT_DAYS = 1
+
+    # Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
+    NAMED_UNTIL_MAX_YEARS = 8
 
     # Returns the next occurrence strictly after now, or nil if there is none in the supported range.
     def self.next_from(schedule, now)
-      search(schedule, now, 1) if in_range?(now)
+      Search.new(schedule).nearest(now, Direction::FORWARD) if SUPPORTED_RANGE.cover?(now)
     end
 
     # Returns the latest occurrence strictly before now, or nil if there is none in the supported range.
     def self.previous_from(schedule, now)
-      search(schedule, now, -1) if in_range?(now)
+      Search.new(schedule).nearest(now, Direction::BACKWARD) if SUPPORTED_RANGE.cover?(now)
     end
 
     def self.next_n_from(schedule, now, n)
-      results = []
-      current = now
-      n.times do
-        nxt = next_from(schedule, current)
-        break unless nxt
-
-        results << nxt
-        current = nxt
-      end
-      results
+      occurrences(schedule, now).first([n, 0].max)
     end
 
     # Returns a lazy Enumerator of occurrences strictly after from. Unbounded for repeating
     # schedules unless an until clause or the end of the supported range ends them.
     def self.occurrences(schedule, from)
       Enumerator.new do |yielder|
-        current = from
-        loop do
-          nxt = next_from(schedule, current)
-          break unless nxt
+        next unless SUPPORTED_RANGE.cover?(from)
 
-          yielder << nxt
-          current = nxt
+        search = Search.new(schedule)
+        current = from
+        while (current = search.nearest(current, Direction::FORWARD))
+          yielder << current
         end
       end.lazy
     end
@@ -228,218 +62,368 @@ module Hron
     # bound is outside the supported range.
     def self.between(schedule, from, to)
       Enumerator.new do |yielder|
-        next unless in_range?(to)
+        next unless SUPPORTED_RANGE.cover?(to)
 
-        occurrences(schedule, from).each do |dt|
-          break if dt > to
+        occurrences(schedule, from).each do |instant|
+          break if instant > to
 
-          yielder << dt
+          yielder << instant
         end
       end.lazy
     end
 
     # True when the minute containing dt, on the schedule's wall clock, is an occurrence.
+    # Defined through the forward search, so the two cannot disagree (spec/README.md,
+    # "matches is true exactly when the minute containing t is an occurrence").
     def self.matches(schedule, dt)
-      return false unless in_range?(dt)
+      return false unless SUPPORTED_RANGE.cover?(dt)
 
-      local = TzResolver.resolve(schedule.timezone).to_local(dt)
+      search = Search.new(schedule)
+      local = search.zone.to_local(dt)
       minute = dt - local.sec - local.subsec
-      search(schedule, minute - 1, 1) == minute
+      # Occurrences fall on whole seconds, so none lies between this and the minute.
+      just_before = minute - 1
+      search.nearest(just_before, Direction::FORWARD) == minute
     end
 
-    def self.in_range?(time)
-      time >= MIN_INSTANT && time < MAX_INSTANT
-    end
+    class Direction
+      attr_reader :sign
 
-    # Walks candidate days away from now, forward when dir is 1 and backward when it is -1,
-    # and returns the closest occurrence strictly beyond now.
-    def self.search(schedule, now, dir)
-      expr = schedule.expr
-      tz = TzResolver.resolve(schedule.timezone)
-      starting = schedule.anchor && EvalHelpers.parse_date(schedule.anchor)
-      until_date = schedule.until && EvalHelpers.resolve_until(schedule.until, starting)
-      from = tz.utc_to_local(now.utc).to_date.gregorian
-      # A spring-forward shift can carry the previous date's fixed time past now, and a fall-back
-      # overlap that crosses midnight can put the next date's first pass before now.
-      if dir.positive?
-        from -= 1 unless expr.is_a?(IntervalRepeat)
-        from = [from, starting].max if starting
-      else
-        from += 1
-        from = [from, until_date].min if until_date
+      def initialize(sign)
+        @sign = sign
+        @forward = sign.positive?
       end
-      named_excepts, iso_excepts = schedule.except.partition { |exc| exc.is_a?(NamedException) }
-      iso_excepts = iso_excepts.map { |exc| EvalHelpers.parse_date(exc.date) }
-      reach = dir.positive? ? iso_excepts.max : iso_excepts.min
-      reach = nil unless reach && dir * (reach - from) > 0
-      best = nil
 
-      each_candidate_day(expr, starting, from, reach, dir) do |target, day|
-        break if best && !could_beat?(best, day, tz, dir)
-        if dir.positive?
-          break if day.year > 9999 || (until_date && day > until_date)
-          next if starting && day < starting
+      def forward?
+        @forward
+      end
+
+      # Whether a comes before b in this direction.
+      def precedes?(a, b)
+        @forward ? a < b : a > b
+      end
+
+      # Items given earliest first, in the order this direction visits them.
+      def in_order(items)
+        (@forward || items.size < 2) ? items : items.reverse
+      end
+
+      FORWARD = new(1)
+      BACKWARD = new(-1)
+      private_class_method :new
+    end
+
+    # A schedule prepared for searching: its zone, cadence, times and clauses resolved once.
+    class Search
+      attr_reader :zone
+
+      def initialize(schedule)
+        name = schedule.timezone
+        @zone = TZInfo::Timezone.get((name.nil? || name.empty?) ? "UTC" : name)
+        @clauses = Clauses.new(schedule)
+        @cadence = Cadence.of(schedule.expr, @clauses.starting)
+        @times = DailyTimes.of(schedule.expr)
+        @expr = schedule.expr
+      end
+
+      # The occurrence nearest now strictly beyond it in direction, or nil.
+      def nearest(now, direction)
+        now = @zone.utc_to_local(now.utc)
+        first_date = @clauses.clamp(now.to_date.gregorian, direction)
+        # A nearest weekday or a DST shift can move an occurrence out of the period it is
+        # scheduled in, so the search starts one period back.
+        first_period = @cadence.period_of(first_date) - direction.sign
+        farthest = @clauses.farthest_except_date(direction)
+        reach = farthest ? @cadence.period_of(farthest) : first_period
+        best = nil
+        each_candidate(first_period, reach, direction) do |candidate|
+          date = candidate.date
+          break if best && !could_beat?(date, best.date, direction)
+          break if @clauses.ends_search?(date, direction)
+          next unless @clauses.allows?(candidate)
+
+          instant = nearest_on_date(date, now, direction)
+          best = Occurrence.new(instant, date) if instant && (best.nil? || direction.precedes?(instant, best.instant))
+        end
+        best.instant if best && SUPPORTED_RANGE.cover?(best.instant)
+      end
+
+      private
+
+      # Yields each period's candidates, in direction order.
+      def each_candidate(first_period, reach, direction, &)
+        @cadence.period_starts(first_period, reach, direction) do |start|
+          direction.in_order(candidates_in_period(start)).each(&)
+        end
+      end
+
+      # The candidates in the period starting at start, earliest first.
+      def candidates_in_period(start)
+        case @expr
+        when DayRepeat
+          Calendar.matches_day_filter?(start, @expr.days) ? [Candidate.on(start)] : []
+        when IntervalRepeat
+          Calendar.matches_day_filter?(start, @expr.day_filter) ? [Candidate.on(start)] : []
+        when WeekRepeat
+          @expr.days.map { |day| start + (Weekday.number(day) - 1) }.uniq.sort.map { |date| Candidate.on(date) }
+        when MonthRepeat
+          Calendar.month_target_dates(start.year, start.month, @expr.target).map { |date| Candidate.new(date, start.month) }
+        when YearRepeat
+          date = Calendar.year_target_date(start.year, @expr.target)
+          date ? [Candidate.on(date)] : []
+        when SingleDateExpr
+          date = @expr.date.is_a?(IsoDate) ? start : Calendar.date(start.year, MonthName.number(@expr.date.month), @expr.date.day)
+          date ? [Candidate.on(date)] : []
+        end
+      end
+
+      # Whether an occurrence scheduled on date can precede, in direction, the best one,
+      # scheduled on best, given how many dates past its own an occurrence can land.
+      def could_beat?(date, best, direction)
+        direction.sign * Calendar.days_between(best, date) <= @times.max_shift_days
+      end
+
+      # The occurrence on date nearest now strictly beyond it in direction.
+      def nearest_on_date(date, now, direction)
+        case @times
+        when DailyTimes::Fixed
+          # A time shifted out of a gap can land after a later wall time.
+          instants = @times.times.map { |time| WallClock.fixed_time_on(date, time, @zone) }.sort!
+          direction.in_order(instants).find { |instant| direction.precedes?(now, instant) }
+        when DailyTimes::Slots
+          if direction.forward?
+            first_slot_after(@times.minutes, date, now)
+          else
+            last_slot_before(@times.minutes, date, now)
+          end
+        end
+      end
+
+      # Each slot on a date before now's had its first pass before now's date began.
+      def first_slot_after(minutes, date, now)
+        return if date < now.to_date
+
+        first = minutes.bsearch_index { |minute| WallClock.slot_position(date, minute, @zone) > now }
+        first_existing_slot(minutes[first..], date) if first
+      end
+
+      def last_slot_before(minutes, date, now)
+        stop = minutes.bsearch_index { |minute| WallClock.slot_position(date, minute, @zone) >= now } || minutes.size
+        first_existing_slot(minutes[0...stop].reverse, date)
+      end
+
+      # The instant of the first of minutes whose slot on date is not in a gap.
+      def first_existing_slot(minutes, date)
+        minutes.each do |minute|
+          instant = WallClock.slot_on(date, minute, @zone)
+          return instant if instant
+        end
+        nil
+      end
+    end
+
+    # An occurrence a search found, with the date it is scheduled on.
+    Occurrence = Data.define(:instant, :date)
+
+    # A date the expression fires on, with the month whose day it names. They differ only
+    # when a directional nearest weekday crosses into the adjacent month. A Struct, as one is
+    # made for every date a search walks and a Data costs twice as much to make.
+    Candidate = Struct.new(:date, :target_month) do
+      def self.on(date)
+        new(date, date.month)
+      end
+    end
+
+    # The times of day an expression fires at.
+    module DailyTimes
+      # Fixed times, each shifted out of a gap.
+      Fixed = Data.define(:times) do
+        def max_shift_days
+          MAX_SHIFT_DAYS
+        end
+      end
+
+      # Interval slots in minutes after midnight, each skipped in a gap, so a slot lands on
+      # its own date.
+      Slots = Data.define(:minutes) do
+        def max_shift_days
+          0
+        end
+      end
+
+      def self.of(expr)
+        return Fixed.new(expr.times) unless expr.is_a?(IntervalRepeat)
+
+        step = (expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * WallClock::MINUTES_PER_HOUR
+        first = WallClock.minute_of_day(expr.from_time)
+        last = WallClock.minute_of_day(expr.to_time)
+        Slots.new((first..last).step(step).to_a)
+      end
+    end
+
+    # The trailing clauses, resolved once. during applies to a candidate's target month;
+    # except, until and starting to its date (spec/README.md, "Nearest weekday and `during`",
+    # "The `starting` clause").
+    class Clauses
+      attr_reader :starting
+
+      def initialize(schedule)
+        @starting = schedule.anchor && Calendar.parse_date(schedule.anchor)
+        @until = schedule.until && resolve_until(schedule.until, @starting)
+        named, iso = schedule.except.partition { |exception| exception.is_a?(NamedException) }
+        @except_month_days = named.map { |exception| [MonthName.number(exception.month), exception.day] }
+        @except_dates = iso.map { |exception| Calendar.parse_date(exception.date) }
+        @during = schedule.during.map { |month| MonthName.number(month) }
+      end
+
+      def allows?(candidate)
+        date = candidate.date
+        (@during.empty? || @during.include?(candidate.target_month)) &&
+          @except_month_days.none? { |month, day| date.month == month && date.day == day } &&
+          !@except_dates.include?(date) &&
+          (@until.nil? || date <= @until) &&
+          (@starting.nil? || date >= @starting)
+      end
+
+      # The one-off except date farthest along direction: the calendar repeats only beyond
+      # it (spec/README.md, "Search horizon").
+      def farthest_except_date(direction)
+        direction.forward? ? @except_dates.max : @except_dates.min
+      end
+
+      # The date a search starts from: nothing fires before starting or after until.
+      def clamp(date, direction)
+        if direction.forward?
+          @starting ? [date, @starting].max : date
         else
-          break if day.year < 1 || (starting && day < starting)
-          next if until_date && day > until_date
+          @until ? [date, @until].min : date
         end
-        next unless EvalHelpers.matches_during(target, schedule.during)
-        next if EvalHelpers.is_excepted(day, named_excepts, iso_excepts)
-
-        found = occurrence_on(expr, day, tz, now, dir)
-        best = found if found && (best.nil? || (dir.positive? ? found < best : found > best))
       end
-      best if best && in_range?(best)
-    end
 
-    # A shift moves an occurrence at most onto the adjacent date, so a candidate day can still beat
-    # best only if its occurrences may land on best's date.
-    def self.could_beat?(best, day, tz, dir)
-      landed = tz.utc_to_local(best.utc).to_date.gregorian
-      dir.positive? ? day <= landed : day >= landed - 1
-    end
+      # Whether date, and every date beyond it in direction, is past the bound the search
+      # moves toward.
+      def ends_search?(date, direction)
+        if direction.forward?
+          !@until.nil? && date > @until
+        else
+          !@starting.nil? && date < @starting
+        end
+      end
 
-    # Yields [target, day] for each candidate day in search order. day is the date an occurrence is
-    # scheduled on, which the day filter, except, until and starting see even when a spring-forward
-    # shift carries it onto the next date; target is the date whose month `during` checks, which
-    # differs from day only for a nearest weekday (spec/README.md "Nearest weekday and during").
-    def self.each_candidate_day(expr, starting, from, reach, dir)
-      case expr
-      when DayRepeat, IntervalRepeat
-        interval, filter = expr.is_a?(DayRepeat) ? [expr.interval, expr.days] : [1, expr.day_filter]
-        each_period(from.jd, reach&.jd, (starting || EPOCH_DATE).jd, interval, CYCLE_DAYS, dir) do |jd|
-          day = Date.jd(jd, Date::GREGORIAN)
-          yield day, day if filter.nil? || EvalHelpers.matches_day_filter(day, filter)
-        end
-      when WeekRepeat
-        offsets = expr.days.map { |wd| Weekday.number(wd) - 1 }.uniq.sort
-        offsets.reverse! if dir.negative?
-        # Julian day numbers that are multiples of 7 are Mondays, so jd.div(7) numbers ISO weeks.
-        each_period(from.jd.div(7), reach&.jd&.div(7), (starting || EPOCH_MONDAY).jd.div(7), expr.interval, CYCLE_WEEKS, dir) do |week|
-          offsets.each do |offset|
-            day = Date.jd((week * 7) + offset, Date::GREGORIAN)
-            yield day, day
-          end
-        end
-      when MonthRepeat
-        # A nearest weekday can land in the month next to its target's, so the walk takes one
-        # extra month on each side: before from, and past reach.
-        each_period(month_number(from) - dir, reach && (month_number(reach) + dir), month_number(starting || EPOCH_DATE), expr.interval, CYCLE_MONTHS, dir) do |number|
-          year, month = number.divmod(12)
-          target = EvalHelpers.date(year, month + 1, 1)
-          days = month_target_days(expr.target, year, month + 1)
-          days.reverse! if dir.negative?
-          days.each { |day| yield target, day }
-        end
-      when YearRepeat
-        each_period(from.year, reach&.year, (starting || EPOCH_DATE).year, expr.interval, CYCLE_YEARS, dir) do |year|
-          day = year_target_day(expr.target, year)
-          yield day, day if day
-        end
-      when SingleDateExpr
-        case expr.date
-        when IsoDate
-          day = EvalHelpers.parse_date(expr.date.date)
-          yield day, day
-        when NamedDate
-          each_period(from.year, reach&.year, from.year, 1, CYCLE_YEARS, dir) do |year|
-            day = valid_date(year, MonthName.number(expr.date.month), expr.date.day)
-            yield day, day if day
-          end
+      private
+
+      # A named until date is the first such date on or after the starting date
+      # (spec/README.md, "Named `until`"). Parse requires starting; a schedule built without
+      # one resolves from the default anchor, the epoch. nil when the date never occurs, so
+      # nothing bounds the schedule.
+      def resolve_until(until_spec, starting)
+        case until_spec
+        when IsoUntil then Calendar.parse_date(until_spec.date)
+        when NamedUntil
+          from = starting || EPOCH_DATE
+          month = MonthName.number(until_spec.month)
+          (0..NAMED_UNTIL_MAX_YEARS)
+            .filter_map { |k| Calendar.date(from.year + k, month, until_spec.day) }
+            .find { |date| date >= from }
         end
       end
     end
 
-    # Yields period numbers (days, weeks, months or years) from `from` in direction dir that are a
-    # whole number of intervals from anchor, covering lcm(400 years, interval) beyond reach, or
-    # beyond from when reach is nil: the search horizon (spec/README.md "Search horizon").
-    def self.each_period(from, reach, anchor, interval, cycle, dir)
-      first = from + (dir * ((dir * (anchor - from)) % interval))
-      span = cycle.lcm(interval)
-      span += dir * (reach - from) if reach
-      ((span / interval) + 1).times { |k| yield first + (dir * interval * k) }
-    end
+    # The periods (days, weeks, months or years) an expression fires in, numbered from
+    # origin: period k is aligned when k is a multiple of interval.
+    class Cadence
+      # Units in 400 years, after which the proleptic Gregorian calendar repeats.
+      PER_400_YEARS = {day: 146_097, week: 20_871, month: 4800, year: 400}.freeze
 
-    def self.month_number(date)
-      (date.year * 12) + date.month - 1
-    end
+      def self.of(expr, starting)
+        unit, interval, default_anchor = case expr
+        in SingleDateExpr[date: IsoDate[date:]] then return new(:day, Calendar.parse_date(date), 1, single: true)
+        in SingleDateExpr then [:year, 1, EPOCH_DATE]
+        in IntervalRepeat then [:day, 1, EPOCH_DATE]
+        in DayRepeat then [:day, expr.interval, EPOCH_DATE]
+        in WeekRepeat then [:week, expr.interval, EPOCH_MONDAY]
+        in MonthRepeat then [:month, expr.interval, EPOCH_DATE]
+        in YearRepeat then [:year, expr.interval, EPOCH_DATE]
+        end
+        anchor = starting || default_anchor
+        origin = case unit
+        when :day then anchor
+        when :week then Calendar.monday_of_week(anchor)
+        when :month then Calendar.date(anchor.year, anchor.month, 1)
+        when :year then Calendar.first_of_year(anchor.year)
+        end
+        new(unit, origin, interval)
+      end
 
-    def self.valid_date(year, month, day)
-      EvalHelpers.date(year, month, day) if Date.valid_date?(year, month, day, Date::GREGORIAN)
-    end
+      # A single ISO date has one period, the one holding that date.
+      def initialize(unit, origin, interval, single: false)
+        @unit = unit
+        @origin = origin
+        @interval = interval
+        @single = single
+        @origin_month = Calendar.month_index(origin)
+        # A nearest weekday can move a candidate into the calendar from the period on
+        # either side of it.
+        @earliest = period_of(Calendar::FIRST_DATE) - 1
+        @latest = period_of(Calendar::LAST_DATE) + 1
+      end
 
-    def self.month_target_days(target, year, month)
-      case target
-      when DaysTarget
-        Hron.expand_month_target(target).uniq.sort.filter_map { |day| valid_date(year, month, day) }
-      when LastDayTarget
-        [EvalHelpers.last_day_of_month(year, month)]
-      when LastWeekdayTarget
-        [EvalHelpers.last_weekday_of_month(year, month)]
-      when NearestWeekdayTarget
-        [EvalHelpers.nearest_weekday(year, month, target.day, target.direction)].compact
-      when OrdinalWeekdayTarget
-        [ordinal_weekday(target.ordinal, year, month, target.weekday)].compact
+      def period_of(date)
+        case @unit
+        when :day then Calendar.days_between(@origin, date)
+        when :week then Calendar.days_between(@origin, date).div(7)
+        when :month then Calendar.month_index(date) - @origin_month
+        when :year then date.year - @origin.year
+        end
+      end
+
+      def start_of(k)
+        case @unit
+        when :day then @origin + k
+        when :week then @origin + (k * 7)
+        when :month then Calendar.first_of_month(@origin_month + k)
+        when :year then Calendar.first_of_year(@origin.year + k)
+        end
+      end
+
+      # Yields the first days of the aligned periods from first_period in direction, through
+      # one search horizon beyond whichever of first_period and reach is farther along it
+      # (spec/README.md, "Search horizon"), within the periods a search walks.
+      def period_starts(first_period, reach, direction)
+        return yield @origin if @single
+
+        first = align(first_period, direction)
+        beyond = direction.sign * (align(reach, direction) - first)
+        count = horizon_periods + HORIZON_MARGIN_PERIODS + ([beyond, 0].max / @interval)
+        # Steps outside the calendar are skipped: those leading up to it, as from a hand-built
+        # starting date before it, and all past it.
+        near, far = direction.in_order([@earliest, @latest]).map { |edge| direction.sign * (edge - first) }
+        inside = [ceil_div(near, @interval), 0].max...[(far / @interval) + 1, count].min
+        step = direction.sign * @interval
+        inside.each { |i| yield start_of(first + (i * step)) }
+      end
+
+      private
+
+      # The first aligned period at or beyond period k in direction.
+      def align(k, direction)
+        direction.forward? ? k + (-k % @interval) : k - (k % @interval)
+      end
+
+      def ceil_div(a, b)
+        -(-a / b)
+      end
+
+      # Aligned periods in lcm(400 years, interval units), after which both the calendar and
+      # the alignment repeat.
+      def horizon_periods
+        cycle = PER_400_YEARS.fetch(@unit)
+        cycle / cycle.gcd(@interval)
       end
     end
 
-    def self.year_target_day(target, year)
-      month = MonthName.number(target.month)
-      case target
-      when YearDateTarget, YearDayOfMonthTarget
-        valid_date(year, month, target.day)
-      when YearOrdinalWeekdayTarget
-        ordinal_weekday(target.ordinal, year, month, target.weekday)
-      when YearLastWeekdayTarget
-        EvalHelpers.last_weekday_of_month(year, month)
-      end
-    end
-
-    def self.ordinal_weekday(ordinal, year, month, weekday)
-      if ordinal == OrdinalPosition::LAST
-        EvalHelpers.last_weekday_in_month(year, month, weekday)
-      else
-        EvalHelpers.nth_weekday_of_month(year, month, weekday, OrdinalPosition.to_n(ordinal))
-      end
-    end
-
-    # The occurrence on day closest to now that is strictly beyond it in direction dir.
-    def self.occurrence_on(expr, day, tz, now, dir)
-      return interval_slot_on(expr, day, tz, now, dir) if expr.is_a?(IntervalRepeat)
-
-      instants = expr.times.map { |tod| EvalHelpers.at_time_on_date(day, tod, tz) }
-      instants.select! { |t| dir.positive? ? t > now : t < now }
-      dir.positive? ? instants.min : instants.max
-    end
-
-    # Slots follow spec/README.md "Interval slots in a spring-forward gap". Keyed by its instant, or
-    # by the gap's transition instant when it has none, slots are in instant order, so a binary
-    # search finds the slot closest beyond now.
-    def self.interval_slot_on(expr, day, tz, now, dir)
-      step = ((expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * 60) * 60
-      first_slot = EvalHelpers.wall_time(day, expr.from_time)
-      last_slot = EvalHelpers.wall_time(day, expr.to_time)
-      count = ((last_slot - first_slot) / step).floor + 1
-      return nil if count <= 0
-
-      instant = lambda do |k|
-        wall = first_slot + (k * step)
-        offset = EvalHelpers.utc_offset_at(wall, tz)
-        offset ? wall - offset : nil
-      end
-      key = ->(k) { instant.call(k) || EvalHelpers.gap_transition(first_slot + (k * step), tz).at.to_time }
-
-      if dir.positive?
-        start = (0...count).bsearch { |k| key.call(k) > now }
-        start && (start...count).lazy.filter_map(&instant).first
-      else
-        stop = (0...count).bsearch { |k| key.call(k) >= now } || count
-        (0...stop).reverse_each.lazy.filter_map(&instant).first
-      end
-    end
-
-    private_class_method :in_range?, :search, :could_beat?, :each_candidate_day, :each_period,
-      :month_number, :valid_date, :month_target_days, :year_target_day, :ordinal_weekday,
-      :occurrence_on, :interval_slot_on
+    private_constant :EPOCH_MONDAY, :EPOCH_DATE, :SUPPORTED_RANGE, :HORIZON_MARGIN_PERIODS, :MAX_SHIFT_DAYS, :NAMED_UNTIL_MAX_YEARS,
+      :Direction, :Search, :Occurrence, :Candidate, :DailyTimes, :Clauses, :Cadence,
+      :Calendar, :WallClock
   end
 end

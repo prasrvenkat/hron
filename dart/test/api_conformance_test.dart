@@ -1,5 +1,8 @@
 // Calls each spec/api.json method directly: finding them by reflection would
 // need dart:mirrors, which is unavailable on some platforms (Flutter, AOT).
+// Reads spec/api.json through dart:io, which the web platforms lack.
+@TestOn('vm')
+library;
 
 import 'dart:convert';
 import 'dart:io';
