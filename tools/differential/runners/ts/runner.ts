@@ -68,5 +68,8 @@ function run(c: Case): object {
 
 for await (const line of createInterface({ input: process.stdin })) {
   const c: Case = JSON.parse(line);
-  process.stdout.write(`${JSON.stringify({ id: c.id, ...run(c) })}\n`);
+  const start = performance.now();
+  const outcome = run(c);
+  const micros = Math.round((performance.now() - start) * 1000);
+  process.stdout.write(`${JSON.stringify({ id: c.id, ...outcome, micros })}\n`);
 }

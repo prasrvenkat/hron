@@ -11,8 +11,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from cases import generate
-from languages import LANGUAGES, RunnerError, build, run
-from report import compare, report
+from languages import LANGUAGES, Run, RunnerError, build, run
+from report import compare, compare_times, report
 
 
 def json_file(path: str) -> object:
@@ -47,11 +47,11 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def timed_run(name: str, cases: list[dict], timeout: float) -> dict[str, dict]:
+def timed_run(name: str, cases: list[dict], timeout: float) -> Run:
     start = time.monotonic()
-    outcomes = run(name, cases, timeout)
+    result = run(name, cases, timeout)
     print(f"{name}: {len(cases)} cases in {time.monotonic() - start:.1f}s", file=sys.stderr)
-    return outcomes
+    return result
 
 
 def main() -> int:
@@ -64,17 +64,26 @@ def main() -> int:
             if not args.no_build:
                 print(f"building {', '.join(names)}", file=sys.stderr)
                 list(pool.map(build, names))
-            runs = pool.map(lambda name: timed_run(name, cases, args.timeout), names)
-            outcomes = dict(zip(names, runs, strict=True))
+            runs = dict(
+                zip(
+                    names,
+                    pool.map(lambda name: timed_run(name, cases, args.timeout), names),
+                    strict=True,
+                )
+            )
     except RunnerError as error:
         print(error, file=sys.stderr)
         return 2
     print(f"{len(cases)} cases, {len(names)} languages, {time.monotonic() - start:.0f}s")
 
+    outcomes = {name: result.outcomes for name, result in runs.items()}
+    micros = {name: result.micros for name, result in runs.items()}
     if args.save:
-        args.save.write_text(json.dumps({"cases": cases, "outcomes": outcomes}))
+        args.save.write_text(json.dumps({"cases": cases, "outcomes": outcomes, "micros": micros}))
     if args.compare:
-        return 1 if compare(args.compare, cases, outcomes, args.examples) else 0
+        changes = compare(args.compare, cases, outcomes, args.examples)
+        compare_times(args.compare, cases, micros, args.examples)
+        return 1 if changes else 0
     return 1 if report(cases, outcomes, args.examples) else 0
 
 

@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, Write};
 use std::panic::{self, AssertUnwindSafe};
+use std::time::Instant;
 
 use hron::{Schedule, ScheduleError};
 use jiff::Zoned;
@@ -10,7 +11,10 @@ fn main() {
     let mut stdout = io::stdout().lock();
     for line in io::stdin().lock().lines() {
         let case: Value = serde_json::from_str(&line.expect("stdin")).expect("a JSON case");
-        let mut outcome = match panic::catch_unwind(AssertUnwindSafe(|| evaluate(&case))) {
+        let start = Instant::now();
+        let evaluated = panic::catch_unwind(AssertUnwindSafe(|| evaluate(&case)));
+        let micros = start.elapsed().as_micros();
+        let mut outcome = match evaluated {
             Ok(Ok(result)) => json!({ "ok": true, "result": result }),
             Ok(Err(error)) => json!({ "ok": false, "error": details(&error) }),
             Err(panic) => {
@@ -18,6 +22,7 @@ fn main() {
             }
         };
         outcome["id"] = case["id"].clone();
+        outcome["micros"] = json!(micros);
         writeln!(stdout, "{outcome}").expect("stdout");
         stdout.flush().expect("stdout");
     }

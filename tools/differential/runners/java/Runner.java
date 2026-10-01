@@ -32,7 +32,10 @@ public class Runner {
         new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8);
     for (String line; (line = in.readLine()) != null; ) {
       Map<String, String> c = parseCase(line);
-      out.println("{\"id\":" + json(c.get("id")) + "," + run(c) + "}");
+      long start = System.nanoTime();
+      String outcome = run(c);
+      long micros = (System.nanoTime() - start) / 1000;
+      out.println("{\"id\":" + json(c.get("id")) + "," + outcome + ",\"micros\":" + micros + "}");
     }
   }
 

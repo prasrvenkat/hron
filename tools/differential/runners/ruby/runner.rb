@@ -51,5 +51,8 @@ end
 $stdout.sync = true
 $stdin.each_line do |line|
   c = JSON.parse(line)
-  puts JSON.generate({id: c["id"], **run(c)})
+  start = Process.clock_gettime(Process::CLOCK_MONOTONIC, :microsecond)
+  outcome = run(c)
+  micros = Process.clock_gettime(Process::CLOCK_MONOTONIC, :microsecond) - start
+  puts JSON.generate({id: c["id"], **outcome, micros: micros})
 end

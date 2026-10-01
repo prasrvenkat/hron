@@ -5,6 +5,10 @@ from collections import Counter, defaultdict
 
 ARGUMENTS = ["now", "datetime", "from", "to", "n"]
 ERROR_FIELDS = ["kind", "span", "suggestion"]
+# A case counts as slower only past both: a garbage collection pause can add a
+# few milliseconds to any one case, while past regressions were 1000x.
+SLOWER_RATIO = 3
+SLOWER_FLOOR_MICROS = 20_000
 
 
 def describe(case: dict) -> str:
@@ -100,3 +104,26 @@ def compare(saved: dict, cases: list[dict], outcomes: dict[str, dict], examples:
             print(f"    before: {show(before[case['id']])}")
             print(f"    after:  {show(after[case['id']])}")
     return changes
+
+
+def compare_times(saved: dict, cases: list[dict], micros: dict[str, dict], examples: int) -> None:
+    """Prints each language's evaluation time against the saved run's, and the
+    cases that became much slower. Timings are noisy, so this only informs."""
+    print("\nevaluation time, before -> after")
+    for name, after in micros.items():
+        before = saved.get("micros", {}).get(name)
+        if before is None:
+            print(f"{name}: no saved timings")
+            continue
+        timed = [case["id"] for case in cases if case["id"] in before and case["id"] in after]
+        total_before = sum(before[case_id] for case_id in timed) / 1e6
+        total_after = sum(after[case_id] for case_id in timed) / 1e6
+        print(f"{name}: {total_before:.2f}s -> {total_after:.2f}s")
+        slower = [
+            case_id
+            for case_id in timed
+            if after[case_id] > SLOWER_RATIO * before[case_id] + SLOWER_FLOOR_MICROS
+        ]
+        slower.sort(key=lambda case_id: after[case_id] - before[case_id], reverse=True)
+        for case_id in slower[:examples]:
+            print(f"  {case_id}: {before[case_id]}us -> {after[case_id]}us")

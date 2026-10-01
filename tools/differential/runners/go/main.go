@@ -141,7 +141,9 @@ func main() {
 		if err := json.Unmarshal(scanner.Bytes(), &c); err != nil {
 			panic(err)
 		}
+		start := time.Now()
 		outcome := run(c)
+		outcome["micros"] = time.Since(start).Microseconds()
 		outcome["id"] = c.ID
 		if err := out.Encode(outcome); err != nil {
 			panic(err)
