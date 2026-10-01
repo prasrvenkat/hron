@@ -7690,6 +7690,13 @@
           "description": "the next aligned year, 1001969, is far past the calendar any platform represents: the search ends there instead of failing",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": null
+        },
+        {
+          "name": "except_at_range_end",
+          "expression": "every day at 12:00 except 9999-12-29 in Etc/GMT-14",
+          "description": "past the excepted date, local 9999-12-30 at +14:00 is still in range: 12:00 there is 9999-12-29T22:00Z",
+          "now": "9999-12-28T12:00:00+00:00[UTC]",
+          "next": "9999-12-30T12:00:00+14:00[Etc/GMT-14]"
         }
       ]
     }

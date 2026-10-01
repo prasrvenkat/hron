@@ -62,7 +62,7 @@ func nextOccurrence(schedule *ScheduleData, loc *time.Location, now, startDate t
 	_, lastExcept := isoExceptBounds(schedule.Except, startDate)
 	searchEnd := lastExcept.AddDate(horizonYears(schedule.Expr), 0, 0)
 
-	for !startDate.After(searchEnd) && startDate.Before(rangeEnd) {
+	for !startDate.After(searchEnd) && !startDate.After(rangeEnd) {
 		occ := nextExpr(schedule.Expr, loc, schedule.Anchor, now, startDate, targetDuring)
 		if occ == nil || !inRange(occ.at) {
 			return nil
