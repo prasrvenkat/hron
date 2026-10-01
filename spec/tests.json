@@ -7313,6 +7313,13 @@
           "expected": "9996-12-29T09:00:00+00:00[UTC]"
         },
         {
+          "name": "week_repeat_sunday_past_the_calendar_end",
+          "expression": "every week on sunday at 12:00 in UTC",
+          "description": "the Sunday of the week of 9999-12-27 is past the calendar's end, so the previous one is 9999-12-26",
+          "now": "9999-12-29T23:59:00+00:00[UTC]",
+          "expected": "9999-12-26T12:00:00+00:00[UTC]"
+        },
+        {
           "name": "named_until_same_year",
           "expression": "every day at 09:00 until dec 31 starting 2026-06-01 in UTC",
           "description": "until dec 31 with starting 2026-06-01 resolves to 2026-12-31",

@@ -836,6 +836,9 @@ def _prev_week_repeat(
     sorted_days = sorted(days, key=lambda wd: wd.number, reverse=True)
     for _ in range(3):
         for wd in sorted_days:
+            # The week of 9999-12-27 ends past date.max; its later weekdays do not exist.
+            if wd.number - 1 > (date.max - monday).days:
+                continue
             d = monday + timedelta(days=wd.number - 1)
             if d > start:
                 continue
