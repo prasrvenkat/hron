@@ -6,7 +6,7 @@ Gem::Specification.new do |spec|
   spec.name = "hron"
   spec.version = Hron::VERSION
   spec.authors = ["Prasanna Venkataraman"]
-  spec.email = ["prasrvenkat@gmail.com"]
+  spec.email = ["pras@simpllyf.io"]
 
   spec.summary = "Human-readable cron — a scheduling expression language that is a superset of cron"
   spec.description = "hron (human-readable cron) is a scheduling expression language " \
@@ -17,8 +17,8 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 4.0.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/prasrvenkat/hron"
-  spec.metadata["changelog_uri"] = "https://github.com/prasrvenkat/hron/releases"
+  spec.metadata["source_code_uri"] = "https://github.com/simpllyf/hron"
+  spec.metadata["changelog_uri"] = "https://github.com/simpllyf/hron/releases"
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.files = Dir.chdir(__dir__) do

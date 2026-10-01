@@ -1,6 +1,6 @@
 # hron (Dart)
 
-Native Dart implementation of [hron](https://github.com/prasrvenkat/hron) — human-readable cron expressions for Flutter and Dart.
+Native Dart implementation of [hron](https://github.com/simpllyf/hron) — human-readable cron expressions for Flutter and Dart.
 
 ## Install
 

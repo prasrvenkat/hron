@@ -20,8 +20,8 @@ classifiers = [
 dependencies = ["tzdata>=2024.1"]
 
 [project.urls]
-Homepage = "https://github.com/prasrvenkat/hron"
-Repository = "https://github.com/prasrvenkat/hron"
+Homepage = "https://github.com/simpllyf/hron"
+Repository = "https://github.com/simpllyf/hron"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13"]

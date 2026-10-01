@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	hron "github.com/prasrvenkat/hron/go"
+	hron "github.com/simpllyf/hron/go/v2"
 )
 
 type testCase struct {

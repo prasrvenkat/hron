@@ -1,6 +1,6 @@
 # hron CLI
 
-Command-line interface for [hron](https://github.com/prasrvenkat/hron) — human-readable cron expressions.
+Command-line interface for [hron](https://github.com/simpllyf/hron) — human-readable cron expressions.
 
 ## Install
 

@@ -11,7 +11,7 @@
 
     <name>hron</name>
     <description>Human-readable cron - scheduling expressions that are a superset of what cron can express</description>
-    <url>https://github.com/prasrvenkat/hron</url>
+    <url>https://github.com/simpllyf/hron</url>
 
     <licenses>
         <license>
@@ -28,9 +28,9 @@
     </developers>
 
     <scm>
-        <connection>scm:git:git://github.com/prasrvenkat/hron.git</connection>
-        <developerConnection>scm:git:ssh://github.com:prasrvenkat/hron.git</developerConnection>
-        <url>https://github.com/prasrvenkat/hron/tree/main</url>
+        <connection>scm:git:git://github.com/simpllyf/hron.git</connection>
+        <developerConnection>scm:git:ssh://github.com:simpllyf/hron.git</developerConnection>
+        <url>https://github.com/simpllyf/hron/tree/main</url>
     </scm>
 
     <properties>

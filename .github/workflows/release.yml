@@ -303,7 +303,7 @@ jobs:
           # Request the module version from proxy.golang.org to trigger indexing
           # This may fail initially if the tag hasn't propagated yet, so we retry
           for i in 1 2 3 4 5; do
-            if curl -sfL "https://proxy.golang.org/github.com/prasrvenkat/hron/go/@v/v${VERSION}.info"; then
+            if curl -sfL "https://proxy.golang.org/github.com/simpllyf/hron/go/v2/@v/v${VERSION}.info"; then
               echo "Go module v${VERSION} indexed successfully"
               exit 0
             fi

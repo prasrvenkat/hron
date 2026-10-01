@@ -46,7 +46,7 @@ See [`hron-cli`](rust/hron-cli/) for all options.
 | JS/TS (WASM) | [`hron-wasm`](rust/wasm/) | [![npm](https://img.shields.io/npm/v/hron-wasm)](https://www.npmjs.com/package/hron-wasm) |
 | Dart/Flutter | [`hron`](dart/) | [![pub.dev](https://img.shields.io/pub/v/hron)](https://pub.dev/packages/hron) |
 | Python | [`hron`](python/) | [![PyPI](https://img.shields.io/pypi/v/hron)](https://pypi.org/project/hron/) |
-| Go | [`hron`](go/) | [![Go Reference](https://pkg.go.dev/badge/github.com/prasrvenkat/hron/go.svg)](https://pkg.go.dev/github.com/prasrvenkat/hron/go) |
+| Go | [`hron`](go/) | [![Go Reference](https://pkg.go.dev/badge/github.com/simpllyf/hron/go/v2.svg)](https://pkg.go.dev/github.com/simpllyf/hron/go/v2) |
 | Java | [`hron`](java/) | [![Maven Central](https://img.shields.io/maven-central/v/io.hron/hron)](https://central.sonatype.com/artifact/io.hron/hron) |
 | C# | [`Hron`](csharp/Hron/) | [![NuGet](https://img.shields.io/nuget/v/Hron)](https://www.nuget.org/packages/Hron) |
 | Ruby | [`hron`](ruby/) | [![Gem Version](https://img.shields.io/gem/v/hron)](https://rubygems.org/gems/hron) |
@@ -72,7 +72,7 @@ dart pub add hron
 pip install hron
 
 # Go
-go get github.com/prasrvenkat/hron/go
+go get github.com/simpllyf/hron/go/v2
 
 # Java (Maven) — add io.hron:hron to pom.xml (see badge above for latest version)
 

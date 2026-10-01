@@ -1,6 +1,6 @@
 # hron-ts (TypeScript)
 
-Native TypeScript implementation of [hron](https://github.com/prasrvenkat/hron) — human-readable cron expressions.
+Native TypeScript implementation of [hron](https://github.com/simpllyf/hron) — human-readable cron expressions.
 
 ## Install
 
