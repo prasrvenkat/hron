@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import MAXYEAR, MINYEAR, UTC, date, datetime, time, timedelta
 from enum import Enum
 from itertools import islice, takewhile
@@ -127,7 +127,7 @@ def matches(schedule: PreparedSchedule, dt: datetime) -> bool:
     minute = dt.astimezone(UTC) - timedelta(seconds=local.second, microseconds=local.microsecond)
     # An occurrence never lands before the date it is scheduled on, so one at this minute
     # is scheduled on or before the minute's wall date.
-    ended = replace(search, clauses=search.clauses.end_on(minute.astimezone(search.zone).date()))
+    ended = search.ending_on(minute.astimezone(search.zone).date())
     found = ended.nearest(minute - timedelta(microseconds=1), _Direction.FORWARD)
     # Compared in UTC: a datetime in a fall-back overlap never equals one in another zone.
     return found is not None and found.astimezone(UTC) == minute
@@ -201,6 +201,12 @@ class Search:
             times=_daily_times(expr),
             clauses=_Clauses.of(schedule, starting, during),
         )
+
+    def ending_on(self, d: date) -> Search:
+        """This search ended on `d`: nothing after it is an occurrence. Built directly, as
+        dataclasses.replace costs a microsecond on every call to matches."""
+        clauses = self.clauses.end_on(d)
+        return Search(self.zone, self.cadence, self.candidates_in_period, self.times, clauses)
 
     def nearest(self, now: datetime, direction: _Direction) -> datetime | None:
         """The occurrence nearest `now` strictly beyond it in `direction`."""
@@ -432,7 +438,11 @@ class _Clauses:
 
     def end_on(self, d: date) -> _Clauses:
         """These clauses with the search ended on `d`: nothing after it is an occurrence."""
-        return replace(self, until=d if self.until is None else min(self.until, d))
+        until = d if self.until is None else min(self.until, d)
+        # Built directly: dataclasses.replace is slow on matches' path.
+        return _Clauses(
+            self.during, self.except_month_days, self.except_dates, until, self.starting
+        )
 
     def farthest_except_date(self, direction: _Direction) -> date | None:
         """The one-off except date farthest along `direction`: the calendar repeats only
