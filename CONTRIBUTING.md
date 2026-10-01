@@ -139,6 +139,7 @@ Where a platform needs it, an implementation may also:
 
 - Number periods by their calendar index instead of their first date, where a date type cannot hold December of year 0 or building dates is costly.
 - Drop an instant outside the supported range where it is resolved instead of filtering the result: the nearest instant is out of range only when every farther one is.
+- Find a date's slots from the index of the instant's wall minute instead of a binary search on keys, where resolving a slot is costly: forward from the next slot, backward from the slot at the wall minute read on its first pass. These are the two slot scans that may be mirrored.
 
 ## Pull Requests
 
