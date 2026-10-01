@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from cases import meant_to_parse
 
 ARGUMENTS = ["now", "datetime", "from", "to", "n"]
-ERROR_FIELDS = ["kind", "span", "suggestion"]
+ERROR_FIELDS = ["kind", "message", "span", "suggestion"]
 PARSE_KINDS = ["lex", "parse"]
 # A case counts as slower only past both, as garbage collection pauses and JIT
 # warm-up can add tens of milliseconds to any one case.
@@ -33,13 +33,9 @@ def show(outcome: dict, width: int = 160) -> str:
 
 
 def agreed(outcome: dict) -> dict:
-    """The spec fixes an error's kind, span and suggestion, and the message of a cron
-    error; each language words its other messages."""
     if outcome["ok"]:
         return outcome
-    error = outcome["error"]
-    fields = ERROR_FIELDS + ["message"] if error.get("kind") == "cron" else ERROR_FIELDS
-    return {"ok": False, "error": {key: error.get(key) for key in fields}}
+    return {"ok": False, "error": {key: outcome["error"].get(key) for key in ERROR_FIELDS}}
 
 
 def split(case_id: str, outcomes: dict[str, dict]) -> list[list[str]]:

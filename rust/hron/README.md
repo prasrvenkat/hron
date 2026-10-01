@@ -44,6 +44,16 @@ let from_cron = Schedule::from_cron("0 9 * * *").unwrap();
 println!("{schedule}");
 ```
 
+## Errors
+
+`Schedule::parse` fails with `ScheduleError::Lex` or `ScheduleError::Parse`, each with the exact message of the spec, the `input`, and a `span` that counts code points (`char`s), not bytes. A parse error may carry a `suggestion`. `display_rich()` renders the error with carets under the span:
+
+```text
+error: until dec 31 has no year: add a starting date, or use an ISO date
+  every weekday at 09:00 until dec 31
+                         ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"
+```
+
 ## Tests
 
 ```sh

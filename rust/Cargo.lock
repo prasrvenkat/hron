@@ -453,6 +453,7 @@ dependencies = [
  "criterion",
  "jiff",
  "proptest",
+ "regex",
  "serde",
  "serde_json",
 ]

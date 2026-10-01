@@ -35,18 +35,47 @@ fn parse_zoned(s: &str) -> Result<jiff::Zoned, JsError> {
     Ok(extreme.to_zoned(jiff::tz::TimeZone::UTC))
 }
 
+fn set(target: &JsValue, key: &str, value: impl Into<JsValue>) {
+    js_sys::Reflect::set(target, &key.into(), &value.into())
+        .expect("a new object accepts properties");
+}
+
 fn hron_error(error: hron::ScheduleError) -> JsValue {
-    let kind = match error {
+    let js_error: JsValue = js_sys::Error::new(&error.to_string()).into();
+    let kind = match &error {
         hron::ScheduleError::Lex { .. } => "lex",
         hron::ScheduleError::Parse { .. } => "parse",
         hron::ScheduleError::Eval { .. } => "eval",
         hron::ScheduleError::Cron { .. } => "cron",
         _ => "unknown",
     };
-    let js_error = js_sys::Error::new(&error.to_string());
-    js_sys::Reflect::set(&js_error, &"kind".into(), &kind.into())
-        .expect("a new Error accepts properties");
-    js_error.into()
+    set(&js_error, "kind", kind);
+    if let hron::ScheduleError::Lex { span, input, .. }
+    | hron::ScheduleError::Parse { span, input, .. } = &error
+    {
+        let span_object: JsValue = js_sys::Object::new().into();
+        set(&span_object, "start", span.start);
+        set(&span_object, "end", span.end);
+        set(&js_error, "span", span_object);
+        set(&js_error, "input", input.as_str());
+        let suggestion = match &error {
+            hron::ScheduleError::Parse { suggestion, .. } => suggestion.as_deref(),
+            _ => None,
+        };
+        set(&js_error, "suggestion", suggestion);
+    }
+    // String.prototype.toString bound to the rendered text is a method that returns
+    // it, without eval (blocked in Workers) or a Rust closure for JS to free.
+    let string_prototype = js_sys::Object::get_prototype_of(&"".into());
+    let to_string: js_sys::Function = js_sys::Reflect::get(&string_prototype, &"toString".into())
+        .expect("String.prototype has toString")
+        .into();
+    set(
+        &js_error,
+        "displayRich",
+        to_string.bind0(&error.display_rich().into()),
+    );
+    js_error
 }
 
 /// A parsed hron schedule, usable from JavaScript.

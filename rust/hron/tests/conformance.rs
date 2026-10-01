@@ -1,4 +1,4 @@
-use hron::Schedule;
+use hron::{Schedule, ScheduleError};
 use serde_json::Value;
 use std::sync::LazyLock;
 
@@ -22,7 +22,6 @@ fn parse_zoned(s: &str) -> jiff::Zoned {
 
 /// Fails on a field this runner does not check, and on a case with none of the
 /// section's assertion fields (spec/README.md, "Writing a runner").
-/// `parse_errors` passes no assertion fields: the section itself asserts the error.
 fn check_fields(case: &Value, inputs: &[&str], assertions: &[&str]) {
     let name = case["name"].as_str().unwrap_or("<unnamed>");
     let fields = case.as_object().expect("a case should be an object");
@@ -62,24 +61,55 @@ fn run_parse_roundtrip(section: &str, index: usize) {
 
 fn run_parse_error(index: usize) {
     let case = &SPEC["parse_errors"]["tests"][index];
-    check_fields(case, &["input", "error_contains"], &[]);
+    check_fields(case, &["input"], &["error", "display"]);
     let input = case["input"].as_str().unwrap();
+    let expected = case["error"]
+        .as_object()
+        .expect("'error' should be an object");
+    for key in expected.keys() {
+        assert!(
+            ["kind", "message", "span", "suggestion"].contains(&key.as_str()),
+            "error field '{key}' is not known to this runner"
+        );
+    }
 
     assert!(
         !Schedule::validate(input),
         "validate('{input}') is true, expected false"
     );
-    match Schedule::parse(input) {
+    let error = match Schedule::parse(input) {
         Ok(s) => panic!("expected parse error for '{input}', got: {s}"),
-        Err(e) => {
-            if let Some(expected) = case.get("error_contains") {
-                let expected = expected.as_str().unwrap();
-                assert!(
-                    e.to_string().contains(expected),
-                    "parse error for '{input}' is '{e}', expected it to contain '{expected}'"
-                );
-            }
-        }
+        Err(e) => e,
+    };
+    let (kind, span, suggestion) = match &error {
+        ScheduleError::Lex { span, .. } => ("lex", span, None),
+        ScheduleError::Parse {
+            span, suggestion, ..
+        } => ("parse", span, suggestion.as_deref()),
+        other => panic!("'{input}' failed with neither a lex nor a parse error: {other:?}"),
+    };
+    assert_eq!(kind, expected["kind"], "kind for '{input}'");
+    assert_eq!(
+        error.to_string(),
+        expected["message"],
+        "message for '{input}'"
+    );
+    assert_eq!(
+        serde_json::json!([span.start, span.end]),
+        expected["span"],
+        "span for '{input}'"
+    );
+    assert_eq!(
+        suggestion,
+        expected.get("suggestion").map(|s| s.as_str().unwrap()),
+        "suggestion for '{input}'"
+    );
+    if let Some(display) = case.get("display") {
+        assert_eq!(
+            error.display_rich(),
+            display.as_str().unwrap(),
+            "displayRich for '{input}'"
+        );
     }
 }
 

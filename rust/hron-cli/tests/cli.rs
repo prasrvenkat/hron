@@ -127,7 +127,8 @@ fn test_check_invalid() {
     hron()
         .args(["--check", "every blorp at 09:00"])
         .assert()
-        .failure();
+        .failure()
+        .stderr("error: unknown keyword 'blorp'\n  every blorp at 09:00\n        ^^^^^\n");
 }
 
 #[test]

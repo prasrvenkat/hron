@@ -78,6 +78,40 @@ try {
 }
 ```
 
+A `lex` or `parse` error also carries:
+
+| Property | Value |
+|---|---|
+| `span` | `{ start, end }`, the part of the input the error points at: `[start, end)` in code points |
+| `input` | the expression as given |
+| `suggestion` | text to put in place of the span, or `undefined` |
+
+Every hron error has `displayRich()`, which renders the message, then for `lex` and `parse` errors the input with carets under the span:
+
+```javascript
+try {
+  Schedule.parse("every weekday at 09:00 until dec 31");
+} catch (error) {
+  error.kind;       // "parse"
+  error.message;    // "until dec 31 has no year: add a starting date, or use an ISO date"
+  error.span;       // { start: 23, end: 35 }
+  error.suggestion; // "until dec 31 starting YYYY-MM-DD"
+  console.log(error.displayRich());
+  // error: until dec 31 has no year: add a starting date, or use an ISO date
+  //   every weekday at 09:00 until dec 31
+  //                          ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"
+}
+```
+
+Spans count code points, not JavaScript string (UTF-16) indices, so the two differ after a character such as an emoji. To turn a span position into a string index:
+
+```javascript
+const index = (n) => [...input].slice(0, n).join("").length;
+const text = input.slice(index(error.span.start), index(error.span.end));
+```
+
+Strings reach WebAssembly as UTF-8, so a lone surrogate arrives as U+FFFD and is reported as `unexpected character U+FFFD`, one code point wide.
+
 A datetime argument that cannot be parsed throws a plain `Error` with no `kind`.
 
 ## License

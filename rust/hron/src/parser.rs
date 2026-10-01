@@ -2,337 +2,282 @@
 
 use crate::ast::*;
 use crate::error::{ScheduleError, Span};
-use crate::lexer::{Token, TokenKind};
+use crate::lexer::{Lexer, Token, TokenKind};
+
+/// The `{what}` of each `expected {what}, got ...` error, one per phrase in
+/// the position table of spec/README.md, "Parse errors".
+mod expected {
+    pub const EVERY_OR_ON: &str = "'every' or 'on'";
+    pub const REPEATER: &str =
+        "'day', 'weekday', 'weekend', a day name, 'week', 'month', 'year' or a number";
+    pub const UNIT: &str = "a unit ('min', 'hours', 'days', 'weeks', 'months' or 'years')";
+    pub const AT: &str = "'at'";
+    pub const TIME: &str = "a time (HH:MM)";
+    pub const FROM: &str = "'from'";
+    pub const TO: &str = "'to'";
+    pub const DAY_TARGET: &str = "'day', 'weekday', 'weekend' or a day name";
+    pub const ON: &str = "'on'";
+    pub const DAY_NAME: &str = "a day name";
+    pub const THE: &str = "'the'";
+    pub const MONTH_TARGET: &str =
+        "a day such as 15th, 'last', an ordinal such as 'first', 'next', 'previous' or 'nearest'";
+    pub const MONTH_LAST: &str = "'day', 'weekday' or a day name";
+    pub const NEAREST: &str = "'nearest'";
+    pub const WEEKDAY: &str = "'weekday'";
+    pub const DAY_OF_MONTH: &str = "a day such as 15th";
+    pub const YEAR_TARGET: &str = "a month name or 'the'";
+    pub const YEAR_THE: &str = "a day such as 15th, 'last' or an ordinal such as 'first'";
+    pub const YEAR_LAST: &str = "'weekday' or a day name";
+    pub const OF: &str = "'of'";
+    pub const MONTH_NAME: &str = "a month name";
+    pub const DAY_NUMBER: &str = "a day number";
+    pub const DATE: &str = "a date (YYYY-MM-DD, or a month and day)";
+    pub const ISO_DATE: &str = "a date (YYYY-MM-DD)";
+    pub const TIMEZONE: &str = "a timezone";
+}
+
+const CLAUSE_ORDER: [(TokenKind, &str); 5] = [
+    (TokenKind::Except, "except"),
+    (TokenKind::Until, "until"),
+    (TokenKind::Starting, "starting"),
+    (TokenKind::During, "during"),
+    (TokenKind::In, "in"),
+];
 
 struct Parser<'a> {
     tokens: &'a [Token],
     pos: usize,
     input: &'a str,
+    until_bytes: Option<(usize, usize)>,
 }
 
 impl<'a> Parser<'a> {
-    fn new(tokens: &'a [Token], input: &'a str) -> Self {
-        Self {
-            tokens,
-            pos: 0,
-            input,
-        }
-    }
-
-    fn peek(&self) -> Option<&Token> {
+    fn peek(&self) -> Option<&'a Token> {
         self.tokens.get(self.pos)
     }
 
-    fn advance(&mut self) -> Option<&Token> {
-        let tok = self.tokens.get(self.pos);
-        if tok.is_some() {
+    fn peek_kind(&self) -> Option<&'a TokenKind> {
+        self.peek().map(|t| &t.kind)
+    }
+
+    fn advance(&mut self) -> &'a Token {
+        let token = &self.tokens[self.pos];
+        self.pos += 1;
+        token
+    }
+
+    fn previous(&self) -> &'a Token {
+        &self.tokens[self.pos - 1]
+    }
+
+    fn eat(&mut self, kind: &TokenKind) -> bool {
+        let found = self.peek_kind() == Some(kind);
+        if found {
             self.pos += 1;
         }
-        tok
+        found
     }
 
-    fn expect(&mut self, expected: &str) -> Result<&Token, ScheduleError> {
-        match self.peek() {
-            Some(_) => Ok(&self.tokens[self.pos]),
-            None => Err(self.error_at_end(format!("expected {expected}"))),
-        }
-    }
-
-    fn current_span(&self) -> Span {
-        if let Some(tok) = self.peek() {
-            tok.span
-        } else if let Some(last) = self.tokens.last() {
-            Span::new(last.span.end, last.span.end)
+    fn expect(&mut self, kind: &TokenKind, what: &str) -> Result<(), ScheduleError> {
+        if self.eat(kind) {
+            Ok(())
         } else {
-            Span::new(0, 0)
+            Err(self.expected(what))
         }
     }
 
-    fn error(&self, message: String, span: Span) -> ScheduleError {
+    fn text(&self, token: &Token) -> &'a str {
+        &self.input[token.start..token.end]
+    }
+
+    fn error(&self, message: String, start: usize, end: usize) -> ScheduleError {
+        let span = Span::from_byte_range(self.input, start, end);
         ScheduleError::parse(message, span, self.input, None)
     }
 
-    fn error_at_end(&self, message: String) -> ScheduleError {
-        let span = if let Some(last) = self.tokens.last() {
-            Span::new(last.span.end, last.span.end)
-        } else {
-            Span::new(0, 0)
-        };
-        ScheduleError::parse(message, span, self.input, None)
-    }
-
-    fn validate_day_number(&self, n: u32) -> Result<u8, ScheduleError> {
-        if !(1..=31).contains(&n) {
-            return Err(self.error(
-                format!("invalid day number {n} (must be 1-31)"),
-                self.current_span(),
-            ));
-        }
-        Ok(n as u8)
-    }
-
-    fn validate_named_date(
-        &self,
-        month: MonthName,
-        day: u8,
-        span: Span,
-    ) -> Result<(), ScheduleError> {
-        let max = match month {
-            MonthName::January => 31,
-            MonthName::February => 29,
-            MonthName::March => 31,
-            MonthName::April => 30,
-            MonthName::May => 31,
-            MonthName::June => 30,
-            MonthName::July => 31,
-            MonthName::August => 31,
-            MonthName::September => 30,
-            MonthName::October => 31,
-            MonthName::November => 30,
-            MonthName::December => 31,
-        };
-        if day < 1 || day > max {
-            return Err(self.error(
-                format!("invalid day {} for {} (max {})", day, month.as_str(), max),
-                span,
-            ));
-        }
-        Ok(())
-    }
-
-    fn parse_day_number(&mut self, context: &str) -> Result<(u8, Span), ScheduleError> {
-        let span = self.current_span();
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Number(n)) => {
-                let d = self.validate_day_number(*n)?;
-                self.advance();
-                Ok((d, span))
-            }
-            Some(TokenKind::OrdinalNumber(n)) => {
-                let d = self.validate_day_number(*n)?;
-                self.advance();
-                Ok((d, span))
-            }
-            _ => Err(self.error(format!("expected day number {context}"), span)),
-        }
-    }
-
-    fn consume_kind(
-        &mut self,
-        expected: &str,
-        check: impl Fn(&TokenKind) -> bool,
-    ) -> Result<&Token, ScheduleError> {
-        let span = self.current_span();
+    fn expected(&self, what: &str) -> ScheduleError {
         match self.peek() {
-            Some(tok) if check(&tok.kind) => {
-                let idx = self.pos;
-                self.pos += 1;
-                Ok(&self.tokens[idx])
+            Some(token) => self.error(
+                format!("expected {what}, got '{}'", self.text(token)),
+                token.start,
+                token.end,
+            ),
+            None => {
+                let end = self.tokens.last().map_or(0, |t| t.end);
+                self.error(format!("expected {what}, got end of input"), end, end)
             }
-            Some(tok) => Err(self.error(format!("expected {expected}, got {:?}", tok.kind), span)),
-            None => Err(self.error_at_end(format!("expected {expected}"))),
         }
     }
 
-    fn parse_expression(&mut self) -> Result<Schedule, ScheduleError> {
-        let span = self.current_span();
-        let expr = match self.peek().map(|t| &t.kind) {
+    fn parse_expression(&mut self) -> Result<ScheduleExpr, ScheduleError> {
+        match self.peek_kind() {
             Some(TokenKind::Every) => {
                 self.advance();
-                self.parse_every()?
+                self.parse_every()
             }
             Some(TokenKind::On) => {
                 self.advance();
-                self.parse_on()?
+                self.parse_on()
             }
-            _ => {
-                return Err(self.error("expected 'every' or 'on'".into(), span));
-            }
-        };
-
-        self.parse_trailing_clauses(expr)
+            _ => Err(self.expected(expected::EVERY_OR_ON)),
+        }
     }
 
-    fn parse_trailing_clauses(&mut self, expr: ScheduleExpr) -> Result<Schedule, ScheduleError> {
+    fn parse_clauses(&mut self, expr: ScheduleExpr) -> Result<Schedule, ScheduleError> {
         let mut schedule = Schedule::new(expr);
 
-        if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Except)) {
-            self.advance();
+        if self.eat(&TokenKind::Except) {
             schedule.except = self.parse_exception_list()?;
         }
 
-        let mut until_span = None;
-        if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Until)) {
-            let start = self.current_span().start;
-            self.advance();
-            schedule.until = Some(self.parse_until_spec()?);
-            until_span = Some(Span::new(start, self.tokens[self.pos - 1].span.end));
+        if self.peek_kind() == Some(&TokenKind::Until) {
+            let until = self.advance();
+            schedule.until = Some(match self.parse_date()? {
+                DateSpec::Iso(date) => UntilSpec::Iso(date),
+                DateSpec::Named { month, day } => UntilSpec::Named { month, day },
+            });
+            self.until_bytes = Some((until.start, self.previous().end));
         }
 
-        if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Starting)) {
-            self.advance();
-            match self.peek().map(|t| &t.kind) {
-                Some(TokenKind::IsoDate(d)) => {
-                    let date = self.parse_iso_date(d)?;
-                    self.advance();
-                    schedule.anchor = Some(date);
-                }
-                _ => {
-                    let span = self.current_span();
-                    return Err(self.error(
-                        "expected ISO date (YYYY-MM-DD) after 'starting'".into(),
-                        span,
-                    ));
-                }
+        if self.eat(&TokenKind::Starting) {
+            if self.peek_kind() != Some(&TokenKind::IsoDate) {
+                return Err(self.expected(expected::ISO_DATE));
             }
+            let token = self.advance();
+            schedule.anchor = Some(self.iso_date(token)?);
         }
 
-        // spec/README.md, "Named `until`": a month and day has no year of its own.
-        if let (Some(UntilSpec::Named { month, day }), None, Some(span)) =
-            (&schedule.until, schedule.anchor, until_span)
-        {
-            return Err(ScheduleError::parse(
-                "a named until date needs a starting date to resolve its year (or use an ISO date)",
-                span,
-                self.input,
-                Some(format!(
-                    "until {} {day} starting YYYY-MM-DD",
-                    month.as_str()
-                )),
-            ));
-        }
-
-        if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::During)) {
-            self.advance();
+        if self.eat(&TokenKind::During) {
             schedule.during = self.parse_month_list()?;
         }
 
-        if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::In)) {
-            self.advance();
-            match self.peek().map(|t| &t.kind) {
-                Some(TokenKind::Timezone(tz)) => {
-                    schedule.timezone = Some(self.canonical_timezone(tz)?);
-                    self.advance();
-                }
-                _ => {
-                    let span = self.current_span();
-                    return Err(self.error("expected timezone after 'in'".into(), span));
-                }
+        if self.eat(&TokenKind::In) {
+            if self.peek_kind() != Some(&TokenKind::Timezone) {
+                return Err(self.expected(expected::TIMEZONE));
             }
+            let token = self.advance();
+            schedule.timezone = Some(self.timezone(token)?);
         }
 
         Ok(schedule)
     }
 
-    fn parse_exception_list(&mut self) -> Result<Vec<Exception>, ScheduleError> {
-        let mut exceptions = Vec::new();
-        exceptions.push(self.parse_exception()?);
+    fn leftover(&self, schedule: &Schedule) -> ScheduleError {
+        let token = &self.tokens[self.pos];
+        // Every clause holds at least one item, so a clause was read exactly when its field is set.
+        let read = [
+            !schedule.except.is_empty(),
+            schedule.until.is_some(),
+            schedule.anchor.is_some(),
+            !schedule.during.is_empty(),
+            schedule.timezone.is_some(),
+        ];
+        let clause = CLAUSE_ORDER
+            .iter()
+            .position(|(kind, _)| *kind == token.kind);
+        let last_read = read.iter().rposition(|&was_read| was_read);
+        let message = match (clause, last_read) {
+            (Some(i), _) if read[i] => format!("duplicate '{}' clause", CLAUSE_ORDER[i].1),
+            (Some(i), Some(last)) => format!(
+                "'{}' must come before '{}'",
+                CLAUSE_ORDER[i].1, CLAUSE_ORDER[last].1
+            ),
+            _ => format!("unexpected '{}' after the schedule", self.text(token)),
+        };
+        self.error(message, token.start, token.end)
+    }
 
-        while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Comma)) {
-            self.advance();
+    fn check_named_until(&self, schedule: &Schedule) -> Result<(), ScheduleError> {
+        if let (Some(UntilSpec::Named { month, day }), None, Some((start, end))) =
+            (&schedule.until, schedule.anchor, self.until_bytes)
+        {
+            let month = month.as_str();
+            return Err(ScheduleError::parse(
+                format!("until {month} {day} has no year: add a starting date, or use an ISO date"),
+                Span::from_byte_range(self.input, start, end),
+                self.input,
+                Some(format!("until {month} {day} starting YYYY-MM-DD")),
+            ));
+        }
+        Ok(())
+    }
+
+    fn parse_exception_list(&mut self) -> Result<Vec<Exception>, ScheduleError> {
+        let mut exceptions = vec![self.parse_exception()?];
+        while self.eat(&TokenKind::Comma) {
             exceptions.push(self.parse_exception()?);
         }
-
         Ok(exceptions)
     }
 
-    fn parse_iso_date(&self, d: &str) -> Result<jiff::civil::Date, ScheduleError> {
-        match d.parse::<jiff::civil::Date>() {
+    fn parse_exception(&mut self) -> Result<Exception, ScheduleError> {
+        Ok(match self.parse_date()? {
+            DateSpec::Iso(date) => Exception::Iso(date),
+            DateSpec::Named { month, day } => Exception::Named { month, day },
+        })
+    }
+
+    fn parse_date(&mut self) -> Result<DateSpec, ScheduleError> {
+        match self.peek_kind() {
+            Some(TokenKind::IsoDate) => {
+                let token = self.advance();
+                self.iso_date(token)?;
+                Ok(DateSpec::Iso(self.text(token).to_string()))
+            }
+            Some(&TokenKind::MonthName(month)) => {
+                self.advance();
+                let day = self.parse_day_of(month)?;
+                Ok(DateSpec::Named { month, day })
+            }
+            _ => Err(self.expected(expected::DATE)),
+        }
+    }
+
+    fn iso_date(&self, token: &Token) -> Result<jiff::civil::Date, ScheduleError> {
+        match self.text(token).parse::<jiff::civil::Date>() {
             Ok(date) if date.year() >= 1 => Ok(date),
             _ => Err(self.error(
-                format!("invalid date: {d} (years run from 0001 to 9999)"),
-                self.current_span(),
+                format!(
+                    "date must be a calendar date from 0001-01-01 to 9999-12-31, got {}",
+                    self.text(token)
+                ),
+                token.start,
+                token.end,
             )),
         }
     }
 
     /// spec/README.md, "Parse-time validation": `UTC` or an IANA Area/Location
     /// name in any case, stored with the database's capitalization.
-    fn canonical_timezone(&self, name: &str) -> Result<String, ScheduleError> {
-        let span = self.current_span();
+    fn timezone(&self, token: &Token) -> Result<String, ScheduleError> {
+        let name = self.text(token);
         let lower = name.to_ascii_lowercase();
         // System zoneinfo directories that are not IANA names of their own.
         let legacy = ["systemv/", "posix/", "right/"]
             .iter()
             .any(|prefix| lower.starts_with(prefix));
-        if !name.is_ascii() || legacy || (lower != "utc" && !name.contains('/')) {
-            return Err(self.error(
-                format!(
-                    "unsupported timezone '{name}': use UTC or an IANA Area/Location name such as America/New_York"
-                ),
-                span,
-            ));
-        }
+        let shaped = name.is_ascii() && !legacy && (lower == "utc" || name.contains('/'));
         // jiff answers `Etc/Unknown` with its placeholder zone rather than an error.
-        match jiff::tz::TimeZone::get(name) {
-            Ok(tz) if !tz.is_unknown() => match tz.iana_name() {
-                Some(canonical) => Ok(canonical.to_string()),
-                None => Err(self.unknown_timezone(name, span)),
-            },
-            _ => Err(self.unknown_timezone(name, span)),
-        }
-    }
-
-    fn unknown_timezone(&self, name: &str, span: Span) -> ScheduleError {
-        self.error(
-            format!("unknown timezone '{name}': not in the IANA timezone database (check the spelling, e.g. America/New_York)"),
-            span,
-        )
-    }
-
-    fn parse_exception(&mut self) -> Result<Exception, ScheduleError> {
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::IsoDate(d)) => {
-                let d = d.clone();
-                self.parse_iso_date(&d)?;
-                self.advance();
-                Ok(Exception::Iso(d))
-            }
-            Some(TokenKind::MonthName(m)) => {
-                let month = parse_month_name(m).unwrap();
-                self.advance();
-                let (day, day_span) = self.parse_day_number("after month name in exception")?;
-                self.validate_named_date(month, day, day_span)?;
-                Ok(Exception::Named { month, day })
-            }
-            _ => {
-                let span = self.current_span();
-                Err(self.error("expected ISO date or month-day in exception".into(), span))
-            }
-        }
-    }
-
-    fn parse_until_spec(&mut self) -> Result<UntilSpec, ScheduleError> {
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::IsoDate(d)) => {
-                let d = d.clone();
-                self.parse_iso_date(&d)?;
-                self.advance();
-                Ok(UntilSpec::Iso(d))
-            }
-            Some(TokenKind::MonthName(m)) => {
-                let month = parse_month_name(m).unwrap();
-                self.advance();
-                let (day, day_span) = self.parse_day_number("after month name in until")?;
-                self.validate_named_date(month, day, day_span)?;
-                Ok(UntilSpec::Named { month, day })
-            }
-            _ => {
-                let span = self.current_span();
-                Err(self.error("expected ISO date or month-day after 'until'".into(), span))
-            }
-        }
+        let canonical = shaped
+            .then(|| jiff::tz::TimeZone::get(name).ok())
+            .flatten()
+            .filter(|tz| !tz.is_unknown())
+            .and_then(|tz| tz.iana_name().map(str::to_string));
+        canonical.ok_or_else(|| {
+            self.error(
+                format!("timezone must be UTC or an Area/Location name such as America/New_York, got {name}"),
+                token.start,
+                token.end,
+            )
+        })
     }
 
     fn parse_every(&mut self) -> Result<ScheduleExpr, ScheduleError> {
-        self.expect("repeater")?;
-
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Year) => {
+        match self.peek_kind() {
+            Some(TokenKind::Day) => {
                 self.advance();
-                self.parse_year_repeat(1)
+                self.parse_day_repeat(1, DayFilter::Every)
             }
-            Some(TokenKind::Day) => self.parse_day_repeat(1, DayFilter::Every),
             Some(TokenKind::Weekday) => {
                 self.advance();
                 self.parse_day_repeat(1, DayFilter::Weekday)
@@ -345,7 +290,7 @@ impl<'a> Parser<'a> {
                 let days = self.parse_day_list()?;
                 self.parse_day_repeat(1, DayFilter::Days(days))
             }
-            Some(TokenKind::Weeks) => {
+            Some(TokenKind::Week) => {
                 self.advance();
                 self.parse_week_repeat(1)
             }
@@ -353,15 +298,12 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.parse_month_repeat(1)
             }
-            Some(TokenKind::Number(_)) => self.parse_number_repeat(),
-            _ => {
-                let span = self.current_span();
-                Err(self.error(
-                    "expected day, weekday, weekend, week, year, day name, month, or number after 'every'"
-                        .into(),
-                    span,
-                ))
+            Some(TokenKind::Year) => {
+                self.advance();
+                self.parse_year_repeat(1)
             }
+            Some(&TokenKind::Number(interval)) => self.parse_number_repeat(interval),
+            _ => Err(self.expected(expected::REPEATER)),
         }
     }
 
@@ -370,10 +312,7 @@ impl<'a> Parser<'a> {
         interval: u32,
         days: DayFilter,
     ) -> Result<ScheduleExpr, ScheduleError> {
-        if days == DayFilter::Every {
-            self.consume_kind("'day'", |k| matches!(k, TokenKind::Day))?;
-        }
-        self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
+        self.expect(&TokenKind::At, expected::AT)?;
         let times = self.parse_time_list()?;
         Ok(ScheduleExpr::DayRepeat {
             interval,
@@ -382,79 +321,65 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_number_repeat(&mut self) -> Result<ScheduleExpr, ScheduleError> {
-        let num = match &self.peek().unwrap().kind {
-            TokenKind::Number(n) => *n,
-            _ => unreachable!("parse_number_repeat called without Number token"),
-        };
-        if num == 0 || num > i32::MAX as u32 {
-            let span = self.peek().unwrap().span;
+    fn parse_number_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
+        let number = self.advance();
+        if interval == 0 {
             return Err(self.error(
-                if num == 0 {
-                    format!("interval must be at least 1 (allowed 1-{})", i32::MAX)
-                } else {
-                    format!("interval number too large (allowed 1-{})", i32::MAX)
-                },
-                span,
+                format!("interval must be 1-2147483647, got {}", self.text(number)),
+                number.start,
+                number.end,
             ));
         }
-        self.advance();
 
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Weeks) => {
+        match self.peek_kind() {
+            Some(TokenKind::Week) => {
                 self.advance();
-                self.parse_week_repeat(num)
+                self.parse_week_repeat(interval)
             }
-            Some(TokenKind::IntervalUnit(_)) => self.parse_interval_repeat(num),
-            Some(TokenKind::Day) => self.parse_day_repeat(num, DayFilter::Every),
+            Some(&TokenKind::IntervalUnit(unit)) => {
+                self.advance();
+                self.parse_interval_repeat(interval, unit)
+            }
+            Some(TokenKind::Day) => {
+                self.advance();
+                self.parse_day_repeat(interval, DayFilter::Every)
+            }
             Some(TokenKind::Month) => {
                 self.advance();
-                self.parse_month_repeat(num)
+                self.parse_month_repeat(interval)
             }
             Some(TokenKind::Year) => {
                 self.advance();
-                self.parse_year_repeat(num)
+                self.parse_year_repeat(interval)
             }
-            _ => {
-                let span = self.current_span();
-                Err(self.error(
-                    "expected 'weeks', 'days', 'months', 'years', 'min', 'minutes', 'hour', or 'hours' after number".into(),
-                    span,
-                ))
-            }
+            _ => Err(self.expected(expected::UNIT)),
         }
     }
 
-    fn parse_interval_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
-        let unit_str = match &self.peek().unwrap().kind {
-            TokenKind::IntervalUnit(u) => u.clone(),
-            _ => unreachable!("parse_interval_repeat called without IntervalUnit token"),
-        };
-        self.advance();
-
-        let unit = match unit_str.as_str() {
-            "min" => IntervalUnit::Minutes,
-            "hours" => IntervalUnit::Hours,
-            _ => unreachable!("lexer produced invalid IntervalUnit: {unit_str}"),
-        };
-
-        self.consume_kind("'from'", |k| matches!(k, TokenKind::From))?;
+    fn parse_interval_repeat(
+        &mut self,
+        interval: u32,
+        unit: IntervalUnit,
+    ) -> Result<ScheduleExpr, ScheduleError> {
+        self.expect(&TokenKind::From, expected::FROM)?;
         let from = self.parse_time()?;
-        self.consume_kind("'to'", |k| matches!(k, TokenKind::To))?;
-        let to_span = self.current_span();
+        let from_token = self.previous();
+        self.expect(&TokenKind::To, expected::TO)?;
         let to = self.parse_time()?;
+        let to_token = self.previous();
         if from > to {
             return Err(self.error(
                 format!(
-                    "time range from {:02}:{:02} to {:02}:{:02} is reversed: a window cannot cross midnight, so 'from' must not be later than 'to'",
-                    from.hour, from.minute, to.hour, to.minute
+                    "time window must not run backwards: {} to {} (a window cannot cross midnight)",
+                    self.text(from_token),
+                    self.text(to_token)
                 ),
-                to_span,
+                from_token.start,
+                to_token.end,
             ));
         }
 
-        let day_filter = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::On)) {
-            self.advance();
+        let day_filter = if self.eat(&TokenKind::On) {
             Some(self.parse_day_target()?)
         } else {
             None
@@ -470,11 +395,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_week_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
-        self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
+        self.expect(&TokenKind::On, expected::ON)?;
         let days = self.parse_day_list()?;
-        self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
+        self.expect(&TokenKind::At, expected::AT)?;
         let times = self.parse_time_list()?;
-
         Ok(ScheduleExpr::WeekRepeat {
             interval,
             days,
@@ -483,74 +407,38 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_month_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
-        self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
-        self.consume_kind("'the'", |k| matches!(k, TokenKind::The))?;
+        self.expect(&TokenKind::On, expected::ON)?;
+        self.expect(&TokenKind::The, expected::THE)?;
 
-        let target = match self.peek().map(|t| &t.kind) {
+        let target = match self.peek_kind() {
             Some(TokenKind::Last) => {
                 self.advance();
-                match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::Day) => {
-                        self.advance();
-                        MonthTarget::LastDay
-                    }
-                    Some(TokenKind::Weekday) => {
-                        self.advance();
-                        MonthTarget::LastWeekday
-                    }
-                    Some(TokenKind::DayName(name)) => {
-                        let weekday = parse_weekday(name).unwrap();
-                        self.advance();
-                        MonthTarget::OrdinalWeekday {
-                            ordinal: OrdinalPosition::Last,
-                            weekday,
-                        }
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        return Err(self.error(
-                            "expected 'day', 'weekday', or day name after 'last'".into(),
-                            span,
-                        ));
-                    }
-                }
+                let target = match self.peek_kind() {
+                    Some(TokenKind::Day) => MonthTarget::LastDay,
+                    Some(TokenKind::Weekday) => MonthTarget::LastWeekday,
+                    Some(&TokenKind::DayName(weekday)) => MonthTarget::OrdinalWeekday {
+                        ordinal: OrdinalPosition::Last,
+                        weekday,
+                    },
+                    _ => return Err(self.expected(expected::MONTH_LAST)),
+                };
+                self.advance();
+                target
             }
-            Some(TokenKind::Ordinal(_)) => {
-                let ordinal = self.parse_ordinal_position()?;
-                match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::DayName(name)) => {
-                        let weekday = parse_weekday(name).unwrap();
-                        self.advance();
-                        MonthTarget::OrdinalWeekday { ordinal, weekday }
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        return Err(self.error(
-                            "expected day name after ordinal in monthly expression".into(),
-                            span,
-                        ));
-                    }
-                }
+            Some(&TokenKind::Ordinal(ordinal)) => {
+                self.advance();
+                let weekday = self.parse_day_name()?;
+                MonthTarget::OrdinalWeekday { ordinal, weekday }
             }
-            Some(TokenKind::OrdinalNumber(_)) => {
-                let days = self.parse_ordinal_day_list()?;
-                MonthTarget::Days(days)
-            }
-            Some(TokenKind::Next) | Some(TokenKind::Previous) | Some(TokenKind::Nearest) => {
+            Some(TokenKind::OrdinalNumber(_)) => MonthTarget::Days(self.parse_ordinal_day_list()?),
+            Some(TokenKind::Next | TokenKind::Previous | TokenKind::Nearest) => {
                 self.parse_nearest_weekday_target()?
             }
-            _ => {
-                let span = self.current_span();
-                return Err(self.error(
-                    "expected ordinal day (1st, 15th), 'last', ordinal (first, second, ...), or '[next|previous] nearest' after 'the'".into(),
-                    span,
-                ));
-            }
+            _ => return Err(self.expected(expected::MONTH_TARGET)),
         };
 
-        self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
+        self.expect(&TokenKind::At, expected::AT)?;
         let times = self.parse_time_list()?;
-
         Ok(ScheduleExpr::MonthRepeat {
             interval,
             target,
@@ -559,68 +447,121 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_nearest_weekday_target(&mut self) -> Result<MonthTarget, ScheduleError> {
-        let direction = match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Next) => {
-                self.advance();
-                Some(NearestDirection::Next)
-            }
-            Some(TokenKind::Previous) => {
-                self.advance();
-                Some(NearestDirection::Previous)
-            }
-            _ => None,
+        let direction = if self.eat(&TokenKind::Next) {
+            Some(NearestDirection::Next)
+        } else if self.eat(&TokenKind::Previous) {
+            Some(NearestDirection::Previous)
+        } else {
+            None
         };
-
-        self.consume_kind("'nearest'", |k| matches!(k, TokenKind::Nearest))?;
-        self.consume_kind("'weekday'", |k| matches!(k, TokenKind::Weekday))?;
-        self.consume_kind("'to'", |k| matches!(k, TokenKind::To))?;
-
-        let day = self.parse_ordinal_day_number()?;
-
+        self.expect(&TokenKind::Nearest, expected::NEAREST)?;
+        self.expect(&TokenKind::Weekday, expected::WEEKDAY)?;
+        self.expect(&TokenKind::To, expected::TO)?;
+        let (day, _) = self.parse_ordinal_day()?;
         Ok(MonthTarget::NearestWeekday { day, direction })
     }
 
-    fn parse_ordinal_day_number(&mut self) -> Result<u8, ScheduleError> {
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::OrdinalNumber(n)) => {
-                let d = self.validate_day_number(*n)?;
-                self.advance();
-                Ok(d)
-            }
-            _ => {
-                let span = self.current_span();
-                Err(self.error("expected ordinal day number".into(), span))
-            }
+    fn parse_ordinal_day_list(&mut self) -> Result<Vec<DayOfMonthSpec>, ScheduleError> {
+        let mut specs = vec![self.parse_ordinal_day_spec()?];
+        while self.eat(&TokenKind::Comma) {
+            specs.push(self.parse_ordinal_day_spec()?);
+        }
+        Ok(specs)
+    }
+
+    fn parse_ordinal_day_spec(&mut self) -> Result<DayOfMonthSpec, ScheduleError> {
+        let (start, start_token) = self.parse_ordinal_day()?;
+        if !self.eat(&TokenKind::To) {
+            return Ok(DayOfMonthSpec::Single(start));
+        }
+        let (end, end_token) = self.parse_ordinal_day()?;
+        if start > end {
+            return Err(self.error(
+                format!(
+                    "day range must not run backwards: {} to {}",
+                    self.text(start_token),
+                    self.text(end_token)
+                ),
+                start_token.start,
+                end_token.end,
+            ));
+        }
+        Ok(DayOfMonthSpec::Range(start, end))
+    }
+
+    fn parse_ordinal_day(&mut self) -> Result<(u8, &'a Token), ScheduleError> {
+        let Some(&TokenKind::OrdinalNumber(n)) = self.peek_kind() else {
+            return Err(self.expected(expected::DAY_OF_MONTH));
+        };
+        let token = self.advance();
+        Ok((self.day_of_month(n, token)?, token))
+    }
+
+    fn parse_day_of(&mut self, month: MonthName) -> Result<u8, ScheduleError> {
+        let (Some(&TokenKind::Number(n)) | Some(&TokenKind::OrdinalNumber(n))) = self.peek_kind()
+        else {
+            return Err(self.expected(expected::DAY_NUMBER));
+        };
+        let token = self.advance();
+        let day = self.day_of_month(n, token)?;
+        self.check_day_in_month(day, token, month)?;
+        Ok(day)
+    }
+
+    fn day_of_month(&self, n: u32, token: &Token) -> Result<u8, ScheduleError> {
+        match u8::try_from(n) {
+            Ok(day) if (1..=31).contains(&day) => Ok(day),
+            _ => Err(self.error(
+                format!("day must be 1-31, got {}", self.text(token)),
+                token.start,
+                token.end,
+            )),
         }
     }
 
-    fn parse_year_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
-        self.consume_kind("'on'", |k| matches!(k, TokenKind::On))?;
+    fn check_day_in_month(
+        &self,
+        day: u8,
+        token: &Token,
+        month: MonthName,
+    ) -> Result<(), ScheduleError> {
+        let max = match month {
+            MonthName::February => 29,
+            MonthName::April | MonthName::June | MonthName::September | MonthName::November => 30,
+            _ => 31,
+        };
+        if day > max {
+            return Err(self.error(
+                format!(
+                    "day must be 1-{max} for {}, got {}",
+                    month.as_str(),
+                    self.text(token)
+                ),
+                token.start,
+                token.end,
+            ));
+        }
+        Ok(())
+    }
 
-        let target = match self.peek().map(|t| &t.kind) {
+    fn parse_year_repeat(&mut self, interval: u32) -> Result<ScheduleExpr, ScheduleError> {
+        self.expect(&TokenKind::On, expected::ON)?;
+
+        let target = match self.peek_kind() {
             Some(TokenKind::The) => {
                 self.advance();
                 self.parse_year_target_after_the()?
             }
-            Some(TokenKind::MonthName(m)) => {
-                let month = parse_month_name(m).unwrap();
+            Some(&TokenKind::MonthName(month)) => {
                 self.advance();
-                let (day, day_span) = self.parse_day_number("after month name")?;
-                self.validate_named_date(month, day, day_span)?;
+                let day = self.parse_day_of(month)?;
                 YearTarget::Date { month, day }
             }
-            _ => {
-                let span = self.current_span();
-                return Err(self.error(
-                    "expected month name or 'the' after 'every year on'".into(),
-                    span,
-                ));
-            }
+            _ => return Err(self.expected(expected::YEAR_TARGET)),
         };
 
-        self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
+        self.expect(&TokenKind::At, expected::AT)?;
         let times = self.parse_time_list()?;
-
         Ok(ScheduleExpr::YearRepeat {
             interval,
             target,
@@ -629,152 +570,76 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_year_target_after_the(&mut self) -> Result<YearTarget, ScheduleError> {
-        match self.peek().map(|t| &t.kind) {
+        match self.peek_kind() {
             Some(TokenKind::Last) => {
                 self.advance();
-                match self.peek().map(|t| &t.kind) {
+                match self.peek_kind() {
                     Some(TokenKind::Weekday) => {
                         self.advance();
-                        self.consume_kind("'of'", |k| matches!(k, TokenKind::Of))?;
-                        let month = self.parse_month_name_token()?;
+                        self.expect(&TokenKind::Of, expected::OF)?;
+                        let month = self.parse_month_name()?;
                         Ok(YearTarget::LastWeekday { month })
                     }
-                    Some(TokenKind::DayName(name)) => {
-                        let weekday = parse_weekday(name).unwrap();
+                    Some(&TokenKind::DayName(weekday)) => {
                         self.advance();
-                        self.consume_kind("'of'", |k| matches!(k, TokenKind::Of))?;
-                        let month = self.parse_month_name_token()?;
+                        self.expect(&TokenKind::Of, expected::OF)?;
+                        let month = self.parse_month_name()?;
                         Ok(YearTarget::OrdinalWeekday {
                             ordinal: OrdinalPosition::Last,
                             weekday,
                             month,
                         })
                     }
-                    _ => {
-                        let span = self.current_span();
-                        Err(self.error(
-                            "expected 'weekday' or day name after 'last' in yearly expression"
-                                .into(),
-                            span,
-                        ))
-                    }
+                    _ => Err(self.expected(expected::YEAR_LAST)),
                 }
             }
-            Some(TokenKind::Ordinal(_)) => {
-                let ordinal = self.parse_ordinal_position()?;
-                match self.peek().map(|t| &t.kind) {
-                    Some(TokenKind::DayName(name)) => {
-                        let weekday = parse_weekday(name).unwrap();
-                        self.advance();
-                        self.consume_kind("'of'", |k| matches!(k, TokenKind::Of))?;
-                        let month = self.parse_month_name_token()?;
-                        Ok(YearTarget::OrdinalWeekday {
-                            ordinal,
-                            weekday,
-                            month,
-                        })
-                    }
-                    _ => {
-                        let span = self.current_span();
-                        Err(self.error(
-                            "expected day name after ordinal in yearly expression".into(),
-                            span,
-                        ))
-                    }
-                }
-            }
-            Some(TokenKind::OrdinalNumber(n)) => {
-                let day = self.validate_day_number(*n)?;
-                let day_span = self.current_span();
+            Some(&TokenKind::Ordinal(ordinal)) => {
                 self.advance();
-                self.consume_kind("'of'", |k| matches!(k, TokenKind::Of))?;
-                let month = self.parse_month_name_token()?;
-                self.validate_named_date(month, day, day_span)?;
+                let weekday = self.parse_day_name()?;
+                self.expect(&TokenKind::Of, expected::OF)?;
+                let month = self.parse_month_name()?;
+                Ok(YearTarget::OrdinalWeekday {
+                    ordinal,
+                    weekday,
+                    month,
+                })
+            }
+            Some(TokenKind::OrdinalNumber(_)) => {
+                let (day, day_token) = self.parse_ordinal_day()?;
+                self.expect(&TokenKind::Of, expected::OF)?;
+                let month = self.parse_month_name()?;
+                self.check_day_in_month(day, day_token, month)?;
                 Ok(YearTarget::DayOfMonth { day, month })
             }
-            _ => {
-                let span = self.current_span();
-                Err(self.error(
-                    "expected ordinal, day number, or 'last' after 'the' in yearly expression"
-                        .into(),
-                    span,
-                ))
-            }
+            _ => Err(self.expected(expected::YEAR_THE)),
         }
     }
 
-    fn parse_month_name_token(&mut self) -> Result<MonthName, ScheduleError> {
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::MonthName(m)) => {
-                let month = parse_month_name(m).unwrap();
-                self.advance();
-                Ok(month)
-            }
-            _ => {
-                let span = self.current_span();
-                Err(self.error("expected month name".into(), span))
-            }
-        }
+    fn parse_month_name(&mut self) -> Result<MonthName, ScheduleError> {
+        let Some(&TokenKind::MonthName(month)) = self.peek_kind() else {
+            return Err(self.expected(expected::MONTH_NAME));
+        };
+        self.advance();
+        Ok(month)
     }
 
-    fn parse_ordinal_position(&mut self) -> Result<OrdinalPosition, ScheduleError> {
-        let span = self.current_span();
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Ordinal(s)) => {
-                let pos = match s.as_str() {
-                    "first" => OrdinalPosition::First,
-                    "second" => OrdinalPosition::Second,
-                    "third" => OrdinalPosition::Third,
-                    "fourth" => OrdinalPosition::Fourth,
-                    "fifth" => OrdinalPosition::Fifth,
-                    _ => return Err(self.error(format!("unknown ordinal '{s}'"), span)),
-                };
-                self.advance();
-                Ok(pos)
-            }
-            Some(TokenKind::Last) => {
-                self.advance();
-                Ok(OrdinalPosition::Last)
-            }
-            _ => Err(self.error(
-                "expected ordinal (first, second, third, fourth, fifth, last)".into(),
-                span,
-            )),
+    fn parse_month_list(&mut self) -> Result<Vec<MonthName>, ScheduleError> {
+        let mut months = vec![self.parse_month_name()?];
+        while self.eat(&TokenKind::Comma) {
+            months.push(self.parse_month_name()?);
         }
+        Ok(months)
     }
 
     fn parse_on(&mut self) -> Result<ScheduleExpr, ScheduleError> {
-        let date = self.parse_date_target()?;
-        self.consume_kind("'at'", |k| matches!(k, TokenKind::At))?;
+        let date = self.parse_date()?;
+        self.expect(&TokenKind::At, expected::AT)?;
         let times = self.parse_time_list()?;
-
         Ok(ScheduleExpr::SingleDate { date, times })
     }
 
-    fn parse_date_target(&mut self) -> Result<DateSpec, ScheduleError> {
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::IsoDate(d)) => {
-                let d = d.clone();
-                self.parse_iso_date(&d)?;
-                self.advance();
-                Ok(DateSpec::Iso(d))
-            }
-            Some(TokenKind::MonthName(m)) => {
-                let month = parse_month_name(m).unwrap();
-                self.advance();
-                let (day, day_span) = self.parse_day_number("after month name")?;
-                self.validate_named_date(month, day, day_span)?;
-                Ok(DateSpec::Named { month, day })
-            }
-            _ => {
-                let span = self.current_span();
-                Err(self.error("expected date (ISO date or month name)".into(), span))
-            }
-        }
-    }
-
     fn parse_day_target(&mut self) -> Result<DayFilter, ScheduleError> {
-        match self.peek().map(|t| &t.kind) {
+        match self.peek_kind() {
             Some(TokenKind::Day) => {
                 self.advance();
                 Ok(DayFilter::Every)
@@ -787,142 +652,46 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(DayFilter::Weekend)
             }
-            Some(TokenKind::DayName(_)) => {
-                let days = self.parse_day_list()?;
-                Ok(DayFilter::Days(days))
-            }
-            _ => {
-                let span = self.current_span();
-                Err(self.error(
-                    "expected 'day', 'weekday', 'weekend', or day name".into(),
-                    span,
-                ))
-            }
+            Some(TokenKind::DayName(_)) => Ok(DayFilter::Days(self.parse_day_list()?)),
+            _ => Err(self.expected(expected::DAY_TARGET)),
         }
+    }
+
+    fn parse_day_name(&mut self) -> Result<Weekday, ScheduleError> {
+        let Some(&TokenKind::DayName(weekday)) = self.peek_kind() else {
+            return Err(self.expected(expected::DAY_NAME));
+        };
+        self.advance();
+        Ok(weekday)
     }
 
     fn parse_day_list(&mut self) -> Result<Vec<Weekday>, ScheduleError> {
-        let mut days = Vec::new();
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::DayName(name)) => {
-                days.push(parse_weekday(name).unwrap());
-                self.advance();
-            }
-            _ => {
-                let span = self.current_span();
-                return Err(self.error("expected day name".into(), span));
-            }
+        let mut days = vec![self.parse_day_name()?];
+        while self.eat(&TokenKind::Comma) {
+            days.push(self.parse_day_name()?);
         }
-
-        while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Comma)) {
-            self.advance();
-            match self.peek().map(|t| &t.kind) {
-                Some(TokenKind::DayName(name)) => {
-                    days.push(parse_weekday(name).unwrap());
-                    self.advance();
-                }
-                _ => {
-                    let span = self.current_span();
-                    return Err(self.error("expected day name after ','".into(), span));
-                }
-            }
-        }
-
         Ok(days)
-    }
-
-    fn parse_ordinal_day_list(&mut self) -> Result<Vec<DayOfMonthSpec>, ScheduleError> {
-        let mut specs = Vec::new();
-        specs.push(self.parse_ordinal_day_spec()?);
-
-        while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Comma)) {
-            self.advance();
-            specs.push(self.parse_ordinal_day_spec()?);
-        }
-
-        Ok(specs)
-    }
-
-    fn parse_ordinal_day_spec(&mut self) -> Result<DayOfMonthSpec, ScheduleError> {
-        let start = match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::OrdinalNumber(n)) => {
-                let d = self.validate_day_number(*n)?;
-                self.advance();
-                d
-            }
-            _ => {
-                let span = self.current_span();
-                return Err(self.error("expected ordinal day number".into(), span));
-            }
-        };
-
-        if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::To)) {
-            self.advance();
-            let end = match self.peek().map(|t| &t.kind) {
-                Some(TokenKind::OrdinalNumber(n)) => {
-                    let d = self.validate_day_number(*n)?;
-                    self.advance();
-                    d
-                }
-                _ => {
-                    let span = self.current_span();
-                    return Err(self.error("expected ordinal day number after 'to'".into(), span));
-                }
-            };
-            if start > end {
-                let span = self.current_span();
-                return Err(self.error(
-                    format!(
-                        "invalid day range: {} to {} (start must be <= end)",
-                        start, end
-                    ),
-                    span,
-                ));
-            }
-            Ok(DayOfMonthSpec::Range(start, end))
-        } else {
-            Ok(DayOfMonthSpec::Single(start))
-        }
-    }
-
-    fn parse_month_list(&mut self) -> Result<Vec<MonthName>, ScheduleError> {
-        let mut months = vec![self.parse_month_name_token()?];
-        while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Comma)) {
-            self.advance();
-            months.push(self.parse_month_name_token()?);
-        }
-        Ok(months)
     }
 
     fn parse_time_list(&mut self) -> Result<Vec<TimeOfDay>, ScheduleError> {
         let mut times = vec![self.parse_time()?];
-        while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Comma)) {
-            self.advance();
+        while self.eat(&TokenKind::Comma) {
             times.push(self.parse_time()?);
         }
         Ok(times)
     }
 
     fn parse_time(&mut self) -> Result<TimeOfDay, ScheduleError> {
-        let span = self.current_span();
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Time(h, m)) => {
-                let time = TimeOfDay {
-                    hour: *h,
-                    minute: *m,
-                };
-                self.advance();
-                Ok(time)
-            }
-            _ => Err(self.error("expected time (HH:MM)".into(), span)),
-        }
+        let Some(&TokenKind::Time(hour, minute)) = self.peek_kind() else {
+            return Err(self.expected(expected::TIME));
+        };
+        self.advance();
+        Ok(TimeOfDay { hour, minute })
     }
 }
 
 pub fn parse(input: &str) -> Result<Schedule, ScheduleError> {
-    let mut lexer = crate::lexer::Lexer::new(input);
-    let tokens = lexer.tokenize()?;
-
+    let tokens = Lexer::new(input).tokenize()?;
     if tokens.is_empty() {
         return Err(ScheduleError::parse(
             "empty expression",
@@ -932,19 +701,19 @@ pub fn parse(input: &str) -> Result<Schedule, ScheduleError> {
         ));
     }
 
-    let mut parser = Parser::new(&tokens, input);
-    let schedule = parser.parse_expression()?;
-
+    let mut parser = Parser {
+        tokens: &tokens,
+        pos: 0,
+        input,
+        until_bytes: None,
+    };
+    let expr = parser.parse_expression()?;
+    let schedule = parser.parse_clauses(expr)?;
     if parser.peek().is_some() {
-        let span = parser.current_span();
-        return Err(ScheduleError::parse(
-            "unexpected tokens after expression",
-            span,
-            input,
-            None,
-        ));
+        return Err(parser.leftover(&schedule));
     }
-
+    // spec/README.md, "Parse errors": every other error wins over a named until without starting.
+    parser.check_named_until(&schedule)?;
     Ok(schedule)
 }
 
