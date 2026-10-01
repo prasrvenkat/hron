@@ -225,26 +225,39 @@ module Hron
           end
           Occurrence.new(nearest, landing) if nearest
         when DailyTimes::Slots
-          minutes = @times.minutes
-          # Slot keys never decrease in wall-clock order, so the slots beyond now in
-          # direction are the ones past a single boundary.
-          if direction.forward?
-            first = minutes.bsearch_index { |minute| WallClock.slot_on(date, minute, @zone).key > now }
-            instant = first && first_instant(minutes[first..], date)
-          else
-            stop = minutes.bsearch_index { |minute| WallClock.slot_on(date, minute, @zone).key >= now } || minutes.size
-            instant = first_instant(minutes[0...stop].reverse!, date)
-          end
+          instant = nearest_slot(date, now, direction)
           # A slot outside a gap is the first pass of its wall time, so it lands on its date.
           Occurrence.new(instant, date) if instant
         end
       end
 
-      # The instant of the first of minutes whose slot on date is not in a gap.
-      def first_instant(minutes, date)
-        minutes.each do |minute|
-          instant = WallClock.slot_on(date, minute, @zone).instant
-          return instant if instant
+      # The instant of the slot on date nearest now strictly beyond it in direction. Slot keys
+      # never decrease in wall-clock order, so one binary search finds where the slots past now
+      # begin, and the scan starts from the slot beside that boundary that the search resolved.
+      def nearest_slot(date, now, direction)
+        minutes = @times.minutes
+        forward = direction.forward?
+        low = 0
+        high = minutes.size
+        below = above = nil
+        while low < high
+          middle = (low + high) / 2
+          slot = WallClock.slot_on(date, minutes[middle], @zone)
+          if forward ? slot.key > now : slot.key >= now
+            high = middle
+            above = slot
+          else
+            low = middle + 1
+            below = slot
+          end
+        end
+        index, slot = forward ? [low, above] : [low - 1, below]
+        while index >= 0 && index < minutes.size
+          slot ||= WallClock.slot_on(date, minutes[index], @zone)
+          return slot.instant if slot.instant
+
+          slot = nil
+          index += direction.sign
         end
         nil
       end

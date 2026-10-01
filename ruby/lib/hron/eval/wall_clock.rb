@@ -22,9 +22,11 @@ module Hron
         instant = first_pass(wall, zone) { nil }
         return instant, date if instant
 
-        # Read with the offset in force before the gap, a wall time in it lands past it.
-        instant = wall - gap_transition(wall, zone).previous_offset.utc_total_offset
-        local = instant + zone.period_for_utc(instant).utc_total_offset
+        # Read with the offset in force before the gap, a wall time in it lands past it, where
+        # the offset after the gap reads it.
+        transition = gap_transition(wall, zone)
+        instant = wall - transition.previous_offset.utc_total_offset
+        local = instant + transition.offset.utc_total_offset
         [instant, Date.new(local.year, local.month, local.day, Date::GREGORIAN)]
       end
 
