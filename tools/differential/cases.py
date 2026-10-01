@@ -142,7 +142,9 @@ SPARSE_EXPRS = [
     "every day at 09:00 until mar 1 starting 9999-03-02",
     "every 2147483647 days at 09:00 except feb 1, feb 15, feb 28, feb 29 during feb",
     "every 2147483647 months on the 31st at 09:00 during feb in America/New_York",
-    "every 2 days at 09:00 during feb except " + ", ".join(f"feb {day}" for day in range(1, 30)),
+    "every 2 days at 09:00 except "
+    + ", ".join(f"feb {day}" for day in range(1, 30))
+    + " during feb",
 ]
 SPARSE_NOWS = [
     datetime(1, 1, 2, tzinfo=UTC),
