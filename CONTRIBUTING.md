@@ -73,9 +73,11 @@ If you're adding or modifying hron syntax:
 
 If you're fixing a bug or optimizing a single implementation:
 
-1. Make the change
-2. Ensure conformance tests still pass: `just test-all`
-3. If the fix is relevant to other implementations, apply it there too
+1. For a refactor, record the current behaviour first: `just diff --save tools/differential/.build/before.json`
+2. Make the change
+3. Ensure conformance tests still pass: `just test-all`
+4. For a refactor, show nothing changed: `just diff --compare tools/differential/.build/before.json` (see [tools/differential](tools/differential/README.md))
+5. If the fix is relevant to other implementations, apply it there too
 
 ### Adding Conformance Tests
 

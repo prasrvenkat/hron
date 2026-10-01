@@ -1,0 +1,10 @@
+name: hron_differential
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  hron:
+    path: ../../../../dart
+  timezone: ^0.11.0
