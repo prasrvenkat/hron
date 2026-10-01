@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import MAXYEAR, MINYEAR, UTC, date, datetime, time, timedelta
 from enum import Enum
 from itertools import islice, takewhile
@@ -121,13 +121,16 @@ def matches(schedule: PreparedSchedule, dt: datetime) -> bool:
     if not _in_supported_range(dt):
         return False
     search = schedule.search()
-    local = dt.astimezone(search.zone).replace(second=0, microsecond=0)
-    minute = local.astimezone(UTC)
+    # Seconds are dropped on the timeline: dropping them from the wall time could move it
+    # into a gap a sub-minute offset change opens.
+    local = dt.astimezone(search.zone)
+    minute = dt.astimezone(UTC) - timedelta(seconds=local.second, microseconds=local.microsecond)
     # An occurrence never lands before the date it is scheduled on, so one at this minute
     # is scheduled on or before the minute's wall date.
-    clauses = search.clauses.end_on(local.date())
-    best = search.best(minute - timedelta(microseconds=1), _Direction.FORWARD, clauses)
-    return best is not None and best.instant == minute and _in_supported_range(minute)
+    ended = replace(search, clauses=search.clauses.end_on(minute.astimezone(search.zone).date()))
+    found = ended.nearest(minute - timedelta(microseconds=1), _Direction.FORWARD)
+    # Compared in UTC: a datetime in a fall-back overlap never equals one in another zone.
+    return found is not None and found.astimezone(UTC) == minute
 
 
 def next_n_from(schedule: PreparedSchedule, now: datetime, n: int) -> list[datetime]:
@@ -201,14 +204,13 @@ class Search:
 
     def nearest(self, now: datetime, direction: _Direction) -> datetime | None:
         """The occurrence nearest `now` strictly beyond it in `direction`."""
-        best = self.best(now.astimezone(UTC), direction, self.clauses)
+        best = self._best(now.astimezone(UTC), direction)
         if best is None or not _in_supported_range(best.instant):
             return None
         return best.instant.astimezone(self.zone)
 
-    def best(self, now: datetime, direction: _Direction, clauses: _Clauses) -> _Occurrence | None:
-        """The occurrence nearest `now`, a UTC instant, strictly beyond it in `direction`
-        under `clauses`, in or out of the supported range."""
+    def _best(self, now: datetime, direction: _Direction) -> _Occurrence | None:
+        clauses = self.clauses
         local = now.astimezone(self.zone)
         now_date = local.date()
         first_date = clauses.clamp(now_date, direction)
@@ -271,16 +273,14 @@ class Search:
         """The slot on `d` nearest `now`, read on the zone's clock as `local`, strictly beyond
         it in `direction`. Slot keys never decrease in wall-clock order, so one search finds
         where they part around now, and the nearest is the first slot with an instant from
-        there in `direction`. Each key costs a zone lookup, so the search starts where now's
-        wall time parts the slots' wall times, which is where their keys part unless a
-        transition is near."""
+        there in `direction`. The search starts where now's wall time parts the slots' wall
+        times, which is where their keys part unless a transition is near."""
         zone = self.zone
         forward = direction is _Direction.FORWARD
         probed: dict[int, Slot] = {}
 
         def earlier(i: int) -> bool:
-            """Whether slot `i` is on now's earlier side, where a key equal to now's falls
-            when the search moves away from it."""
+            """Whether slot `i`'s key is before now, or equal to it when searching forward."""
             slot = probed[i] = slot_on(d, minutes[i], zone)
             return slot.key <= now if forward else slot.key < now
 
@@ -432,10 +432,7 @@ class _Clauses:
 
     def end_on(self, d: date) -> _Clauses:
         """These clauses with the search ended on `d`: nothing after it is an occurrence."""
-        until = d if self.until is None else min(self.until, d)
-        return _Clauses(
-            self.during, self.except_month_days, self.except_dates, until, self.starting
-        )
+        return replace(self, until=d if self.until is None else min(self.until, d))
 
     def farthest_except_date(self, direction: _Direction) -> date | None:
         """The one-off except date farthest along `direction`: the calendar repeats only

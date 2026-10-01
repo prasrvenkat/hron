@@ -123,3 +123,26 @@ def test_matches_is_false_for_a_minute_that_starts_before_the_supported_range() 
     # range's first instant starts before it.
     schedule = Schedule.parse("every day at 09:18 in Asia/Tokyo")
     assert not schedule.matches(datetime(1, 1, 2, tzinfo=UTC))
+
+
+@pytest.mark.parametrize(
+    ("expression", "instant"),
+    [
+        pytest.param(
+            "every day at 00:01, 00:02 in Europe/London",
+            datetime(1847, 12, 1, 0, 1, 15, tzinfo=UTC),
+            id="london-lmt-to-gmt",
+        ),
+        pytest.param(
+            "every day at 00:00, 00:01 in Europe/Amsterdam",
+            datetime(1937, 6, 30, 22, 40, 28, tzinfo=UTC),
+            id="amsterdam-1937",
+        ),
+    ],
+)
+def test_matches_drops_seconds_on_the_timeline_not_into_a_sub_minute_gap(
+    expression: str, instant: datetime
+) -> None:
+    # The wall minute's start falls in a gap of under a minute; dropping seconds from the
+    # wall time would land past the gap, on a listed time.
+    assert not Schedule.parse(expression).matches(instant)
