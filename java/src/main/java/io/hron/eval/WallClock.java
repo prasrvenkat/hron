@@ -30,30 +30,23 @@ final class WallClock {
   }
 
   /**
-   * The instant of the interval slot {@code minute} minutes after midnight on {@code date}, or
-   * empty when that wall time falls in a spring-forward gap (spec/README.md, "Interval slots in a
-   * spring-forward gap").
+   * An interval slot on a date: where it sits in time, and its instant unless a spring-forward gap
+   * skips it (spec/README.md, "Interval slots in a spring-forward gap"). A skipped slot sits at the
+   * instant its gap ends, so keys never decrease in wall-clock order and one binary search finds
+   * the slots on either side of an instant.
    */
-  static Optional<ZonedDateTime> slotOn(LocalDate date, int minute, ZoneId zone) {
-    LocalDateTime wallTime = wallTime(date, minute);
-    if (zone.getRules().getValidOffsets(wallTime).isEmpty()) {
-      return Optional.empty();
-    }
-    return Optional.of(ZonedDateTime.of(wallTime, zone));
-  }
+  record Slot(Instant key, Optional<ZonedDateTime> instant) {}
 
-  /**
-   * The instant of the slot {@code minute} minutes after midnight on {@code date}, or of the end of
-   * the gap it falls in: unlike {@link #slotOn}, defined for every minute, and never decreasing as
-   * the minute advances.
-   */
-  static Instant slotOrGapEnd(LocalDate date, int minute, ZoneId zone) {
+  /** The slot {@code minute} minutes after midnight on {@code date}. */
+  static Slot slotOn(LocalDate date, int minute, ZoneId zone) {
     LocalDateTime wallTime = wallTime(date, minute);
     ZoneRules rules = zone.getRules();
     List<ZoneOffset> offsets = rules.getValidOffsets(wallTime);
-    return offsets.isEmpty()
-        ? rules.getTransition(wallTime).getInstant()
-        : wallTime.toInstant(offsets.getFirst());
+    if (offsets.isEmpty()) {
+      return new Slot(rules.getTransition(wallTime).getInstant(), Optional.empty());
+    }
+    ZonedDateTime instant = ZonedDateTime.ofLocal(wallTime, zone, offsets.getFirst());
+    return new Slot(instant.toInstant(), Optional.of(instant));
   }
 
   private static LocalDateTime wallTime(LocalDate date, int minute) {

@@ -49,11 +49,21 @@ record Clauses(
 
   boolean allows(Candidate candidate) {
     LocalDate date = candidate.date();
-    return (during.isEmpty() || during.contains(candidate.targetMonth()))
+    return allowsMonth(candidate.targetMonth())
         && !exceptMonthDays.contains(MonthDay.from(date))
         && !exceptDates.contains(date)
         && (until == null || !date.isAfter(until))
         && (starting == null || !date.isBefore(starting));
+  }
+
+  boolean allowsMonth(Month month) {
+    return during.isEmpty() || during.contains(month);
+  }
+
+  /** These clauses, ending the search on {@code date}: nothing after it is an occurrence. */
+  Clauses endOn(LocalDate date) {
+    LocalDate end = until == null || date.isBefore(until) ? date : until;
+    return new Clauses(during, exceptMonthDays, exceptDates, end, starting);
   }
 
   /**
