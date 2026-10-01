@@ -546,7 +546,7 @@ class Cadence {
 
   /**
    * The month of a day or month period, which all its candidates target; null
-   * for a week or year, whose candidates fall in several months.
+   * for a week or year, whose candidates need not fall in its first month.
    */
   monthOf(period: number): number | null {
     switch (this.unit) {
