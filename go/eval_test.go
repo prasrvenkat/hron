@@ -109,8 +109,9 @@ func TestMatchesDropsSecondsOnTheWallClock(t *testing.T) {
 // at the instant its gap ends, and the bounded binary search finds what a scan
 // of every slot finds, on the dates around transitions: a spring-forward gap,
 // a fall-back overlap, at midnight (Sao Paulo), of half an hour (Lord Howe),
-// of a whole day (Apia, 2011), and of 28 seconds, from an offset that carries
-// seconds (Amsterdam, 1937).
+// of a whole day (Apia, 2011), of 28 seconds, from an offset that carries
+// seconds (Amsterdam, 1937), and after the date ends in UTC, in a zone west of
+// it (Nuuk, 2022).
 func TestSlotSearchAroundTransitions(t *testing.T) {
 	zones := map[string]int{
 		"America/New_York":    2026,
@@ -118,6 +119,7 @@ func TestSlotSearchAroundTransitions(t *testing.T) {
 		"Australia/Lord_Howe": 2026,
 		"Pacific/Apia":        2011,
 		"Europe/Amsterdam":    1937,
+		"America/Nuuk":        2022,
 	}
 	for name, year := range zones {
 		zone, err := time.LoadLocation(name)
@@ -185,6 +187,22 @@ func checkSlotSearch(t *testing.T, s *search, transition time.Time) {
 					t.Fatalf("%s %s step %d from %s direction %d: got %s %v, want %s %v", s.zone, date.Format(time.DateOnly), slots.step, now, d, got, ok, want, found)
 				}
 			}
+		}
+	}
+}
+
+// Before 1970 Unix seconds are negative, so a date must floor them.
+func TestSearchesBeforeTheUnixEpoch(t *testing.T) {
+	s := MustParse("every 30 min from 00:00 to 23:59")
+	for _, now := range []time.Time{
+		time.Date(1969, 12, 31, 12, 10, 0, 0, time.UTC),
+		time.Date(1900, 6, 1, 12, 10, 0, 0, time.UTC),
+	} {
+		if next := s.NextFrom(now); next == nil || !next.Equal(now.Add(20*time.Minute)) {
+			t.Errorf("NextFrom(%v) = %v, want %v", now, next, now.Add(20*time.Minute))
+		}
+		if prev := s.PreviousFrom(now); prev == nil || !prev.Equal(now.Add(-10*time.Minute)) {
+			t.Errorf("PreviousFrom(%v) = %v, want %v", now, prev, now.Add(-10*time.Minute))
 		}
 	}
 }

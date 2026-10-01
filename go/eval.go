@@ -356,7 +356,7 @@ func (s slots) wallBehind(date, now time.Time, offset time.Duration, atNow bool)
 	if !atNow && seconds%60 == 0 && now.Nanosecond() == 0 {
 		minute--
 	}
-	// Past either end of the date, every slot or none is behind.
+	// Clamped first so int(minute) cannot overflow on 32-bit for a date far from now.
 	minute = min(max(minute, -1), minutesPerDay)
 	return min(max(floorDiv(int(minute)-s.from, s.step)+1, 0), s.count)
 }

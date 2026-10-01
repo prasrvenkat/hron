@@ -33,7 +33,7 @@ func slotOn(date time.Time, minute int, zone *time.Location) slot {
 		return slot{key: instant, instant: instant}
 	}
 	// In a gap, resolveWallClock reads the wall time at the offset before it,
-	// which gives an instant after the gap ends, at the offset after it.
+	// which gives an instant at or after the gap ends, at the offset after it.
 	wall := date.Add(time.Duration(minute) * time.Minute)
 	return slot{key: gapEnd(wall, wall.Sub(instant), offsetAt(instant, zone), zone), skipped: true}
 }
