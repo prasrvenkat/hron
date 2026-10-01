@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"math"
 	"os"
 	"regexp"
 	"slices"
@@ -52,15 +51,24 @@ func formatOrNil(t *time.Time) any {
 	return formatZoned(*t)
 }
 
-func formatAll(times iter.Seq[time.Time], limit int) []string {
+func formatAll(times iter.Seq[time.Time]) []string {
 	out := []string{}
 	for t := range times {
-		if len(out) == limit {
-			break
-		}
 		out = append(out, formatZoned(t))
 	}
 	return out
+}
+
+func take(times iter.Seq[time.Time], n int) iter.Seq[time.Time] {
+	return func(yield func(time.Time) bool) {
+		left := n
+		for t := range times {
+			if left == 0 || !yield(t) {
+				return
+			}
+			left--
+		}
+	}
 }
 
 func evaluate(c testCase) (any, error) {
@@ -83,17 +91,28 @@ func evaluate(c testCase) (any, error) {
 	case "next":
 		return formatOrNil(s.NextFrom(parseZoned(c.Now))), nil
 	case "nextN":
-		return formatAll(slices.Values(s.NextNFrom(parseZoned(c.Now), c.N)), math.MaxInt), nil
+		return formatAll(slices.Values(s.NextNFrom(parseZoned(c.Now), c.N))), nil
 	case "prev":
 		return formatOrNil(s.PreviousFrom(parseZoned(c.Now))), nil
 	case "matches":
 		return s.Matches(parseZoned(c.Datetime)), nil
 	case "between":
-		return formatAll(s.Between(parseZoned(c.From), parseZoned(c.To)), math.MaxInt), nil
+		return formatAll(s.Between(parseZoned(c.From), parseZoned(c.To))), nil
 	case "occurrences":
-		return formatAll(s.Occurrences(parseZoned(c.From)), c.N), nil
+		return formatAll(take(s.Occurrences(parseZoned(c.From)), c.N)), nil
 	}
 	panic("unknown op " + c.Op)
+}
+
+func details(e *hron.HronError) map[string]any {
+	var span, suggestion any
+	if e.Span != nil {
+		span = []int{e.Span.Start, e.Span.End}
+	}
+	if e.Suggestion != "" {
+		suggestion = e.Suggestion
+	}
+	return map[string]any{"kind": string(e.Kind), "message": e.Message, "span": span, "suggestion": suggestion}
 }
 
 func run(c testCase) (outcome map[string]any) {
@@ -106,7 +125,7 @@ func run(c testCase) (outcome map[string]any) {
 	var hronErr *hron.HronError
 	switch {
 	case errors.As(err, &hronErr):
-		return map[string]any{"ok": false, "error": map[string]any{"kind": string(hronErr.Kind)}}
+		return map[string]any{"ok": false, "error": details(hronErr)}
 	case err != nil:
 		return map[string]any{"ok": false, "error": map[string]any{"kind": "crash", "message": err.Error()}}
 	}

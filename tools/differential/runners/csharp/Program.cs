@@ -20,7 +20,17 @@ static Dictionary<string, object?> Run(JsonObject c)
     }
     catch (HronException e)
     {
-        return new() { ["ok"] = false, ["error"] = new { kind = e.Kind.ToString().ToLowerInvariant() } };
+        return new()
+        {
+            ["ok"] = false,
+            ["error"] = new
+            {
+                kind = e.Kind.ToString().ToLowerInvariant(),
+                message = e.Message,
+                span = e.Span is { } s ? new[] { s.Start, s.End } : null,
+                suggestion = e.Suggestion,
+            },
+        };
     }
     catch (Exception e)
     {
@@ -37,11 +47,10 @@ static object? Evaluate(JsonObject c)
         return Schedule.FromCron(expr).ToString();
     }
     var schedule = Schedule.Parse(expr);
-    // DateTimeOffset carries no zone, so only the instant returned is compared, written in
-    // the schedule's timezone (UTC when none).
+    // DateTimeOffset carries an offset but no zone name, so the schedule's zone is assumed.
     var zone = schedule.Timezone ?? "UTC";
     string? Format(DateTimeOffset? t) => t is { } v
-        ? TimeZoneInfo.ConvertTimeBySystemTimeZoneId(v, zone).ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture) + $"[{zone}]"
+        ? v.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture) + $"[{zone}]"
         : null;
     DateTimeOffset Time(string field) => ParseZoned(c[field]!.GetValue<string>());
     int N() => c["n"]!.GetValue<int>();

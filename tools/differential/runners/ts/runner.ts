@@ -48,11 +48,20 @@ function evaluate(c: Case): unknown {
   throw new Error(`unknown op ${c.op}`);
 }
 
+function details(e: HronError): object {
+  return {
+    kind: e.kind,
+    message: e.message,
+    span: e.span ? [e.span.start, e.span.end] : null,
+    suggestion: e.suggestion ?? null,
+  };
+}
+
 function run(c: Case): object {
   try {
     return { ok: true, result: evaluate(c) };
   } catch (e) {
-    if (e instanceof HronError) return { ok: false, error: { kind: e.kind } };
+    if (e instanceof HronError) return { ok: false, error: details(e) };
     return { ok: false, error: { kind: "crash", message: String(e) } };
   }
 }

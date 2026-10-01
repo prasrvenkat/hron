@@ -52,14 +52,18 @@ Object? evaluate(Map<String, dynamic> c) {
   };
 }
 
+Map<String, Object?> details(HronError e) => {
+  'kind': e.kind.name,
+  'message': e.message,
+  'span': e.span == null ? null : [e.span!.start, e.span!.end],
+  'suggestion': e.suggestion,
+};
+
 Map<String, Object?> run(Map<String, dynamic> c) {
   try {
     return {'ok': true, 'result': evaluate(c)};
   } on HronError catch (e) {
-    return {
-      'ok': false,
-      'error': {'kind': e.kind.name},
-    };
+    return {'ok': false, 'error': details(e)};
   } catch (e) {
     return {
       'ok': false,

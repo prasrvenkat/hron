@@ -70,6 +70,7 @@ class RunnerError(Exception):
     pass
 
 
+TIMEOUT = {"ok": False, "error": {"kind": "timeout"}}
 EXITED = {"ok": False, "error": {"kind": "crash", "message": "the runner exited"}}
 
 
@@ -77,9 +78,12 @@ def build(name: str) -> None:
     language = LANGUAGES[name]
     (BUILD / name).mkdir(parents=True, exist_ok=True)
     for command in language.build:
-        done = subprocess.run(
-            command, cwd=ROOT, env=os.environ | language.env, capture_output=True, text=True
-        )
+        try:
+            done = subprocess.run(
+                command, cwd=ROOT, env=os.environ | language.env, capture_output=True, text=True
+            )
+        except OSError as error:
+            raise RunnerError(f"{name}: `{' '.join(command)}` failed: {error}") from None
         if done.returncode != 0:
             raise RunnerError(f"{name}: `{' '.join(command)}` failed\n{done.stdout}{done.stderr}")
 
@@ -87,16 +91,17 @@ def build(name: str) -> None:
 def run(name: str, cases: list[dict], timeout: float) -> dict[str, dict]:
     """Runs every case and returns each case's outcome by id. A case that hangs
     or kills the runner gets a timeout or crash outcome, and the runner restarts
-    with the case after it."""
+    with the case after it. A runner that fails its first two cases that way is
+    broken, not buggy, so the run stops."""
     outcomes = {}
     with open(BUILD / f"{name}.log", "w") as log:
         pending = cases
         while pending:
             pending = run_until_stuck(name, pending, timeout, outcomes, log)
-            if len(cases) > 1 and all(outcomes.get(case["id"]) == EXITED for case in cases[:2]):
-                raise RunnerError(
-                    f"{name}: the runner exited on its first two cases; see {log.name}"
-                )
+            if len(cases) > 1 and all(
+                outcomes.get(case["id"]) in (TIMEOUT, EXITED) for case in cases[:2]
+            ):
+                raise RunnerError(f"{name}: no answer to the first two cases; see {log.name}")
     return outcomes
 
 
@@ -104,16 +109,19 @@ def run_until_stuck(
     name: str, cases: list[dict], timeout: float, outcomes: dict, log: TextIO
 ) -> list[dict]:
     language = LANGUAGES[name]
-    process = subprocess.Popen(
-        language.run,
-        cwd=ROOT,
-        env=os.environ | language.env,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=log,
-        text=True,
-        encoding="utf-8",
-    )
+    try:
+        process = subprocess.Popen(
+            language.run,
+            cwd=ROOT,
+            env=os.environ | language.env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=log,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError as error:
+        raise RunnerError(f"{name}: could not start `{' '.join(language.run)}`: {error}") from None
     lines = queue.Queue()
     threading.Thread(target=feed, args=(process.stdin, cases), daemon=True).start()
     threading.Thread(target=drain, args=(process.stdout, lines), daemon=True).start()
@@ -122,7 +130,7 @@ def run_until_stuck(
             try:
                 line = lines.get(timeout=timeout)
             except queue.Empty:
-                outcomes[case["id"]] = failure("timeout")
+                outcomes[case["id"]] = TIMEOUT
                 return cases[i + 1 :]
             if line is None:
                 outcomes[case["id"]] = EXITED
@@ -143,10 +151,6 @@ def answer(name: str, case: dict, line: str) -> dict:
     if answered != case["id"]:
         raise RunnerError(f"{name}: answered {answered} instead of {case['id']}")
     return outcome
-
-
-def failure(kind: str, **details: str) -> dict:
-    return {"ok": False, "error": {"kind": kind, **details}}
 
 
 def feed(stdin: TextIO, cases: list[dict]) -> None:

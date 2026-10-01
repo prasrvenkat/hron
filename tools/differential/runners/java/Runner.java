@@ -40,10 +40,18 @@ public class Runner {
     try {
       return "\"ok\":true,\"result\":" + json(evaluate(c));
     } catch (HronException e) {
-      return "\"ok\":false,\"error\":{\"kind\":" + json(e.kind().value()) + "}";
+      return "\"ok\":false,\"error\":" + details(e);
     } catch (Exception | StackOverflowError e) {
       return "\"ok\":false,\"error\":{\"kind\":\"crash\",\"message\":" + json(e.toString()) + "}";
     }
+  }
+
+  private static String details(HronException e) {
+    var span = e.span().map(s -> List.of(s.start(), s.end())).orElse(null);
+    return "{\"kind\":" + json(e.kind().value())
+        + ",\"message\":" + json(e.getMessage())
+        + ",\"span\":" + json(span)
+        + ",\"suggestion\":" + json(e.suggestion().orElse(null)) + "}";
   }
 
   private static Object evaluate(Map<String, String> c) throws HronException {
@@ -128,6 +136,7 @@ public class Runner {
     return switch (value) {
       case null -> "null";
       case Boolean b -> b.toString();
+      case Integer i -> i.toString();
       case List<?> list ->
           list.stream().map(Runner::json).collect(Collectors.joining(",", "[", "]"));
       default -> {

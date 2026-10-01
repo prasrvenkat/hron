@@ -35,10 +35,15 @@ def evaluate(c)
   end
 end
 
+def details(e)
+  span = e.span && [e.span.start, e.span.end_pos]
+  {kind: e.kind, message: e.message, span: span, suggestion: e.suggestion}
+end
+
 def run(c)
   {ok: true, result: evaluate(c)}
 rescue Hron::HronError => e
-  {ok: false, error: {kind: e.kind}}
+  {ok: false, error: details(e)}
 rescue StandardError, SystemStackError => e
   {ok: false, error: {kind: "crash", message: "#{e.class}: #{e.message}"}}
 end

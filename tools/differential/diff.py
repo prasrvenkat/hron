@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -14,12 +15,19 @@ from languages import LANGUAGES, RunnerError, build, run
 from report import compare, report
 
 
+def json_file(path: str) -> object:
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", help="comma-separated languages, e.g. rust,go")
-    parser.add_argument("--cases", type=Path, help="run the cases in this JSON file instead")
+    parser.add_argument("--cases", type=json_file, help="run the cases in this JSON file instead")
     parser.add_argument("--save", type=Path, help="write the cases and every outcome to this file")
-    parser.add_argument("--compare", type=Path, help="report outcomes changed since --save")
+    parser.add_argument("--compare", type=json_file, help="report outcomes changed since --save")
     parser.add_argument("--no-build", action="store_true", help="skip building the runners")
     parser.add_argument("--timeout", type=float, default=10, help="seconds per case (default 10)")
     parser.add_argument("--examples", type=int, default=3, help="examples per group (default 3)")
@@ -29,6 +37,13 @@ def parse_args() -> argparse.Namespace:
         parser.error(f"unknown languages: {', '.join(unknown)} (known: {', '.join(LANGUAGES)})")
     if len(set(args.names)) < len(args.names):
         parser.error("--only names a language twice")
+    if args.compare and args.no_build:
+        parser.error("--compare needs fresh builds, so it cannot be used with --no-build")
+    if args.cases is None:
+        args.cases = generate()
+    ids = Counter(case["id"] for case in args.cases)
+    if duplicates := [case_id for case_id, count in ids.items() if count > 1]:
+        parser.error(f"duplicate case ids: {', '.join(duplicates[:5])}")
     return args
 
 
@@ -41,8 +56,7 @@ def timed_run(name: str, cases: list[dict], timeout: float) -> dict[str, dict]:
 
 def main() -> int:
     args = parse_args()
-    names = args.names
-    cases = json.loads(args.cases.read_text()) if args.cases else generate()
+    names, cases = args.names, args.cases
 
     start = time.monotonic()
     try:
@@ -60,8 +74,7 @@ def main() -> int:
     if args.save:
         args.save.write_text(json.dumps({"cases": cases, "outcomes": outcomes}))
     if args.compare:
-        changes = compare(json.loads(args.compare.read_text()), cases, outcomes, args.examples)
-        return 1 if changes else 0
+        return 1 if compare(args.compare, cases, outcomes, args.examples) else 0
     return 1 if report(cases, outcomes, args.examples) else 0
 
 

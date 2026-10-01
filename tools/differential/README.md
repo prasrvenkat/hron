@@ -19,18 +19,18 @@ just diff --cases mine.json                                 # run hand-written c
 | `--only LANGS` | Comma-separated languages: `rust`, `ts`, `python`, `go`, `java`, `csharp`, `ruby`, `dart`. |
 | `--cases FILE` | A JSON array of cases to run in place of the generated ones. |
 | `--save FILE` | Write the cases and every language's answers. |
-| `--compare FILE` | Compare each language's answers with a `--save` file instead of with each other. A refactor should show zero changes. |
-| `--no-build` | Skip building the runners. |
+| `--compare FILE` | Compare each language's answers with a `--save` file instead of with each other, including error messages. A refactor should show zero changes. |
+| `--no-build` | Skip building the runners. Not allowed with `--compare`, which would then test stale builds. |
 | `--timeout SECONDS` | How long one case may take before it is reported as a timeout (default 10). |
 | `--examples N` | Examples printed per group of divergences (default 3). |
 
-The exit status is 0 when every language agrees (with `--compare`, when every outcome was compared and none changed), 1 when they do not, and 2 for bad arguments or when a runner fails to build or answer.
+The exit status is 0 when every language agrees (with `--compare`, when every outcome was compared and none changed), 1 when they do not, and 2 for bad arguments or input files, or when a runner cannot be built, started or answer at all.
 
-Divergences are grouped by operation and by how the languages split, largest group first, so a bug shows up as one group for each operation it affects, however many cases hit it.
+Divergences are grouped by operation and by how the languages split, largest group first, so a bug shows up as one group for each operation it affects, however many cases hit it. Languages agree on an error when its kind, span and suggestion match; the spec leaves the message's wording to each language.
 
 ## Cases
 
-`cases.py` generates about 25,000 cases from a fixed seed: every expression kind with each trailing clause and timezone, schedules at, just before and just after the wall-clock times that each 2026 DST transition skips or repeats in eight zones (and Apia's transitions in 2011, including its skipped day), with `now` a day before, a minute before and a minute after the transition, month ends, leap days, nearest weekday, `starting` and `until`, the edges of the supported range, huge intervals, invalid and mutated expressions, and cron strings.
+`cases.py` generates about 25,000 cases from a fixed seed: every expression kind with random trailing clauses and timezones (zoneless schedules also get times written in other zones), schedules at, just before and just after the wall-clock times that each 2026 DST transition skips or repeats in eight zones (and Apia's transitions in 2011, including its skipped day), with `now` a day before, a minute before and a minute after the transition, month ends, leap days, nearest weekday, `starting` and `until`, the edges of the supported range, huge intervals, invalid and mutated expressions, and cron strings.
 
 A case is a JSON object:
 
@@ -51,7 +51,7 @@ A case is a JSON object:
 
 Timestamps use the spec's form, `2026-03-08T03:30:00-04:00[America/New_York]`.
 
-A runner answers each case with one line, `{"id", "ok": true, "result"}` or `{"id", "ok": false, "error": {"kind"}}`, where `kind` is the hron error kind (`lex`, `parse`, `eval`, `cron`) or `crash`, with a `message`, for any other exception. The driver records `timeout` for a case that hangs and `crash` for one that kills the runner, then restarts the runner from the next case; a runner that dies on its first two cases stops the run. Each runner's stderr goes to `.build/<lang>.log`.
+A runner answers each case with one line, `{"id", "ok": true, "result"}` or `{"id", "ok": false, "error"}`. For a hron error, `error` is `{"kind", "message", "span", "suggestion"}`, where `kind` is `lex`, `parse`, `eval` or `cron`, `span` is `[start, end]` or `null`, and `suggestion` is a string or `null`. Any other exception is `{"kind": "crash", "message"}`. The driver records `timeout` for a case that hangs and `crash` for one that kills the runner, then restarts the runner from the next case; a runner that hangs or dies on its first two cases stops the run. Each runner's stderr goes to `.build/<lang>.log`.
 
 ## Adding a language
 

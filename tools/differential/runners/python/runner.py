@@ -10,7 +10,9 @@ from hron import HronError, Schedule
 
 
 def parse_zoned(s: str) -> datetime:
-    iso, zone = re.fullmatch(r"(.+)\[(.+)\]", s).groups()
+    match = re.fullmatch(r"(.+)\[(.+)\]", s)
+    assert match, s
+    iso, zone = match.groups()
     return datetime.fromisoformat(iso).astimezone(ZoneInfo(zone))
 
 
@@ -49,11 +51,20 @@ def evaluate(case: dict[str, Any]) -> object:
     raise ValueError(f"unknown op {case['op']}")
 
 
+def details(e: HronError) -> dict[str, Any]:
+    return {
+        "kind": e.kind,
+        "message": str(e),
+        "span": [e.span.start, e.span.end] if e.span else None,
+        "suggestion": e.suggestion,
+    }
+
+
 def run(case: dict[str, Any]) -> dict[str, Any]:
     try:
         return {"ok": True, "result": evaluate(case)}
     except HronError as e:
-        return {"ok": False, "error": {"kind": e.kind}}
+        return {"ok": False, "error": details(e)}
     except Exception as e:
         return {"ok": False, "error": {"kind": "crash", "message": repr(e)}}
 

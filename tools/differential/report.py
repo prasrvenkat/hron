@@ -4,6 +4,7 @@ import json
 from collections import Counter, defaultdict
 
 ARGUMENTS = ["now", "datetime", "from", "to", "n"]
+ERROR_FIELDS = ["kind", "span", "suggestion"]
 
 
 def describe(case: dict) -> str:
@@ -16,15 +17,29 @@ def show(outcome: dict, width: int = 160) -> str:
         text = json.dumps(outcome["result"], ensure_ascii=False)
     else:
         error = outcome["error"]
-        text = f"error {error['kind']}" + (f": {error['message']}" if "message" in error else "")
+        text = f"error {error['kind']}"
+        if error.get("span"):
+            text += f" at {error['span'][0]}..{error['span'][1]}"
+        if "message" in error:
+            text += f": {error['message']}"
+        if error.get("suggestion"):
+            text += f" (suggest {error['suggestion']!r})"
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+def agreed(outcome: dict) -> dict:
+    """The part of an outcome every language must agree on. The spec fixes an
+    error's kind, span and suggestion, but each language words its message."""
+    if outcome["ok"]:
+        return outcome
+    return {"ok": False, "error": {key: outcome["error"].get(key) for key in ERROR_FIELDS}}
+
+
 def split(case_id: str, outcomes: dict[str, dict]) -> list[list[str]]:
-    """The languages grouped by identical outcome, largest group first."""
+    """The languages grouped by agreeing outcome, largest group first."""
     groups = defaultdict(list)
     for name, by_id in outcomes.items():
-        groups[json.dumps(by_id[case_id], sort_keys=True)].append(name)
+        groups[json.dumps(agreed(by_id[case_id]), sort_keys=True)].append(name)
     return sorted(groups.values(), key=len, reverse=True)
 
 
@@ -63,12 +78,14 @@ def print_table(cases: list[dict], outcomes: dict[str, dict], divergent: list) -
 
 def compare(saved: dict, cases: list[dict], outcomes: dict[str, dict], examples: int) -> int:
     """Prints each language's outcomes that differ from the saved run. Returns
-    the number of outcomes that changed or could not be compared."""
+    the number of outcomes, one per case and language, that changed or could
+    not be compared."""
     saved_cases = {case["id"]: case for case in saved["cases"]}
     comparable = [case for case in cases if saved_cases.get(case["id"]) == case]
-    changes = len(cases) - len(comparable)
-    if changes:
-        print(f"{changes} cases are not in the saved run, so their outcomes were not compared")
+    uncompared = len(cases) - len(comparable)
+    if uncompared:
+        print(f"{uncompared} cases are new or changed since the saved run, so were not compared")
+    changes = 0
     for name, after in outcomes.items():
         before = saved["outcomes"].get(name)
         if before is None:
@@ -76,7 +93,7 @@ def compare(saved: dict, cases: list[dict], outcomes: dict[str, dict], examples:
             changes += len(cases)
             continue
         changed = [case for case in comparable if before[case["id"]] != after[case["id"]]]
-        changes += len(changed)
+        changes += uncompared + len(changed)
         print(f"{name}: {len(changed)} changed")
         for case in changed[:examples]:
             print(f"  {describe(case)}")

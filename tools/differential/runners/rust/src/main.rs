@@ -12,7 +12,7 @@ fn main() {
         let case: Value = serde_json::from_str(&line.expect("stdin")).expect("a JSON case");
         let mut outcome = match panic::catch_unwind(AssertUnwindSafe(|| evaluate(&case))) {
             Ok(Ok(result)) => json!({ "ok": true, "result": result }),
-            Ok(Err(error)) => json!({ "ok": false, "error": { "kind": kind(&error) } }),
+            Ok(Err(error)) => json!({ "ok": false, "error": details(&error) }),
             Err(panic) => {
                 json!({ "ok": false, "error": { "kind": "crash", "message": message(panic) } })
             }
@@ -57,14 +57,22 @@ fn strings(times: Vec<Zoned>) -> Value {
     json!(times.iter().map(Zoned::to_string).collect::<Vec<_>>())
 }
 
-fn kind(error: &ScheduleError) -> &'static str {
-    match error {
-        ScheduleError::Lex { .. } => "lex",
-        ScheduleError::Parse { .. } => "parse",
-        ScheduleError::Eval { .. } => "eval",
-        ScheduleError::Cron { .. } => "cron",
-        _ => "unknown",
-    }
+fn details(error: &ScheduleError) -> Value {
+    let (kind, span, suggestion) = match error {
+        ScheduleError::Lex { span, .. } => ("lex", Some(span), None),
+        ScheduleError::Parse {
+            span, suggestion, ..
+        } => ("parse", Some(span), suggestion.as_deref()),
+        ScheduleError::Eval { .. } => ("eval", None, None),
+        ScheduleError::Cron { .. } => ("cron", None, None),
+        _ => ("unknown", None, None),
+    };
+    json!({
+        "kind": kind,
+        "message": error.to_string(),
+        "span": span.map(|span| [span.start, span.end]),
+        "suggestion": suggestion,
+    })
 }
 
 fn message(panic: Box<dyn std::any::Any + Send>) -> String {

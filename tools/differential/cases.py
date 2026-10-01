@@ -17,11 +17,10 @@ DST_ZONES = [
     "Australia/Lord_Howe",
     "America/Santiago",
     "America/St_Johns",
-    "Pacific/Apia",
     "America/Nuuk",
 ]
 FIXED_ZONES = [None, "UTC", "Etc/GMT+12", "Etc/GMT-14"]
-OTHER_ZONES = ["Asia/Kolkata", "Asia/Kathmandu", "Pacific/Kiritimati"]
+OTHER_ZONES = ["Asia/Kolkata", "Asia/Kathmandu", "Pacific/Kiritimati", "Pacific/Apia"]
 
 TIMES = ["00:00", "09:00", "23:59", "9:30, 17:45", "01:30, 02:30"]
 BODIES = [
@@ -77,7 +76,8 @@ FAR_BODIES = [
     "every 11 years on the fifth sunday of february at {t}",
 ]
 EXCEPTS = ["except dec 25", "except feb 29, 2026-03-01", "except 2026-03-29"]
-UNTILS = ["until 2026-12-31", "until 2027-02-28", "until mar 1"]
+UNTILS = ["until 2026-12-31", "until 2027-02-28"]
+NAMED_UNTILS = ["until mar 1"]
 STARTINGS = [
     "starting 2026-02-28",
     "starting 2024-02-29",
@@ -123,13 +123,12 @@ EDGE_ZONES = ["", " in Etc/GMT-14", " in Etc/GMT+12"]
 EARLIEST = datetime(1, 1, 1, tzinfo=UTC)
 # The latest instant that jiff, and so the Rust runner, can represent.
 LATEST = datetime(9999, 12, 30, 22, tzinfo=UTC)
-EDGE_NOWS = [
-    datetime(1, 1, 1, 23, 59, tzinfo=UTC),
-    datetime(1, 1, 2, tzinfo=UTC),
-    datetime(1970, 1, 1, tzinfo=UTC),
-    datetime(9999, 12, 29, 23, 59, tzinfo=UTC),
-    datetime(9999, 12, 30, tzinfo=UTC),
-]
+BEFORE_RANGE = datetime(1, 1, 1, 23, 59, tzinfo=UTC)
+RANGE_FIRST = datetime(1, 1, 2, tzinfo=UTC)
+RANGE_LAST = datetime(9999, 12, 29, 23, 59, tzinfo=UTC)
+AFTER_RANGE = datetime(9999, 12, 30, tzinfo=UTC)
+RANGE_EDGES = [BEFORE_RANGE, RANGE_FIRST, RANGE_LAST, AFTER_RANGE]
+EDGE_NOWS = [BEFORE_RANGE, RANGE_FIRST, datetime(1970, 1, 1, tzinfo=UTC), RANGE_LAST, AFTER_RANGE]
 
 INVALID = [
     "",
@@ -284,9 +283,9 @@ def random_schedule(rng: random.Random) -> tuple[str, str | None]:
     if rng.random() < 0.3:
         parts.append(rng.choice(EXCEPTS))
     if rng.random() < 0.3:
-        until = rng.choice(UNTILS)
+        until = rng.choice(UNTILS + NAMED_UNTILS)
         parts.append(until)
-        if until == "until mar 1":
+        if until in NAMED_UNTILS:
             starting = starting or STARTINGS[0]
     if starting:
         parts.append(starting)
@@ -335,8 +334,10 @@ def add_eval(cases: Cases, rng: random.Random) -> None:
 
 
 def add_evaluations(cases: Cases, rng: random.Random, expr: str, zone: str | None) -> None:
-    """Evaluations of `expr` around NOWS, with times written in its zone or in UTC."""
-    written_in = rng.choice([zone, None])
+    """Evaluations of `expr` around NOWS, with times written in its zone or in UTC.
+    A zoneless schedule runs in UTC, so it gets times written in another zone
+    instead, which must not change its answers."""
+    written_in = rng.choice([zone or rng.choice(DST_ZONES + OTHER_ZONES), None])
 
     def at(instant: datetime) -> str:
         return stamp(instant, written_in)
@@ -358,20 +359,22 @@ def add_evaluations(cases: Cases, rng: random.Random, expr: str, zone: str | Non
         cases.add("eval", "matches", expr, {"datetime": at(instant)})
 
 
+def offset(instant: datetime, tz: ZoneInfo) -> timedelta:
+    utcoffset = instant.astimezone(tz).utcoffset()
+    assert utcoffset is not None
+    return utcoffset
+
+
 def transitions(zone: str, year: int) -> list[datetime]:
     """The instants in `year` at which the zone's UTC offset changes."""
     tz = ZoneInfo(zone)
-
-    def offset(instant: datetime) -> timedelta:
-        return instant.astimezone(tz).utcoffset()
-
     found = []
     hour = datetime(year, 1, 1, tzinfo=UTC)
     while hour.year == year:
         later = hour + timedelta(hours=1)
-        if offset(hour) != offset(later):
+        if offset(hour, tz) != offset(later, tz):
             minute = hour
-            while offset(minute) == offset(hour):
+            while offset(minute, tz) == offset(hour, tz):
                 minute += MINUTE
             found.append(minute)
         hour = later
@@ -382,29 +385,28 @@ def add_dst(cases: Cases) -> None:
     for zone, year in [(zone, 2026) for zone in DST_ZONES] + [("Pacific/Apia", 2011)]:
         tz = ZoneInfo(zone)
         for change in transitions(zone, year):
-            before = (change - MINUTE).astimezone(tz).utcoffset()
-            after = change.astimezone(tz).utcoffset()
+            before, after = offset(change - MINUTE, tz), offset(change, tz)
             naive = change.replace(tzinfo=None)
-            first, end = sorted([naive + before, naive + after])
-            for expr, wall in dst_schedules(first, end):
+            start, end = sorted([naive + before, naive + after])
+            for expr, wall in dst_schedules(start, end):
                 # The wall time read with each offset: in a gap the shifted
                 # occurrence, in an overlap the first and the second pass.
-                readings = [(wall - offset).replace(tzinfo=UTC) for offset in (before, after)]
+                readings = [(wall - utc_offset).replace(tzinfo=UTC) for utc_offset in (before, after)]
                 add_dst_evaluations(cases, f"{expr} in {zone}", zone, change, readings)
 
 
-def dst_schedules(first: datetime, end: datetime) -> list[tuple[str, datetime]]:
+def dst_schedules(start: datetime, end: datetime) -> list[tuple[str, datetime]]:
     """Schedules, each with the wall time it fires at, in, just before and just
-    after the wall-clock range [first, end) that a transition skips or repeats."""
-    middle = first + (end - first) // 2
+    after the wall-clock range [start, end) that a transition skips or repeats."""
+    middle = start + (end - start) // 2
     schedules = []
-    for wall in [first - MINUTE, first, middle, end - MINUTE, end]:
+    for wall in [start - MINUTE, start, middle, end - MINUTE, end]:
         schedules.append((f"every day at {hhmm(wall)}", wall))
         schedules.append((f"on {wall.date()} at {hhmm(wall)}", wall))
     day, t = middle.date(), hhmm(middle)
     month = MONTHS[day.month - 1]
     schedules += [
-        (f"every day at {hhmm(first - MINUTE)}, {t}, {hhmm(end)}", middle),
+        (f"every day at {hhmm(start - MINUTE)}, {t}, {hhmm(end)}", middle),
         (f"every {WEEKDAYS[day.weekday()]} at {t}", middle),
         (f"every month on the {ordinal(day.day)} at {t}", middle),
         (f"every year on {month} {day.day} at {t}", middle),
@@ -412,8 +414,8 @@ def dst_schedules(first: datetime, end: datetime) -> list[tuple[str, datetime]]:
         (f"every day at {t} until {day}", middle),
         (f"every day at {t} starting {day + DAY}", middle),
     ]
-    window_start = max(first - timedelta(hours=1), first.replace(hour=0, minute=0))
-    window_end = min(end + timedelta(hours=1), first.replace(hour=23, minute=59))
+    window_start = max(start - timedelta(hours=1), start.replace(hour=0, minute=0))
+    window_end = min(end + timedelta(hours=1), start.replace(hour=23, minute=59))
     for interval in [
         f"15 min from {hhmm(window_start)} to {hhmm(window_end)}",
         "30 min from 00:00 to 23:59",
@@ -446,10 +448,10 @@ def add_range(cases: Cases) -> None:
             for now in EDGE_NOWS:
                 cases.add("range", "next", expr, {"now": stamp(now)})
                 cases.add("range", "prev", expr, {"now": stamp(now)})
-            for instant in [EDGE_NOWS[0], EDGE_NOWS[1], EDGE_NOWS[3], EDGE_NOWS[4]]:
+            for instant in RANGE_EDGES:
                 cases.add("range", "matches", expr, {"datetime": stamp(instant)})
             cases.add("range", "nextN", expr, {"now": stamp(EARLIEST), "n": 3})
-            cases.add("range", "occurrences", expr, {"from": stamp(EDGE_NOWS[3] - DAY), "n": 3})
+            cases.add("range", "occurrences", expr, {"from": stamp(RANGE_LAST - DAY), "n": 3})
             cases.add("range", "between", expr, early)
             cases.add("range", "between", expr, late)
 
