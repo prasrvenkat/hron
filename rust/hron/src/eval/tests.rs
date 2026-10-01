@@ -190,3 +190,62 @@ fn until_limits_results() {
         Date::new(2026, 2, 10).unwrap()
     );
 }
+
+#[test]
+fn no_offset_change_in_tzdb_exceeds_a_day() {
+    // MAX_SHIFT_DAYS and MAX_OVERLAP_DAYS rest on this.
+    let end: Timestamp = "2100-01-01T00:00:00Z".parse().unwrap();
+    for name in jiff::tz::db().available() {
+        let zone = TimeZone::get(name.as_str()).unwrap();
+        let mut before = zone.to_offset(Timestamp::MIN);
+        for transition in zone.following(Timestamp::MIN) {
+            if transition.timestamp() > end {
+                break;
+            }
+            let change = (transition.offset().seconds() - before.seconds()).abs();
+            assert!(
+                change <= 24 * 60 * 60,
+                "{} changes its offset by {change}s at {}",
+                name.as_str(),
+                transition.timestamp()
+            );
+            before = transition.offset();
+        }
+    }
+}
+
+#[test]
+fn slot_keys_never_decrease_across_gaps_and_overlaps() {
+    for (zone, day) in [
+        ("America/New_York", "2026-03-08"),
+        ("America/New_York", "2026-11-01"),
+        ("America/Santiago", "2026-09-06"),
+        ("America/Santiago", "2026-04-05"),
+        ("Pacific/Apia", "2011-12-30"),
+    ] {
+        let zone = TimeZone::get(zone).unwrap();
+        let date: Date = day.parse().unwrap();
+        let mut last: Option<Timestamp> = None;
+        for date in [date.yesterday().unwrap(), date, date.tomorrow().unwrap()] {
+            for minute in 0..24 * 60 {
+                let slot = wall_clock::slot_on(date, minute, &zone);
+                if let Some(instant) = &slot.instant {
+                    assert_eq!(slot.key, instant.timestamp());
+                }
+                assert!(last.is_none_or(|last| slot.key >= last), "{date} {minute}");
+                last = Some(slot.key);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_slot_in_a_gap_has_no_instant_and_sits_where_the_gap_ends() {
+    let zone = TimeZone::get("America/New_York").unwrap();
+    let slot = wall_clock::slot_on("2026-03-08".parse().unwrap(), 2 * 60 + 30, &zone);
+    assert!(slot.instant.is_none());
+    assert_eq!(
+        slot.key,
+        "2026-03-08T07:00:00Z".parse::<Timestamp>().unwrap()
+    );
+}

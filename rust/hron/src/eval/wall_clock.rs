@@ -28,7 +28,8 @@ pub(super) struct Slot {
 }
 
 /// The slot `minute` minutes after midnight on `date`. Past what jiff can
-/// represent, which is outside the supported range, it sits at the end of time.
+/// represent, which is outside the supported range, it sits at the end of time;
+/// so does a gap slot whose gap end cannot be found.
 pub(super) fn slot_on(date: Date, minute: i64, zone: &TimeZone) -> Slot {
     let time = Time::new(
         (minute / MINUTES_PER_HOUR) as i8,

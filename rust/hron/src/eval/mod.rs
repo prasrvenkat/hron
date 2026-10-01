@@ -32,11 +32,11 @@ static RANGE_END: LazyLock<Timestamp> = LazyLock::new(|| "9999-12-30T00:00:00Z".
 const HORIZON_MARGIN_PERIODS: i64 = 2;
 
 /// How many dates past its scheduled date a fixed time can land: one shifted out
-/// of a gap before midnight lands on the next date.
+/// of a gap before midnight lands on the next date. No gap in tzdb exceeds 24 hours.
 const MAX_SHIFT_DAYS: i64 = 1;
 
-/// How many dates behind a date that has begun now's wall date can read: from
-/// the second pass of a fall-back overlap that crosses midnight, one.
+/// How far now's wall date can trail a date that has begun: one, on the second
+/// pass of a fall-back across midnight. No overlap in tzdb exceeds 24 hours.
 const MAX_OVERLAP_DAYS: i64 = 1;
 
 /// Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
@@ -318,8 +318,8 @@ fn could_beat(date: Date, landing: Date, direction: Direction, shift: i64) -> bo
     }
 }
 
-/// Whether every occurrence scheduled on `date` lies behind `now`, whose wall
-/// date is `now_date`, in `direction`.
+/// True only when every occurrence scheduled on `date` lies behind `now`, whose
+/// wall date is `now_date`, in `direction`; false proves nothing.
 fn is_behind(date: Date, now_date: Date, direction: Direction, shift: i64) -> bool {
     match direction {
         Direction::Forward => days_between(date, now_date) > shift,
