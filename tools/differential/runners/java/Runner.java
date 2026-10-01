@@ -35,8 +35,8 @@ public class Runner {
       long start = System.nanoTime();
       Evaluated evaluated = run(c);
       long micros = (System.nanoTime() - start) / 1000;
-      out.println(
-          "{\"id\":" + json(c.get("id")) + "," + outcome(evaluated) + ",\"micros\":" + micros + "}");
+      String id = json(c.get("id"));
+      out.println("{\"id\":" + id + "," + outcome(evaluated) + ",\"micros\":" + micros + "}");
     }
   }
 
