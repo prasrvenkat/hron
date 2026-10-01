@@ -149,10 +149,27 @@ String spanned =
 |--------|-------------|
 | `nextFrom(ZonedDateTime now)` | Get the next occurrence after `now` |
 | `nextNFrom(ZonedDateTime now, int n)` | Get the next `n` occurrences after `now` |
+| `previousFrom(ZonedDateTime now)` | Get the most recent occurrence before `now` |
 | `matches(ZonedDateTime datetime)` | Check if `datetime` matches this schedule |
+| `occurrences(ZonedDateTime from)` | Get a lazy stream of occurrences after `from` |
+| `between(ZonedDateTime from, ZonedDateTime to)` | Get a lazy stream of occurrences after `from` and up to `to` |
 | `toCron()` | Convert to a 5-field cron expression |
 | `toString()` | Get the canonical string form |
 | `timezone()` | Get the IANA timezone name with its canonical capitalization (if specified) |
+
+#### Timestamps
+
+Only the instant of a `ZonedDateTime` argument matters, not its zone, and every returned `ZonedDateTime` is in the schedule's timezone, or `ZoneId.of("UTC")` when it has none:
+
+```java
+Schedule s = Schedule.parse("every day at 09:00 in America/New_York");
+ZonedDateTime tokyo = ZonedDateTime.parse("2026-02-06T21:00:00+09:00[Asia/Tokyo]");
+s.nextFrom(tokyo); // Optional[2026-02-06T09:00-05:00[America/New_York]]
+```
+
+- A timestamp outside the [supported range](../spec/README.md#supported-range), `0001-01-02T00:00:00Z` up to `9999-12-30T00:00:00Z`, is not an error, even at `LocalDateTime.MIN` or `MAX` in any zone: `nextFrom` and `previousFrom` return empty, `matches` returns false, and `nextNFrom`, `occurrences` and `between` return nothing.
+- `nextNFrom` returns at most `n` occurrences, and none when `n <= 0`. `n` only caps the count, so `Integer.MAX_VALUE` returns at once, with every occurrence through the end of the supported range.
+- A `null` timestamp throws `NullPointerException`.
 
 ### HronException
 

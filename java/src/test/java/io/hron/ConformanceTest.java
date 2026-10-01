@@ -28,6 +28,8 @@ import org.junit.jupiter.api.function.Executable;
 
 public class ConformanceTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final DateTimeFormatter TIMESTAMP =
+      DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssxxxxx");
   private static JsonNode SPEC;
   private static ZonedDateTime DEFAULT_NOW;
 
@@ -218,7 +220,7 @@ public class ConformanceTest {
         ZonedDateTime now = parseZonedDateTime(required(tc, "now", label).asText());
         assertEquals(
             timestamp(required(tc, "expected", label)),
-            s.previousFrom(now).map(ZonedDateTime::toInstant),
+            s.previousFrom(now).map(ConformanceTest::format),
             label + ": previousFrom(" + now + ")");
       }
       case "occurrences" -> {
@@ -227,7 +229,7 @@ public class ConformanceTest {
         int take = required(tc, "take", label).asInt();
         assertEquals(
             timestamps(required(tc, "expected", label)),
-            instants(s.occurrences(from).limit(take).toList()),
+            format(s.occurrences(from).limit(take).toList()),
             label + ": occurrences(" + from + ")");
       }
       case "between" -> {
@@ -235,7 +237,7 @@ public class ConformanceTest {
             tc, Set.of("expression", "from", "to", "expected", "expected_count"), label);
         ZonedDateTime from = parseZonedDateTime(required(tc, "from", label).asText());
         ZonedDateTime to = parseZonedDateTime(required(tc, "to", label).asText());
-        List<Instant> results = instants(s.between(from, to).toList());
+        List<String> results = format(s.between(from, to).toList());
         assertTrue(
             tc.has("expected") || tc.has("expected_count"),
             label + ": no expected or expected_count");
@@ -266,7 +268,7 @@ public class ConformanceTest {
 
     if (tc.has("next")) {
       assertEquals(
-          timestamp(tc.get("next")), next.map(ZonedDateTime::toInstant), label + ": nextFrom()");
+          timestamp(tc.get("next")), next.map(ConformanceTest::format), label + ": nextFrom()");
     }
     if (tc.has("next_date")) {
       JsonNode expected = tc.get("next_date");
@@ -276,9 +278,9 @@ public class ConformanceTest {
           label + ": nextFrom() date");
     }
     if (tc.has("next_n")) {
-      List<Instant> expected = timestamps(tc.get("next_n"));
+      List<String> expected = timestamps(tc.get("next_n"));
       int n = tc.has("next_n_count") ? tc.get("next_n_count").asInt() : expected.size();
-      assertEquals(expected, instants(s.nextNFrom(now, n)), label + ": nextNFrom(" + n + ")");
+      assertEquals(expected, format(s.nextNFrom(now, n)), label + ": nextNFrom(" + n + ")");
     }
     if (tc.has("next_n_length")) {
       int n = required(tc, "next_n_count", label).asInt();
@@ -305,17 +307,27 @@ public class ConformanceTest {
     assertEquals(List.of(), unknown, label + ": unknown fields");
   }
 
-  private static Optional<Instant> timestamp(JsonNode node) {
-    return node.isNull()
-        ? Optional.empty()
-        : Optional.of(parseZonedDateTime(node.asText()).toInstant());
+  private static Optional<String> timestamp(JsonNode node) {
+    return node.isNull() ? Optional.empty() : Optional.of(node.asText());
   }
 
-  private static List<Instant> timestamps(JsonNode node) {
+  private static List<String> timestamps(JsonNode node) {
     assertTrue(node.isArray(), "expected a list, got " + node);
-    List<Instant> result = new ArrayList<>();
-    node.forEach(item -> result.add(parseZonedDateTime(item.asText()).toInstant()));
+    List<String> result = new ArrayList<>();
+    node.forEach(item -> result.add(item.asText()));
     return result;
+  }
+
+  /**
+   * Compared in full with the expected string (spec/README.md, "Writing a runner"). The offset
+   * keeps any seconds, so a sub-minute offset cannot pass as its rounded one.
+   */
+  private static String format(ZonedDateTime t) {
+    return TIMESTAMP.format(t) + "[" + t.getZone().getId() + "]";
+  }
+
+  private static List<String> format(List<ZonedDateTime> times) {
+    return times.stream().map(ConformanceTest::format).toList();
   }
 
   @TestFactory

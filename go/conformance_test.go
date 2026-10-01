@@ -3,6 +3,7 @@ package hron
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"regexp"
@@ -61,7 +62,7 @@ type EvalTest struct {
 	Next        json.RawMessage `json:"next,omitempty"`
 	NextDate    json.RawMessage `json:"next_date,omitempty"`
 	NextN       *[]string       `json:"next_n,omitempty"`
-	NextNCount  int             `json:"next_n_count,omitempty"`
+	NextNCount  *int            `json:"next_n_count,omitempty"`
 	NextNLength *int            `json:"next_n_length,omitempty"`
 }
 
@@ -365,30 +366,18 @@ func TestEval(t *testing.T) {
 					}
 
 					if tc.NextN != nil {
-						expectedN := *tc.NextN
-						n := len(expectedN)
-						if tc.NextNCount > 0 {
-							n = tc.NextNCount
+						n := len(*tc.NextN)
+						if tc.NextNCount != nil {
+							n = *tc.NextNCount
 						}
-						results := s.NextNFrom(now, n)
-
-						if len(results) != len(expectedN) {
-							t.Errorf("NextNFrom() returned %d results, want %d", len(results), len(expectedN))
-						} else {
-							for i, expectedStr := range expectedN {
-								expected, err := parseZonedDateTime(expectedStr)
-								if err != nil {
-									t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
-								}
-								if !results[i].Equal(expected) {
-									t.Errorf("NextNFrom()[%d] = %v, want %v", i, results[i], expected)
-								}
-							}
-						}
+						checkTimestamps(t, "NextNFrom()", s.NextNFrom(now, n), *tc.NextN)
 					}
 
 					if tc.NextNLength != nil {
-						results := s.NextNFrom(now, tc.NextNCount)
+						if tc.NextNCount == nil {
+							t.Fatalf("next_n_length has no next_n_count")
+						}
+						results := s.NextNFrom(now, *tc.NextNCount)
 						if len(results) != *tc.NextNLength {
 							t.Errorf("NextNFrom() returned %d results, want %d", len(results), *tc.NextNLength)
 						}
@@ -428,19 +417,7 @@ func TestOccurrences(t *testing.T) {
 				count++
 			}
 
-			if len(results) != len(expectedList) {
-				t.Errorf("Occurrences() returned %d results, want %d", len(results), len(expectedList))
-			} else {
-				for i, expectedStr := range expectedList {
-					expected, err := parseZonedDateTime(expectedStr)
-					if err != nil {
-						t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
-					}
-					if !results[i].Equal(expected) {
-						t.Errorf("Occurrences()[%d] = %v, want %v", i, results[i], expected)
-					}
-				}
-			}
+			checkTimestamps(t, "Occurrences()", results, expectedList)
 		})
 	}
 }
@@ -479,20 +456,7 @@ func TestBetween(t *testing.T) {
 				}
 			}
 			if tc.Expected != nil {
-				expectedList := *tc.Expected
-				if len(results) != len(expectedList) {
-					t.Errorf("Between() returned %d results, want %d", len(results), len(expectedList))
-				} else {
-					for i, expectedStr := range expectedList {
-						expected, err := parseZonedDateTime(expectedStr)
-						if err != nil {
-							t.Fatalf("failed to parse expected[%d] %q: %v", i, expectedStr, err)
-						}
-						if !results[i].Equal(expected) {
-							t.Errorf("Between()[%d] = %v, want %v", i, results[i], expected)
-						}
-					}
-				}
+				checkTimestamps(t, "Between()", results, *tc.Expected)
 			}
 		})
 	}
@@ -729,7 +693,7 @@ func TestIntervalAlignment(t *testing.T) {
 	}
 }
 
-func expectedTimestamp(t *testing.T, raw json.RawMessage) *time.Time {
+func expectedTimestamp(t *testing.T, raw json.RawMessage) *string {
 	if strings.TrimSpace(string(raw)) == "null" {
 		return nil
 	}
@@ -737,21 +701,42 @@ func expectedTimestamp(t *testing.T, raw json.RawMessage) *time.Time {
 	if err := json.Unmarshal(raw, &str); err != nil {
 		t.Fatalf("failed to read expected timestamp %s: %v", raw, err)
 	}
-	expected, err := parseZonedDateTime(str)
-	if err != nil {
-		t.Fatalf("failed to parse expected timestamp %q: %v", str, err)
-	}
-	return &expected
+	return &str
 }
 
-func checkTimestamp(t *testing.T, call string, got, want *time.Time) {
+// Go's -07:00 layout drops an offset's seconds, and -07:00:00 writes
+// Africa/Accra's -00:00:52 as +00:00:-52.
+func formatZoned(t time.Time) string {
+	_, offset := t.Zone()
+	sign := '+'
+	if offset < 0 {
+		sign, offset = '-', -offset
+	}
+	zone := fmt.Sprintf("%c%02d:%02d", sign, offset/3600, offset/60%60)
+	if offset%60 != 0 {
+		zone += fmt.Sprintf(":%02d", offset%60)
+	}
+	return t.Format("2006-01-02T15:04:05") + zone + "[" + t.Location().String() + "]"
+}
+
+func checkTimestamp(t *testing.T, call string, got *time.Time, want *string) {
 	switch {
 	case want == nil && got != nil:
-		t.Errorf("%s = %v, want nil", call, *got)
+		t.Errorf("%s = %s, want nil", call, formatZoned(*got))
 	case want != nil && got == nil:
-		t.Errorf("%s = nil, want %v", call, *want)
-	case want != nil && !got.Equal(*want):
-		t.Errorf("%s = %v, want %v", call, *got, *want)
+		t.Errorf("%s = nil, want %s", call, *want)
+	case want != nil && formatZoned(*got) != *want:
+		t.Errorf("%s = %s, want %s", call, formatZoned(*got), *want)
+	}
+}
+
+func checkTimestamps(t *testing.T, call string, got []time.Time, want []string) {
+	formatted := make([]string, len(got))
+	for i, g := range got {
+		formatted[i] = formatZoned(g)
+	}
+	if !slices.Equal(formatted, want) {
+		t.Errorf("%s = %v, want %v", call, formatted, want)
 	}
 }
 

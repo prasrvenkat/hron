@@ -39,7 +39,8 @@ fn evaluate(case: &Value) -> Result<Value, ScheduleError> {
         let instant: Timestamp = iso.parse().expect(field);
         instant.in_tz(zone.trim_end_matches(']')).expect(field)
     };
-    let n = || case["n"].as_u64().expect("n") as usize;
+    // next_n_from takes a usize, and a count of zero or less asks for nothing.
+    let n = || usize::try_from(case["n"].as_i64().expect("n")).unwrap_or(0);
     if case["op"] == "fromCron" {
         return Ok(json!(Schedule::from_cron(expr)?.to_string()));
     }

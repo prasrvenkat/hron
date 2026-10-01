@@ -30,9 +30,10 @@ const maxOverlapDays = 1
 // Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 const namedUntilMaxYears = 8
 
-// The parser's limit on an interval. A schedule built by hand can exceed it;
-// any larger interval fires as this one does in the supported range, and with
-// a 64-bit int period arithmetic on it cannot overflow.
+// The parser's limit on an interval. A schedule built in code can exceed it
+// where int is 64 bits; any larger interval fires as this one does in the
+// supported range. Periods are int64, so stepping by it cannot overflow on any
+// platform.
 const maxInterval = math.MaxInt32
 
 // Default anchors for day, month and year intervals, and for week intervals
@@ -120,8 +121,8 @@ const (
 	backward direction = -1
 )
 
-func (d direction) sign() int {
-	return int(d)
+func (d direction) sign() int64 {
+	return int64(d)
 }
 
 func (d direction) precedes(a, b time.Time) bool {
@@ -472,7 +473,7 @@ func (u unit) per400Years() int {
 type cadence struct {
 	unit     unit
 	origin   time.Time
-	interval int
+	interval int64
 
 	single bool
 }
@@ -508,19 +509,19 @@ func cadenceOf(expr *ScheduleExpr, starting *time.Time) cadence {
 	case unitYear:
 		origin = newDate(anchor.Year(), time.January, 1)
 	}
-	return cadence{unit: u, origin: origin, interval: min(max(interval, 1), maxInterval)}
+	return cadence{unit: u, origin: origin, interval: int64(min(max(interval, 1), maxInterval))}
 }
 
-func (c *cadence) periodOf(date time.Time) int {
+func (c *cadence) periodOf(date time.Time) int64 {
 	switch c.unit {
 	case unitDay:
-		return daysBetween(c.origin, date)
+		return int64(daysBetween(c.origin, date))
 	case unitWeek:
-		return floorDiv(daysBetween(c.origin, date), 7)
+		return int64(floorDiv(daysBetween(c.origin, date), 7))
 	case unitMonth:
-		return monthIndex(date) - monthIndex(c.origin)
+		return int64(monthIndex(date) - monthIndex(c.origin))
 	default:
-		return date.Year() - c.origin.Year()
+		return int64(date.Year() - c.origin.Year())
 	}
 }
 
@@ -528,7 +529,11 @@ func (c *cadence) targetsStartMonth() bool {
 	return c.unit == unitDay || c.unit == unitMonth
 }
 
-func (c *cadence) startOf(k int) time.Time {
+// Every period further than calendarDays from the origin starts beyond the
+// calendar, where only pastCalendar reads it, so k is clamped there and the int
+// arithmetic below stays within 32 bits.
+func (c *cadence) startOf(period int64) time.Time {
+	k := int(min(max(period, -calendarDays), calendarDays))
 	switch c.unit {
 	case unitDay:
 		return addDays(c.origin, k)
@@ -544,7 +549,7 @@ func (c *cadence) startOf(k int) time.Time {
 
 // The walk reaches one search horizon beyond whichever of firstPeriod and
 // reach is farther along d (spec/README.md, "Search horizon").
-func (c *cadence) periodStarts(firstPeriod, reach int, d direction) periodWalk {
+func (c *cadence) periodStarts(firstPeriod, reach int64, d direction) periodWalk {
 	if c.single {
 		return periodWalk{cadence: c, step: 1, left: 1, direction: d}
 	}
@@ -559,7 +564,7 @@ func (c *cadence) periodStarts(firstPeriod, reach int, d direction) periodWalk {
 	}
 }
 
-func (c *cadence) align(k int, d direction) int {
+func (c *cadence) align(k int64, d direction) int64 {
 	if d == forward {
 		return k + floorMod(-k, c.interval)
 	}
@@ -568,16 +573,16 @@ func (c *cadence) align(k int, d direction) int {
 
 // horizonPeriods returns the aligned periods in lcm(400 years, interval units),
 // after which both the calendar and the alignment repeat.
-func (c *cadence) horizonPeriods() int {
-	cycle := c.unit.per400Years()
+func (c *cadence) horizonPeriods() int64 {
+	cycle := int64(c.unit.per400Years())
 	return cycle / gcd(cycle, c.interval)
 }
 
 type periodWalk struct {
 	cadence   *cadence
-	period    int
-	step      int
-	left      int
+	period    int64
+	step      int64
+	left      int64
 	direction direction
 }
 
@@ -602,6 +607,8 @@ var (
 	calendarStart = newDate(0, time.January, 1)
 	calendarEnd   = newDate(10000, time.December, 31)
 )
+
+const calendarDays = 10001 * 366
 
 func pastCalendar(start time.Time, d direction) bool {
 	if d == forward {
@@ -667,7 +674,7 @@ func datesInPeriod(expr *ScheduleExpr, start time.Time) []time.Time {
 // floorDiv rounds toward negative infinity where Go's / truncates toward zero,
 // so dates before an origin align by floor (spec/README.md, "previousFrom
 // mirrors nextFrom").
-func floorDiv(a, b int) int {
+func floorDiv[T int | int64](a, b T) T {
 	q := a / b
 	if a%b != 0 && (a < 0) != (b < 0) {
 		q--
@@ -675,11 +682,11 @@ func floorDiv(a, b int) int {
 	return q
 }
 
-func floorMod(a, b int) int {
+func floorMod[T int | int64](a, b T) T {
 	return a - floorDiv(a, b)*b
 }
 
-func gcd(a, b int) int {
+func gcd(a, b int64) int64 {
 	for b != 0 {
 		a, b = b, a%b
 	}

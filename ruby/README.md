@@ -28,14 +28,15 @@ require 'hron'
 # Parse an expression
 schedule = Hron::Schedule.parse("every weekday at 9:00 except dec 25, jan 1 in America/New_York")
 
-# Get next occurrence
-now = Time.now
-next_time = schedule.next_from(now)
-puts next_time
+# Get the next occurrence, in the schedule's timezone
+now = Time.new(2026, 2, 6, 21, 0, 0, "+09:00")  # 07:00 in New York
+puts schedule.next_from(now)  # 2026-02-06 09:00:00 -0500
 
-# Get next 5 occurrences
-upcoming = schedule.next_n_from(now, 5)
-upcoming.each { |t| puts t }
+# Get the next 3 occurrences
+schedule.next_n_from(now, 3).each { |t| puts t }
+# 2026-02-06 09:00:00 -0500
+# 2026-02-09 09:00:00 -0500
+# 2026-02-10 09:00:00 -0500
 
 # Check if a time matches
 schedule.matches(Time.new(2026, 2, 9, 9, 0, 0, "-05:00"))  # true: 09:00 in New York
@@ -70,11 +71,24 @@ Check if an input string is a valid hron expression.
 ### `schedule.next_from(now) -> Time | nil`
 Compute the next occurrence after `now`.
 
+### `schedule.previous_from(now) -> Time | nil`
+Compute the most recent occurrence before `now`.
+
 ### `schedule.next_n_from(now, n) -> Array<Time>`
-Compute the next `n` occurrences after `now`.
+Compute up to `n` occurrences after `now`: none when `n <= 0`, and every one through the end of the supported range when there are fewer than `n`. Raises `TypeError` when `n` is not an `Integer`.
 
 ### `schedule.matches(time) -> Boolean`
 Check if a time matches this schedule.
+
+### `schedule.occurrences(from) -> Enumerator::Lazy<Time>`
+Every occurrence after `from`, computed as it is taken.
+
+### `schedule.between(from, to) -> Enumerator::Lazy<Time>`
+Every occurrence after `from` and up to and including `to`.
+
+### Times
+
+Every method takes a `Time` in any zone or offset; only its instant counts, and the methods never change it. Anything else, such as a `String`, `Date`, `DateTime` or `nil`, raises `TypeError`. Every `Time` returned is in the schedule's timezone, with that `TZInfo::Timezone` as its `zone`, or UTC when the schedule has none.
 
 ### `schedule.to_cron -> String`
 Convert to a 5-field cron expression that fires at the same times. Yearly schedules, ordinal weekdays and partial-day intervals convert (`every 15 min from 09:00 to 17:45 on weekday` is `*/15 9-17 * * 1-5`). Raises `Hron::HronError` with `kind` `:cron` when no cron fires at the same times, as for `except`, `until`, `starting`, ISO dates, repeats every `n > 1` days, weeks, months or years, a directional nearest weekday, a `during` that excludes a yearly or named date's month, a schedule built in code with no days or no times, and times that are not every combination of their minutes and hours (`at 09:00, 17:30`). The timezone is not part of the cron: run it in the schedule's timezone. The [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#cron-conversion) has the full rules and every error message.

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Xunit;
@@ -132,8 +133,7 @@ public partial class ConformanceTest
         else
         {
             Assert.NotNull(result);
-            var expected = ParseZonedDateTime(expectedNext);
-            Assert.Equal(expected.ToUniversalTime(), result.Value.ToUniversalTime());
+            AssertSameTimestamp(expectedNext, result.Value);
         }
     }
 
@@ -218,8 +218,7 @@ public partial class ConformanceTest
 
         for (var i = 0; i < expectedStrs.Length; i++)
         {
-            var expected = ParseZonedDateTime(expectedStrs[i]);
-            Assert.Equal(expected.ToUniversalTime(), results[i].ToUniversalTime());
+            AssertSameTimestamp(expectedStrs[i], results[i]);
         }
     }
 
@@ -294,8 +293,7 @@ public partial class ConformanceTest
         else
         {
             Assert.NotNull(result);
-            var expected = ParseZonedDateTime(expectedStr);
-            Assert.Equal(expected.ToUniversalTime(), result.Value.ToUniversalTime());
+            AssertSameTimestamp(expectedStr, result.Value);
         }
     }
 
@@ -361,8 +359,7 @@ public partial class ConformanceTest
 
         for (var i = 0; i < expectedStrs.Length; i++)
         {
-            var expected = ParseZonedDateTime(expectedStrs[i]);
-            Assert.Equal(expected.ToUniversalTime(), results[i].ToUniversalTime());
+            AssertSameTimestamp(expectedStrs[i], results[i]);
         }
     }
 
@@ -413,8 +410,7 @@ public partial class ConformanceTest
 
             for (var i = 0; i < expectedStrs.Length; i++)
             {
-                var expected = ParseZonedDateTime(expectedStrs[i]);
-                Assert.Equal(expected.ToUniversalTime(), results[i].ToUniversalTime());
+                AssertSameTimestamp(expectedStrs[i], results[i]);
             }
         }
         else if (expectedCount.HasValue)
@@ -799,6 +795,16 @@ public partial class ConformanceTest
         var display = s.ToString();
         var again = Schedule.Parse(display).ToString();
         return again == display ? null : $"'{display}' re-displays as '{again}'";
+    }
+
+    /// <summary>
+    /// The whole string but the zone name, which DateTimeOffset does not have (spec/README.md,
+    /// "Writing a runner").
+    /// </summary>
+    private static void AssertSameTimestamp(string expected, DateTimeOffset actual)
+    {
+        var withoutZone = expected[..expected.IndexOf('[')];
+        Assert.Equal(withoutZone, actual.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
     }
 
     private static string Show(DateTimeOffset? t) => t?.ToString("o") ?? "null";

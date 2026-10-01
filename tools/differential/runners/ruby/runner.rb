@@ -11,22 +11,21 @@ def parse_zoned(s)
   TZInfo::Timezone.get(zone).to_local(Time.new(iso))
 end
 
-# Time carries no zone, so only the instant returned is compared, written in the
-# schedule's timezone (UTC when none).
-def format_zoned(time, zone)
+# Written in the time's own zone, so a result in the wrong zone shows as a divergence.
+def format_zoned(time)
   return nil unless time
 
-  local = TZInfo::Timezone.get(zone).to_local(time)
-  offset = (local.utc_offset % 60).zero? ? "%:z" : "%::z"
-  "#{local.strftime("%Y-%m-%dT%H:%M:%S#{offset}")}[#{zone}]"
+  zone = time.zone
+  name = zone.respond_to?(:identifier) ? zone.identifier : zone
+  offset = (time.utc_offset % 60).zero? ? "%:z" : "%::z"
+  "#{time.strftime("%Y-%m-%dT%H:%M:%S#{offset}")}[#{name}]"
 end
 
 def evaluate(c)
   return Hron::Schedule.from_cron(c["expr"]).to_s if c["op"] == "fromCron"
 
   schedule = Hron::Schedule.parse(c["expr"])
-  zone = schedule.timezone || "UTC"
-  format = ->(t) { format_zoned(t, zone) }
+  format = method(:format_zoned)
   case c["op"]
   when "parse" then schedule.to_s
   when "toCron" then schedule.to_cron

@@ -15,7 +15,7 @@ public static class Evaluator
     }
 
     /// <summary>
-    /// Computes the next n occurrences strictly after the given time.
+    /// Computes up to n occurrences strictly after the given time, none when n &lt;= 0.
     /// </summary>
     public static IReadOnlyList<DateTimeOffset> NextNFrom(ScheduleData data, DateTimeOffset now, int n, TimeZoneInfo location)
     {

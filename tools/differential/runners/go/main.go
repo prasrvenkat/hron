@@ -91,7 +91,7 @@ func take(times iter.Seq[time.Time], n int) iter.Seq[time.Time] {
 	return func(yield func(time.Time) bool) {
 		left := n
 		for t := range times {
-			if left == 0 || !yield(t) {
+			if left <= 0 || !yield(t) {
 				return
 			}
 			left--

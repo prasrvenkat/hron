@@ -15,6 +15,12 @@ export 'src/ast.dart';
 export 'src/error.dart';
 
 /// Built only by [Schedule.parse] or [Schedule.fromCron].
+///
+/// A [TZDateTime] argument stands for its instant; its location changes no
+/// result. Every returned [TZDateTime] is in the schedule's [timezone], or in a
+/// location named `UTC` when it has none. An argument outside
+/// `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z` is not an error: it gives
+/// `null`, `false` or no occurrences.
 class Schedule {
   final ScheduleData _data;
 
@@ -49,9 +55,8 @@ class Schedule {
   /// Returns the next occurrence strictly after [now], or `null` if none exists.
   TZDateTime? nextFrom(TZDateTime now) => eval_impl.nextFrom(_data, now);
 
-  /// Returns the next [n] occurrences strictly after [now].
-  ///
-  /// May return fewer than [n] results if the schedule has an end date.
+  /// Returns the next [n] occurrences strictly after [now]: none when [n] is
+  /// 0 or less, and fewer when the schedule or the supported range ends.
   List<TZDateTime> nextNFrom(TZDateTime now, int n) =>
       eval_impl.nextNFrom(_data, now, n);
 
@@ -63,8 +68,8 @@ class Schedule {
   /// (seconds are ignored).
   bool matches(TZDateTime datetime) => eval_impl.matches(_data, datetime);
 
-  /// Returns a lazy iterable of occurrences strictly after [from].
-  /// Unbounded for repeating schedules unless an `until` clause ends them.
+  /// Returns a lazy iterable of occurrences strictly after [from], through the
+  /// end of the supported range unless the schedule ends first.
   Iterable<TZDateTime> occurrences(TZDateTime from) =>
       eval_impl.occurrences(_data, from);
 

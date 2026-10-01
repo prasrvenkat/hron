@@ -172,10 +172,7 @@ fn run_eval(section: &str, index: usize) {
             "an empty next_n asserts nothing without next_n_count for '{expr_str}'"
         );
 
-        let n_count = case
-            .get("next_n_count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(expected.len() as u64) as usize;
+        let n_count = next_n_count(case).unwrap_or(expected.len());
 
         let results = schedule
             .next_n_from(&now, n_count)
@@ -194,10 +191,8 @@ fn run_eval(section: &str, index: usize) {
 
     if let Some(expected_len) = case.get("next_n_length") {
         let expected = expected_len.as_u64().unwrap() as usize;
-        let n_count = case["next_n_count"]
-            .as_u64()
-            .unwrap_or_else(|| panic!("next_n_length needs next_n_count for '{expr_str}'"))
-            as usize;
+        let n_count = next_n_count(case)
+            .unwrap_or_else(|| panic!("next_n_length needs next_n_count for '{expr_str}'"));
         let results = schedule
             .next_n_from(&now, n_count)
             .unwrap_or_else(|e| panic!("next_n_from error for '{expr_str}': {e}"));
@@ -207,6 +202,21 @@ fn run_eval(section: &str, index: usize) {
             "next_n_length mismatch for '{expr_str}'"
         );
     }
+}
+
+/// `next_n_from` takes a `usize`, so a negative count is checked as 0
+/// (spec/README.md, "Writing a runner").
+fn next_n_count(case: &Value) -> Option<usize> {
+    let count = case.get("next_n_count")?;
+    let count = count.as_i64().expect("next_n_count should be an integer");
+    Some(usize::try_from(count).unwrap_or(0))
+}
+
+#[test]
+fn a_negative_next_n_count_is_checked_as_zero() {
+    let case =
+        serde_json::json!({ "next_n_count": -1, "next_n": ["2026-02-07T09:00:00+00:00[UTC]"] });
+    assert_eq!(next_n_count(&case), Some(0));
 }
 
 fn run_eval_matches(section: &str, index: usize) {

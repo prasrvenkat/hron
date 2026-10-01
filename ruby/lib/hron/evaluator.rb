@@ -42,18 +42,33 @@ module Hron
     end
 
     def self.next_from(schedule, now)
+      require_time(now, "now")
       Search.new(schedule).nearest(now, Direction::FORWARD) if SUPPORTED_RANGE.cover?(now)
     end
 
     def self.previous_from(schedule, now)
+      require_time(now, "now")
       Search.new(schedule).nearest(now, Direction::BACKWARD) if SUPPORTED_RANGE.cover?(now)
     end
 
+    # Not Enumerable#first, which raises RangeError for an n past a machine integer, where
+    # n only caps the count (spec/README.md, "Timestamps and counts").
     def self.next_n_from(schedule, now, n)
-      occurrences(schedule, now).first([n, 0].max)
+      require_time(now, "now")
+      raise TypeError, "n must be an Integer, not #{n.class}" unless n.is_a?(Integer)
+
+      results = []
+      return results unless n.positive?
+
+      occurrences(schedule, now).each do |occurrence|
+        results << occurrence
+        break if results.size == n
+      end
+      results
     end
 
     def self.occurrences(schedule, from)
+      require_time(from, "from")
       Enumerator.new do |yielder|
         next unless SUPPORTED_RANGE.cover?(from)
 
@@ -66,6 +81,8 @@ module Hron
     end
 
     def self.between(schedule, from, to)
+      require_time(from, "from")
+      require_time(to, "to")
       Enumerator.new do |yielder|
         next unless SUPPORTED_RANGE.cover?(to)
 
@@ -80,6 +97,7 @@ module Hron
     # Defined through the forward search, so the two cannot disagree (spec/README.md,
     # "matches is true exactly when the minute containing t is an occurrence").
     def self.matches(schedule, dt)
+      require_time(dt, "datetime")
       return false unless SUPPORTED_RANGE.cover?(dt)
 
       search = Search.new(schedule)
@@ -92,6 +110,12 @@ module Hron
       search.clauses.end_on(local.to_date.gregorian)
       search.nearest(just_before, Direction::FORWARD) == minute
     end
+
+    # A usage error, never a HronError (spec/README.md, "Timestamps and counts").
+    def self.require_time(value, name)
+      raise TypeError, "#{name} must be a Time, not #{value.class}" unless value.is_a?(Time)
+    end
+    private_class_method :require_time
 
     class Direction
       attr_reader :sign
@@ -123,7 +147,9 @@ module Hron
 
       def initialize(schedule)
         name = schedule.timezone
-        @zone = TZInfo::Timezone.get((name.nil? || name.empty?) ? "UTC" : name)
+        zoned = !(name.nil? || name.empty?)
+        @zone = TZInfo::Timezone.get(zoned ? name : "UTC")
+        @result_zone = zoned ? @zone : "UTC"
         @clauses = Clauses.new(schedule)
         @cadence = Cadence.of(schedule.expr, @clauses.starting)
         @times = DailyTimes.of(schedule.expr)
@@ -131,7 +157,7 @@ module Hron
       end
 
       def nearest(now, direction)
-        now = @zone.utc_to_local(now.utc)
+        now = @zone.utc_to_local(now.getutc)
         now_date = now.to_date.gregorian
         first_date = @clauses.clamp(now_date, direction)
         # A nearest weekday or a DST shift can move an occurrence out of the period it is
@@ -150,7 +176,7 @@ module Hron
           occurrence = nearest_on_date(date, now, direction)
           best = occurrence if occurrence && (best.nil? || direction.precedes?(occurrence.instant, best.instant))
         end
-        best.instant if best && SUPPORTED_RANGE.cover?(best.instant)
+        Time.at(best.instant, in: @result_zone) if best && SUPPORTED_RANGE.cover?(best.instant)
       end
 
       private

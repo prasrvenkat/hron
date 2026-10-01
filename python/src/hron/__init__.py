@@ -59,6 +59,10 @@ from ._parser import parse
 
 
 class Schedule:
+    """Evaluation methods take a `datetime`, reading a naive one as host local time, and
+    return aware datetimes in the schedule's `ZoneInfo`, or `ZoneInfo("UTC")` when it has
+    none. They raise TypeError for a timestamp that is not a `datetime`."""
+
     _data: ScheduleData
     _prepared: PreparedSchedule
 
@@ -92,7 +96,8 @@ class Schedule:
         return _next_from(self._prepared, now)
 
     def next_n_from(self, now: datetime, n: int) -> list[datetime]:
-        """Return up to `n` occurrences after `now`; fewer if the schedule ends."""
+        """Return up to `n` occurrences after `now`; fewer if the schedule ends, none if
+        `n <= 0`. Raises TypeError if `n` is not an integer."""
         return _next_n_from(self._prepared, now, n)
 
     def previous_from(self, now: datetime) -> datetime | None:

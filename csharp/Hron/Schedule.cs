@@ -6,6 +6,10 @@ using HronDisplay = Hron.Display.Display;
 
 namespace Hron;
 
+/// <summary>
+/// Only the instant of a <see cref="DateTimeOffset"/> argument matters. Every result has the offset
+/// of the schedule's timezone at that instant, or zero when it has none.
+/// </summary>
 public sealed class Schedule
 {
     private readonly ScheduleData _data;
@@ -65,9 +69,9 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Computes the next n occurrences strictly after the given time.
+    /// Computes up to count occurrences strictly after the given time.
     /// </summary>
-    /// <returns>A list of the next n occurrences, empty when now is outside the supported range</returns>
+    /// <returns>At most count occurrences in order, empty when count &lt;= 0 or now is outside the supported range</returns>
     public IReadOnlyList<DateTimeOffset> NextNFrom(DateTimeOffset now, int count)
     {
         return Evaluator.NextNFrom(_data, now, count, _zoneInfo);

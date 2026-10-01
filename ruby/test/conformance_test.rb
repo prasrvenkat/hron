@@ -60,20 +60,15 @@ class ConformanceTest < Minitest::Test
     (tc["name"] || tc[fallback_key]).gsub(/[^a-zA-Z0-9_]/, "_")
   end
 
-  def format_like(time, expected)
-    TestHelper.format_zoned(time, expected[/\[(.+)\]$/, 1] || "UTC")
-  end
-
   def assert_occurrence(expected, actual, label)
     return assert_nil actual, label if expected.nil?
 
     refute_nil actual, label
-    assert_equal expected, format_like(actual, expected), label
+    assert_equal expected, TestHelper.format_zoned(actual), label
   end
 
   def assert_occurrences(expected, actual, label)
-    sample = expected.first || "[UTC]"
-    assert_equal expected, actual.map { |t| format_like(t, sample) }, label
+    assert_equal expected, actual.map { |t| TestHelper.format_zoned(t) }, label
   end
 
   def assert_cron_error(expected)
@@ -135,7 +130,7 @@ class ConformanceTest < Minitest::Test
         assert_occurrence tc["next"], schedule.next_from(now), "next" if tc.key?("next")
         if tc.key?("next_date")
           result = schedule.next_from(now)
-          next_date = result && TestHelper.format_zoned(result, schedule.timezone || "UTC")[0, 10]
+          next_date = result&.strftime("%Y-%m-%d")
           tc["next_date"].nil? ? assert_nil(next_date, "next_date") : assert_equal(tc["next_date"], next_date, "next_date")
         end
 

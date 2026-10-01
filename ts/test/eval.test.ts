@@ -54,3 +54,29 @@ describe("supported range at nanosecond precision", () => {
     expect(schedule.nextFrom(justBefore)).toBeNull();
   });
 });
+
+describe("Temporal's own limits", () => {
+  const limit = 8_640_000_000_000_000_000_000n;
+  const schedules = [
+    Schedule.parse("every day at 09:00"),
+    Schedule.parse("every day at 09:00 in Pacific/Kiritimati"),
+  ];
+
+  for (const ns of [-limit, limit]) {
+    for (const at of [
+      Temporal.Instant.fromEpochNanoseconds(ns),
+      Temporal.Instant.fromEpochNanoseconds(ns).toZonedDateTimeISO("UTC"),
+    ]) {
+      it(`finds nothing and raises nothing at ${at}`, () => {
+        for (const schedule of schedules) {
+          expect(schedule.nextFrom(at)).toBeNull();
+          expect(schedule.previousFrom(at)).toBeNull();
+          expect(schedule.matches(at)).toBe(false);
+          expect(schedule.nextNFrom(at, 3)).toEqual([]);
+          expect([...schedule.occurrences(at)]).toEqual([]);
+          expect([...schedule.between(at, at)]).toEqual([]);
+        }
+      });
+    }
+  }
+});

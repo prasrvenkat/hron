@@ -277,7 +277,7 @@ Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:
 | Language | Type |
 |---|---|
 | Rust | `jiff::Zoned` |
-| TypeScript | `Temporal.ZonedDateTime`, native or polyfill |
+| TypeScript | `Temporal.ZonedDateTime`, native or polyfill; it also takes a `Temporal.Instant` |
 | Python | an aware `datetime` |
 | Go | `time.Time` |
 | Java | `ZonedDateTime` |
@@ -288,10 +288,10 @@ Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:
 
 - Every returned timestamp is in the schedule's timezone, or UTC when it has none: a Python `datetime` with that `ZoneInfo`, a Go `time.Time` with that `Location`, a Ruby `Time` whose `zone` is that `TZInfo::Timezone`, and so on.
 - No method modifies its arguments.
-- Only Python (a naive `datetime`) and .NET (a `DateTime`, which C# converts to `DateTimeOffset` before hron sees it) accept a value without an offset; both read it as the host's local time.
-- `nextNFrom(now, n)` returns no more than `n` occurrences, and none when `n <= 0`. `n` only caps the count: no implementation reserves room for it, so `n = 2147483647` returns at once, with every occurrence through the end of the supported range. Where a caller can pass a non-integer `n` (JavaScript, Python, Ruby, WebAssembly), that is a usage error; an integer is what `Number.isInteger`, `operator.index` or `Integer` accepts. WebAssembly's `occurrences(from, limit)` treats `limit` the same way.
+- Only Python (a naive `datetime`) and .NET (a `DateTime`, which C# converts to `DateTimeOffset` before hron sees it) accept a value without an offset; both read it as the host's local time, by the platform's own rule for a time the host's DST skips or repeats.
+- `nextNFrom(now, n)` returns no more than `n` occurrences, and none when `n <= 0`. `n` only caps the count: no implementation reserves room for it, so `n = 2147483647` returns at once, with every occurrence through the end of the supported range. Where a caller can pass a non-integer `n` (JavaScript, Python, Ruby, WebAssembly), that is a usage error; an integer is what `Number.isInteger` accepts in JavaScript, `operator.index` in Python and `is_a?(Integer)` in Ruby. WebAssembly's `occurrences(from, limit)` treats `limit` the same way.
 - A usage error is the platform's own error for a bad argument, never a hron error: in JavaScript a `TypeError` for a value of the wrong type (null and `undefined` included) and a `RangeError` for a bad value; in Python and Ruby a `TypeError`; in Java a `NullPointerException` for null. The CLI prints it and exits with status 2. The static types in Rust, Go, C# and Dart rule the others out.
-- WebAssembly and the CLI take a timestamp as an RFC 9557 or RFC 3339 string with an offset or `Z`, in either case (`2026-02-06T12:00:00+09:00[Asia/Tokyo]`, `2026-02-06T03:00:00Z`, `2026-02-06t03:00:00.000z`). The offset decides the instant: a zone in brackets that disagrees with it is ignored, unless it is marked critical (`[!Asia/Tokyo]`), which is a usage error. Other bracketed tags such as `[u-ca=hebrew]` are ignored unless critical. A string without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`) names no instant, or two at a DST change, so it is a usage error, as is an unknown zone. Six-digit years (`+010000-01-01T00:00:00Z`, as `Date.prototype.toISOString` writes them) are read and lie outside the supported range.
+- WebAssembly and the CLI take a timestamp as an RFC 9557 or RFC 3339 string with an offset or `Z`, in either case (`2026-02-06T12:00:00+09:00[Asia/Tokyo]`, `2026-02-06T03:00:00Z`, `2026-02-06t03:00:00.000z`). The offset decides the instant: a zone in brackets that disagrees with it is ignored, unless it is marked critical (`[!Asia/Tokyo]`), which is a usage error. `Z` names the instant without claiming a local offset, so it never disagrees with a zone. Other bracketed tags such as `[u-ca=hebrew]` are ignored unless critical. A string without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`) names no instant, or two at a DST change, so it is a usage error, as is an unknown zone. Six-digit years (`+010000-01-01T00:00:00Z`, as `Date.prototype.toISOString` writes them) are read and lie outside the supported range.
 - WebAssembly and the CLI write every timestamp as `2026-02-06T09:00:00-05:00[America/New_York]`: seconds always, the offset as `±HH:MM` (`+00:00`, never `Z`), and the schedule's zone or `UTC` in brackets.
 
 ### Timezone data

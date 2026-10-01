@@ -51,7 +51,8 @@ static object? Evaluate(JsonObject c)
         return Schedule.FromCron(expr).ToString();
     }
     var schedule = Schedule.Parse(expr);
-    // DateTimeOffset carries an offset but no zone name, so the schedule's zone is assumed.
+    // DateTimeOffset carries an offset but no zone name, so a result is checked against the
+    // schedule zone's offset and printed with that zone's name.
     var zone = schedule.Timezone ?? "UTC";
     string? Format(DateTimeOffset? t) => t is { } v ? FormatZoned(v, zone) : null;
     DateTimeOffset Time(string field) => ParseZoned(c[field]!.GetValue<string>());
@@ -86,6 +87,10 @@ static DateTimeOffset ParseZoned(string s)
 
 static string FormatZoned(DateTimeOffset t, string zone)
 {
+    if (t.Offset != TimeZoneInfo.FindSystemTimeZoneById(zone).GetUtcOffset(t))
+    {
+        throw new InvalidOperationException($"{t:o} is not in {zone}");
+    }
     var offset = Offsets.Exact(t, zone);
     var wall = (t.UtcDateTime + offset).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
     var sign = offset < TimeSpan.Zero ? "-" : "+";

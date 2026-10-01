@@ -6,6 +6,9 @@ require_relative "display"
 require_relative "cron"
 
 module Hron
+  # Each method that takes a time takes a Time in any zone and reads only its instant, and
+  # raises TypeError for anything else. Each Time returned is in the schedule's timezone, with
+  # that TZInfo::Timezone as its zone, or in UTC when the schedule has none.
   class Schedule
     attr_reader :data
 
@@ -37,7 +40,8 @@ module Hron
       Evaluator.next_from(@data, now)
     end
 
-    # Returns an Array of up to n occurrences strictly after now.
+    # Returns an Array of up to n occurrences strictly after now, empty when n <= 0. Raises
+    # TypeError unless n is an Integer.
     def next_n_from(now, n)
       Evaluator.next_n_from(@data, now, n)
     end
