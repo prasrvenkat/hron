@@ -164,12 +164,15 @@ func (s *search) nearest(now time.Time, d direction) (time.Time, bool) {
 	periods := s.cadence.periodStarts(firstPeriod, reach, d)
 walk:
 	for start, ok := periods.next(); ok; start, ok = periods.next() {
+		if s.cadence.targetsStartMonth() && !s.clauses.allowsMonth(start.Month()) {
+			continue
+		}
 		candidates := candidatesInPeriod(s.expr, start)
 		if d == backward {
 			slices.Reverse(candidates)
 		}
 		for _, c := range candidates {
-			if (best != nil && !couldBeat(c.date, best.date, d)) || s.clauses.endsSearch(c.date, d) {
+			if (best != nil && !couldBeat(c.date, best.date, d, s.times.shiftDays())) || s.clauses.endsSearch(c.date, d) {
 				break walk
 			}
 			if !s.clauses.allows(c) {
@@ -256,9 +259,9 @@ func (s *search) lastSlotBefore(date, now time.Time) (time.Time, bool) {
 
 // couldBeat reports whether an occurrence scheduled on date can precede, in
 // direction d, the best one, scheduled on best, given that each lands at most
-// maxShiftDays after its date.
-func couldBeat(date, best time.Time, d direction) bool {
-	return d.sign()*daysBetween(best, date) <= maxShiftDays
+// shift days after its date.
+func couldBeat(date, best time.Time, d direction, shift int) bool {
+	return d.sign()*daysBetween(best, date) <= shift
 }
 
 // dailyTimes are the times of day an expression fires at: fixed times in
@@ -293,6 +296,15 @@ func intervalSlots(expr *ScheduleExpr) slots {
 	}
 	from, to := expr.FromTime.TotalMinutes(), expr.ToTime.TotalMinutes()
 	return slots{from: from, step: step, count: max(floorDiv(to-from, step)+1, 0)}
+}
+
+// shiftDays returns how many dates past its scheduled date an occurrence at
+// these times can land: a gap pushes a fixed time forward but skips a slot.
+func (t *dailyTimes) shiftDays() int {
+	if t.fixed != nil {
+		return maxShiftDays
+	}
+	return 0
 }
 
 func (s slots) minute(k int) int {
@@ -348,11 +360,16 @@ func clausesOf(data *ScheduleData) clauses {
 
 func (c *clauses) allows(candidate candidate) bool {
 	date := candidate.date
-	return (len(c.during) == 0 || slices.Contains(c.during, candidate.targetMonth)) &&
+	return c.allowsMonth(candidate.targetMonth) &&
 		!slices.Contains(c.exceptMonthDays, monthDay{date.Month(), date.Day()}) &&
 		!slices.ContainsFunc(c.exceptDates, date.Equal) &&
 		(c.until == nil || !date.After(*c.until)) &&
 		(c.starting == nil || !date.Before(*c.starting))
+}
+
+// allowsMonth reports whether during allows a candidate that targets month.
+func (c *clauses) allowsMonth(month time.Month) bool {
+	return len(c.during) == 0 || slices.Contains(c.during, month)
 }
 
 // farthestExceptDate returns the one-off except date farthest along direction
@@ -490,6 +507,12 @@ func (c *cadence) periodOf(date time.Time) int {
 	default:
 		return date.Year() - c.origin.Year()
 	}
+}
+
+// targetsStartMonth reports whether every candidate in a period targets the
+// month the period starts in, as in a day or a month.
+func (c *cadence) targetsStartMonth() bool {
+	return c.unit == unitDay || c.unit == unitMonth
 }
 
 // startOf returns the first day of period k.
