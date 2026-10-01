@@ -2,7 +2,10 @@ package hron
 
 import "time"
 
-const minutesPerHour = 60
+const (
+	minutesPerHour = 60
+	minutesPerDay  = 24 * minutesPerHour
+)
 
 // fixedTimeOn returns the instant of the wall time minute minutes after
 // midnight on date, shifted forward by the gap's length when it falls in a
@@ -12,22 +15,44 @@ func fixedTimeOn(date time.Time, minute int, zone *time.Location) time.Time {
 	return instant
 }
 
-// slotOn returns the instant of the interval slot minute minutes after midnight
-// on date, or false when that wall time falls in a spring-forward gap
-// (spec/README.md, "Interval slots in a spring-forward gap").
-func slotOn(date time.Time, minute int, zone *time.Location) (time.Time, bool) {
-	return resolveWallClock(date, minute, zone)
+// slot is an interval slot on a date: where it sits in time, and its instant
+// unless a spring-forward gap skips it (spec/README.md, "Interval slots in a
+// spring-forward gap"). A skipped slot sits at the instant its gap ends, so
+// keys never decrease in wall-clock order and one binary search finds the
+// slots on either side of an instant.
+type slot struct {
+	key     time.Time
+	instant time.Time
+	skipped bool
 }
 
-// inSecondPass reports whether t, read in zone, is in the second pass of a
-// fall-back overlap: the first pass of its wall-clock minute ended before t.
-func inSecondPass(t time.Time, zone *time.Location) bool {
-	first := fixedTimeOn(dateOf(t), minuteOfDay(t), zone)
-	return !t.Before(first.Add(time.Minute))
+// slotOn returns the slot minute minutes after midnight on date.
+func slotOn(date time.Time, minute int, zone *time.Location) slot {
+	instant, ok := resolveWallClock(date, minute, zone)
+	if ok {
+		return slot{key: instant, instant: instant}
+	}
+	// In a gap, resolveWallClock reads the wall time at the offset before it,
+	// which gives an instant after the gap ends, at the offset after it.
+	wall := date.Add(time.Duration(minute) * time.Minute)
+	return slot{key: gapEnd(wall, wall.Sub(instant), offsetAt(instant, zone), zone), skipped: true}
 }
 
-func minuteOfDay(t time.Time) int {
-	return t.Hour()*minutesPerHour + t.Minute()
+// gapEnd returns the instant the spring-forward gap holding wall ends: the
+// transition from offset before to offset after. Read at the later offset, wall
+// is before it; read at the earlier, at or after it. Transitions fall on whole
+// seconds, so a binary search over that bracket finds it.
+func gapEnd(wall time.Time, before, after time.Duration, zone *time.Location) time.Time {
+	lo, hi := wall.Add(-after).Unix(), wall.Add(-before).Unix()
+	for hi-lo > 1 {
+		mid := lo + (hi-lo)/2
+		if offsetAt(time.Unix(mid, 0), zone) == after {
+			hi = mid
+		} else {
+			lo = mid
+		}
+	}
+	return time.Unix(hi, 0)
 }
 
 // resolveWallClock returns the first instant whose wall-clock time in zone is

@@ -4,6 +4,7 @@ import (
 	"iter"
 	"math"
 	"slices"
+	"sort"
 	"time"
 )
 
@@ -18,9 +19,13 @@ var (
 // search starts, and for a horizon that starts mid-period.
 const horizonMarginPeriods = 2
 
-// How many dates past its scheduled date an occurrence can land: a fixed time
-// shifted out of a gap before midnight lands on the next date.
+// How many dates past its scheduled date a fixed time can land: one shifted out
+// of a gap before midnight lands on the next date.
 const maxShiftDays = 1
+
+// How many dates behind a date that has begun now's wall date can read: from
+// the second pass of a fall-back overlap that crosses midnight, one.
+const maxOverlapDays = 1
 
 // Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 const namedUntilMaxYears = 8
@@ -71,6 +76,9 @@ func matches(data *ScheduleData, zone *time.Location, t time.Time) bool {
 	local := t.In(zone)
 	// Not Truncate: it rounds the absolute instant, and LMT offsets carry seconds.
 	minute := local.Add(-time.Duration(local.Second())*time.Second - time.Duration(local.Nanosecond()))
+	// An occurrence never lands before the date it is scheduled on, so one at
+	// this minute is scheduled on or before the minute's wall date.
+	s.clauses.endOn(dateOf(minute))
 	next, ok := s.nearest(minute.Add(-time.Nanosecond), forward)
 	return ok && next.Equal(minute)
 }
@@ -145,16 +153,17 @@ func newSearch(data *ScheduleData, zone *time.Location) search {
 	}
 }
 
-// occurrence is an instant a search found, with the date it is scheduled on.
+// occurrence is an instant a search found, with the local date it lands on.
 type occurrence struct {
 	instant time.Time
-	date    time.Time
+	landing time.Time
 }
 
 // nearest returns the occurrence nearest now strictly beyond it in direction d.
 func (s *search) nearest(now time.Time, d direction) (time.Time, bool) {
 	now = now.In(s.zone)
-	firstDate := s.clauses.clamp(dateOf(now), d)
+	nowDate := dateOf(now)
+	firstDate := s.clauses.clamp(nowDate, d)
 	// A nearest weekday or a DST shift can move an occurrence out of the
 	// period it is scheduled in, so the search starts one period back.
 	firstPeriod := s.cadence.periodOf(firstDate) - d.sign()
@@ -162,6 +171,7 @@ func (s *search) nearest(now time.Time, d direction) (time.Time, bool) {
 	if date, ok := s.clauses.farthestExceptDate(d); ok {
 		reach = s.cadence.periodOf(date)
 	}
+	shift := s.times.maxShiftDays()
 	var best *occurrence
 	periods := s.cadence.periodStarts(firstPeriod, reach, d)
 walk:
@@ -174,15 +184,15 @@ walk:
 			slices.Reverse(candidates)
 		}
 		for _, c := range candidates {
-			if (best != nil && !couldBeat(c.date, best.date, d, s.times.shiftDays())) || s.clauses.endsSearch(c.date, d) {
+			if (best != nil && !couldBeat(c.date, best.landing, d, shift)) || s.clauses.endsSearch(c.date, d) {
 				break walk
 			}
-			if !s.clauses.allows(c) {
+			if isBehind(c.date, nowDate, d, shift) || !s.clauses.allows(c) {
 				continue
 			}
 			instant, ok := s.nearestOnDate(c.date, now, d)
 			if ok && (best == nil || d.precedes(instant, best.instant)) {
-				best = &occurrence{instant, c.date}
+				best = &occurrence{instant, dateOf(instant)}
 			}
 		}
 	}
@@ -195,14 +205,10 @@ walk:
 // nearestOnDate returns the occurrence on date nearest now strictly beyond it
 // in direction d.
 func (s *search) nearestOnDate(date, now time.Time, d direction) (time.Time, bool) {
-	switch {
-	case s.times.fixed != nil:
+	if s.times.fixed != nil {
 		return s.nearestFixedTime(date, now, d)
-	case d == forward:
-		return s.firstSlotAfter(date, now)
-	default:
-		return s.lastSlotBefore(date, now)
 	}
+	return s.nearestSlot(date, now, d)
 }
 
 // nearestFixedTime resolves every time, since one shifted out of a gap can land
@@ -219,51 +225,68 @@ func (s *search) nearestFixedTime(date, now time.Time, d direction) (time.Time, 
 	return nearest, found
 }
 
-// firstSlotAfter skips, on now's date, the slots whose wall time is at or
-// before now's: slots resolve in wall-clock order, so those have passed.
-func (s *search) firstSlotAfter(date, now time.Time) (time.Time, bool) {
+// nearestSlot finds the slots on either side of now by one binary search on
+// their keys, which never decrease in wall-clock order, then takes the nearest
+// one in direction d that a gap does not skip. Forward, the slots behind now
+// are those keyed at or before it; backward, before it.
+func (s *search) nearestSlot(date, now time.Time, d direction) (time.Time, bool) {
 	slots := s.times.slots
-	first := 0
-	today := dateOf(now)
-	switch {
-	case date.Before(today):
-		return time.Time{}, false
-	case date.Equal(today):
-		first = slots.upTo(minuteOfDay(now))
+	at := func(k int) slot { return slotOn(date, slots.minute(k), s.zone) }
+	atNow := d == forward
+	// resolveWallClock reads the offsets a day either side of a wall time, so
+	// the date's slots resolve with those from a day before it to a day after
+	// it: two at most, as tzdata has no offset changes closer than about four
+	// days. On most dates they are one, and the bounds meet.
+	before := offsetAt(date.Add(-24*time.Hour), s.zone)
+	after := offsetAt(date.Add(48*time.Hour), s.zone)
+	lo, hi := slots.behindBounds(date, now, atNow, before, after)
+	if lo < hi {
+		// The keys still in question lie within the offsets' spread of now,
+		// so the offsets there bound them too, and meet unless a transition
+		// is that near.
+		spread := max(before, after) - min(before, after)
+		nearLo, nearHi := slots.behindBounds(date, now, atNow,
+			offsetAt(now.Add(-spread), s.zone), offsetAt(now.Add(spread), s.zone))
+		lo, hi = max(lo, nearLo), min(hi, nearHi)
 	}
-	for k := first; k < slots.count; k++ {
-		if instant, ok := slotOn(date, slots.minute(k), s.zone); ok && instant.After(now) {
-			return instant, true
+	behind := lo + sort.Search(hi-lo, func(i int) bool {
+		key := at(lo + i).key
+		return key.After(now) || !atNow && key.Equal(now)
+	})
+	if d == forward {
+		for k := behind; k < slots.count; k++ {
+			if slot := at(k); !slot.skipped {
+				return slot.instant, true
+			}
 		}
-	}
-	return time.Time{}, false
-}
-
-// lastSlotBefore mirrors firstSlotAfter, except in the second pass of a
-// fall-back overlap, where a slot with a later wall time, even on the next
-// date, can be earlier than now.
-func (s *search) lastSlotBefore(date, now time.Time) (time.Time, bool) {
-	slots := s.times.slots
-	end := slots.count
-	if today := dateOf(now); !date.Before(today) && !inSecondPass(now, s.zone) {
-		if date.After(today) {
-			return time.Time{}, false
-		}
-		end = slots.upTo(minuteOfDay(now))
-	}
-	for k := end - 1; k >= 0; k-- {
-		if instant, ok := slotOn(date, slots.minute(k), s.zone); ok && instant.Before(now) {
-			return instant, true
+	} else {
+		for k := behind - 1; k >= 0; k-- {
+			if slot := at(k); !slot.skipped {
+				return slot.instant, true
+			}
 		}
 	}
 	return time.Time{}, false
 }
 
 // couldBeat reports whether an occurrence scheduled on date can precede, in
-// direction d, the best one, scheduled on best, given that each lands at most
-// shift days after its date.
-func couldBeat(date, best time.Time, d direction, shift int) bool {
-	return d.sign()*daysBetween(best, date) <= shift
+// direction d, the best one, which landed on landing. An occurrence lands from
+// its scheduled date to shift dates after it, on a first pass, and first passes
+// keep wall-clock order.
+func couldBeat(date, landing time.Time, d direction, shift int) bool {
+	if d == forward {
+		return !date.After(landing)
+	}
+	return daysBetween(date, landing) <= shift
+}
+
+// isBehind reports whether every occurrence scheduled on date lies behind now,
+// whose wall date is nowDate, in direction d.
+func isBehind(date, nowDate time.Time, d direction, shift int) bool {
+	if d == forward {
+		return daysBetween(date, nowDate) > shift
+	}
+	return daysBetween(nowDate, date) > maxOverlapDays
 }
 
 // dailyTimes are the times of day an expression fires at: fixed times in
@@ -300,9 +323,9 @@ func intervalSlots(expr *ScheduleExpr) slots {
 	return slots{from: from, step: step, count: max(floorDiv(to-from, step)+1, 0)}
 }
 
-// shiftDays returns how many dates past its scheduled date an occurrence at
-// these times can land: a gap pushes a fixed time forward but skips a slot.
-func (t *dailyTimes) shiftDays() int {
+// maxShiftDays returns how many dates past its scheduled date an occurrence at
+// these times can land: a gap pushes a fixed time forward, and skips a slot.
+func (t *dailyTimes) maxShiftDays() int {
 	if t.fixed != nil {
 		return maxShiftDays
 	}
@@ -313,9 +336,29 @@ func (s slots) minute(k int) int {
 	return s.from + k*s.step
 }
 
-// upTo returns how many slots are at or before minute.
-func (s slots) upTo(minute int) int {
-	return min(max(floorDiv(minute-s.from, s.step)+1, 0), s.count)
+// behindBounds bounds how many of the slots on date are behind now (keyed
+// before it, or at it when atNow), given that their keys resolve with offsets
+// a and b. A key lies between its wall time read at the larger offset and at
+// the smaller, so the count lies between the slots whose wall time is behind
+// now read at each.
+func (s slots) behindBounds(date, now time.Time, atNow bool, a, b time.Duration) (lo, hi int) {
+	return s.wallBehind(date, now, min(a, b), atNow), s.wallBehind(date, now, max(a, b), atNow)
+}
+
+// wallBehind returns how many slots on date have a wall time before now read
+// at offset, or at it when atNow.
+func (s slots) wallBehind(date, now time.Time, offset time.Duration, atNow bool) int {
+	seconds := now.Unix() + int64(offset/time.Second) - date.Unix()
+	minute := seconds / 60
+	if seconds%60 < 0 {
+		minute--
+	}
+	if !atNow && seconds%60 == 0 && now.Nanosecond() == 0 {
+		minute--
+	}
+	// Past either end of the date, every slot or none is behind.
+	minute = min(max(minute, -1), minutesPerDay)
+	return min(max(floorDiv(int(minute)-s.from, s.step)+1, 0), s.count)
 }
 
 type monthDay struct {
@@ -372,6 +415,13 @@ func (c *clauses) allows(candidate candidate) bool {
 // allowsMonth reports whether during allows a candidate that targets month.
 func (c *clauses) allowsMonth(month time.Month) bool {
 	return len(c.during) == 0 || slices.Contains(c.during, month)
+}
+
+// endOn ends the search on date: nothing after it is an occurrence.
+func (c *clauses) endOn(date time.Time) {
+	if c.until == nil || date.Before(*c.until) {
+		c.until = &date
+	}
 }
 
 // farthestExceptDate returns the one-off except date farthest along direction
