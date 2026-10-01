@@ -7634,6 +7634,13 @@
           "description": "the next january is in year 10000, outside the supported range",
           "now": "9999-11-30T00:00:00+00:00[UTC]",
           "next": null
+        },
+        {
+          "name": "week_past_calendar_end",
+          "expression": "every week on saturday at 09:00 in UTC",
+          "description": "the week's saturday is 10000-01-01, past the calendar's end",
+          "now": "9999-12-29T12:00:00+00:00[UTC]",
+          "next": null
         }
       ]
     }
