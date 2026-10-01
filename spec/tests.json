@@ -2842,6 +2842,13 @@
           "description": "the excepted occurrence for March 2426 lands on Friday Feb 27; the span runs past its target month, finding 2826-02-27",
           "now": "2026-04-15T12:00:00+00:00[UTC]",
           "next": "2826-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "unsorted_iso_exceptions_beyond_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 2800-01-01, 3200-01-01, 2400-01-01 starting 2000-01-01 in UTC",
+          "description": "the span runs past the last ISO exception by date, 3200-01-01, not the last one written",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "3600-01-01T00:00:00+00:00[UTC]"
         }
       ]
     },
@@ -5583,6 +5590,14 @@
           "from": "9999-12-30T12:00:00+00:00[UTC]",
           "take": 3,
           "expected": []
+        },
+        {
+          "name": "range_from_before_start",
+          "expression": "every day at 09:00 in UTC",
+          "description": "an iterator from just before the supported range is empty, though the next day's occurrence is in range",
+          "from": "0001-01-01T23:59:59+00:00[UTC]",
+          "take": 3,
+          "expected": []
         }
       ]
     },
@@ -7313,6 +7328,27 @@
           "expected": "9996-12-29T09:00:00+00:00[UTC]"
         },
         {
+          "name": "week_repeat_sunday_past_the_calendar_end",
+          "expression": "every week on sunday at 12:00 in UTC",
+          "description": "the Sunday of the week of 9999-12-27 is past the calendar's end, so the previous one is 9999-12-26",
+          "now": "9999-12-29T23:59:00+00:00[UTC]",
+          "expected": "9999-12-26T12:00:00+00:00[UTC]"
+        },
+        {
+          "name": "previous_nearest_weekday_before_the_calendar_start",
+          "expression": "every month on the previous nearest weekday to 31st at 23:59 in Etc/GMT+12",
+          "description": "Sunday 0000-12-31 moves back to Friday 0000-12-29, before the calendar starts, so nothing comes earlier",
+          "now": "0001-01-03T00:00:00+00:00[UTC]",
+          "expected": null
+        },
+        {
+          "name": "named_until_with_no_date_left_in_the_calendar",
+          "expression": "every day at 09:00 until feb 29 starting 9997-03-01 in UTC",
+          "description": "no Feb 29 follows 9997-03-01 before the calendar ends, so nothing bounds the schedule",
+          "now": "9999-06-01T00:00:00+00:00[UTC]",
+          "expected": "9999-05-31T09:00:00+00:00[UTC]"
+        },
+        {
           "name": "named_until_same_year",
           "expression": "every day at 09:00 until dec 31 starting 2026-06-01 in UTC",
           "description": "until dec 31 with starting 2026-06-01 resolves to 2026-12-31",
@@ -7409,6 +7445,13 @@
           "now": "2026-11-01T01:05:00-05:00[America/New_York]",
           "expected": "2026-11-01T01:45:00-04:00[America/New_York]",
           "description": "now 01:05 EST (second pass): the latest slot before it is 01:45 EDT; 01:00 EST repeats the 01:00 slot, so it is not one"
+        },
+        {
+          "name": "unsorted_iso_exceptions_before_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 9600-01-01, 8800-01-01, 9200-01-01 starting 2000-01-01 in UTC",
+          "now": "9990-01-01T00:00:00+00:00[UTC]",
+          "expected": "8400-01-01T00:00:00+00:00[UTC]",
+          "description": "backward, the span runs past the first ISO exception by date, 8800-01-01, not the first one written"
         }
       ]
     },
@@ -7690,6 +7733,13 @@
           "description": "the next aligned year, 1001969, is far past the calendar any platform represents: the search ends there instead of failing",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": null
+        },
+        {
+          "name": "except_at_range_end",
+          "expression": "every day at 12:00 except 9999-12-29 in Etc/GMT-14",
+          "description": "past the excepted date, local 9999-12-30 at +14:00 is still in range: 12:00 there is 9999-12-29T22:00Z",
+          "now": "9999-12-28T12:00:00+00:00[UTC]",
+          "next": "9999-12-30T12:00:00+14:00[Etc/GMT-14]"
         }
       ]
     }

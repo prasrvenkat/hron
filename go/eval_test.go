@@ -1,0 +1,106 @@
+package hron
+
+import (
+	"fmt"
+	"testing"
+	"time"
+)
+
+var friday = time.Date(2026, 2, 6, 12, 0, 0, 0, time.UTC)
+
+func formatOrNil(t *time.Time) string {
+	if t == nil {
+		return "nil"
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func mustSchedule(t *testing.T, data *ScheduleData) *Schedule {
+	t.Helper()
+	s, err := NewSchedule(data)
+	if err != nil {
+		t.Fatalf("NewSchedule: %v", err)
+	}
+	return s
+}
+
+// The parser accepts intervals from 1 to 2147483647; a schedule built by hand
+// treats one below 1 as 1 and one above as 2147483647.
+func TestHandBuiltIntervals(t *testing.T) {
+	nine := []TimeOfDay{{9, 0}}
+	cases := []struct {
+		name       string
+		expr       func(interval int) ScheduleExpr
+		interval   int
+		next, prev string
+	}{
+		{"week", weekOnMonday, 0, "2026-02-09T09:00:00Z", "2026-02-02T09:00:00Z"},
+		{"week", weekOnMonday, -3, "2026-02-09T09:00:00Z", "2026-02-02T09:00:00Z"},
+		{"week", weekOnMonday, 1<<62 + 7, "nil", "1970-01-05T09:00:00Z"},
+		{"minutes", minutesFromNine, 0, "2026-02-07T09:00:00Z", "2026-02-06T10:00:00Z"},
+		{"minutes", minutesFromNine, -3, "2026-02-07T09:00:00Z", "2026-02-06T10:00:00Z"},
+		{"minutes", minutesFromNine, 1<<62 + 7, "2026-02-07T09:00:00Z", "2026-02-06T09:00:00Z"},
+		{"hours", hoursFromNine, 1 << 58, "2026-02-07T09:00:00Z", "2026-02-06T09:00:00Z"},
+		{"day", func(n int) ScheduleExpr { return NewDayRepeat(n, NewDayFilterEvery(), nine) }, 1<<62 + 7, "nil", "1970-01-01T09:00:00Z"},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%s %d", c.name, c.interval), func(t *testing.T) {
+			s := mustSchedule(t, NewScheduleData(c.expr(c.interval)))
+			if got := formatOrNil(s.NextFrom(friday)); got != c.next {
+				t.Errorf("NextFrom = %s, want %s", got, c.next)
+			}
+			if got := formatOrNil(s.PreviousFrom(friday)); got != c.prev {
+				t.Errorf("PreviousFrom = %s, want %s", got, c.prev)
+			}
+		})
+	}
+}
+
+func weekOnMonday(interval int) ScheduleExpr {
+	return NewWeekRepeat(interval, []Weekday{Monday}, []TimeOfDay{{9, 0}})
+}
+
+func minutesFromNine(interval int) ScheduleExpr {
+	return NewIntervalRepeat(interval, IntervalMin, TimeOfDay{9, 0}, TimeOfDay{10, 0}, nil)
+}
+
+func hoursFromNine(interval int) ScheduleExpr {
+	return NewIntervalRepeat(interval, IntervalHours, TimeOfDay{9, 0}, TimeOfDay{10, 0}, nil)
+}
+
+// Parse requires starting with a named until; a schedule built without one
+// resolves it from the epoch.
+func TestHandBuiltNamedUntilWithoutStarting(t *testing.T) {
+	data := NewScheduleData(NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{9, 0}}))
+	until := NewNamedUntil(Mar, 1)
+	data.Until = &until
+	s := mustSchedule(t, data)
+	if got := formatOrNil(s.PreviousFrom(friday)); got != "1970-03-01T09:00:00Z" {
+		t.Errorf("PreviousFrom = %s, want 1970-03-01T09:00:00Z", got)
+	}
+}
+
+// A named until that names no real date bounds nothing.
+func TestHandBuiltNamedUntilWithNoSuchDate(t *testing.T) {
+	data := NewScheduleData(NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{9, 0}}))
+	until := NewNamedUntil(Feb, 30)
+	data.Until = &until
+	s := mustSchedule(t, data)
+	if got := formatOrNil(s.NextFrom(friday)); got != "2026-02-07T09:00:00Z" {
+		t.Errorf("NextFrom = %s, want 2026-02-07T09:00:00Z", got)
+	}
+}
+
+// Amsterdam's local mean time, +00:19:32, carries seconds, so the minute is
+// cut on the wall clock, not on the instant. The spec leaves sub-minute
+// offsets out (spec/README.md, "Timezone data"), so this is a Go test.
+func TestMatchesDropsSecondsOnTheWallClock(t *testing.T) {
+	s := MustParse("every day at 09:00 in Europe/Amsterdam")
+	amsterdam, err := time.LoadLocation("Europe/Amsterdam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Matches(time.Date(1900, 6, 1, 9, 0, 10, 0, amsterdam)) {
+		t.Error("Matches(1900-06-01 09:00:10 local) = false, want true")
+	}
+}

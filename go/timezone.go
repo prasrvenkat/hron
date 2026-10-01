@@ -2,6 +2,7 @@ package hron
 
 import (
 	"archive/zip"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +11,27 @@ import (
 	"sync"
 	"time"
 )
+
+// resolveTimezone returns the location and canonical name for tzName, and UTC
+// for an empty name so results never depend on the host zone.
+func resolveTimezone(tzName string) (*time.Location, string, error) {
+	if tzName == "" {
+		return time.UTC, "", nil
+	}
+	canonical, ok := canonicalTimezone(tzName)
+	if !ok {
+		return nil, "", &HronError{Kind: ErrorKindParse, Message: unknownTimezoneMessage(tzName)}
+	}
+	loc, err := time.LoadLocation(canonical)
+	if err != nil {
+		return nil, "", &HronError{Kind: ErrorKindParse, Message: unknownTimezoneMessage(tzName)}
+	}
+	return loc, canonical, nil
+}
+
+func unknownTimezoneMessage(name string) string {
+	return fmt.Sprintf("unknown timezone %q: use UTC or an IANA Area/Location name such as America/New_York", name)
+}
 
 // canonicalTimezone returns the IANA spelling of name, which matches in any
 // case: "UTC", or an Area/Location zone or link name. Abbreviations, offsets,
