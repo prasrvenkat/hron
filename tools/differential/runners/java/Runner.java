@@ -19,9 +19,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class Runner {
-  // Cases are flat objects of strings and integers; the JDK has no JSON parser.
-  private static final Pattern FIELD =
-      Pattern.compile("\"(\\w+)\":\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|(-?\\d+))");
   private static final Pattern ZONED = Pattern.compile("(.+)\\[(.+)]");
   private static final DateTimeFormatter ISO =
       DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssxxx");
@@ -111,18 +108,52 @@ public class Runner {
     return times.map(Runner::format).toList();
   }
 
+  // Cases are flat objects of strings and integers, and the JDK has no JSON parser. A scanner
+  // rather than a regex: a regex's backtracking recurses per character and overflows the stack on
+  // a long string.
   private static Map<String, String> parseCase(String line) {
     Map<String, String> fields = new HashMap<>();
-    Matcher m = FIELD.matcher(line);
-    while (m.find()) {
-      fields.put(m.group(1), m.group(2) != null ? unescape(m.group(2)) : m.group(3));
+    int i = line.indexOf('{') + 1;
+    while (true) {
+      i = skipSpace(line, i);
+      char ch = line.charAt(i);
+      if (ch == '}') {
+        return fields;
+      }
+      if (ch == ',') {
+        i++;
+        continue;
+      }
+      var key = new StringBuilder();
+      i = readString(line, i, key);
+      i = skipSpace(line, line.indexOf(':', i) + 1);
+      if (line.charAt(i) == '"') {
+        var value = new StringBuilder();
+        i = readString(line, i, value);
+        fields.put(key.toString(), value.toString());
+      } else {
+        int start = i;
+        while (line.charAt(i) != ',' && line.charAt(i) != '}' && !isSpace(line.charAt(i))) {
+          i++;
+        }
+        fields.put(key.toString(), line.substring(start, i));
+      }
     }
-    return fields;
   }
 
-  private static String unescape(String s) {
-    var out = new StringBuilder();
-    for (int i = 0; i < s.length(); i++) {
+  private static boolean isSpace(char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
+  }
+
+  private static int skipSpace(String s, int i) {
+    while (isSpace(s.charAt(i))) {
+      i++;
+    }
+    return i;
+  }
+
+  private static int readString(String s, int i, StringBuilder out) {
+    for (i++; s.charAt(i) != '"'; i++) {
       char ch = s.charAt(i);
       if (ch != '\\') {
         out.append(ch);
@@ -142,7 +173,7 @@ public class Runner {
         default -> out.append(escaped);
       }
     }
-    return out.toString();
+    return i + 1;
   }
 
   private static String json(Object value) {

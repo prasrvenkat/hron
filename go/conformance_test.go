@@ -2,6 +2,7 @@ package hron
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"os"
 	"regexp"
@@ -90,9 +91,9 @@ type ToCronTest struct {
 }
 
 type ToCronErrorTest struct {
-	Name        string `json:"name"`
-	Hron        string `json:"hron"`
-	Description string `json:"description"`
+	Name  string `json:"name"`
+	Hron  string `json:"hron"`
+	Error string `json:"error"`
 }
 
 type FromCronTest struct {
@@ -102,9 +103,9 @@ type FromCronTest struct {
 }
 
 type FromCronErrorTest struct {
-	Name        string `json:"name"`
-	Cron        string `json:"cron"`
-	Description string `json:"description"`
+	Name  string `json:"name"`
+	Cron  string `json:"cron"`
+	Error string `json:"error"`
 }
 
 type RoundtripTest struct {
@@ -495,7 +496,7 @@ func TestToCron(t *testing.T) {
 func TestToCronErrors(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range decodeCases[ToCronErrorTest](t, spec.Cron["to_cron_errors"], "hron") {
+	for _, tc := range decodeCases[ToCronErrorTest](t, spec.Cron["to_cron_errors"], "hron", "error") {
 		t.Run(tc.Name, func(t *testing.T) {
 			s, err := ParseSchedule(tc.Hron)
 			if err != nil {
@@ -503,9 +504,7 @@ func TestToCronErrors(t *testing.T) {
 			}
 
 			_, err = s.ToCron()
-			if err == nil {
-				t.Errorf("expected ToCron() error for %q (%s)", tc.Hron, tc.Description)
-			}
+			assertCronError(t, err, tc.Error)
 		})
 	}
 }
@@ -531,13 +530,22 @@ func TestFromCron(t *testing.T) {
 func TestFromCronErrors(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range decodeCases[FromCronErrorTest](t, spec.Cron["from_cron_errors"], "cron") {
+	for _, tc := range decodeCases[FromCronErrorTest](t, spec.Cron["from_cron_errors"], "cron", "error") {
 		t.Run(tc.Name, func(t *testing.T) {
 			_, err := FromCronExpr(tc.Cron)
-			if err == nil {
-				t.Errorf("expected FromCron(%q) error (%s)", tc.Cron, tc.Description)
-			}
+			assertCronError(t, err, tc.Error)
 		})
+	}
+}
+
+func assertCronError(t *testing.T, err error, message string) {
+	t.Helper()
+	var hronErr *HronError
+	if !errors.As(err, &hronErr) {
+		t.Fatalf("expected a cron error %q, got %v", message, err)
+	}
+	if hronErr.Kind != ErrorKindCron || hronErr.Message != message {
+		t.Errorf("got %s error %q, want cron error %q", hronErr.Kind, hronErr.Message, message)
 	}
 }
 

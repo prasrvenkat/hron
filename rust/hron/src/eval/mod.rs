@@ -358,12 +358,17 @@ impl DailyTimes {
     }
 }
 
-fn interval_slots(interval: u32, unit: IntervalUnit, from: &TimeOfDay, to: &TimeOfDay) -> Vec<i64> {
+pub(crate) fn interval_slots(
+    interval: u32,
+    unit: IntervalUnit,
+    from: &TimeOfDay,
+    to: &TimeOfDay,
+) -> Vec<i64> {
+    let interval = interval.max(1) as i64;
     let step = match unit {
-        IntervalUnit::Minutes => interval as i64,
-        IntervalUnit::Hours => interval as i64 * MINUTES_PER_HOUR,
-    }
-    .max(1);
+        IntervalUnit::Minutes => interval,
+        IntervalUnit::Hours => interval * MINUTES_PER_HOUR,
+    };
     let from = minute_of_day(civil_time(from));
     let to = minute_of_day(civil_time(to));
     (0..=(to - from).div_euclid(step))

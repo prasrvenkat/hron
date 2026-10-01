@@ -22,7 +22,7 @@ public record DayOfMonthSpec(Kind kind, int day, int start, int end) {
     if (kind == Kind.SINGLE) {
       return List.of(day);
     }
-    List<Integer> days = new ArrayList<>(end - start + 1);
+    List<Integer> days = new ArrayList<>(Math.max(end - start + 1, 0));
     for (int i = start; i <= end; i++) {
       days.add(i);
     }

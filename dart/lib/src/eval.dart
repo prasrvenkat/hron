@@ -260,17 +260,26 @@ final class _FixedTimes implements _DailyTimes {
   }
 }
 
+// toCron writes these, so a converted interval fires at the slots evaluation
+// steps through.
+List<int> intervalSlots(IntervalRepeat expr) {
+  final slots = _Slots.of(expr);
+  return [for (var k = 0; k <= slots._last; k++) slots._minuteOf(k)];
+}
+
 /// Unlike the reference's binary search on slot keys, index arithmetic finds
 /// the slot at now's wall time directly: each wall time resolved here costs
 /// three zone lookups, and the binary search measured slower.
 final class _Slots implements _DailyTimes {
   factory _Slots.of(IntervalRepeat expr) {
     final from = minuteOfDay(expr.from);
+    // A ScheduleData built in code can have an interval below 1, which counts
+    // as 1 of its unit. Capping hours at a day keeps the product from
+    // overflowing, and any step of a day or more leaves only the from slot.
+    final interval = max(expr.interval, 1);
     final step = switch (expr.unit) {
-      IntervalUnit.min => expr.interval,
-      // fromCron takes any hour step; one of a day or more leaves only the
-      // from slot.
-      IntervalUnit.hours => min(expr.interval, hoursPerDay) * minutesPerHour,
+      IntervalUnit.min => interval,
+      IntervalUnit.hours => min(interval, hoursPerDay) * minutesPerHour,
     };
     return _Slots._(from, step, floorDiv(minuteOfDay(expr.to) - from, step));
   }

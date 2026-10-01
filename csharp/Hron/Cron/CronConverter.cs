@@ -1,853 +1,631 @@
+using System.Text;
 using Hron.Ast;
+using Hron.Eval;
 
 namespace Hron.Cron;
 
 public static class CronConverter
 {
-    public static string ToCron(ScheduleData data)
-    {
-        if (data.Except.Count > 0)
-        {
-            throw HronException.Cron("not expressible as cron (except clauses not supported)");
-        }
-        if (data.Until is not null)
-        {
-            throw HronException.Cron("not expressible as cron (until clauses not supported)");
-        }
-        if (data.During.Count > 0)
-        {
-            throw HronException.Cron("not expressible as cron (during clauses not supported)");
-        }
+    private const int MaxListedTimes = 24;
+    private const string BothDaysRestricted =
+        "not expressible in hron: cron fires on either the day of month or the day of week";
+    private const string IntervalDays =
+        "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days";
+    private const int MinutesPerDay = 24 * 60;
+    private static readonly TimeOfDay Midnight = new(0, 0);
+    private static readonly TimeOfDay EndOfDay = new(23, 59);
 
-        return data.Expr switch
-        {
-            DayRepeat dr => DayRepeatToCron(dr),
-            IntervalRepeat ir => IntervalRepeatToCron(ir),
-            WeekRepeat => throw HronException.Cron("not expressible as cron (multi-week intervals not supported)"),
-            MonthRepeat mr => MonthRepeatToCron(mr),
-            SingleDate => throw HronException.Cron("not expressible as cron (single dates are not repeating)"),
-            YearRepeat => throw HronException.Cron("not expressible as cron (yearly schedules not supported in 5-field cron)"),
-            _ => throw new ArgumentException($"Unknown expression type: {data.Expr.GetType()}", nameof(data))
-        };
+    // Digit strings may be of any length. Every number at or above this cap is out
+    // of every field's range and steps past every range's end, so saturating at it
+    // keeps each comparison exact without overflow.
+    private const int NumberCap = 1000;
+
+    private static readonly string[] MonthNames =
+        ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    private static readonly string[] DayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    private static readonly Weekday[] Weekdays =
+    [
+        Weekday.Sunday, Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday,
+        Weekday.Thursday, Weekday.Friday, Weekday.Saturday
+    ];
+    private static readonly OrdinalPosition[] Ordinals =
+    [
+        OrdinalPosition.First, OrdinalPosition.Second, OrdinalPosition.Third,
+        OrdinalPosition.Fourth, OrdinalPosition.Fifth
+    ];
+
+    // In the day of week, 7 is Sunday only where written: `*` and `a/n` end at 6.
+    private sealed record Field(string Name, int Min, int Max, int StarEnd, string[] Names)
+    {
+        public static readonly Field Minute = new("minute", 0, 59, 59, []);
+        public static readonly Field Hour = new("hour", 0, 23, 23, []);
+        public static readonly Field DayOfMonth = new("day of month", 1, 31, 31, []);
+        public static readonly Field Month = new("month", 1, 12, 12, MonthNames);
+        public static readonly Field DayOfWeek = new("day of week", 0, 7, 6, DayNames);
     }
 
-    private static string DayRepeatToCron(DayRepeat dr)
+    private abstract record Bounds
     {
-        if (dr.Interval > 1)
-        {
-            throw HronException.Cron("not expressible as cron (multi-day intervals not supported)");
-        }
-        if (dr.Times.Count != 1)
-        {
-            throw HronException.Cron("not expressible as cron (multiple times not supported)");
-        }
+        public sealed record Star : Bounds;
 
-        var t = dr.Times[0];
-        var dow = DayFilterToCronDOW(dr.Days);
+        public sealed record Value(string A) : Bounds;
 
-        return $"{t.Minute} {t.Hour} * * {dow}";
+        public sealed record Range(string A, string B) : Bounds;
     }
 
-    private static string IntervalRepeatToCron(IntervalRepeat ir)
+    private sealed record Item(Bounds Bounds, string? Step);
+
+    private abstract record MonthDays
     {
-        var fullDay = ir.FromTime.Hour == 0
-            && ir.FromTime.Minute == 0
-            && ir.ToTime.Hour == 23
-            && ir.ToTime.Minute == 59;
+        public sealed record Any : MonthDays;
 
-        if (!fullDay)
-        {
-            throw HronException.Cron("not expressible as cron (partial-day interval windows not supported)");
-        }
-        if (ir.DayFilter is not null)
-        {
-            throw HronException.Cron("not expressible as cron (interval with day filter not supported)");
-        }
+        public sealed record Listed(List<int> Days) : MonthDays;
 
-        if (ir.Unit == IntervalUnit.Minutes)
-        {
-            if (60 % ir.Interval != 0)
-            {
-                throw HronException.Cron($"not expressible as cron (*/{ir.Interval} breaks at hour boundaries)");
-            }
-            return $"*/{ir.Interval} * * * *";
-        }
+        public sealed record Last : MonthDays;
 
-        return $"0 */{ir.Interval} * * *";
+        public sealed record LastWeekday : MonthDays;
+
+        public sealed record Nearest(int Day) : MonthDays;
     }
 
-    private static string MonthRepeatToCron(MonthRepeat mr)
+    private abstract record WeekDays
     {
-        if (mr.Interval > 1)
-        {
-            throw HronException.Cron("not expressible as cron (multi-month intervals not supported)");
-        }
-        if (mr.Times.Count != 1)
-        {
-            throw HronException.Cron("not expressible as cron (multiple times not supported)");
-        }
+        public sealed record Any : WeekDays;
 
-        var t = mr.Times[0];
+        public sealed record Listed(List<int> Days) : WeekDays;
 
-        return mr.Target.Kind switch
-        {
-            MonthTargetKind.Days => $"{t.Minute} {t.Hour} {FormatIntList(mr.Target.ExpandDays())} * *",
-            MonthTargetKind.LastDay => throw HronException.Cron("not expressible as cron (last day of month not supported)"),
-            MonthTargetKind.LastWeekday => throw HronException.Cron("not expressible as cron (last weekday of month not supported)"),
-            MonthTargetKind.NearestWeekday when mr.Target.NearestWeekdayDirection.HasValue =>
-                throw HronException.Cron("not expressible as cron (directional nearest weekday not supported)"),
-            MonthTargetKind.NearestWeekday => $"{t.Minute} {t.Hour} {mr.Target.NearestWeekdayDay}W * *",
-            MonthTargetKind.OrdinalWeekday => throw HronException.Cron("not expressible as cron (ordinal weekday of month not supported)"),
-            _ => throw new ArgumentException("Unknown month target kind")
-        };
+        public sealed record Nth(Weekday Weekday, int N) : WeekDays;
+
+        public sealed record Last(Weekday Weekday) : WeekDays;
     }
 
-    private static string DayFilterToCronDOW(DayFilter f)
+    private abstract record Days
     {
-        return f.Kind switch
-        {
-            DayFilterKind.Every => "*",
-            DayFilterKind.Weekday => "1-5",
-            DayFilterKind.Weekend => "0,6",
-            DayFilterKind.Days => FormatIntList(f.Days.Select(w => w.CronDOW()).Order().ToList()),
-            _ => throw new ArgumentException("Unknown day filter kind")
-        };
-    }
+        public sealed record OfWeek(DayFilter Filter) : Days;
 
-    private static string FormatIntList(IReadOnlyList<int> nums)
-        => string.Join(",", nums);
+        public sealed record OfMonth(MonthTarget Target) : Days;
+    }
 
     public static ScheduleData FromCron(string cron)
     {
-        cron = cron.Trim();
-
-        if (cron.StartsWith('@'))
-        {
-            return ParseCronShortcut(cron);
-        }
-
-        var fields = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var input = cron.Trim(' ', '\t', '\r', '\n');
+        var text = input.StartsWith('@') ? Shortcut(input) : input;
+        var fields = text.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length != 5)
         {
             throw HronException.Cron($"expected 5 cron fields, got {fields.Length}");
         }
 
-        var minuteField = fields[0];
-        var hourField = fields[1];
-        var domField = fields[2];
-        var monthField = fields[3];
-        var dowField = fields[4];
+        var minutes = Sorted(Values(fields[0], Field.Minute));
+        var hours = Sorted(Values(fields[1], Field.Hour));
+        var monthDays = ParseDayOfMonth(fields[2]);
+        var months = Sorted(Values(fields[3], Field.Month));
+        var weekDays = ParseDayOfWeek(fields[4]);
+        var days = DayExpression(monthDays, weekDays);
+        var times = hours.SelectMany(hour => minutes.Select(minute => new TimeOfDay(hour, minute))).ToList();
 
-        // Cron's `?` means the same as `*` here.
-        if (domField == "?") domField = "*";
-        if (dowField == "?") dowField = "*";
-
-        var during = ParseMonthField(monthField);
-
-        var nthWeekday = TryParseNthWeekday(minuteField, hourField, domField, dowField, during);
-        if (nthWeekday is not null)
+        var gap = EqualGap(times);
+        IScheduleExpr expr;
+        if (days is Days.OfWeek ofWeek && gap is { } equalGap)
         {
-            return nthWeekday;
+            expr = Interval(times, equalGap, ofWeek.Filter);
+        }
+        else if (times.Count > MaxListedTimes)
+        {
+            throw TooManyTimes(times.Count, gap);
+        }
+        else if (YearlyTarget(days, months) is { } target)
+        {
+            expr = new YearRepeat(1, target, times);
+        }
+        else if (days is Days.OfWeek everyWeek)
+        {
+            expr = new DayRepeat(1, everyWeek.Filter, times);
+        }
+        else
+        {
+            expr = new MonthRepeat(1, ((Days.OfMonth)days).Target, times);
         }
 
-        var lastDay = TryParseLastDay(minuteField, hourField, domField, dowField, during);
-        if (lastDay is not null)
+        var schedule = ScheduleData.Of(expr);
+        if (expr is not YearRepeat && months.Count < MonthNames.Length)
         {
-            return lastDay;
+            schedule = schedule.WithDuring(months.Select(m => (MonthName)m).ToList());
         }
-
-        if (domField.EndsWith('W') && domField != "LW")
-        {
-            var nearestWeekday = TryParseNearestWeekday(minuteField, hourField, domField, dowField, during);
-            if (nearestWeekday is not null)
-            {
-                return nearestWeekday;
-            }
-        }
-
-        var interval = TryParseInterval(minuteField, hourField, domField, dowField, during);
-        if (interval is not null)
-        {
-            return interval;
-        }
-
-        var minute = ParseSingleValue(minuteField, "minute", 0, 59);
-        var hour = ParseSingleValue(hourField, "hour", 0, 23);
-        var time = new TimeOfDay(hour, minute);
-
-        if (domField != "*" && dowField == "*")
-        {
-            var target = ParseDomField(domField);
-            return ScheduleData.Of(new MonthRepeat(1, target, [time])).WithDuring(during);
-        }
-
-        var days = ParseCronDOW(dowField);
-        return ScheduleData.Of(new DayRepeat(1, days, [time])).WithDuring(during);
+        return schedule;
     }
 
-    private static ScheduleData ParseCronShortcut(string cron)
+    private static string Shortcut(string input)
     {
-        return cron.ToLowerInvariant() switch
+        if (Ascii.EqualsIgnoreCase(input, "@yearly") || Ascii.EqualsIgnoreCase(input, "@annually"))
         {
-            "@yearly" or "@annually" => ScheduleData.Of(new YearRepeat(
-                1,
-                YearTarget.Date(MonthName.January, 1),
-                [new TimeOfDay(0, 0)])),
-            "@monthly" => ScheduleData.Of(new MonthRepeat(
-                1,
-                MonthTarget.Days([DayOfMonthSpec.Single(1)]),
-                [new TimeOfDay(0, 0)])),
-            "@weekly" => ScheduleData.Of(new DayRepeat(
-                1,
-                DayFilter.SpecificDays([Weekday.Sunday]),
-                [new TimeOfDay(0, 0)])),
-            "@daily" or "@midnight" => ScheduleData.Of(new DayRepeat(
-                1,
-                DayFilter.Every(),
-                [new TimeOfDay(0, 0)])),
-            "@hourly" => ScheduleData.Of(new IntervalRepeat(
-                1,
-                IntervalUnit.Hours,
-                new TimeOfDay(0, 0),
-                new TimeOfDay(23, 59),
-                null)),
-            _ => throw HronException.Cron($"unknown @ shortcut: {cron}")
-        };
+            return "0 0 1 1 *";
+        }
+        if (Ascii.EqualsIgnoreCase(input, "@monthly"))
+        {
+            return "0 0 1 * *";
+        }
+        if (Ascii.EqualsIgnoreCase(input, "@weekly"))
+        {
+            return "0 0 * * 0";
+        }
+        if (Ascii.EqualsIgnoreCase(input, "@daily") || Ascii.EqualsIgnoreCase(input, "@midnight"))
+        {
+            return "0 0 * * *";
+        }
+        if (Ascii.EqualsIgnoreCase(input, "@hourly"))
+        {
+            return "0 * * * *";
+        }
+        throw HronException.Cron($"unknown cron shortcut: {input}");
     }
 
-    private static List<MonthName> ParseMonthField(string field)
+    private static MonthDays ParseDayOfMonth(string text)
     {
-        if (field == "*")
+        if (text is "*" or "?")
         {
-            return [];
+            return new MonthDays.Any();
         }
-
-        var months = new List<MonthName>();
-        foreach (var part in field.Split(','))
+        if (Ascii.EqualsIgnoreCase(text, "L"))
         {
-            // Before the range check: a step such as 1-12/3 also contains '-'.
-            if (part.Contains('/'))
+            return new MonthDays.Last();
+        }
+        if (Ascii.EqualsIgnoreCase(text, "LW"))
+        {
+            return new MonthDays.LastWeekday();
+        }
+        if (text.EndsWith('W') || text.EndsWith('w'))
+        {
+            var day = text[..^1];
+            if (IsNumber(day))
             {
-                var slashIdx = part.IndexOf('/');
-                var rangePart = part[..slashIdx];
-                var stepStr = part[(slashIdx + 1)..];
-
-                int start, end;
-                if (rangePart == "*")
-                {
-                    start = 1;
-                    end = 12;
-                }
-                else if (rangePart.Contains('-'))
-                {
-                    var dashIdx = rangePart.IndexOf('-');
-                    var startMonth = ParseMonthValue(rangePart[..dashIdx]);
-                    var endMonth = ParseMonthValue(rangePart[(dashIdx + 1)..]);
-                    start = startMonth.Number();
-                    end = endMonth.Number();
-                }
-                else
-                {
-                    throw HronException.Cron($"invalid month step expression: {part}");
-                }
-
-                if (!int.TryParse(stepStr, out var step) || step == 0)
-                {
-                    throw HronException.Cron($"invalid month step value: {stepStr}");
-                }
-
-                for (var n = start; n <= end; n += step)
-                {
-                    months.Add(MonthFromNumber(n));
-                }
-            }
-            else if (part.Contains('-'))
-            {
-                var dashIdx = part.IndexOf('-');
-                var startMonth = ParseMonthValue(part[..dashIdx]);
-                var endMonth = ParseMonthValue(part[(dashIdx + 1)..]);
-                var startNum = startMonth.Number();
-                var endNum = endMonth.Number();
-
-                if (startNum > endNum)
-                {
-                    throw HronException.Cron($"invalid month range: {part}");
-                }
-
-                for (var n = startNum; n <= endNum; n++)
-                {
-                    months.Add(MonthFromNumber(n));
-                }
-            }
-            else
-            {
-                months.Add(ParseMonthValue(part));
+                return new MonthDays.Nearest(FieldValue(day, Field.DayOfMonth));
             }
         }
-
-        return months;
+        return new MonthDays.Listed(Values(text, Field.DayOfMonth));
     }
 
-    private static MonthName ParseMonthValue(string s)
+    private static WeekDays ParseDayOfWeek(string text)
     {
-        if (int.TryParse(s, out var n))
+        var field = Field.DayOfWeek;
+        if (text is "*" or "?")
         {
-            return MonthFromNumber(n);
+            return new WeekDays.Any();
         }
-        var month = MonthNameExtensions.Parse(s);
-        if (month is null)
+        var hash = text.IndexOf('#');
+        if (hash >= 0)
         {
-            throw HronException.Cron($"invalid month: {s}");
-        }
-        return month.Value;
-    }
-
-    private static MonthName MonthFromNumber(int n)
-    {
-        var month = MonthNameExtensions.FromNumber(n);
-        if (month is null)
-        {
-            throw HronException.Cron($"invalid month number: {n}");
-        }
-        return month.Value;
-    }
-
-    private static ScheduleData? TryParseNthWeekday(
-        string minuteField,
-        string hourField,
-        string domField,
-        string dowField,
-        List<MonthName> during)
-    {
-        if (dowField.Contains('#'))
-        {
-            var hashIdx = dowField.IndexOf('#');
-            var dowStr = dowField[..hashIdx];
-            var nthStr = dowField[(hashIdx + 1)..];
-
-            var dowNum = ParseDowValue(dowStr);
-            var weekday = CronDOWToWeekday(dowNum);
-
-            if (!int.TryParse(nthStr, out var nth) || nth < 1 || nth > 5)
+            var day = text[..hash];
+            var nth = text[(hash + 1)..];
+            if (IsValue(day, field) && IsNumber(nth))
             {
-                throw HronException.Cron($"nth must be 1-5, got {nthStr}");
+                var weekday = Weekdays[FieldValue(day, field) % 7];
+                var n = Number(nth);
+                if (n < 1 || n > 5)
+                {
+                    throw HronException.Cron($"day of week ordinal must be 1-5, got {nth}");
+                }
+                return new WeekDays.Nth(weekday, n);
             }
-
-            var ordinal = nth switch
+        }
+        if (text.EndsWith('L') || text.EndsWith('l'))
+        {
+            var day = text[..^1];
+            if (IsValue(day, field))
             {
-                1 => OrdinalPosition.First,
-                2 => OrdinalPosition.Second,
-                3 => OrdinalPosition.Third,
-                4 => OrdinalPosition.Fourth,
-                5 => OrdinalPosition.Fifth,
-                _ => throw HronException.Cron($"invalid nth value: {nth}")
+                return new WeekDays.Last(Weekdays[FieldValue(day, field) % 7]);
+            }
+        }
+        return new WeekDays.Listed(Values(text, field));
+    }
+
+    // Keeps the order of first appearance, in which fromCron lists days of the week.
+    private static List<int> Values(string text, Field field)
+    {
+        var items = Items(text, field) ?? throw HronException.Cron($"invalid {field.Name}: {text}");
+        var values = new List<int>();
+        foreach (var item in items)
+        {
+            int first;
+            int last;
+            switch (item.Bounds)
+            {
+                case Bounds.Value value:
+                    first = FieldValue(value.A, field);
+                    // `7/n` starts past the end of `*`, so it is Sunday alone.
+                    last = item.Step is null ? first : Math.Max(first, field.StarEnd);
+                    break;
+                case Bounds.Range range:
+                    first = FieldValue(range.A, field);
+                    last = FieldValue(range.B, field);
+                    if (first > last)
+                    {
+                        throw HronException.Cron($"{field.Name} range must not run backwards: {range.A}-{range.B}");
+                    }
+                    break;
+                default:
+                    first = field.Min;
+                    last = field.StarEnd;
+                    break;
+            }
+            var step = item.Step is null ? 1 : Number(item.Step);
+            if (step == 0)
+            {
+                throw HronException.Cron($"{field.Name} step must be at least 1");
+            }
+            for (var n = first; n <= last; n += step)
+            {
+                var value = field == Field.DayOfWeek ? n % 7 : n;
+                if (!values.Contains(value))
+                {
+                    values.Add(value);
+                }
+            }
+        }
+        return values;
+    }
+
+    private static List<Item>? Items(string text, Field field)
+    {
+        var items = new List<Item>();
+        foreach (var item in text.Split(','))
+        {
+            var slash = item.IndexOf('/');
+            var range = slash < 0 ? item : item[..slash];
+            var step = slash < 0 ? null : item[(slash + 1)..];
+            var dash = range.IndexOf('-');
+            Bounds bounds = range == "*" ? new Bounds.Star()
+                : dash >= 0 ? new Bounds.Range(range[..dash], range[(dash + 1)..])
+                : new Bounds.Value(range);
+            var valid = (step is null || IsNumber(step)) && bounds switch
+            {
+                Bounds.Value value => IsValue(value.A, field),
+                Bounds.Range r => IsValue(r.A, field) && IsValue(r.B, field),
+                _ => true
             };
-
-            if (domField != "*" && domField != "?")
-            {
-                throw HronException.Cron("DOM must be * when using # for nth weekday");
-            }
-
-            var minute = ParseSingleValue(minuteField, "minute", 0, 59);
-            var hour = ParseSingleValue(hourField, "hour", 0, 23);
-
-            return ScheduleData.Of(new MonthRepeat(1, MonthTarget.OrdinalWeekday(ordinal, weekday), [new TimeOfDay(hour, minute)]))
-                .WithDuring(during);
-        }
-
-        if (dowField.EndsWith('L') && dowField.Length > 1)
-        {
-            var dowStr = dowField[..^1];
-            var dowNum = ParseDowValue(dowStr);
-            var weekday = CronDOWToWeekday(dowNum);
-
-            if (domField != "*" && domField != "?")
-            {
-                throw HronException.Cron("DOM must be * when using nL for last weekday");
-            }
-
-            var minute = ParseSingleValue(minuteField, "minute", 0, 59);
-            var hour = ParseSingleValue(hourField, "hour", 0, 23);
-
-            return ScheduleData.Of(new MonthRepeat(1, MonthTarget.OrdinalWeekday(OrdinalPosition.Last, weekday), [new TimeOfDay(hour, minute)]))
-                .WithDuring(during);
-        }
-
-        return null;
-    }
-
-    private static ScheduleData? TryParseLastDay(
-        string minuteField,
-        string hourField,
-        string domField,
-        string dowField,
-        List<MonthName> during)
-    {
-        if (domField != "L" && domField != "LW")
-        {
-            return null;
-        }
-
-        if (dowField != "*" && dowField != "?")
-        {
-            throw HronException.Cron("DOW must be * when using L or LW in DOM");
-        }
-
-        var minute = ParseSingleValue(minuteField, "minute", 0, 59);
-        var hour = ParseSingleValue(hourField, "hour", 0, 23);
-
-        var target = domField == "LW" ? MonthTarget.LastWeekday() : MonthTarget.LastDay();
-
-        return ScheduleData.Of(new MonthRepeat(1, target, [new TimeOfDay(hour, minute)]))
-            .WithDuring(during);
-    }
-
-    private static ScheduleData? TryParseNearestWeekday(
-        string minuteField,
-        string hourField,
-        string domField,
-        string dowField,
-        List<MonthName> during)
-    {
-        if (!domField.EndsWith('W') || domField == "LW")
-        {
-            return null;
-        }
-
-        if (dowField != "*" && dowField != "?")
-        {
-            throw HronException.Cron("DOW must be * when using W in DOM");
-        }
-
-        var dayStr = domField[..^1];
-        if (!int.TryParse(dayStr, out var day))
-        {
-            throw HronException.Cron($"invalid W day: {dayStr}");
-        }
-
-        if (day < 1 || day > 31)
-        {
-            throw HronException.Cron($"W day must be 1-31, got {day}");
-        }
-
-        var minute = ParseSingleValue(minuteField, "minute", 0, 59);
-        var hour = ParseSingleValue(hourField, "hour", 0, 23);
-
-        var target = MonthTarget.NearestWeekday(day, direction: null);
-
-        return ScheduleData.Of(new MonthRepeat(1, target, [new TimeOfDay(hour, minute)]))
-            .WithDuring(during);
-    }
-
-    private static ScheduleData? TryParseInterval(
-        string minuteField,
-        string hourField,
-        string domField,
-        string dowField,
-        List<MonthName> during)
-    {
-        if (minuteField.Contains('/'))
-        {
-            var slashIdx = minuteField.IndexOf('/');
-            var rangePart = minuteField[..slashIdx];
-            var stepStr = minuteField[(slashIdx + 1)..];
-
-            if (!int.TryParse(stepStr, out var interval) || interval == 0)
-            {
-                throw HronException.Cron("invalid minute interval value");
-            }
-
-            int fromMinute, toMinute;
-            if (rangePart == "*")
-            {
-                fromMinute = 0;
-                toMinute = 59;
-            }
-            else if (rangePart.Contains('-'))
-            {
-                var dashIdx = rangePart.IndexOf('-');
-                if (!int.TryParse(rangePart[..dashIdx], out fromMinute) ||
-                    !int.TryParse(rangePart[(dashIdx + 1)..], out toMinute))
-                {
-                    throw HronException.Cron("invalid minute range");
-                }
-                if (fromMinute > toMinute)
-                {
-                    throw HronException.Cron($"range start must be <= end: {fromMinute}-{toMinute}");
-                }
-            }
-            else
-            {
-                // Cron reads `0/15` as `0-59/15`.
-                if (!int.TryParse(rangePart, out fromMinute))
-                {
-                    throw HronException.Cron("invalid minute value");
-                }
-                toMinute = 59;
-            }
-
-            int fromHour, toHour;
-            if (hourField == "*")
-            {
-                fromHour = 0;
-                toHour = 23;
-            }
-            else if (hourField.Contains('-'))
-            {
-                var dashIdx = hourField.IndexOf('-');
-                if (!int.TryParse(hourField[..dashIdx], out fromHour) ||
-                    !int.TryParse(hourField[(dashIdx + 1)..], out toHour))
-                {
-                    throw HronException.Cron("invalid hour range");
-                }
-            }
-            else if (hourField.Contains('/'))
+            if (!valid)
             {
                 return null;
             }
-            else
-            {
-                if (!int.TryParse(hourField, out fromHour))
-                {
-                    throw HronException.Cron("invalid hour");
-                }
-                toHour = fromHour;
-            }
-
-            DayFilter? dayFilter = null;
-            if (dowField != "*")
-            {
-                dayFilter = ParseCronDOW(dowField);
-            }
-
-            if (domField == "*" || domField == "?")
-            {
-                int endMinute;
-                if (fromMinute == 0 && toMinute == 59 && toHour == 23)
-                {
-                    endMinute = 59;
-                }
-                else if (fromMinute == 0 && toMinute == 59)
-                {
-                    // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
-                    endMinute = 0;
-                }
-                else
-                {
-                    endMinute = toMinute;
-                }
-
-                return ScheduleData.Of(new IntervalRepeat(
-                    interval,
-                    IntervalUnit.Minutes,
-                    new TimeOfDay(fromHour, fromMinute),
-                    new TimeOfDay(toHour, endMinute),
-                    dayFilter)).WithDuring(during);
-            }
+            items.Add(new Item(bounds, step));
         }
-
-        if (hourField.Contains('/') && (minuteField == "0" || minuteField == "00"))
-        {
-            var slashIdx = hourField.IndexOf('/');
-            var rangePart = hourField[..slashIdx];
-            var stepStr = hourField[(slashIdx + 1)..];
-
-            if (!int.TryParse(stepStr, out var interval) || interval == 0)
-            {
-                throw HronException.Cron("invalid hour interval value");
-            }
-
-            int fromHour, toHour;
-            if (rangePart == "*")
-            {
-                fromHour = 0;
-                toHour = 23;
-            }
-            else if (rangePart.Contains('-'))
-            {
-                var dashIdx = rangePart.IndexOf('-');
-                if (!int.TryParse(rangePart[..dashIdx], out fromHour) ||
-                    !int.TryParse(rangePart[(dashIdx + 1)..], out toHour))
-                {
-                    throw HronException.Cron("invalid hour range");
-                }
-                if (fromHour > toHour)
-                {
-                    throw HronException.Cron($"range start must be <= end: {fromHour}-{toHour}");
-                }
-            }
-            else
-            {
-                if (!int.TryParse(rangePart, out fromHour))
-                {
-                    throw HronException.Cron("invalid hour value");
-                }
-                toHour = 23;
-            }
-
-            if ((domField == "*" || domField == "?") && (dowField == "*" || dowField == "?"))
-            {
-                var endMinute = (fromHour == 0 && toHour == 23) ? 59 : 0;
-
-                return ScheduleData.Of(new IntervalRepeat(
-                    interval,
-                    IntervalUnit.Hours,
-                    new TimeOfDay(fromHour, 0),
-                    new TimeOfDay(toHour, endMinute),
-                    null)).WithDuring(during);
-            }
-        }
-
-        return null;
+        return items;
     }
 
-    private static MonthTarget ParseDomField(string field)
+    private static bool IsNumber(string text) => text.Length > 0 && text.All(char.IsAsciiDigit);
+
+    private static bool IsValue(string text, Field field) => IsNumber(text) || NameValue(text, field) is not null;
+
+    private static int? NameValue(string text, Field field)
     {
-        var specs = new List<DayOfMonthSpec>();
-
-        foreach (var part in field.Split(','))
-        {
-            if (part.Contains('/'))
-            {
-                var slashIdx = part.IndexOf('/');
-                var rangePart = part[..slashIdx];
-                var stepStr = part[(slashIdx + 1)..];
-
-                int start, end;
-                if (rangePart == "*")
-                {
-                    start = 1;
-                    end = 31;
-                }
-                else if (rangePart.Contains('-'))
-                {
-                    var dashIdx = rangePart.IndexOf('-');
-                    if (!int.TryParse(rangePart[..dashIdx], out start))
-                    {
-                        throw HronException.Cron($"invalid DOM range start: {rangePart[..dashIdx]}");
-                    }
-                    if (!int.TryParse(rangePart[(dashIdx + 1)..], out end))
-                    {
-                        throw HronException.Cron($"invalid DOM range end: {rangePart[(dashIdx + 1)..]}");
-                    }
-                    if (start > end)
-                    {
-                        throw HronException.Cron($"range start must be <= end: {start}-{end}");
-                    }
-                }
-                else
-                {
-                    if (!int.TryParse(rangePart, out start))
-                    {
-                        throw HronException.Cron($"invalid DOM value: {rangePart}");
-                    }
-                    end = 31;
-                }
-
-                if (!int.TryParse(stepStr, out var step) || step == 0)
-                {
-                    throw HronException.Cron($"invalid DOM step: {stepStr}");
-                }
-
-                ValidateDom(start);
-                ValidateDom(end);
-
-                for (var d = start; d <= end; d += step)
-                {
-                    specs.Add(DayOfMonthSpec.Single(d));
-                }
-            }
-            else if (part.Contains('-'))
-            {
-                var dashIdx = part.IndexOf('-');
-                if (!int.TryParse(part[..dashIdx], out var start))
-                {
-                    throw HronException.Cron($"invalid DOM range start: {part[..dashIdx]}");
-                }
-                if (!int.TryParse(part[(dashIdx + 1)..], out var end))
-                {
-                    throw HronException.Cron($"invalid DOM range end: {part[(dashIdx + 1)..]}");
-                }
-                if (start > end)
-                {
-                    throw HronException.Cron($"range start must be <= end: {start}-{end}");
-                }
-                ValidateDom(start);
-                ValidateDom(end);
-                specs.Add(DayOfMonthSpec.Range(start, end));
-            }
-            else
-            {
-                if (!int.TryParse(part, out var day))
-                {
-                    throw HronException.Cron($"invalid DOM value: {part}");
-                }
-                ValidateDom(day);
-                specs.Add(DayOfMonthSpec.Single(day));
-            }
-        }
-
-        return MonthTarget.Days(specs);
+        var index = Array.FindIndex(field.Names, name => Ascii.EqualsIgnoreCase(name, text));
+        return index < 0 ? null : index + field.Min;
     }
 
-    private static void ValidateDom(int day)
+    private static int Number(string digits)
     {
-        if (day < 1 || day > 31)
+        var n = 0;
+        foreach (var digit in digits)
         {
-            throw HronException.Cron($"DOM must be 1-31, got {day}");
+            n = Math.Min(n * 10 + (digit - '0'), NumberCap);
         }
+        return n;
     }
 
-    private static DayFilter ParseCronDOW(string field)
+    private static int FieldValue(string text, Field field)
     {
-        if (field == "*")
+        var value = NameValue(text, field) ?? Number(text);
+        if (value < field.Min || value > field.Max)
         {
-            return DayFilter.Every();
-        }
-
-        var days = new List<Weekday>();
-
-        foreach (var part in field.Split(','))
-        {
-            if (part.Contains('/'))
-            {
-                var slashIdx = part.IndexOf('/');
-                var rangePart = part[..slashIdx];
-                var stepStr = part[(slashIdx + 1)..];
-
-                int start, end;
-                if (rangePart == "*")
-                {
-                    start = 0;
-                    end = 6;
-                }
-                else if (rangePart.Contains('-'))
-                {
-                    var dashIdx = rangePart.IndexOf('-');
-                    start = ParseDowValueRaw(rangePart[..dashIdx]);
-                    end = ParseDowValueRaw(rangePart[(dashIdx + 1)..]);
-                    if (start > end)
-                    {
-                        throw HronException.Cron($"range start must be <= end: {rangePart}");
-                    }
-                }
-                else
-                {
-                    start = ParseDowValueRaw(rangePart);
-                    end = 6;
-                }
-
-                if (!int.TryParse(stepStr, out var step) || step == 0)
-                {
-                    throw HronException.Cron($"invalid DOW step: {stepStr}");
-                }
-
-                for (var d = start; d <= end; d += step)
-                {
-                    days.Add(CronDOWToWeekday(d));
-                }
-            }
-            else if (part.Contains('-'))
-            {
-                var dashIdx = part.IndexOf('-');
-                // Keep 7 as Sunday here so that a range such as 5-7 stays ascending.
-                var start = ParseDowValueRaw(part[..dashIdx]);
-                var end = ParseDowValueRaw(part[(dashIdx + 1)..]);
-                if (start > end)
-                {
-                    throw HronException.Cron($"range start must be <= end: {part}");
-                }
-                for (var d = start; d <= end; d++)
-                {
-                    var normalized = d == 7 ? 0 : d;
-                    days.Add(CronDOWToWeekday(normalized));
-                }
-            }
-            else
-            {
-                var dow = ParseDowValue(part);
-                days.Add(CronDOWToWeekday(dow));
-            }
-        }
-
-        if (days.Count == 5)
-        {
-            var sorted = days.OrderBy(d => d.Number()).ToList();
-            var weekdays = new List<Weekday>
-            {
-                Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday,
-                Weekday.Thursday, Weekday.Friday
-            };
-            if (sorted.SequenceEqual(weekdays))
-            {
-                return DayFilter.Weekday();
-            }
-        }
-        if (days.Count == 2)
-        {
-            var sorted = days.OrderBy(d => d.Number()).ToList();
-            var weekend = new List<Weekday> { Weekday.Saturday, Weekday.Sunday };
-            if (sorted.SequenceEqual(weekend))
-            {
-                return DayFilter.Weekend();
-            }
-        }
-
-        return DayFilter.SpecificDays(days);
-    }
-
-    private static int ParseDowValue(string s)
-    {
-        var raw = ParseDowValueRaw(s);
-        // Normalize 7 to 0 (both mean Sunday)
-        return raw == 7 ? 0 : raw;
-    }
-
-    private static int ParseDowValueRaw(string s)
-    {
-        if (int.TryParse(s, out var n))
-        {
-            if (n > 7)
-            {
-                throw HronException.Cron($"DOW must be 0-7, got {n}");
-            }
-            return n;
-        }
-        return s.ToUpperInvariant() switch
-        {
-            "SUN" => 0,
-            "MON" => 1,
-            "TUE" => 2,
-            "WED" => 3,
-            "THU" => 4,
-            "FRI" => 5,
-            "SAT" => 6,
-            _ => throw HronException.Cron($"invalid DOW: {s}")
-        };
-    }
-
-    private static Weekday CronDOWToWeekday(int n) => n switch
-    {
-        0 or 7 => Weekday.Sunday,
-        1 => Weekday.Monday,
-        2 => Weekday.Tuesday,
-        3 => Weekday.Wednesday,
-        4 => Weekday.Thursday,
-        5 => Weekday.Friday,
-        6 => Weekday.Saturday,
-        _ => throw HronException.Cron($"invalid DOW number: {n}")
-    };
-
-    private static int ParseSingleValue(string field, string name, int min, int max)
-    {
-        if (!int.TryParse(field, out var value))
-        {
-            throw HronException.Cron($"invalid {name} field: {field}");
-        }
-        if (value < min || value > max)
-        {
-            throw HronException.Cron($"{name} must be {min}-{max}, got {value}");
+            throw HronException.Cron($"{field.Name} must be {field.Min}-{field.Max}, got {text}");
         }
         return value;
     }
+
+    private static Days DayExpression(MonthDays monthDays, WeekDays weekDays) => (monthDays, weekDays) switch
+    {
+        (MonthDays.Any, WeekDays.Any) => new Days.OfWeek(DayFilter.Every()),
+        (MonthDays.Any, WeekDays.Listed listed) => new Days.OfWeek(WeekdayFilter(listed.Days)),
+        (MonthDays.Any, WeekDays.Nth nth) =>
+            new Days.OfMonth(MonthTarget.OrdinalWeekday(Ordinals[nth.N - 1], nth.Weekday)),
+        (MonthDays.Any, WeekDays.Last last) =>
+            new Days.OfMonth(MonthTarget.OrdinalWeekday(OrdinalPosition.Last, last.Weekday)),
+        (MonthDays.Listed listed, WeekDays.Any) when listed.Days.Count == 31 => new Days.OfWeek(DayFilter.Every()),
+        (MonthDays.Listed listed, WeekDays.Any) => new Days.OfMonth(MonthTarget.Days(
+            Runs(Sorted(listed.Days))
+                .Select(run => run.First == run.Last
+                    ? DayOfMonthSpec.Single(run.First)
+                    : DayOfMonthSpec.Range(run.First, run.Last))
+                .ToList())),
+        (MonthDays.Last, WeekDays.Any) => new Days.OfMonth(MonthTarget.LastDay()),
+        (MonthDays.LastWeekday, WeekDays.Any) => new Days.OfMonth(MonthTarget.LastWeekday()),
+        (MonthDays.Nearest nearest, WeekDays.Any) =>
+            new Days.OfMonth(MonthTarget.NearestWeekday(nearest.Day, direction: null)),
+        _ => throw HronException.Cron(BothDaysRestricted)
+    };
+
+    private static DayFilter WeekdayFilter(List<int> days)
+    {
+        var sorted = Sorted(days);
+        if (sorted.SequenceEqual([0, 1, 2, 3, 4, 5, 6]))
+        {
+            return DayFilter.Every();
+        }
+        if (sorted.SequenceEqual([1, 2, 3, 4, 5]))
+        {
+            return DayFilter.Weekday();
+        }
+        if (sorted.SequenceEqual([0, 6]))
+        {
+            return DayFilter.Weekend();
+        }
+        return DayFilter.SpecificDays(days.Select(d => Weekdays[d]).ToList());
+    }
+
+    private static int? EqualGap(List<TimeOfDay> times)
+    {
+        if (times.Count < 2)
+        {
+            return null;
+        }
+        var minutes = times.Select(t => t.TotalMinutes).ToList();
+        var gap = minutes[1] - minutes[0];
+        var equal = minutes.Count >= 3 && minutes.Zip(minutes.Skip(1)).All(w => w.Second - w.First == gap);
+        return equal ? gap : null;
+    }
+
+    private static IntervalRepeat Interval(List<TimeOfDay> times, int gap, DayFilter days)
+    {
+        var from = times[0];
+        var last = times[^1];
+        var to = from == Midnight && last.TotalMinutes + gap >= MinutesPerDay ? EndOfDay : last;
+        var (interval, unit) = gap % 60 == 0 ? (gap / 60, IntervalUnit.Hours) : (gap, IntervalUnit.Minutes);
+        return new IntervalRepeat(interval, unit, from, to, days.Kind == DayFilterKind.Every ? null : days);
+    }
+
+    private static HronException TooManyTimes(int count, int? gap) => gap is null
+        ? HronException.Cron($"not expressible in hron: {count} times a day are too many to list")
+        : HronException.Cron(IntervalDays);
+
+    private static YearTarget? YearlyTarget(Days days, List<int> months)
+    {
+        if (days is not Days.OfMonth { Target: var target } || months.Count != 1)
+        {
+            return null;
+        }
+        var month = (MonthName)months[0];
+        return target.Kind switch
+        {
+            MonthTargetKind.Days when target.Specs is [{ Kind: DayOfMonthSpecKind.Single } spec]
+                && spec.Day <= MaxDay(month) => YearTarget.Date(month, spec.Day),
+            MonthTargetKind.LastWeekday => YearTarget.LastWeekday(month),
+            MonthTargetKind.OrdinalWeekday => YearTarget.OrdinalWeekday(
+                target.OrdinalValue!.Value, target.WeekdayValue!.Value, month),
+            _ => null
+        };
+    }
+
+    private static int MaxDay(MonthName month) => month switch
+    {
+        MonthName.February => 29,
+        MonthName.April or MonthName.June or MonthName.September or MonthName.November => 30,
+        _ => 31
+    };
+
+    public static string ToCron(ScheduleData data)
+    {
+        if (data.Except.Count > 0)
+        {
+            throw NotExpressible("except clauses not supported");
+        }
+        if (data.Until is not null)
+        {
+            throw NotExpressible("until clauses not supported");
+        }
+        if (data.Anchor is not null)
+        {
+            throw NotExpressible("starting clauses not supported");
+        }
+        var (dayOfMonth, dayOfWeek) = DayFields(data.Expr);
+        // ScheduleData can hold an empty day list, which writes an empty field.
+        if (dayOfMonth.Length == 0 || dayOfWeek.Length == 0)
+        {
+            throw NotExpressible("schedule has no days");
+        }
+        var month = MonthField(data);
+        var (minute, hour) = TimeFields(data.Expr);
+        return $"{minute} {hour} {dayOfMonth} {month} {dayOfWeek}";
+    }
+
+    private static HronException NotExpressible(string reason) =>
+        HronException.Cron($"not expressible as cron: {reason}");
+
+    private static void RepeatsOnce(int interval, string unit)
+    {
+        if (interval > 1)
+        {
+            throw NotExpressible($"multi-{unit} repeats not supported");
+        }
+    }
+
+    private static (string DayOfMonth, string DayOfWeek) DayFields(IScheduleExpr expr)
+    {
+        const string any = "*";
+        switch (expr)
+        {
+            case IntervalRepeat ir:
+                return (any, ir.DayFilter is null ? any : FilterField(ir.DayFilter));
+            case DayRepeat dr:
+                RepeatsOnce(dr.Interval, "day");
+                return (any, FilterField(dr.Days));
+            case WeekRepeat wr:
+                RepeatsOnce(wr.Interval, "week");
+                return (any, WeekdaysField(wr.WeekDays));
+            case MonthRepeat mr:
+                RepeatsOnce(mr.Interval, "month");
+                var target = mr.Target;
+                return target.Kind switch
+                {
+                    MonthTargetKind.Days => (ListField(SortedUnique(target.ExpandDays()), 31), any),
+                    MonthTargetKind.LastDay => ("L", any),
+                    MonthTargetKind.LastWeekday => ("LW", any),
+                    MonthTargetKind.NearestWeekday when target.NearestWeekdayDirection is not null =>
+                        throw NotExpressible("directional nearest weekday not supported"),
+                    MonthTargetKind.NearestWeekday => ($"{target.NearestWeekdayDay}W", any),
+                    _ => (any, OrdinalField(target.OrdinalValue!.Value, target.WeekdayValue!.Value))
+                };
+            case YearRepeat yr:
+                RepeatsOnce(yr.Interval, "year");
+                return yr.Target.Kind switch
+                {
+                    YearTargetKind.Date or YearTargetKind.DayOfMonth => (yr.Target.Day.ToString(), any),
+                    YearTargetKind.OrdinalWeekday =>
+                        (any, OrdinalField(yr.Target.Ordinal!.Value, yr.Target.WeekdayValue!.Value)),
+                    _ => ("LW", any)
+                };
+            case SingleDate { DateSpec.Kind: DateSpecKind.Iso }:
+                throw NotExpressible("ISO dates do not repeat");
+            case SingleDate sd:
+                return (sd.DateSpec.Day.ToString(), any);
+            default:
+                throw new ArgumentException($"Unknown expression type: {expr.GetType()}", nameof(expr));
+        }
+    }
+
+    private static string MonthField(ScheduleData data)
+    {
+        var during = data.During;
+        if (OwnMonth(data.Expr) is { } month)
+        {
+            if (during.Count > 0 && !during.Contains(month))
+            {
+                throw NotExpressible("during excludes the schedule's month");
+            }
+            return month.Number().ToString();
+        }
+        return during.Count == 0 ? "*" : ListField(SortedUnique(during.Select(m => m.Number())), 12);
+    }
+
+    private static MonthName? OwnMonth(IScheduleExpr expr) => expr switch
+    {
+        YearRepeat yr => yr.Target.Month,
+        SingleDate { DateSpec.Kind: DateSpecKind.Named } sd => sd.DateSpec.Month,
+        _ => null
+    };
+
+    private static (string Minute, string Hour) TimeFields(IScheduleExpr expr)
+    {
+        var times = DailyMinutes(expr);
+        var minutes = SortedUnique(times.Select(t => (int)(t % 60)));
+        var hours = SortedUnique(times.Select(t => (int)(t / 60)));
+        // ScheduleData can hold a schedule with no times, which no cron writes.
+        if (times.Count == 0)
+        {
+            throw NotExpressible("schedule has no times");
+        }
+        if (minutes.Count * hours.Count != times.Count)
+        {
+            throw NotExpressible("times are not every combination of their minutes and hours");
+        }
+        return (StepField(minutes, 60), StepField(hours, 24));
+    }
+
+    private static List<long> DailyMinutes(IScheduleExpr expr)
+    {
+        IEnumerable<long> times = DailyTimes.Of(expr) switch
+        {
+            DailyTimes.Slots slots => LongRange(slots.Count).Select(slots.MinuteAt),
+            DailyTimes.Fixed fixedTimes => fixedTimes.Times.Select(t => (long)t.TotalMinutes),
+            _ => []
+        };
+        return times.Distinct().Order().ToList();
+    }
+
+    private static IEnumerable<long> LongRange(long count)
+    {
+        for (long i = 0; i < count; i++)
+        {
+            yield return i;
+        }
+    }
+
+    private static string FilterField(DayFilter filter) => filter.Kind switch
+    {
+        DayFilterKind.Every => "*",
+        DayFilterKind.Weekday => WeekdaysField(
+            [Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday]),
+        DayFilterKind.Weekend => WeekdaysField([Weekday.Saturday, Weekday.Sunday]),
+        _ => WeekdaysField(filter.Days)
+    };
+
+    private static string WeekdaysField(IReadOnlyList<Weekday> days) =>
+        ListField(SortedUnique(days.Select(d => d.CronDOW())), 7);
+
+    private static string OrdinalField(OrdinalPosition ordinal, Weekday weekday)
+    {
+        var day = weekday.CronDOW();
+        var index = Array.IndexOf(Ordinals, ordinal);
+        return index >= 0 ? $"{day}#{index + 1}" : $"{day}L";
+    }
+
+    private static string StepField(List<int> values, int size)
+    {
+        var first = values[0];
+        var last = values[^1];
+        int? gap = values.Count > 1 ? values[1] - first : null;
+        var equalGaps = gap is not null && values.Zip(values.Skip(1)).All(w => w.Second - w.First == gap);
+        if (values.Count == size)
+        {
+            return "*";
+        }
+        if (gap is null)
+        {
+            return first.ToString();
+        }
+        if (equalGaps && first == 0 && last + gap == size)
+        {
+            return $"*/{gap}";
+        }
+        if (equalGaps && gap == 1)
+        {
+            return $"{first}-{last}";
+        }
+        if (equalGaps && values.Count >= 3)
+        {
+            return $"{first}-{last}/{gap}";
+        }
+        return ListField(values, size);
+    }
+
+    private static string ListField(List<int> values, int size)
+    {
+        if (values.Count == size)
+        {
+            return "*";
+        }
+        return string.Join(",", Runs(values).Select(run => run.First == run.Last
+            ? run.First.ToString()
+            : $"{run.First}-{run.Last}"));
+    }
+
+    private static List<(int First, int Last)> Runs(List<int> sortedValues)
+    {
+        var runs = new List<(int First, int Last)>();
+        foreach (var value in sortedValues)
+        {
+            if (runs.Count > 0 && runs[^1].Last + 1 == value)
+            {
+                runs[^1] = (runs[^1].First, value);
+            }
+            else
+            {
+                runs.Add((value, value));
+            }
+        }
+        return runs;
+    }
+
+    private static List<int> Sorted(List<int> values) => values.Order().ToList();
+
+    private static List<int> SortedUnique(IEnumerable<int> values) => values.Distinct().Order().ToList();
 }

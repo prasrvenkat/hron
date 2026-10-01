@@ -59,6 +59,27 @@ const valid = Schedule.validate("every day at 9:00");
 const tz = schedule.timezone; // "America/New_York" or undefined
 ```
 
+## Errors
+
+Methods throw an `Error` whose `message` is the hron error message and whose `kind` says what failed:
+
+| `kind` | Thrown by |
+|---|---|
+| `lex`, `parse` | `Schedule.parse` on an invalid expression |
+| `eval` | reserved: evaluating a schedule from `Schedule.parse` or `fromCron` never fails |
+| `cron` | `fromCron` and `explainCron` on invalid cron or cron hron cannot express exactly; `toCron` when no cron fires at the same times |
+
+```javascript
+try {
+  fromCron("0 9 15 * 1");
+} catch (error) {
+  error.kind;    // "cron"
+  error.message; // "not expressible in hron: cron fires on either the day of month or the day of week"
+}
+```
+
+A datetime argument that cannot be parsed throws a plain `Error` with no `kind`.
+
 ## License
 
 MIT

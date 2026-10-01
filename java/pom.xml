@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>hron</name>
-    <description>Human-readable cron - scheduling expressions that are a superset of what cron can express</description>
+    <description>Human-readable cron - scheduling expressions that read like English and convert to and from cron</description>
     <url>https://github.com/simpllyf/hron</url>
 
     <licenses>

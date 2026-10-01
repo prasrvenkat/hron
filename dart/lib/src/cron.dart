@@ -1,861 +1,617 @@
 import 'ast.dart';
 import 'error.dart';
+import 'eval.dart' show intervalSlots;
 
-String toCron(ScheduleData schedule) {
-  if (schedule.except.isNotEmpty) {
-    throw HronError.cron(
-      'not expressible as cron (except clauses not supported)',
-    );
-  }
-  if (schedule.until != null) {
-    throw HronError.cron(
-      'not expressible as cron (until clauses not supported)',
-    );
-  }
-  if (schedule.during.isNotEmpty) {
-    throw HronError.cron(
-      'not expressible as cron (during clauses not supported)',
-    );
-  }
+const _maxListedTimes = 24;
+const _bothDaysRestricted =
+    'not expressible in hron: cron fires on either the day of month or the day of week';
+const _intervalDays =
+    'not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days';
+const _minutesPerDay = 24 * 60;
+const _midnight = TimeOfDay(0, 0);
+const _endOfDay = TimeOfDay(23, 59);
 
-  final expr = schedule.expr;
+// Digit strings may be of any length. Every number at or above this cap is out
+// of every field's range and steps past every range's end, so saturating at it
+// keeps each comparison exact without overflow.
+const _numberCap = 1000;
 
-  switch (expr) {
-    case DayRepeat(
-      interval: final interval,
-      days: final days,
-      times: final times,
-    ):
-      if (interval > 1) {
-        throw HronError.cron(
-          'not expressible as cron (multi-day intervals not supported)',
-        );
-      }
-      if (times.length != 1) {
-        throw HronError.cron(
-          'not expressible as cron (multiple times not supported)',
-        );
-      }
-      final time = times[0];
-      final dow = _dayFilterToCronDow(days);
-      return '${time.minute} ${time.hour} * * $dow';
+const _monthNames = [
+  'jan',
+  'feb',
+  'mar',
+  'apr',
+  'may',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'oct',
+  'nov',
+  'dec',
+];
+const _dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const _ordinals = [
+  OrdinalPosition.first,
+  OrdinalPosition.second,
+  OrdinalPosition.third,
+  OrdinalPosition.fourth,
+  OrdinalPosition.fifth,
+];
 
-    case IntervalRepeat(
-      interval: final interval,
-      unit: final unit,
-      from: final from,
-      to: final to,
-      dayFilter: final dayFilter,
-    ):
-      final fullDay =
-          from.hour == 0 &&
-          from.minute == 0 &&
-          to.hour == 23 &&
-          to.minute == 59;
-      if (!fullDay) {
-        throw HronError.cron(
-          'not expressible as cron (partial-day interval windows not supported)',
-        );
-      }
-      if (dayFilter != null) {
-        throw HronError.cron(
-          'not expressible as cron (interval with day filter not supported)',
-        );
-      }
-      if (unit == IntervalUnit.min) {
-        if (60 % interval != 0) {
-          throw HronError.cron(
-            'not expressible as cron (*/$interval breaks at hour boundaries)',
-          );
-        }
-        return '*/$interval * * * *';
-      }
-      return '0 */$interval * * *';
+enum _Field {
+  minute('minute', 0, 59),
+  hour('hour', 0, 23),
+  dayOfMonth('day of month', 1, 31),
+  month('month', 1, 12),
+  dayOfWeek('day of week', 0, 7);
 
-    case WeekRepeat():
-      throw HronError.cron(
-        'not expressible as cron (multi-week intervals not supported)',
-      );
+  const _Field(this.label, this.min, this.max);
 
-    case MonthRepeat(
-      interval: final interval,
-      target: final target,
-      times: final times,
-    ):
-      if (interval > 1) {
-        throw HronError.cron(
-          'not expressible as cron (multi-month intervals not supported)',
-        );
-      }
-      if (times.length != 1) {
-        throw HronError.cron(
-          'not expressible as cron (multiple times not supported)',
-        );
-      }
-      final time = times[0];
-      if (target is DaysTarget) {
-        final expanded = target.specs.expand((s) {
-          if (s is SingleDay) return [s.day];
-          final r = s as DayRange;
-          return [for (var d = r.start; d <= r.end; d++) d];
-        }).toList();
-        final dom = expanded.join(',');
-        return '${time.minute} ${time.hour} $dom * *';
-      }
-      if (target is LastDayTarget) {
-        throw HronError.cron(
-          'not expressible as cron (last day of month not supported)',
-        );
-      }
-      if (target is NearestWeekdayTarget) {
-        if (target.direction != null) {
-          throw HronError.cron(
-            'not expressible as cron (directional nearest weekday not supported)',
-          );
-        }
-        return '${time.minute} ${time.hour} ${target.day}W * *';
-      }
-      if (target is OrdinalWeekdayMonthTarget) {
-        throw HronError.cron(
-          'not expressible as cron (ordinal weekday of month not supported)',
-        );
-      }
-      throw HronError.cron(
-        'not expressible as cron (last weekday of month not supported)',
-      );
+  final String label;
+  final int min;
+  final int max;
 
-    case SingleDate():
-      throw HronError.cron(
-        'not expressible as cron (single dates are not repeating)',
-      );
+  // In the day of week, 7 is Sunday only where written: `*` and `a/n` end at 6.
+  int get starEnd => this == dayOfWeek ? 6 : max;
 
-    case YearRepeat():
-      throw HronError.cron(
-        'not expressible as cron (yearly schedules not supported in 5-field cron)',
-      );
-  }
-}
-
-String _dayFilterToCronDow(DayFilter filter) {
-  return switch (filter) {
-    EveryDay() => '*',
-    WeekdayFilter() => '1-5',
-    WeekendFilter() => '0,6',
-    SpecificDays(days: final days) => () {
-      final nums = days.map((d) => d.cronDow).toList()..sort();
-      return nums.join(',');
-    }(),
+  List<String> get names => switch (this) {
+    _Field.month => _monthNames,
+    _Field.dayOfWeek => _dayNames,
+    _ => const [],
   };
 }
 
+sealed class _Bounds {}
+
+class _Star extends _Bounds {}
+
+class _Value extends _Bounds {
+  _Value(this.a);
+  final String a;
+}
+
+class _Range extends _Bounds {
+  _Range(this.a, this.b);
+  final String a;
+  final String b;
+}
+
+typedef _Item = ({_Bounds bounds, String? step});
+
+sealed class _MonthDays {}
+
+class _AnyMonthDay extends _MonthDays {}
+
+class _MonthDayList extends _MonthDays {
+  _MonthDayList(this.days);
+  final List<int> days;
+}
+
+class _LastMonthDay extends _MonthDays {}
+
+class _LastWeekdayOfMonth extends _MonthDays {}
+
+class _NearestMonthDay extends _MonthDays {
+  _NearestMonthDay(this.day);
+  final int day;
+}
+
+sealed class _WeekDays {}
+
+class _AnyWeekDay extends _WeekDays {}
+
+class _WeekDayList extends _WeekDays {
+  _WeekDayList(this.days);
+  final List<int> days;
+}
+
+class _NthWeekDay extends _WeekDays {
+  _NthWeekDay(this.weekday, this.n);
+  final Weekday weekday;
+  final int n;
+}
+
+class _LastWeekDay extends _WeekDays {
+  _LastWeekDay(this.weekday);
+  final Weekday weekday;
+}
+
+sealed class _Days {}
+
+class _DaysOfWeek extends _Days {
+  _DaysOfWeek(this.filter);
+  final DayFilter filter;
+}
+
+class _DaysOfMonth extends _Days {
+  _DaysOfMonth(this.target);
+  final MonthTarget target;
+}
+
 ScheduleData fromCron(String cron) {
-  final trimmed = cron.trim();
-
-  if (trimmed.startsWith('@')) {
-    return _parseCronShortcut(trimmed);
-  }
-
-  final fields = trimmed.split(RegExp(r'\s+'));
+  final input = _trim(cron);
+  final text = input.startsWith('@') ? _shortcut(input) : input;
+  final fields = text
+      .split(_fieldSeparator)
+      .where((f) => f.isNotEmpty)
+      .toList();
   if (fields.length != 5) {
     throw HronError.cron('expected 5 cron fields, got ${fields.length}');
   }
+  final [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
 
-  final minuteField = fields[0];
-  final hourField = fields[1];
-  var domField = fields[2];
-  final monthField = fields[3];
-  var dowField = fields[4];
+  final minutes = _sorted(_values(minute, _Field.minute));
+  final hours = _sorted(_values(hour, _Field.hour));
+  final monthDays = _parseDayOfMonth(dayOfMonth);
+  final months = _sorted(_values(month, _Field.month));
+  final weekDays = _parseDayOfWeek(dayOfWeek);
+  final days = _dayExpression(monthDays, weekDays);
+  final times = [
+    for (final hour in hours)
+      for (final minute in minutes) TimeOfDay(hour, minute),
+  ];
 
-  if (domField == '?') domField = '*';
-  if (dowField == '?') dowField = '*';
-
-  final during = _parseMonthField(monthField);
-
-  final nthResult = _tryParseNthWeekday(
-    minuteField,
-    hourField,
-    domField,
-    dowField,
-    during,
-  );
-  if (nthResult != null) return nthResult;
-
-  final lastDayResult = _tryParseLastDay(
-    minuteField,
-    hourField,
-    domField,
-    dowField,
-    during,
-  );
-  if (lastDayResult != null) return lastDayResult;
-
-  if (domField.endsWith('W') && domField != 'LW') {
-    final nearestWeekdayResult = _tryParseNearestWeekday(
-      minuteField,
-      hourField,
-      domField,
-      dowField,
-      during,
-    );
-    if (nearestWeekdayResult != null) return nearestWeekdayResult;
+  final gap = _equalGap(times);
+  final yearTarget = _yearTarget(days, months);
+  final ScheduleExpr expr;
+  if (days is _DaysOfWeek && gap != null) {
+    expr = _interval(times, gap, days.filter);
+  } else if (times.length > _maxListedTimes) {
+    throw _tooManyTimes(times.length, gap);
+  } else if (yearTarget != null) {
+    expr = YearRepeat(1, yearTarget, times);
+  } else {
+    expr = switch (days) {
+      _DaysOfWeek(:final filter) => DayRepeat(1, filter, times),
+      _DaysOfMonth(:final target) => MonthRepeat(1, target, times),
+    };
   }
-
-  final intervalResult = _tryParseInterval(
-    minuteField,
-    hourField,
-    domField,
-    dowField,
-    during,
-  );
-  if (intervalResult != null) return intervalResult;
-
-  final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
-  final hour = _parseSingleValue(hourField, 'hour', 0, 23);
-  final time = TimeOfDay(hour, minute);
-
-  if (domField != '*' && dowField == '*') {
-    final target = _parseDomField(domField);
-    final schedule = ScheduleData(MonthRepeat(1, target, [time]));
-    schedule.during = during;
-    return schedule;
+  final schedule = ScheduleData(expr);
+  if (expr is! YearRepeat && months.length < MonthName.values.length) {
+    schedule.during = [for (final m in months) MonthName.fromNumber(m)];
   }
-
-  final days = _parseCronDow(dowField);
-  final schedule = ScheduleData(DayRepeat(1, days, [time]));
-  schedule.during = during;
   return schedule;
 }
 
-ScheduleData _parseCronShortcut(String cron) {
-  switch (cron.toLowerCase()) {
-    case '@yearly':
-    case '@annually':
-      return ScheduleData(
-        YearRepeat(1, DateTarget(MonthName.jan, 1), [const TimeOfDay(0, 0)]),
-      );
-    case '@monthly':
-      return ScheduleData(
-        MonthRepeat(1, DaysTarget([SingleDay(1)]), [const TimeOfDay(0, 0)]),
-      );
-    case '@weekly':
-      return ScheduleData(
-        DayRepeat(1, SpecificDays([Weekday.sunday]), [const TimeOfDay(0, 0)]),
-      );
-    case '@daily':
-    case '@midnight':
-      return ScheduleData(DayRepeat(1, EveryDay(), [const TimeOfDay(0, 0)]));
-    case '@hourly':
-      return ScheduleData(
-        IntervalRepeat(
-          1,
-          IntervalUnit.hours,
-          const TimeOfDay(0, 0),
-          const TimeOfDay(23, 59),
-          null,
-        ),
-      );
-    default:
-      throw HronError.cron('unknown @ shortcut: $cron');
+final _fieldSeparator = RegExp('[ \t]');
+
+// Not String.trim, which also strips Unicode spaces the spec does not trim.
+String _trim(String text) {
+  bool isTrimmed(int unit) =>
+      unit == 0x20 || unit == 0x09 || unit == 0x0D || unit == 0x0A;
+  var start = 0;
+  var end = text.length;
+  while (start < end && isTrimmed(text.codeUnitAt(start))) {
+    start++;
   }
+  while (end > start && isTrimmed(text.codeUnitAt(end - 1))) {
+    end--;
+  }
+  return text.substring(start, end);
 }
 
-List<MonthName> _parseMonthField(String field) {
-  if (field == '*') return [];
+// Not String.toLowerCase or toUpperCase, which fold U+212A (Kelvin sign) and
+// U+017F (ſ) onto ASCII letters.
+String _asciiLowercase(String text) => String.fromCharCodes(
+  text.codeUnits.map((u) => u >= 0x41 && u <= 0x5A ? u + 0x20 : u),
+);
 
-  final months = <MonthName>[];
-  for (final part in field.split(',')) {
-    // Before the range check: a step part like 1-12/3 also contains '-'.
-    if (part.contains('/')) {
-      final splitIdx = part.indexOf('/');
-      final rangePart = part.substring(0, splitIdx);
-      final stepStr = part.substring(splitIdx + 1);
+String _shortcut(String input) => switch (_asciiLowercase(input)) {
+  '@yearly' || '@annually' => '0 0 1 1 *',
+  '@monthly' => '0 0 1 * *',
+  '@weekly' => '0 0 * * 0',
+  '@daily' || '@midnight' => '0 0 * * *',
+  '@hourly' => '0 * * * *',
+  _ => throw HronError.cron('unknown cron shortcut: $input'),
+};
 
-      int start, end;
-      if (rangePart == '*') {
-        start = 1;
-        end = 12;
-      } else if (rangePart.contains('-')) {
-        final dashIdx = rangePart.indexOf('-');
-        final startMonth = _parseMonthValue(rangePart.substring(0, dashIdx));
-        final endMonth = _parseMonthValue(rangePart.substring(dashIdx + 1));
-        start = startMonth.number;
-        end = endMonth.number;
-      } else {
-        throw HronError.cron('invalid month step expression: $part');
-      }
-
-      final step = int.tryParse(stepStr);
-      if (step == null) {
-        throw HronError.cron('invalid month step value: $stepStr');
-      }
-      if (step == 0) {
-        throw HronError.cron('step cannot be 0');
-      }
-
-      for (var n = start; n <= end; n += step) {
-        months.add(MonthName.fromNumber(n));
-      }
-    } else if (part.contains('-')) {
-      final dashIdx = part.indexOf('-');
-      final startMonth = _parseMonthValue(part.substring(0, dashIdx));
-      final endMonth = _parseMonthValue(part.substring(dashIdx + 1));
-      final startNum = startMonth.number;
-      final endNum = endMonth.number;
-      if (startNum > endNum) {
-        throw HronError.cron('invalid month range: $part');
-      }
-      for (var n = startNum; n <= endNum; n++) {
-        months.add(MonthName.fromNumber(n));
-      }
-    } else {
-      months.add(_parseMonthValue(part));
+_MonthDays _parseDayOfMonth(String text) {
+  if (text == '*' || text == '?') return _AnyMonthDay();
+  final lower = _asciiLowercase(text);
+  if (lower == 'l') return _LastMonthDay();
+  if (lower == 'lw') return _LastWeekdayOfMonth();
+  if (lower.endsWith('w')) {
+    final day = text.substring(0, text.length - 1);
+    if (_isNumber(day)) {
+      return _NearestMonthDay(_fieldValue(day, _Field.dayOfMonth));
     }
   }
-
-  return months;
+  return _MonthDayList(_values(text, _Field.dayOfMonth));
 }
 
-MonthName _parseMonthValue(String s) {
-  final n = int.tryParse(s);
-  if (n != null) {
-    if (n < 1 || n > 12) {
-      throw HronError.cron('invalid month number: $n');
+_WeekDays _parseDayOfWeek(String text) {
+  const field = _Field.dayOfWeek;
+  if (text == '*' || text == '?') return _AnyWeekDay();
+  final hash = text.indexOf('#');
+  if (hash >= 0) {
+    final day = text.substring(0, hash);
+    final nth = text.substring(hash + 1);
+    if (_isValue(day, field) && _isNumber(nth)) {
+      final weekday = Weekday.fromCronDow(_fieldValue(day, field) % 7);
+      final n = _number(nth);
+      if (n < 1 || n > 5) {
+        throw HronError.cron('day of week ordinal must be 1-5, got $nth');
+      }
+      return _NthWeekDay(weekday, n);
     }
-    return MonthName.fromNumber(n);
   }
-  final month = _parseMonthName(s);
-  if (month == null) {
-    throw HronError.cron('invalid month: $s');
+  if (_asciiLowercase(text).endsWith('l')) {
+    final day = text.substring(0, text.length - 1);
+    if (_isValue(day, field)) {
+      return _LastWeekDay(Weekday.fromCronDow(_fieldValue(day, field) % 7));
+    }
   }
-  return month;
+  return _WeekDayList(_values(text, field));
 }
 
-MonthName? _parseMonthName(String s) {
-  return switch (s.toUpperCase()) {
-    'JAN' => MonthName.jan,
-    'FEB' => MonthName.feb,
-    'MAR' => MonthName.mar,
-    'APR' => MonthName.apr,
-    'MAY' => MonthName.may,
-    'JUN' => MonthName.jun,
-    'JUL' => MonthName.jul,
-    'AUG' => MonthName.aug,
-    'SEP' => MonthName.sep,
-    'OCT' => MonthName.oct,
-    'NOV' => MonthName.nov,
-    'DEC' => MonthName.dec,
+// Keeps the order of first appearance, in which fromCron lists days of the week.
+List<int> _values(String text, _Field field) {
+  final items = _items(text, field);
+  if (items == null) throw HronError.cron('invalid ${field.label}: $text');
+  final values = <int>{};
+  for (final item in items) {
+    final int first;
+    final int last;
+    switch (item.bounds) {
+      case _Star():
+        first = field.min;
+        last = field.starEnd;
+      case _Value(:final a):
+        first = _fieldValue(a, field);
+        // `7/n` starts past the end of `*`, so it is Sunday alone.
+        last = item.step == null
+            ? first
+            : (first > field.starEnd ? first : field.starEnd);
+      case _Range(:final a, :final b):
+        first = _fieldValue(a, field);
+        last = _fieldValue(b, field);
+        if (first > last) {
+          throw HronError.cron(
+            '${field.label} range must not run backwards: $a-$b',
+          );
+        }
+    }
+    final step = item.step == null ? 1 : _number(item.step!);
+    if (step == 0) {
+      throw HronError.cron('${field.label} step must be at least 1');
+    }
+    for (var value = first; value <= last; value += step) {
+      values.add(field == _Field.dayOfWeek ? value % 7 : value);
+    }
+  }
+  return values.toList();
+}
+
+List<_Item>? _items(String text, _Field field) {
+  final items = <_Item>[];
+  for (final item in text.split(',')) {
+    final slash = item.indexOf('/');
+    final range = slash < 0 ? item : item.substring(0, slash);
+    final step = slash < 0 ? null : item.substring(slash + 1);
+    final dash = range.indexOf('-');
+    final _Bounds bounds = range == '*'
+        ? _Star()
+        : dash < 0
+        ? _Value(range)
+        : _Range(range.substring(0, dash), range.substring(dash + 1));
+    final valid =
+        (step == null || _isNumber(step)) &&
+        switch (bounds) {
+          _Star() => true,
+          _Value(:final a) => _isValue(a, field),
+          _Range(:final a, :final b) =>
+            _isValue(a, field) && _isValue(b, field),
+        };
+    if (!valid) return null;
+    items.add((bounds: bounds, step: step));
+  }
+  return items;
+}
+
+bool _isNumber(String text) =>
+    text.isNotEmpty && text.codeUnits.every((u) => u >= 0x30 && u <= 0x39);
+
+bool _isValue(String text, _Field field) =>
+    _isNumber(text) || _nameValue(text, field) != null;
+
+int? _nameValue(String text, _Field field) {
+  final index = field.names.indexOf(_asciiLowercase(text));
+  return index < 0 ? null : index + field.min;
+}
+
+int _number(String digits) {
+  var n = 0;
+  for (final unit in digits.codeUnits) {
+    n = n * 10 + (unit - 0x30);
+    if (n > _numberCap) n = _numberCap;
+  }
+  return n;
+}
+
+int _fieldValue(String text, _Field field) {
+  final value = _nameValue(text, field) ?? _number(text);
+  if (value < field.min || value > field.max) {
+    throw HronError.cron(
+      '${field.label} must be ${field.min}-${field.max}, got $text',
+    );
+  }
+  return value;
+}
+
+_Days _dayExpression(_MonthDays monthDays, _WeekDays weekDays) => switch ((
+  monthDays,
+  weekDays,
+)) {
+  (_AnyMonthDay(), _AnyWeekDay()) => _DaysOfWeek(EveryDay()),
+  (_AnyMonthDay(), _WeekDayList(:final days)) => _DaysOfWeek(
+    _weekdayFilter(days),
+  ),
+  (_AnyMonthDay(), _NthWeekDay(:final weekday, :final n)) => _DaysOfMonth(
+    OrdinalWeekdayMonthTarget(_ordinals[n - 1], weekday),
+  ),
+  (_AnyMonthDay(), _LastWeekDay(:final weekday)) => _DaysOfMonth(
+    OrdinalWeekdayMonthTarget(OrdinalPosition.last, weekday),
+  ),
+  (_MonthDayList(:final days), _AnyWeekDay()) when days.length == 31 =>
+    _DaysOfWeek(EveryDay()),
+  (_MonthDayList(:final days), _AnyWeekDay()) => _DaysOfMonth(
+    DaysTarget([
+      for (final (first, last) in _runs(_sorted(days)))
+        first == last ? SingleDay(first) : DayRange(first, last),
+    ]),
+  ),
+  (_LastMonthDay(), _AnyWeekDay()) => _DaysOfMonth(LastDayTarget()),
+  (_LastWeekdayOfMonth(), _AnyWeekDay()) => _DaysOfMonth(LastWeekdayTarget()),
+  (_NearestMonthDay(:final day), _AnyWeekDay()) => _DaysOfMonth(
+    NearestWeekdayTarget(day),
+  ),
+  _ => throw HronError.cron(_bothDaysRestricted),
+};
+
+DayFilter _weekdayFilter(List<int> days) => switch (_sorted(days)) {
+  [0, 1, 2, 3, 4, 5, 6] => EveryDay(),
+  [1, 2, 3, 4, 5] => WeekdayFilter(),
+  [0, 6] => WeekendFilter(),
+  _ => SpecificDays([for (final d in days) Weekday.fromCronDow(d)]),
+};
+
+int? _equalGap(List<TimeOfDay> times) {
+  final minutes = [for (final t in times) _minuteOfDay(t)];
+  if (minutes.length < 3) return null;
+  final gap = minutes[1] - minutes[0];
+  for (var i = 1; i < minutes.length; i++) {
+    if (minutes[i] - minutes[i - 1] != gap) return null;
+  }
+  return gap;
+}
+
+IntervalRepeat _interval(List<TimeOfDay> times, int gap, DayFilter days) {
+  final from = times.first;
+  final last = times.last;
+  final to = from == _midnight && _minuteOfDay(last) + gap >= _minutesPerDay
+      ? _endOfDay
+      : last;
+  final (interval, unit) = gap % 60 == 0
+      ? (gap ~/ 60, IntervalUnit.hours)
+      : (gap, IntervalUnit.min);
+  return IntervalRepeat(
+    interval,
+    unit,
+    from,
+    to,
+    days is EveryDay ? null : days,
+  );
+}
+
+HronError _tooManyTimes(int count, int? gap) => gap != null
+    ? HronError.cron(_intervalDays)
+    : HronError.cron(
+        'not expressible in hron: $count times a day are too many to list',
+      );
+
+YearTarget? _yearTarget(_Days days, List<int> months) {
+  if (days is! _DaysOfMonth || months.length != 1) return null;
+  final month = MonthName.fromNumber(months.single);
+  return switch (days.target) {
+    DaysTarget(specs: [SingleDay(:final day)]) when day <= _maxDay(month) =>
+      DateTarget(month, day),
+    LastWeekdayTarget() => LastWeekdayYearTarget(month),
+    OrdinalWeekdayMonthTarget(:final ordinal, :final weekday) =>
+      OrdinalWeekdayTarget(ordinal, weekday, month),
     _ => null,
   };
 }
 
-ScheduleData? _tryParseNthWeekday(
-  String minuteField,
-  String hourField,
-  String domField,
-  String dowField,
-  List<MonthName> during,
-) {
-  if (dowField.contains('#')) {
-    final parts = dowField.split('#');
-    if (parts.length != 2) {
-      throw HronError.cron('invalid # pattern: $dowField');
-    }
-    final dowNum = _parseDowValue(parts[0]);
-    final weekday = Weekday.fromCronDow(dowNum);
-    final nth = int.tryParse(parts[1]);
-    if (nth == null) {
-      throw HronError.cron('invalid nth value: ${parts[1]}');
-    }
-    if (nth < 1 || nth > 5) {
-      throw HronError.cron('nth must be 1-5, got $nth');
-    }
-    final ordinal = switch (nth) {
-      1 => OrdinalPosition.first,
-      2 => OrdinalPosition.second,
-      3 => OrdinalPosition.third,
-      4 => OrdinalPosition.fourth,
-      5 => OrdinalPosition.fifth,
-      _ => throw HronError.cron('invalid nth value'),
-    };
+int _maxDay(MonthName month) => switch (month) {
+  MonthName.feb => 29,
+  MonthName.apr || MonthName.jun || MonthName.sep || MonthName.nov => 30,
+  _ => 31,
+};
 
-    if (domField != '*' && domField != '?') {
-      throw HronError.cron('DOM must be * when using # for nth weekday');
-    }
-
-    final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
-    final hour = _parseSingleValue(hourField, 'hour', 0, 23);
-
-    final schedule = ScheduleData(
-      MonthRepeat(1, OrdinalWeekdayMonthTarget(ordinal, weekday), [
-        TimeOfDay(hour, minute),
-      ]),
-    );
-    schedule.during = during;
-    return schedule;
+String toCron(ScheduleData schedule) {
+  if (schedule.except.isNotEmpty) {
+    throw _notExpressible('except clauses not supported');
   }
-
-  if (dowField.endsWith('L') && dowField.length > 1) {
-    final dowStr = dowField.substring(0, dowField.length - 1);
-    final dowNum = _parseDowValue(dowStr);
-    final weekday = Weekday.fromCronDow(dowNum);
-
-    if (domField != '*' && domField != '?') {
-      throw HronError.cron('DOM must be * when using nL for last weekday');
-    }
-
-    final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
-    final hour = _parseSingleValue(hourField, 'hour', 0, 23);
-
-    final schedule = ScheduleData(
-      MonthRepeat(1, OrdinalWeekdayMonthTarget(OrdinalPosition.last, weekday), [
-        TimeOfDay(hour, minute),
-      ]),
-    );
-    schedule.during = during;
-    return schedule;
+  if (schedule.until != null) {
+    throw _notExpressible('until clauses not supported');
   }
-
-  return null;
+  if (schedule.anchor != null) {
+    throw _notExpressible('starting clauses not supported');
+  }
+  final (dayOfMonth, dayOfWeek) = _dayFields(schedule.expr);
+  // A ScheduleData built in code can have an empty day list, which writes an
+  // empty field.
+  if (dayOfMonth.isEmpty || dayOfWeek.isEmpty) {
+    throw _notExpressible('schedule has no days');
+  }
+  final month = _monthField(schedule);
+  final (minute, hour) = _timeFields(schedule.expr);
+  return '$minute $hour $dayOfMonth $month $dayOfWeek';
 }
 
-ScheduleData? _tryParseLastDay(
-  String minuteField,
-  String hourField,
-  String domField,
-  String dowField,
-  List<MonthName> during,
-) {
-  if (domField != 'L' && domField != 'LW') {
-    return null;
+HronError _notExpressible(String reason) =>
+    HronError.cron('not expressible as cron: $reason');
+
+void _repeatsOnce(int interval, String unit) {
+  if (interval > 1) {
+    throw _notExpressible('multi-$unit repeats not supported');
   }
-
-  if (dowField != '*' && dowField != '?') {
-    throw HronError.cron('DOW must be * when using L or LW in DOM');
-  }
-
-  final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
-  final hour = _parseSingleValue(hourField, 'hour', 0, 23);
-
-  final target = domField == 'LW' ? LastWeekdayTarget() : LastDayTarget();
-
-  final schedule = ScheduleData(
-    MonthRepeat(1, target, [TimeOfDay(hour, minute)]),
-  );
-  schedule.during = during;
-  return schedule;
 }
 
-ScheduleData? _tryParseNearestWeekday(
-  String minuteField,
-  String hourField,
-  String domField,
-  String dowField,
-  List<MonthName> during,
-) {
-  if (!domField.endsWith('W') || domField == 'LW') {
-    return null;
-  }
-
-  if (dowField != '*' && dowField != '?') {
-    throw HronError.cron('DOW must be * when using W in DOM');
-  }
-
-  final dayStr = domField.substring(0, domField.length - 1);
-  final day = int.tryParse(dayStr);
-  if (day == null) {
-    throw HronError.cron('invalid W day value: $dayStr');
-  }
-  if (day < 1 || day > 31) {
-    throw HronError.cron('W day must be 1-31, got $day');
-  }
-
-  final minute = _parseSingleValue(minuteField, 'minute', 0, 59);
-  final hour = _parseSingleValue(hourField, 'hour', 0, 23);
-
-  final target = NearestWeekdayTarget(day);
-
-  final schedule = ScheduleData(
-    MonthRepeat(1, target, [TimeOfDay(hour, minute)]),
-  );
-  schedule.during = during;
-  return schedule;
-}
-
-ScheduleData? _tryParseInterval(
-  String minuteField,
-  String hourField,
-  String domField,
-  String dowField,
-  List<MonthName> during,
-) {
-  if (minuteField.contains('/')) {
-    final splitIdx = minuteField.indexOf('/');
-    final rangePart = minuteField.substring(0, splitIdx);
-    final stepStr = minuteField.substring(splitIdx + 1);
-
-    final interval = int.tryParse(stepStr);
-    if (interval == null) {
-      throw HronError.cron('invalid minute interval value');
-    }
-    if (interval == 0) {
-      throw HronError.cron('step cannot be 0');
-    }
-
-    int fromMinute, toMinute;
-    if (rangePart == '*') {
-      fromMinute = 0;
-      toMinute = 59;
-    } else if (rangePart.contains('-')) {
-      final dashIdx = rangePart.indexOf('-');
-      final s = int.tryParse(rangePart.substring(0, dashIdx));
-      final e = int.tryParse(rangePart.substring(dashIdx + 1));
-      if (s == null || e == null) {
-        throw HronError.cron('invalid minute range');
+(String, String) _dayFields(ScheduleExpr expr) {
+  switch (expr) {
+    case IntervalRepeat(:final dayFilter):
+      return ('*', dayFilter == null ? '*' : _filterField(dayFilter));
+    case DayRepeat(:final interval, :final days):
+      _repeatsOnce(interval, 'day');
+      return ('*', _filterField(days));
+    case WeekRepeat(:final interval, :final days):
+      _repeatsOnce(interval, 'week');
+      return ('*', _weekdaysField(days));
+    case MonthRepeat(:final interval, :final target):
+      _repeatsOnce(interval, 'month');
+      switch (target) {
+        case DaysTarget():
+          final days = _sortedUnique(expandMonthTarget(target));
+          return (_listField(days, 31), '*');
+        case LastDayTarget():
+          return ('L', '*');
+        case LastWeekdayTarget():
+          return ('LW', '*');
+        case NearestWeekdayTarget(direction: _?):
+          throw _notExpressible('directional nearest weekday not supported');
+        case NearestWeekdayTarget(:final day):
+          return ('${day}W', '*');
+        case OrdinalWeekdayMonthTarget(:final ordinal, :final weekday):
+          return ('*', _ordinalField(ordinal, weekday));
       }
-      if (s > e) {
-        throw HronError.cron('range start must be <= end: $s-$e');
-      }
-      fromMinute = s;
-      toMinute = e;
-    } else {
-      final s = int.tryParse(rangePart);
-      if (s == null) {
-        throw HronError.cron('invalid minute value');
-      }
-      fromMinute = s;
-      toMinute = 59;
-    }
-
-    int fromHour, toHour;
-    if (hourField == '*') {
-      fromHour = 0;
-      toHour = 23;
-    } else if (hourField.contains('-') && !hourField.contains('/')) {
-      final dashIdx = hourField.indexOf('-');
-      final s = int.tryParse(hourField.substring(0, dashIdx));
-      final e = int.tryParse(hourField.substring(dashIdx + 1));
-      if (s == null || e == null) {
-        throw HronError.cron('invalid hour range');
-      }
-      fromHour = s;
-      toHour = e;
-    } else if (hourField.contains('/')) {
-      return null;
-    } else {
-      final h = int.tryParse(hourField);
-      if (h == null) {
-        throw HronError.cron('invalid hour');
-      }
-      fromHour = h;
-      toHour = h;
-    }
-
-    DayFilter? dayFilter;
-    if (dowField != '*') {
-      dayFilter = _parseCronDow(dowField);
-    }
-
-    if (domField == '*' || domField == '?') {
-      int endMinute;
-      if (fromMinute == 0 && toMinute == 59 && toHour == 23) {
-        endMinute = 59;
-      } else if (fromMinute == 0 && toMinute == 59) {
-        // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
-        endMinute = 0;
-      } else {
-        endMinute = toMinute;
-      }
-
-      final schedule = ScheduleData(
-        IntervalRepeat(
-          interval,
-          IntervalUnit.min,
-          TimeOfDay(fromHour, fromMinute),
-          TimeOfDay(toHour, endMinute),
-          dayFilter,
+    case YearRepeat(:final interval, :final target):
+      _repeatsOnce(interval, 'year');
+      return switch (target) {
+        DateTarget(:final day) || DayOfMonthTarget(:final day) => ('$day', '*'),
+        OrdinalWeekdayTarget(:final ordinal, :final weekday) => (
+          '*',
+          _ordinalField(ordinal, weekday),
         ),
-      );
-      schedule.during = during;
-      return schedule;
-    }
+        LastWeekdayYearTarget() => ('LW', '*'),
+      };
+    case SingleDate(date: IsoDate()):
+      throw _notExpressible('ISO dates do not repeat');
+    case SingleDate(date: NamedDate(:final day)):
+      return ('$day', '*');
   }
+}
 
-  if (hourField.contains('/') && (minuteField == '0' || minuteField == '00')) {
-    final splitIdx = hourField.indexOf('/');
-    final rangePart = hourField.substring(0, splitIdx);
-    final stepStr = hourField.substring(splitIdx + 1);
-
-    final interval = int.tryParse(stepStr);
-    if (interval == null) {
-      throw HronError.cron('invalid hour interval value');
+String _monthField(ScheduleData schedule) {
+  final during = schedule.during;
+  final month = _ownMonth(schedule.expr);
+  if (month != null) {
+    if (during.isNotEmpty && !during.contains(month)) {
+      throw _notExpressible("during excludes the schedule's month");
     }
-    if (interval == 0) {
-      throw HronError.cron('step cannot be 0');
-    }
+    return '${month.number}';
+  }
+  if (during.isEmpty) return '*';
+  return _listField(_sortedUnique([for (final m in during) m.number]), 12);
+}
 
-    int fromHour, toHour;
-    if (rangePart == '*') {
-      fromHour = 0;
-      toHour = 23;
-    } else if (rangePart.contains('-')) {
-      final dashIdx = rangePart.indexOf('-');
-      final s = int.tryParse(rangePart.substring(0, dashIdx));
-      final e = int.tryParse(rangePart.substring(dashIdx + 1));
-      if (s == null || e == null) {
-        throw HronError.cron('invalid hour range');
-      }
-      if (s > e) {
-        throw HronError.cron('range start must be <= end: $s-$e');
-      }
-      fromHour = s;
-      toHour = e;
+MonthName? _ownMonth(ScheduleExpr expr) => switch (expr) {
+  YearRepeat(:final target) => switch (target) {
+    DateTarget(:final month) ||
+    DayOfMonthTarget(:final month) ||
+    OrdinalWeekdayTarget(:final month) ||
+    LastWeekdayYearTarget(:final month) => month,
+  },
+  SingleDate(date: NamedDate(:final month)) => month,
+  _ => null,
+};
+
+(String, String) _timeFields(ScheduleExpr expr) {
+  final times = _dailyTimes(expr);
+  final minutes = _sortedUnique([for (final t in times) t % 60]);
+  final hours = _sortedUnique([for (final t in times) t ~/ 60]);
+  // A ScheduleData built in code can have no times, which no cron writes.
+  if (times.isEmpty) {
+    throw _notExpressible('schedule has no times');
+  }
+  if (minutes.length * hours.length != times.length) {
+    throw _notExpressible(
+      'times are not every combination of their minutes and hours',
+    );
+  }
+  return (_stepField(minutes, 60), _stepField(hours, 24));
+}
+
+List<int> _dailyTimes(ScheduleExpr expr) => _sortedUnique(switch (expr) {
+  IntervalRepeat() => intervalSlots(expr),
+  DayRepeat(:final times) ||
+  WeekRepeat(:final times) ||
+  MonthRepeat(:final times) ||
+  YearRepeat(:final times) ||
+  SingleDate(:final times) => [for (final t in times) _minuteOfDay(t)],
+});
+
+String _filterField(DayFilter filter) => switch (filter) {
+  EveryDay() => '*',
+  WeekdayFilter() => _weekdaysField([
+    Weekday.monday,
+    Weekday.tuesday,
+    Weekday.wednesday,
+    Weekday.thursday,
+    Weekday.friday,
+  ]),
+  WeekendFilter() => _weekdaysField([Weekday.saturday, Weekday.sunday]),
+  SpecificDays(:final days) => _weekdaysField(days),
+};
+
+String _weekdaysField(List<Weekday> days) =>
+    _listField(_sortedUnique([for (final d in days) d.cronDow]), 7);
+
+String _ordinalField(OrdinalPosition ordinal, Weekday weekday) =>
+    ordinal == OrdinalPosition.last
+    ? '${weekday.cronDow}L'
+    : '${weekday.cronDow}#${ordinal.toN}';
+
+String _stepField(List<int> values, int size) {
+  final first = values.first;
+  final last = values.last;
+  final gap = values.length > 1 ? values[1] - first : null;
+  var equalGaps = gap != null;
+  for (var i = 1; equalGaps && i < values.length; i++) {
+    equalGaps = values[i] - values[i - 1] == gap;
+  }
+  if (values.length == size) return '*';
+  if (gap == null) return '$first';
+  if (equalGaps && first == 0 && last + gap == size) return '*/$gap';
+  if (equalGaps && gap == 1) return '$first-$last';
+  if (equalGaps && values.length >= 3) return '$first-$last/$gap';
+  return _listField(values, size);
+}
+
+String _listField(List<int> values, int size) {
+  if (values.length == size) return '*';
+  return [
+    for (final (first, last) in _runs(values))
+      first == last ? '$first' : '$first-$last',
+  ].join(',');
+}
+
+List<(int, int)> _runs(List<int> sortedValues) {
+  final runs = <(int, int)>[];
+  for (final value in sortedValues) {
+    if (runs.isNotEmpty && runs.last.$2 + 1 == value) {
+      runs.last = (runs.last.$1, value);
     } else {
-      final h = int.tryParse(rangePart);
-      if (h == null) {
-        throw HronError.cron('invalid hour value');
-      }
-      fromHour = h;
-      toHour = 23;
-    }
-
-    if ((domField == '*' || domField == '?') &&
-        (dowField == '*' || dowField == '?')) {
-      final endMinute = (fromHour == 0 && toHour == 23) ? 59 : 0;
-
-      final schedule = ScheduleData(
-        IntervalRepeat(
-          interval,
-          IntervalUnit.hours,
-          TimeOfDay(fromHour, 0),
-          TimeOfDay(toHour, endMinute),
-          null,
-        ),
-      );
-      schedule.during = during;
-      return schedule;
+      runs.add((value, value));
     }
   }
-
-  return null;
+  return runs;
 }
 
-MonthTarget _parseDomField(String field) {
-  final specs = <DayOfMonthSpec>[];
+int _minuteOfDay(TimeOfDay time) => time.hour * 60 + time.minute;
 
-  for (final part in field.split(',')) {
-    if (part.contains('/')) {
-      final splitIdx = part.indexOf('/');
-      final rangePart = part.substring(0, splitIdx);
-      final stepStr = part.substring(splitIdx + 1);
+List<int> _sorted(List<int> values) => [...values]..sort();
 
-      int start, end;
-      if (rangePart == '*') {
-        start = 1;
-        end = 31;
-      } else if (rangePart.contains('-')) {
-        final dashIdx = rangePart.indexOf('-');
-        final s = int.tryParse(rangePart.substring(0, dashIdx));
-        final e = int.tryParse(rangePart.substring(dashIdx + 1));
-        if (s == null) {
-          throw HronError.cron(
-            'invalid DOM range start: ${rangePart.substring(0, dashIdx)}',
-          );
-        }
-        if (e == null) {
-          throw HronError.cron(
-            'invalid DOM range end: ${rangePart.substring(dashIdx + 1)}',
-          );
-        }
-        if (s > e) {
-          throw HronError.cron('range start must be <= end: $s-$e');
-        }
-        start = s;
-        end = e;
-      } else {
-        final s = int.tryParse(rangePart);
-        if (s == null) {
-          throw HronError.cron('invalid DOM value: $rangePart');
-        }
-        start = s;
-        end = 31;
-      }
-
-      final step = int.tryParse(stepStr);
-      if (step == null) {
-        throw HronError.cron('invalid DOM step: $stepStr');
-      }
-      if (step == 0) {
-        throw HronError.cron('step cannot be 0');
-      }
-
-      _validateDom(start);
-      _validateDom(end);
-
-      for (var d = start; d <= end; d += step) {
-        specs.add(SingleDay(d));
-      }
-    } else if (part.contains('-')) {
-      final dashIdx = part.indexOf('-');
-      final startStr = part.substring(0, dashIdx);
-      final endStr = part.substring(dashIdx + 1);
-      final start = int.tryParse(startStr);
-      final end = int.tryParse(endStr);
-      if (start == null) {
-        throw HronError.cron('invalid DOM range start: $startStr');
-      }
-      if (end == null) {
-        throw HronError.cron('invalid DOM range end: $endStr');
-      }
-      if (start > end) {
-        throw HronError.cron('range start must be <= end: $start-$end');
-      }
-      _validateDom(start);
-      _validateDom(end);
-      specs.add(DayRange(start, end));
-    } else {
-      final day = int.tryParse(part);
-      if (day == null) {
-        throw HronError.cron('invalid DOM value: $part');
-      }
-      _validateDom(day);
-      specs.add(SingleDay(day));
-    }
-  }
-
-  return DaysTarget(specs);
-}
-
-void _validateDom(int day) {
-  if (day < 1 || day > 31) {
-    throw HronError.cron('DOM must be 1-31, got $day');
-  }
-}
-
-DayFilter _parseCronDow(String field) {
-  if (field == '*') return EveryDay();
-
-  final days = <Weekday>[];
-
-  for (final part in field.split(',')) {
-    if (part.contains('/')) {
-      final splitIdx = part.indexOf('/');
-      final rangePart = part.substring(0, splitIdx);
-      final stepStr = part.substring(splitIdx + 1);
-
-      int start, end;
-      if (rangePart == '*') {
-        start = 0;
-        end = 6;
-      } else if (rangePart.contains('-')) {
-        final dashIdx = rangePart.indexOf('-');
-        start = _parseDowValueRaw(rangePart.substring(0, dashIdx));
-        end = _parseDowValueRaw(rangePart.substring(dashIdx + 1));
-        if (start > end) {
-          throw HronError.cron(
-            'range start must be <= end: ${rangePart.substring(0, dashIdx)}-${rangePart.substring(dashIdx + 1)}',
-          );
-        }
-      } else {
-        start = _parseDowValueRaw(rangePart);
-        end = 6;
-      }
-
-      final step = int.tryParse(stepStr);
-      if (step == null) {
-        throw HronError.cron('invalid DOW step: $stepStr');
-      }
-      if (step == 0) {
-        throw HronError.cron('step cannot be 0');
-      }
-
-      for (var d = start; d <= end; d += step) {
-        days.add(Weekday.fromCronDow(d));
-      }
-    } else if (part.contains('-')) {
-      final dashIdx = part.indexOf('-');
-      final startStr = part.substring(0, dashIdx);
-      final endStr = part.substring(dashIdx + 1);
-      final start = _parseDowValueRaw(startStr);
-      final end = _parseDowValueRaw(endStr);
-      if (start > end) {
-        throw HronError.cron('range start must be <= end: $startStr-$endStr');
-      }
-      for (var d = start; d <= end; d++) {
-        final normalized = d == 7 ? 0 : d;
-        days.add(Weekday.fromCronDow(normalized));
-      }
-    } else {
-      final dow = _parseDowValue(part);
-      days.add(Weekday.fromCronDow(dow));
-    }
-  }
-
-  if (days.length == 5) {
-    final sorted = List<Weekday>.from(days)
-      ..sort((a, b) => a.number.compareTo(b.number));
-    if (_listEquals(sorted, [
-      Weekday.monday,
-      Weekday.tuesday,
-      Weekday.wednesday,
-      Weekday.thursday,
-      Weekday.friday,
-    ])) {
-      return WeekdayFilter();
-    }
-  }
-  if (days.length == 2) {
-    final sorted = List<Weekday>.from(days)
-      ..sort((a, b) => a.number.compareTo(b.number));
-    if (_listEquals(sorted, [Weekday.saturday, Weekday.sunday])) {
-      return WeekendFilter();
-    }
-  }
-
-  return SpecificDays(days);
-}
-
-bool _listEquals<T>(List<T> a, List<T> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}
-
-int _parseDowValue(String s) {
-  final raw = _parseDowValueRaw(s);
-  // Normalize 7 to 0 (both mean Sunday)
-  return raw == 7 ? 0 : raw;
-}
-
-// Raw, so a range ending at 7 (Sunday), like `5-7`, stays ascending.
-int _parseDowValueRaw(String s) {
-  final n = int.tryParse(s);
-  if (n != null) {
-    if (n < 0 || n > 7) {
-      throw HronError.cron('DOW must be 0-7, got $n');
-    }
-    return n;
-  }
-  return switch (s.toUpperCase()) {
-    'SUN' => 0,
-    'MON' => 1,
-    'TUE' => 2,
-    'WED' => 3,
-    'THU' => 4,
-    'FRI' => 5,
-    'SAT' => 6,
-    _ => throw HronError.cron('invalid DOW: $s'),
-  };
-}
-
-int _parseSingleValue(String field, String name, int min, int max) {
-  final value = int.tryParse(field);
-  if (value == null) {
-    throw HronError.cron('invalid $name field: $field');
-  }
-  if (value < min || value > max) {
-    throw HronError.cron('$name must be $min-$max, got $value');
-  }
-  return value;
-}
+List<int> _sortedUnique(Iterable<int> values) =>
+    values.toSet().toList()..sort();

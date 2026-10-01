@@ -36,10 +36,10 @@ interface Pair {
 const PAIRS: Pair[] = [
   { cron: "0 9 * * 1-5", hron: "every <b>weekday</b> at 9:00" },
   { cron: "0 10 * * 0,6", hron: "every <b>weekend</b> at 10:00" },
-  { cron: "*/30 9-17 * * 1-5", hron: "every <b>30 min</b> from 09:00 to 17:00 on weekdays" },
+  { cron: "*/30 9-17 * * 1-5", hron: "every <b>30 min</b> from 09:00 to 17:30 on weekdays" },
   { cron: "0 9 1,15 * *", hron: "every <b>month</b> on the 1st, 15th at 9:00" },
   { cron: "— not possible —", hron: "every <b>2 weeks</b> on monday at 9:00" },
-  { cron: "— not possible —", hron: "every year on <b>dec 25</b> at 00:00" },
+  { cron: "— not possible —", hron: "every weekday at 9:00 <b>except dec 25</b>" },
 ];
 
 const CURSOR = '<span class="translator-cursor"></span>';

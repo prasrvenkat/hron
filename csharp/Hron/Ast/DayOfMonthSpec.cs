@@ -13,7 +13,7 @@ public sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start,
             return [Day];
         }
 
-        var days = new List<int>(End - Start + 1);
+        var days = new List<int>(Math.Max(End - Start + 1, 0));
         for (var i = Start; i <= End; i++)
         {
             days.Add(i);

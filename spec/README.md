@@ -56,8 +56,8 @@ The other sections:
 
 - **`parse.*`** - `input`; asserts that `toString(parse(input))` equals `canonical`, and that parsing `canonical` again gives `canonical`.
 - **`parse_errors`** - `input`; asserts that `parse(input)` fails and that `validate(input)` is false, and when `error_contains` is present, that the error message contains it.
-- **`cron.to_cron`** - `hron`; asserts `toCron(parse(hron))` equals `cron`. **`cron.to_cron_errors`** - `hron`; asserts `toCron` fails.
-- **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`; asserts `fromCron` fails.
+- **`cron.to_cron`** - `hron`; asserts `toCron(parse(hron))` equals `cron`. **`cron.to_cron_errors`** - `hron`, `error`; asserts `toCron(parse(hron))` fails with a `cron` error whose message equals `error`.
+- **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`, `error`; asserts `fromCron(cron)` fails with a `cron` error whose message equals `error`.
 - **`cron.roundtrip`** - `hron`; with `c = toCron(parse(hron))`, asserts `toCron(fromCron(c))` equals `c`.
 - **`invariants`** - entries carry `name`, `expression` and `now`; every rule in `invariants.rules` applies to every entry.
 
@@ -141,7 +141,7 @@ A fixed time (`at HH:MM`, including single dates) that does not exist because cl
 
 ### Interval slots in a spring-forward gap
 
-Interval slots are `from + k × interval` in wall-clock time, from the `from` time up to and including the `to` time. A slot whose wall time does not exist is skipped, not shifted: on 2026-03-08 in `America/New_York`, `every 45 min from 00:00 to 04:00` fires at 01:30 EST and then 03:00 EDT (02:15 does not exist). Fixed times shift so a daily event is not lost; interval slots skip because the cadence continues.
+Interval slots are `from + k × interval` in wall-clock time, from the `from` time up to and including the `to` time. An interval below 1, which only a schedule built in code can hold, counts as 1 of its unit: `0 hours` steps by an hour. A slot whose wall time does not exist is skipped, not shifted: on 2026-03-08 in `America/New_York`, `every 45 min from 00:00 to 04:00` fires at 01:30 EST and then 03:00 EDT (02:15 does not exist). Fixed times shift so a daily event is not lost; interval slots skip because the cadence continues.
 
 ### DST fall-back (ambiguous times)
 
@@ -199,6 +199,81 @@ When multiple trailing clauses are present, they are applied in this order:
 2. **`except`** — exclude matching dates from the filtered set
 3. **`until`** — stop after the cutoff date
 4. **`starting`** — start on the starting date (it also sets the interval anchor)
+
+## Cron Conversion
+
+`fromCron` and `toCron` convert exactly or fail with a `cron` error. Exact means both fire at the same local times on the same dates. It ignores the timezone and DST transitions, where hron follows Behavioral Semantics and cron schedulers differ. When `fromCron(c)` succeeds, `toCron` of the result succeeds and fires as `c`. When `toCron(s)` succeeds, `fromCron` of the result fires as `s`, unless `s` fires more than 24 times a day and those times cannot be written as an interval on its days.
+
+### Cron syntax
+
+Leading and trailing spaces, tabs, carriage returns and line feeds are trimmed; between fields, one or more spaces (U+0020) or tabs (U+0009) separate. After trimming, input that starts with `@` is a shortcut, in any ASCII case: `@yearly` and `@annually` (`0 0 1 1 *`), `@monthly` (`0 0 1 * *`), `@weekly` (`0 0 * * 0`), `@daily` and `@midnight` (`0 0 * * *`), and `@hourly` (`0 * * * *`). Any other input is five fields separated by whitespace: minute (0-59), hour (0-23), day of month (1-31), month (1-12, or `jan` to `dec`) and day of week (0-7, or `sun` to `sat`, where 0 and 7 are Sunday).
+
+Each field denotes a set of values. A field is a list of items separated by commas, none empty. An item is `*`, a value, or a range `a-b` with `a <= b`, each optionally followed by `/n` with `n >= 1`: `*/n` steps through the whole field, `a-b/n` through the range, and `a/n` from `a` to the field's maximum. A value is ASCII decimal digits, of any length and with leading zeros allowed; in the month and day-of-week fields it may also be a three-letter name in any ASCII case, wherever a value goes (`mon-fri/2`, `mon/2`, `fri#2`, `friL`), where `sun` is 0. A step count `n` and an ordinal `n` are always digits. For the day of week, `*` and `a/n` cover 0-6, 7 is Sunday only where written, and `7/n` is Sunday. A step larger than its range selects only the start.
+
+`?` alone in the day of month or the day of week means `*`. The day of month may instead be `L` (the last day), `LW` (the last weekday) or `nW` (the weekday nearest day `n`, within the month; in a month without day `n` it never fires). The day of week may instead be `d#n` (the `n`-th weekday `d` of the month, `n` from 1 to 5) or `dL` (the last weekday `d` of the month). These letter forms take any ASCII case and are the whole field: no list, range or step. A day field is unrestricted only when it is exactly `*` or `?`. When both are restricted, cron fires on a day that matches either (Vixie cron and its descendants instead require both when a field starts with `*`, as in `*/2`), and no hron schedule expresses either reading.
+
+### fromCron
+
+The minute and hour fields give a set of times, every combination of a minute and an hour, taken in ascending order within the day. `fromCron` writes them as:
+
+- `at t` for one time;
+- `every n min from t1 to t2`, as hron displays it (`every n/60 hours` when 60 divides `n`), for three or more times with equal gaps of `n` minutes, when the day fields allow an interval. `t2` is the last time, or `23:59` when `t1` is `00:00` and the last time plus `n` is `24:00` or later;
+- otherwise `at t1, t2, …` for at most 24 times;
+- otherwise nothing: `fromCron` fails.
+
+The day fields give the expression, for days that are sets of values:
+
+| Day of month | Day of week | Expression |
+|---|---|---|
+| `*` | `*`, or all seven days | `every day` |
+| `*` | Monday to Friday | `every weekday` |
+| `*` | Saturday and Sunday | `every weekend` |
+| `*` | other days | `every monday, wednesday`, in order of first appearance, 7 as Sunday, without repeats |
+| `*` | `d#n` | `every month on the first monday` |
+| `*` | `dL` | `every month on the last friday` |
+| all 31 days | `*` | `every day` |
+| days | `*` | `every month on the 1st, 15th`, ascending, each run of two or more consecutive days written `1st to 5th` |
+| `L` | `*` | `every month on the last day` |
+| `LW` | `*` | `every month on the last weekday` |
+| `nW` | `*` | `every month on the nearest weekday to 15th` |
+
+An interval needs days that the table writes as `every day`, `every weekday`, `every weekend` or a list of days of the week. Every day adds nothing; otherwise the interval ends `on weekday`, `on weekend` or `on monday, …`.
+
+A month set of fewer than 12 months adds `during`, with the months in ascending order. When the month set is one month that has the day (February has 29), and the day is one value, `d#n`, `dL` or `LW`, the schedule is yearly instead: `every year on dec 25`, `every year on the first monday of mar`, `every year on the last friday of mar` or `every year on the last weekday of dec`. `L`, `nW` and a day the month never has stay monthly: `0 9 30 2 *` is `every month on the 30th at 09:00 during feb`, which never fires, like the cron.
+
+### toCron
+
+`toCron` is the inverse. It fails for:
+
+- `except`, `until` and `starting`, which cron cannot bound;
+- an ISO date, which does not repeat;
+- a repeat every `n` days, weeks, months or years with `n > 1`, which cron cannot count;
+- a directional nearest weekday (`next nearest`, `previous nearest`);
+- a `during` that excludes a yearly or named date's month;
+- a schedule built in code with no days or no times, which no cron field can write;
+- times that are not every combination of their minutes and hours (`at 09:00, 17:30`, `every 45 min from 09:00 to 17:00`).
+
+In every field, all of the field's values (60, 24, 31, 12 or 7) are written `*`. The minute and the hour are each written from their set of values, by the first rule that applies: every value is `*`; one value is that value; `0, n, 2n, …` up to the field's maximum, where `n >= 2` divides 60 (minute) or 24 (hour), is `*/n`; consecutive values `a` to `b` are `a-b`; three or more values `a, a+n, …, b` with `n >= 2` are `a-b/n`; otherwise an ascending list, each run of two or more consecutive values written `a-b`. The day of month, the month and the day of week use only `*`, single values, runs and lists, Sunday as 0: `1-5` for weekdays, `0,6` for the weekend, `L`, `LW`, `nW`, `d#n` and `dL` as above. A yearly or named date writes its own month, and `during` only decides whether it fails; other schedules write the `during` months. Schedules that fire identically can map to different crons. A schedule's timezone is not part of the cron: cron fires on its scheduler's clock, so run it in the schedule's timezone. Computing an interval's times must not overflow, however large its interval.
+
+### Cron errors
+
+Each failure is a `cron` error with exactly one of these messages, checked in this order: the shortcut, the field count, then the minute, hour, day of month, month and day of week fields in turn (each field's syntax first, then its items from left to right, and within an item its values, then the range's direction, then the step, then the ordinal), then the two day fields together, then the times.
+
+| Condition | Message |
+|---|---|
+| Unknown shortcut | `unknown cron shortcut: {text}` |
+| Wrong number of fields | `expected 5 cron fields, got {count}` |
+| A field that is not valid syntax | `invalid {field}: {text}` |
+| A value out of range (including `0W`, `32W`) | `{field} must be {min}-{max}, got {value}` |
+| A range whose start exceeds its end | `{field} range must not run backwards: {a}-{b}` |
+| A step of 0 | `{field} step must be at least 1` |
+| `d#n` with `n` outside 1-5 | `day of week ordinal must be 1-5, got {n}` |
+| Both day fields restricted | `not expressible in hron: cron fires on either the day of month or the day of week` |
+| More than 24 times with equal gaps, on days an interval cannot carry | `not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days` |
+| More than 24 times without equal gaps | `not expressible in hron: {count} times a day are too many to list` |
+| `toCron` on a schedule cron cannot express | `not expressible as cron: {reason}` |
+
+`{field}` is `minute`, `hour`, `day of month`, `month` or `day of week`; `{text}` is the field as written, or the trimmed input for a shortcut; `{value}`, `{a}`, `{b}` and `{n}` echo the input as written; `{count}` is a count. `toCron` reports the first of these reasons that applies, in this order: `except clauses not supported`, `until clauses not supported`, `starting clauses not supported`, `ISO dates do not repeat`, `multi-day repeats not supported`, `multi-week repeats not supported`, `multi-month repeats not supported`, `multi-year repeats not supported`, `directional nearest weekday not supported`, `schedule has no days`, `during excludes the schedule's month`, `schedule has no times`, `times are not every combination of their minutes and hours`.
 
 ## Invariants
 

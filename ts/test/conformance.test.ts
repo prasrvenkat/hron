@@ -89,6 +89,13 @@ function hronError(run: () => unknown): HronError {
   return error as HronError;
 }
 
+function expectCronError(run: () => unknown, message: unknown): void {
+  expect(typeof message, "error is a string").toBe("string");
+  const error = hronError(run);
+  expect(error.kind, "error kind").toBe("cron");
+  expect(error.message, "error message").toBe(message);
+}
+
 function show(t: Temporal.ZonedDateTime | null): string | null {
   return t === null ? null : t.toString();
 }
@@ -379,9 +386,9 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.hron;
       it(name, () => {
-        checkFields(tc, ["hron"]);
+        checkFields(tc, ["hron", "error"]);
         const schedule = Schedule.parse(tc.hron);
-        hronError(() => schedule.toCron());
+        expectCronError(() => schedule.toCron(), tc.error);
       });
     }
   });
@@ -403,8 +410,8 @@ describe("cron", () => {
     for (const tc of tests) {
       const name = tc.name ?? tc.cron;
       it(name, () => {
-        checkFields(tc, ["cron"]);
-        hronError(() => Schedule.fromCron(tc.cron));
+        checkFields(tc, ["cron", "error"]);
+        expectCronError(() => Schedule.fromCron(tc.cron), tc.error);
       });
     }
   });

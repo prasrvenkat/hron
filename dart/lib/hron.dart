@@ -1,5 +1,5 @@
-/// Human-readable cron (hron) - scheduling expressions that are a superset
-/// of what cron can express.
+/// Human-readable cron (hron) - scheduling expressions that read like English
+/// and convert to and from cron.
 library;
 
 import 'package:timezone/timezone.dart';
@@ -26,9 +26,11 @@ class Schedule {
   /// name missing from the loaded `package:timezone` database.
   static Schedule parse(String input) => Schedule._(parser_impl.parse(input));
 
-  /// Creates a [Schedule] from a standard 5-field cron expression.
+  /// Converts a 5-field cron expression or `@` shortcut into a [Schedule] that
+  /// fires at the same times on the same dates.
   ///
-  /// Throws [HronError] if the cron expression is invalid.
+  /// Throws a [HronError] of kind [HronErrorKind.cron] if [cronExpr] is
+  /// invalid or no hron schedule fires exactly as it does.
   static Schedule fromCron(String cronExpr) =>
       Schedule._(cron_impl.fromCron(cronExpr));
 
@@ -70,9 +72,10 @@ class Schedule {
   Iterable<TZDateTime> between(TZDateTime from, TZDateTime to) =>
       eval_impl.between(_data, from, to);
 
-  /// Converts this schedule to a standard 5-field cron expression.
+  /// Converts this schedule to a 5-field cron expression that fires at the
+  /// same times on the same dates; the timezone is not part of it.
   ///
-  /// Throws [HronError] if the schedule cannot be expressed in cron format.
+  /// Throws a [HronError] of kind [HronErrorKind.cron] if no cron does.
   String toCron() => cron_impl.toCron(_data);
 
   /// Returns the canonical hron string representation of this schedule.

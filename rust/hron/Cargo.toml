@@ -2,7 +2,7 @@
 name = "hron"
 version = "1.0.0"
 edition = "2021"
-description = "Human-readable cron — scheduling expressions that are a superset of what cron can express"
+description = "Human-readable cron — scheduling expressions that read like English and convert to and from cron"
 license = "MIT"
 keywords = ["cron", "schedule", "datetime", "recurring", "calendar"]
 categories = ["date-and-time", "parsing"]

@@ -475,6 +475,7 @@ version = "1.0.0"
 dependencies = [
  "hron",
  "jiff",
+ "js-sys",
  "serde-wasm-bindgen",
  "serde_json",
  "wasm-bindgen",

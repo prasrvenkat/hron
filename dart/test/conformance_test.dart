@@ -93,6 +93,12 @@ void checkFields(Map<String, dynamic> tc, Set<String> fields) {
   }
 }
 
+Matcher throwsCronError(Object? message) => throwsA(
+  isA<HronError>()
+      .having((e) => e.kind, 'kind', HronErrorKind.cron)
+      .having((e) => e.message, 'message', message),
+);
+
 /// Fails a case that carries none of [fields]: a skipped case checks nothing.
 void requireAssertion(Map<String, dynamic> tc, List<String> fields) {
   if (!fields.any(tc.containsKey)) {
@@ -432,9 +438,10 @@ void main() {
       for (final tc in tests) {
         final name = (tc['name'] ?? tc['hron']) as String;
         test(name, () {
-          checkFields(tc as Map<String, dynamic>, {'hron'});
+          checkFields(tc as Map<String, dynamic>, {'hron', 'error'});
+          requireAssertion(tc, ['error']);
           final schedule = Schedule.parse(tc['hron'] as String);
-          expect(() => schedule.toCron(), throwsA(isA<HronError>()));
+          expect(() => schedule.toCron(), throwsCronError(tc['error']));
         });
       }
     });
@@ -460,10 +467,11 @@ void main() {
       for (final tc in tests) {
         final name = (tc['name'] ?? tc['cron']) as String;
         test(name, () {
-          checkFields(tc as Map<String, dynamic>, {'cron'});
+          checkFields(tc as Map<String, dynamic>, {'cron', 'error'});
+          requireAssertion(tc, ['error']);
           expect(
             () => Schedule.fromCron(tc['cron'] as String),
-            throwsA(isA<HronError>()),
+            throwsCronError(tc['error']),
           );
         });
       }

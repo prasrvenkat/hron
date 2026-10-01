@@ -28,7 +28,7 @@ internal abstract record DailyTimes
         IntervalRepeat ir => new Slots(
             ir.FromTime.TotalMinutes,
             ir.ToTime.TotalMinutes,
-            Math.Max((long)ir.Interval * (ir.Unit == IntervalUnit.Minutes ? 1 : WallClock.MinutesPerHour), 1)),
+            Math.Max((long)ir.Interval, 1) * (ir.Unit == IntervalUnit.Minutes ? 1 : WallClock.MinutesPerHour)),
         DayRepeat dr => new Fixed(dr.Times),
         WeekRepeat wr => new Fixed(wr.Times),
         MonthRepeat mr => new Fixed(mr.Times),

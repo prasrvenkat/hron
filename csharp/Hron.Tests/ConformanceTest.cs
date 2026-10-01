@@ -441,16 +441,17 @@ public partial class ConformanceTest
         Assert.Equal(expectedCron, cron);
     }
 
-    public static TheoryData<string, string> GetToCronErrorTests()
+    public static TheoryData<string, string, string> GetToCronErrorTests()
     {
-        var data = new TheoryData<string, string>();
+        var data = new TheoryData<string, string, string>();
         var tests = Spec.RootElement.GetProperty("cron").GetProperty("to_cron_errors").GetProperty("tests");
 
         foreach (var tc in tests.EnumerateArray())
         {
             var name = tc.GetProperty("name").GetString()!;
             var hron = tc.GetProperty("hron").GetString()!;
-            data.Add(name, hron);
+            var error = tc.GetProperty("error").GetString()!;
+            data.Add(name, hron, error);
         }
 
         return data;
@@ -458,11 +459,13 @@ public partial class ConformanceTest
 
     [Theory]
     [MemberData(nameof(GetToCronErrorTests))]
-    public void ToCronErrorTests(string _name, string hron)
+    public void ToCronErrorTests(string _name, string hron, string expectedError)
     {
         _ = _name;
         var s = Schedule.Parse(hron);
-        Assert.Throws<HronException>(() => s.ToCron());
+        var e = Assert.Throws<HronException>(() => s.ToCron());
+        Assert.Equal(ErrorKind.Cron, e.Kind);
+        Assert.Equal(expectedError, e.Message);
     }
 
     public static TheoryData<string, string, string> GetFromCronTests()
@@ -490,16 +493,17 @@ public partial class ConformanceTest
         Assert.Equal(expectedHron, s.ToString());
     }
 
-    public static TheoryData<string, string> GetFromCronErrorTests()
+    public static TheoryData<string, string, string> GetFromCronErrorTests()
     {
-        var data = new TheoryData<string, string>();
+        var data = new TheoryData<string, string, string>();
         var tests = Spec.RootElement.GetProperty("cron").GetProperty("from_cron_errors").GetProperty("tests");
 
         foreach (var tc in tests.EnumerateArray())
         {
             var name = tc.GetProperty("name").GetString()!;
             var cron = tc.GetProperty("cron").GetString()!;
-            data.Add(name, cron);
+            var error = tc.GetProperty("error").GetString()!;
+            data.Add(name, cron, error);
         }
 
         return data;
@@ -507,10 +511,12 @@ public partial class ConformanceTest
 
     [Theory]
     [MemberData(nameof(GetFromCronErrorTests))]
-    public void FromCronErrorTests(string _name, string cron)
+    public void FromCronErrorTests(string _name, string cron, string expectedError)
     {
         _ = _name;
-        Assert.Throws<HronException>(() => Schedule.FromCron(cron));
+        var e = Assert.Throws<HronException>(() => Schedule.FromCron(cron));
+        Assert.Equal(ErrorKind.Cron, e.Kind);
+        Assert.Equal(expectedError, e.Message);
     }
 
     public static TheoryData<string, string> GetCronRoundtripTests()
@@ -560,9 +566,9 @@ public partial class ConformanceTest
     {
         ["parse_errors"] = new(["input", "error_contains"], tc => Has(tc, "input")),
         ["cron/to_cron"] = new(["hron", "cron"], tc => Has(tc, "hron", "cron")),
-        ["cron/to_cron_errors"] = new(["hron"], tc => Has(tc, "hron")),
+        ["cron/to_cron_errors"] = new(["hron", "error"], tc => Has(tc, "hron", "error")),
         ["cron/from_cron"] = new(["cron", "hron"], tc => Has(tc, "cron", "hron")),
-        ["cron/from_cron_errors"] = new(["cron"], tc => Has(tc, "cron")),
+        ["cron/from_cron_errors"] = new(["cron", "error"], tc => Has(tc, "cron", "error")),
         ["cron/roundtrip"] = new(["hron"], tc => Has(tc, "hron")),
         ["eval/matches"] = new(["expression", "datetime", "expected"], tc => Has(tc, "expression", "datetime", "expected")),
         ["eval/previous_from"] = new(["expression", "now", "expected"], tc => Has(tc, "expression", "now", "expected")),

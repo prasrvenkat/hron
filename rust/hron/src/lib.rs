@@ -1,6 +1,6 @@
 //! hron — Human-readable cron.
 //!
-//! Human-readable schedule expressions that are a superset of what cron can express.
+//! Human-readable schedule expressions that read like English and convert to and from cron.
 //!
 //! # Examples
 //!
@@ -167,7 +167,10 @@ impl Schedule {
         Self::parse(input).is_ok()
     }
 
-    /// Convert a 5-field cron expression to a Schedule.
+    /// Convert a 5-field cron expression to a Schedule that fires at the same times.
+    ///
+    /// Errors with a `cron` error when the input is not valid cron or has no
+    /// exact hron equivalent.
     ///
     /// # Examples
     ///
@@ -181,7 +184,8 @@ impl Schedule {
         cron::from_cron(cron_expr)
     }
 
-    /// Explain a cron expression in human-readable form.
+    /// Explain a cron expression in human-readable form: the same as
+    /// `Schedule::from_cron(cron_expr)?.to_string()`, with the same errors.
     ///
     /// # Examples
     ///
@@ -192,12 +196,13 @@ impl Schedule {
     /// assert_eq!(explanation, "every weekday at 09:00");
     /// ```
     pub fn explain_cron(cron_expr: &str) -> Result<String, ScheduleError> {
-        cron::explain_cron(cron_expr)
+        Ok(cron::from_cron(cron_expr)?.to_string())
     }
 
     /// Convert this schedule to a 5-field cron expression.
     ///
-    /// Errors when the schedule cannot be expressed in cron.
+    /// Errors with a `cron` error when cron cannot fire at exactly the same times.
+    /// The schedule's timezone is not part of the cron.
     ///
     /// # Examples
     ///

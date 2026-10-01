@@ -2,903 +2,800 @@ package hron
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
 
-// ToCron converts a schedule to a 5-field cron expression, or returns an error
-// if the schedule has no cron equivalent.
-func ToCron(schedule *ScheduleData) (string, error) {
-	if len(schedule.Except) > 0 {
-		return "", CronError("not expressible as cron (except clauses not supported)")
-	}
-	if schedule.Until != nil {
-		return "", CronError("not expressible as cron (until clauses not supported)")
-	}
-	if len(schedule.During) > 0 {
-		return "", CronError("not expressible as cron (during clauses not supported)")
-	}
+const (
+	maxListedTimes     = 24
+	bothDaysRestricted = "not expressible in hron: cron fires on either the day of month or the day of week"
+	intervalDays       = "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days"
+)
 
-	expr := schedule.Expr
+var (
+	midnight = TimeOfDay{Hour: 0, Minute: 0}
+	endOfDay = TimeOfDay{Hour: 23, Minute: 59}
+)
 
-	switch expr.Kind {
-	case ScheduleExprKindDay:
-		if expr.Interval > 1 {
-			return "", CronError("not expressible as cron (multi-day intervals not supported)")
-		}
-		if len(expr.Times) != 1 {
-			return "", CronError("not expressible as cron (multiple times not supported)")
-		}
-		t := expr.Times[0]
-		dow := dayFilterToCronDOW(expr.Days)
-		return fmt.Sprintf("%d %d * * %s", t.Minute, t.Hour, dow), nil
+// Digit strings may be of any length. Every number at or above this cap is out
+// of every field's range and steps past every range's end, so saturating at it
+// keeps each comparison exact without overflow.
+const numberCap = 1000
 
-	case ScheduleExprKindInterval:
-		fullDay := expr.FromTime.Hour == 0 && expr.FromTime.Minute == 0 && expr.ToTime.Hour == 23 && expr.ToTime.Minute == 59
-		if !fullDay {
-			return "", CronError("not expressible as cron (partial-day interval windows not supported)")
-		}
-		if expr.DayFilter != nil {
-			return "", CronError("not expressible as cron (interval with day filter not supported)")
-		}
-		if expr.Unit == IntervalMin {
-			if 60%expr.Interval != 0 {
-				return "", CronError(fmt.Sprintf("not expressible as cron (*/%d breaks at hour boundaries)", expr.Interval))
-			}
-			return fmt.Sprintf("*/%d * * * *", expr.Interval), nil
-		}
-		return fmt.Sprintf("0 */%d * * *", expr.Interval), nil
+var (
+	monthNames   = []string{"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}
+	dayNames     = []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
+	cronWeekdays = [7]Weekday{Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday}
+)
 
-	case ScheduleExprKindWeek:
-		return "", CronError("not expressible as cron (multi-week intervals not supported)")
+type cronField int
 
-	case ScheduleExprKindMonth:
-		if expr.Interval > 1 {
-			return "", CronError("not expressible as cron (multi-month intervals not supported)")
-		}
-		if len(expr.Times) != 1 {
-			return "", CronError("not expressible as cron (multiple times not supported)")
-		}
-		t := expr.Times[0]
-		switch expr.MonthTarget.Kind {
-		case MonthTargetKindDays:
-			var expanded []int
-			for _, spec := range expr.MonthTarget.Specs {
-				expanded = append(expanded, spec.Expand()...)
-			}
-			dom := formatIntList(expanded)
-			return fmt.Sprintf("%d %d %s * *", t.Minute, t.Hour, dom), nil
-		case MonthTargetKindLastDay:
-			return "", CronError("not expressible as cron (last day of month not supported)")
-		case MonthTargetKindLastWeekday:
-			return "", CronError("not expressible as cron (last weekday of month not supported)")
-		case MonthTargetKindNearestWeekday:
-			if expr.MonthTarget.Direction != NearestNone {
-				return "", CronError("not expressible as cron (directional nearest weekday not supported)")
-			}
-			return fmt.Sprintf("%d %d %dW * *", t.Minute, t.Hour, expr.MonthTarget.Day), nil
-		case MonthTargetKindOrdinalWeekday:
-			return "", CronError("not expressible as cron (ordinal weekday of month not supported)")
-		}
+const (
+	minuteField cronField = iota
+	hourField
+	dayOfMonthField
+	monthField
+	dayOfWeekField
+)
 
-	case ScheduleExprKindSingleDate:
-		return "", CronError("not expressible as cron (single dates are not repeating)")
-
-	case ScheduleExprKindYear:
-		return "", CronError("not expressible as cron (yearly schedules not supported in 5-field cron)")
-	}
-
-	return "", CronError(fmt.Sprintf("unknown expression type: %d", expr.Kind))
-}
-
-func dayFilterToCronDOW(f DayFilter) string {
-	switch f.Kind {
-	case DayFilterKindEvery:
-		return "*"
-	case DayFilterKindWeekday:
-		return "1-5"
-	case DayFilterKindWeekend:
-		return "0,6"
-	case DayFilterKindDays:
-		nums := make([]int, len(f.Days))
-		for i, d := range f.Days {
-			nums[i] = d.CronDOW()
-		}
-		sort.Ints(nums)
-		return formatIntList(nums)
+func (f cronField) name() string {
+	switch f {
+	case minuteField:
+		return "minute"
+	case hourField:
+		return "hour"
+	case dayOfMonthField:
+		return "day of month"
+	case monthField:
+		return "month"
 	default:
-		return "*"
+		return "day of week"
 	}
 }
 
-func formatIntList(nums []int) string {
-	parts := make([]string, len(nums))
-	for i, n := range nums {
-		parts[i] = strconv.Itoa(n)
+func (f cronField) min() int {
+	if f == dayOfMonthField || f == monthField {
+		return 1
 	}
-	return strings.Join(parts, ",")
+	return 0
 }
 
-// FromCron converts a 5-field cron expression, or an @ shortcut such as @daily,
-// to ScheduleData.
-func FromCron(cron string) (*ScheduleData, error) {
-	cron = strings.TrimSpace(cron)
-
-	if strings.HasPrefix(cron, "@") {
-		return parseCronShortcut(cron)
+func (f cronField) max() int {
+	switch f {
+	case minuteField:
+		return 59
+	case hourField:
+		return 23
+	case dayOfMonthField:
+		return 31
+	case monthField:
+		return 12
+	default:
+		return 7
 	}
+}
 
-	fields := strings.Fields(cron)
+// In the day of week, 7 is Sunday only where written: `*` and `a/n` end at 6.
+func (f cronField) starEnd() int {
+	if f == dayOfWeekField {
+		return 6
+	}
+	return f.max()
+}
+
+func (f cronField) names() []string {
+	switch f {
+	case monthField:
+		return monthNames
+	case dayOfWeekField:
+		return dayNames
+	default:
+		return nil
+	}
+}
+
+type boundsKind int
+
+const (
+	starBounds boundsKind = iota
+	valueBounds
+	rangeBounds
+)
+
+type cronItem struct {
+	kind    boundsKind
+	a, b    string
+	step    string
+	hasStep bool
+}
+
+type monthDaysKind int
+
+const (
+	anyMonthDay monthDaysKind = iota
+	listedMonthDays
+	lastMonthDay
+	lastMonthWeekday
+	nearestMonthWeekday
+)
+
+type monthDays struct {
+	kind    monthDaysKind
+	days    []int
+	nearest int
+}
+
+type weekDaysKind int
+
+const (
+	anyWeekDay weekDaysKind = iota
+	listedWeekDays
+	ordinalWeekDay
+)
+
+type weekDays struct {
+	kind    weekDaysKind
+	days    []int
+	ordinal OrdinalPosition
+	weekday Weekday
+}
+
+type cronDays struct {
+	ofMonth bool
+	filter  DayFilter
+	target  MonthTarget
+}
+
+// FromCron is FromCronExpr, returning the ScheduleData instead of a Schedule.
+func FromCron(input string) (*ScheduleData, error) {
+	input = strings.Trim(input, " \t\r\n")
+	text := input
+	if strings.HasPrefix(input, "@") {
+		var err error
+		if text, err = shortcut(input); err != nil {
+			return nil, err
+		}
+	}
+	fields := strings.FieldsFunc(text, func(r rune) bool { return r == ' ' || r == '\t' })
 	if len(fields) != 5 {
 		return nil, CronError(fmt.Sprintf("expected 5 cron fields, got %d", len(fields)))
 	}
 
-	minuteField := fields[0]
-	hourField := fields[1]
-	domField := fields[2]
-	monthField := fields[3]
-	dowField := fields[4]
-
-	if domField == "?" {
-		domField = "*"
-	}
-	if dowField == "?" {
-		dowField = "*"
-	}
-
-	during, err := parseMonthField(monthField)
+	minuteValues, err := values(fields[0], minuteField)
 	if err != nil {
 		return nil, err
 	}
-
-	schedule, handled, err := tryParseNthWeekday(minuteField, hourField, domField, dowField, during)
+	hourValues, err := values(fields[1], hourField)
 	if err != nil {
 		return nil, err
 	}
-	if handled {
-		return schedule, nil
-	}
-
-	schedule, handled, err = tryParseLastDay(minuteField, hourField, domField, dowField, during)
+	monthDayValues, err := parseDayOfMonth(fields[2])
 	if err != nil {
 		return nil, err
 	}
-	if handled {
-		return schedule, nil
-	}
-
-	schedule, handled, err = tryParseNearestWeekday(minuteField, hourField, domField, dowField, during)
+	monthValues, err := values(fields[3], monthField)
 	if err != nil {
 		return nil, err
 	}
-	if handled {
-		return schedule, nil
-	}
-
-	schedule, handled, err = tryParseInterval(minuteField, hourField, domField, dowField, during)
+	weekDayValues, err := parseDayOfWeek(fields[4])
 	if err != nil {
 		return nil, err
 	}
-	if handled {
-		return schedule, nil
-	}
-
-	minute, err := parseSingleValue(minuteField, "minute", 0, 59)
+	days, err := dayExpression(monthDayValues, weekDayValues)
 	if err != nil {
 		return nil, err
 	}
-	hour, err := parseSingleValue(hourField, "hour", 0, 23)
-	if err != nil {
-		return nil, err
-	}
-	t := TimeOfDay{hour, minute}
-
-	if domField != "*" && dowField == "*" {
-		target, err := parseDOMField(domField)
-		if err != nil {
-			return nil, err
+	minutes, hours, months := sorted(minuteValues), sorted(hourValues), sorted(monthValues)
+	times := make([]TimeOfDay, 0, len(hours)*len(minutes))
+	for _, hour := range hours {
+		for _, minute := range minutes {
+			times = append(times, TimeOfDay{Hour: hour, Minute: minute})
 		}
-		schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{t}))
-		schedule.During = during
-		return schedule, nil
 	}
 
-	days, err := parseCronDOW(dowField)
-	if err != nil {
-		return nil, err
+	gap, equal := equalGap(times)
+	target, yearly := yearTarget(days, months)
+	var expr ScheduleExpr
+	switch {
+	case !days.ofMonth && equal:
+		expr = interval(times, gap, days.filter)
+	case len(times) > maxListedTimes:
+		return nil, tooManyTimes(len(times), equal)
+	case yearly:
+		expr = NewYearRepeat(1, target, times)
+	case days.ofMonth:
+		expr = NewMonthRepeat(1, days.target, times)
+	default:
+		expr = NewDayRepeat(1, days.filter, times)
 	}
-	schedule = NewScheduleData(NewDayRepeat(1, days, []TimeOfDay{t}))
-	schedule.During = during
+	schedule := NewScheduleData(expr)
+	if expr.Kind != ScheduleExprKindYear && len(months) < 12 {
+		for _, m := range months {
+			schedule.During = append(schedule.During, MonthName(m))
+		}
+	}
 	return schedule, nil
 }
 
-func parseCronShortcut(cron string) (*ScheduleData, error) {
-	switch strings.ToLower(cron) {
+func shortcut(input string) (string, error) {
+	switch asciiLower(input) {
 	case "@yearly", "@annually":
-		return NewScheduleData(NewYearRepeat(1, NewYearDateTarget(Jan, 1), []TimeOfDay{{0, 0}})), nil
+		return "0 0 1 1 *", nil
 	case "@monthly":
-		return NewScheduleData(NewMonthRepeat(1, NewDaysTarget([]DayOfMonthSpec{NewSingleDay(1)}), []TimeOfDay{{0, 0}})), nil
+		return "0 0 1 * *", nil
 	case "@weekly":
-		return NewScheduleData(NewDayRepeat(1, NewDayFilterDays([]Weekday{Sunday}), []TimeOfDay{{0, 0}})), nil
+		return "0 0 * * 0", nil
 	case "@daily", "@midnight":
-		return NewScheduleData(NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{0, 0}})), nil
+		return "0 0 * * *", nil
 	case "@hourly":
-		return NewScheduleData(NewIntervalRepeat(1, IntervalHours, TimeOfDay{0, 0}, TimeOfDay{23, 59}, nil)), nil
+		return "0 * * * *", nil
 	default:
-		return nil, CronError(fmt.Sprintf("unknown @ shortcut: %s", cron))
+		return "", CronError(fmt.Sprintf("unknown cron shortcut: %s", input))
 	}
 }
 
-func parseMonthField(field string) ([]MonthName, error) {
-	if field == "*" {
-		return nil, nil
+func parseDayOfMonth(text string) (monthDays, error) {
+	if text == "*" || text == "?" {
+		return monthDays{kind: anyMonthDay}, nil
 	}
+	switch asciiLower(text) {
+	case "l":
+		return monthDays{kind: lastMonthDay}, nil
+	case "lw":
+		return monthDays{kind: lastMonthWeekday}, nil
+	}
+	if day, ok := cutSuffixFold(text, "w"); ok && isNumber(day) {
+		value, err := fieldValue(day, dayOfMonthField)
+		if err != nil {
+			return monthDays{}, err
+		}
+		return monthDays{kind: nearestMonthWeekday, nearest: value}, nil
+	}
+	days, err := values(text, dayOfMonthField)
+	if err != nil {
+		return monthDays{}, err
+	}
+	return monthDays{kind: listedMonthDays, days: days}, nil
+}
 
-	var months []MonthName
-	for _, part := range strings.Split(field, ",") {
-		if strings.Contains(part, "/") {
-			rangePart, stepStr, _ := strings.Cut(part, "/")
-			var start, end int
-			if rangePart == "*" {
-				start, end = 1, 12
-			} else if strings.Contains(rangePart, "-") {
-				s, e, _ := strings.Cut(rangePart, "-")
-				startMonth, err := parseMonthValue(s)
-				if err != nil {
-					return nil, err
-				}
-				endMonth, err := parseMonthValue(e)
-				if err != nil {
-					return nil, err
-				}
-				start, end = startMonth.Number(), endMonth.Number()
-			} else {
-				return nil, CronError(fmt.Sprintf("invalid month step expression: %s", part))
-			}
-			step, err := strconv.Atoi(stepStr)
-			if err != nil {
-				return nil, CronError(fmt.Sprintf("invalid month step value: %s", stepStr))
-			}
-			if step == 0 {
-				return nil, CronError("step cannot be 0")
-			}
-			for n := start; n <= end; n += step {
-				m, err := monthFromNumber(n)
-				if err != nil {
-					return nil, err
-				}
-				months = append(months, m)
-			}
-		} else if strings.Contains(part, "-") {
-			startStr, endStr, _ := strings.Cut(part, "-")
-			startMonth, err := parseMonthValue(startStr)
+func parseDayOfWeek(text string) (weekDays, error) {
+	field := dayOfWeekField
+	if text == "*" || text == "?" {
+		return weekDays{kind: anyWeekDay}, nil
+	}
+	if day, nth, found := strings.Cut(text, "#"); found && isValue(day, field) && isNumber(nth) {
+		value, err := fieldValue(day, field)
+		if err != nil {
+			return weekDays{}, err
+		}
+		n := number(nth)
+		if n < 1 || n > 5 {
+			return weekDays{}, CronError(fmt.Sprintf("day of week ordinal must be 1-5, got %s", nth))
+		}
+		return weekDays{kind: ordinalWeekDay, ordinal: OrdinalPosition(n), weekday: cronWeekdays[value%7]}, nil
+	}
+	if day, ok := cutSuffixFold(text, "l"); ok && isValue(day, field) {
+		value, err := fieldValue(day, field)
+		if err != nil {
+			return weekDays{}, err
+		}
+		return weekDays{kind: ordinalWeekDay, ordinal: Last, weekday: cronWeekdays[value%7]}, nil
+	}
+	days, err := values(text, field)
+	if err != nil {
+		return weekDays{}, err
+	}
+	return weekDays{kind: listedWeekDays, days: days}, nil
+}
+
+// Keeps the order of first appearance, in which FromCron lists days of the week.
+func values(text string, field cronField) ([]int, error) {
+	items, ok := parseItems(text, field)
+	if !ok {
+		return nil, CronError(fmt.Sprintf("invalid %s: %s", field.name(), text))
+	}
+	var values []int
+	for _, item := range items {
+		var first, last int
+		switch item.kind {
+		case starBounds:
+			first, last = field.min(), field.starEnd()
+		case valueBounds:
+			value, err := fieldValue(item.a, field)
 			if err != nil {
 				return nil, err
 			}
-			endMonth, err := parseMonthValue(endStr)
+			first, last = value, value
+			if item.hasStep {
+				// `7/n` starts past the end of `*`, so it is Sunday alone.
+				last = max(first, field.starEnd())
+			}
+		case rangeBounds:
+			a, err := fieldValue(item.a, field)
 			if err != nil {
 				return nil, err
 			}
-			startNum, endNum := startMonth.Number(), endMonth.Number()
-			if startNum > endNum {
-				return nil, CronError(fmt.Sprintf("invalid month range: %s > %s", startStr, endStr))
-			}
-			for n := startNum; n <= endNum; n++ {
-				m, err := monthFromNumber(n)
-				if err != nil {
-					return nil, err
-				}
-				months = append(months, m)
-			}
-		} else {
-			m, err := parseMonthValue(part)
+			b, err := fieldValue(item.b, field)
 			if err != nil {
 				return nil, err
 			}
-			months = append(months, m)
+			if a > b {
+				return nil, CronError(fmt.Sprintf("%s range must not run backwards: %s-%s", field.name(), item.a, item.b))
+			}
+			first, last = a, b
+		}
+		step := 1
+		if item.hasStep {
+			step = number(item.step)
+		}
+		if step == 0 {
+			return nil, CronError(fmt.Sprintf("%s step must be at least 1", field.name()))
+		}
+		for n := first; n <= last; n += step {
+			value := n
+			if field == dayOfWeekField {
+				value %= 7
+			}
+			if !slices.Contains(values, value) {
+				values = append(values, value)
+			}
 		}
 	}
-
-	return months, nil
+	return values, nil
 }
 
-func parseMonthValue(s string) (MonthName, error) {
-	if n, err := strconv.Atoi(s); err == nil {
-		return monthFromNumber(n)
+func parseItems(text string, field cronField) ([]cronItem, bool) {
+	parts := strings.Split(text, ",")
+	items := make([]cronItem, 0, len(parts))
+	for _, part := range parts {
+		var item cronItem
+		var bounds string
+		bounds, item.step, item.hasStep = strings.Cut(part, "/")
+		a, b, isRange := strings.Cut(bounds, "-")
+		switch {
+		case bounds == "*":
+			item.kind = starBounds
+		case isRange:
+			item.kind, item.a, item.b = rangeBounds, a, b
+		default:
+			item.kind, item.a = valueBounds, bounds
+		}
+		valid := !item.hasStep || isNumber(item.step)
+		switch item.kind {
+		case valueBounds:
+			valid = valid && isValue(item.a, field)
+		case rangeBounds:
+			valid = valid && isValue(item.a, field) && isValue(item.b, field)
+		}
+		if !valid {
+			return nil, false
+		}
+		items = append(items, item)
 	}
-	if m, ok := ParseMonthName(s); ok {
-		return m, nil
-	}
-	return 0, CronError(fmt.Sprintf("invalid month: %s", s))
+	return items, true
 }
 
-func monthFromNumber(n int) (MonthName, error) {
-	if n < 1 || n > 12 {
-		return 0, CronError(fmt.Sprintf("invalid month number: %d", n))
-	}
-	return MonthName(n), nil
-}
-
-func tryParseNthWeekday(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
-	if strings.Contains(dowField, "#") {
-		dowStr, nthStr, _ := strings.Cut(dowField, "#")
-		dowNum, err := parseDOWValue(dowStr)
-		if err != nil {
-			return nil, false, err
-		}
-		weekday, err := cronDOWToWeekday(dowNum)
-		if err != nil {
-			return nil, false, err
-		}
-		nth, err := strconv.Atoi(nthStr)
-		if err != nil {
-			return nil, false, CronError(fmt.Sprintf("invalid nth value: %s", nthStr))
-		}
-		if nth < 1 || nth > 5 {
-			return nil, false, CronError(fmt.Sprintf("nth must be 1-5, got %d", nth))
-		}
-		var ordinal OrdinalPosition
-		switch nth {
-		case 1:
-			ordinal = First
-		case 2:
-			ordinal = Second
-		case 3:
-			ordinal = Third
-		case 4:
-			ordinal = Fourth
-		case 5:
-			ordinal = Fifth
-		}
-
-		if domField != "*" && domField != "?" {
-			return nil, false, CronError("DOM must be * when using # for nth weekday")
-		}
-
-		minute, err := parseSingleValue(minuteField, "minute", 0, 59)
-		if err != nil {
-			return nil, false, err
-		}
-		hour, err := parseSingleValue(hourField, "hour", 0, 23)
-		if err != nil {
-			return nil, false, err
-		}
-
-		target := NewOrdinalWeekdayTarget(ordinal, weekday)
-		schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{{hour, minute}}))
-		schedule.During = during
-		return schedule, true, nil
-	}
-
-	if strings.HasSuffix(dowField, "L") && len(dowField) > 1 {
-		dowStr := dowField[:len(dowField)-1]
-		dowNum, err := parseDOWValue(dowStr)
-		if err != nil {
-			return nil, false, err
-		}
-		weekday, err := cronDOWToWeekday(dowNum)
-		if err != nil {
-			return nil, false, err
-		}
-
-		if domField != "*" && domField != "?" {
-			return nil, false, CronError("DOM must be * when using nL for last weekday")
-		}
-
-		minute, err := parseSingleValue(minuteField, "minute", 0, 59)
-		if err != nil {
-			return nil, false, err
-		}
-		hour, err := parseSingleValue(hourField, "hour", 0, 23)
-		if err != nil {
-			return nil, false, err
-		}
-
-		target := NewOrdinalWeekdayTarget(Last, weekday)
-		schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{{hour, minute}}))
-		schedule.During = during
-		return schedule, true, nil
-	}
-
-	return nil, false, nil
-}
-
-func tryParseNearestWeekday(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
-	if !strings.HasSuffix(domField, "W") || domField == "LW" {
-		return nil, false, nil
-	}
-
-	dayStr := domField[:len(domField)-1]
-	day, err := strconv.Atoi(dayStr)
-	if err != nil {
-		return nil, false, CronError(fmt.Sprintf("invalid nearest weekday value: %s", domField))
-	}
-	if day < 1 || day > 31 {
-		return nil, false, CronError(fmt.Sprintf("nearest weekday day must be 1-31, got %d", day))
-	}
-
-	if dowField != "*" && dowField != "?" {
-		return nil, false, CronError("DOW must be * when using W in DOM")
-	}
-
-	minute, err := parseSingleValue(minuteField, "minute", 0, 59)
-	if err != nil {
-		return nil, false, err
-	}
-	hour, err := parseSingleValue(hourField, "hour", 0, 23)
-	if err != nil {
-		return nil, false, err
-	}
-
-	target := NewNearestWeekdayTarget(day, NearestNone)
-	schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{{hour, minute}}))
-	schedule.During = during
-	return schedule, true, nil
-}
-
-func tryParseLastDay(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
-	if domField != "L" && domField != "LW" {
-		return nil, false, nil
-	}
-
-	if dowField != "*" && dowField != "?" {
-		return nil, false, CronError("DOW must be * when using L or LW in DOM")
-	}
-
-	minute, err := parseSingleValue(minuteField, "minute", 0, 59)
-	if err != nil {
-		return nil, false, err
-	}
-	hour, err := parseSingleValue(hourField, "hour", 0, 23)
-	if err != nil {
-		return nil, false, err
-	}
-
-	var target MonthTarget
-	if domField == "LW" {
-		target = NewLastWeekdayTarget()
-	} else {
-		target = NewLastDayTarget()
-	}
-
-	schedule := NewScheduleData(NewMonthRepeat(1, target, []TimeOfDay{{hour, minute}}))
-	schedule.During = during
-	return schedule, true, nil
-}
-
-func tryParseInterval(minuteField, hourField, domField, dowField string, during []MonthName) (*ScheduleData, bool, error) {
-	if strings.Contains(minuteField, "/") {
-		rangePart, stepStr, _ := strings.Cut(minuteField, "/")
-		interval, err := strconv.Atoi(stepStr)
-		if err != nil {
-			return nil, false, CronError("invalid minute interval value")
-		}
-		if interval == 0 {
-			return nil, false, CronError("step cannot be 0")
-		}
-
-		var fromMinute, toMinute int
-		if rangePart == "*" {
-			fromMinute, toMinute = 0, 59
-		} else if strings.Contains(rangePart, "-") {
-			startStr, endStr, _ := strings.Cut(rangePart, "-")
-			s, err := strconv.Atoi(startStr)
-			if err != nil {
-				return nil, false, CronError("invalid minute range")
-			}
-			e, err := strconv.Atoi(endStr)
-			if err != nil {
-				return nil, false, CronError("invalid minute range")
-			}
-			if s > e {
-				return nil, false, CronError(fmt.Sprintf("range start must be <= end: %d-%d", s, e))
-			}
-			fromMinute, toMinute = s, e
-		} else {
-			s, err := strconv.Atoi(rangePart)
-			if err != nil {
-				return nil, false, CronError("invalid minute value")
-			}
-			fromMinute, toMinute = s, 59
-		}
-
-		var fromHour, toHour int
-		if hourField == "*" {
-			fromHour, toHour = 0, 23
-		} else if strings.Contains(hourField, "-") {
-			startStr, endStr, _ := strings.Cut(hourField, "-")
-			s, err := strconv.Atoi(startStr)
-			if err != nil {
-				return nil, false, CronError("invalid hour range")
-			}
-			e, err := strconv.Atoi(endStr)
-			if err != nil {
-				return nil, false, CronError("invalid hour range")
-			}
-			fromHour, toHour = s, e
-		} else if strings.Contains(hourField, "/") {
-			return nil, false, nil
-		} else {
-			h, err := strconv.Atoi(hourField)
-			if err != nil {
-				return nil, false, CronError("invalid hour")
-			}
-			fromHour, toHour = h, h
-		}
-
-		var dayFilter *DayFilter
-		if dowField != "*" {
-			df, err := parseCronDOW(dowField)
-			if err != nil {
-				return nil, false, err
-			}
-			dayFilter = &df
-		}
-
-		if domField == "*" || domField == "?" {
-			var endMinute int
-			if fromMinute == 0 && toMinute == 59 && toHour == 23 {
-				endMinute = 59
-			} else if fromMinute == 0 && toMinute == 59 {
-				// `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
-				endMinute = 0
-			} else {
-				endMinute = toMinute
-			}
-
-			schedule := NewScheduleData(NewIntervalRepeat(
-				interval,
-				IntervalMin,
-				TimeOfDay{fromHour, fromMinute},
-				TimeOfDay{toHour, endMinute},
-				dayFilter,
-			))
-			schedule.During = during
-			return schedule, true, nil
-		}
-	}
-
-	if strings.Contains(hourField, "/") && (minuteField == "0" || minuteField == "00") {
-		rangePart, stepStr, _ := strings.Cut(hourField, "/")
-		interval, err := strconv.Atoi(stepStr)
-		if err != nil {
-			return nil, false, CronError("invalid hour interval value")
-		}
-		if interval == 0 {
-			return nil, false, CronError("step cannot be 0")
-		}
-
-		var fromHour, toHour int
-		if rangePart == "*" {
-			fromHour, toHour = 0, 23
-		} else if strings.Contains(rangePart, "-") {
-			startStr, endStr, _ := strings.Cut(rangePart, "-")
-			s, err := strconv.Atoi(startStr)
-			if err != nil {
-				return nil, false, CronError("invalid hour range")
-			}
-			e, err := strconv.Atoi(endStr)
-			if err != nil {
-				return nil, false, CronError("invalid hour range")
-			}
-			if s > e {
-				return nil, false, CronError(fmt.Sprintf("range start must be <= end: %d-%d", s, e))
-			}
-			fromHour, toHour = s, e
-		} else {
-			h, err := strconv.Atoi(rangePart)
-			if err != nil {
-				return nil, false, CronError("invalid hour value")
-			}
-			fromHour, toHour = h, 23
-		}
-
-		if (domField == "*" || domField == "?") && (dowField == "*" || dowField == "?") {
-			var endMinute int
-			if fromHour == 0 && toHour == 23 {
-				endMinute = 59
-			} else {
-				endMinute = 0
-			}
-
-			schedule := NewScheduleData(NewIntervalRepeat(
-				interval,
-				IntervalHours,
-				TimeOfDay{fromHour, 0},
-				TimeOfDay{toHour, endMinute},
-				nil,
-			))
-			schedule.During = during
-			return schedule, true, nil
-		}
-	}
-
-	return nil, false, nil
-}
-
-func parseDOMField(field string) (MonthTarget, error) {
-	var specs []DayOfMonthSpec
-
-	for _, part := range strings.Split(field, ",") {
-		if strings.Contains(part, "/") {
-			rangePart, stepStr, _ := strings.Cut(part, "/")
-			var start, end int
-			if rangePart == "*" {
-				start, end = 1, 31
-			} else if strings.Contains(rangePart, "-") {
-				startStr, endStr, _ := strings.Cut(rangePart, "-")
-				s, err := strconv.Atoi(startStr)
-				if err != nil {
-					return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM range start: %s", startStr))
-				}
-				e, err := strconv.Atoi(endStr)
-				if err != nil {
-					return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM range end: %s", endStr))
-				}
-				if s > e {
-					return MonthTarget{}, CronError(fmt.Sprintf("range start must be <= end: %d-%d", s, e))
-				}
-				start, end = s, e
-			} else {
-				s, err := strconv.Atoi(rangePart)
-				if err != nil {
-					return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM value: %s", rangePart))
-				}
-				start, end = s, 31
-			}
-
-			step, err := strconv.Atoi(stepStr)
-			if err != nil {
-				return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM step: %s", stepStr))
-			}
-			if step == 0 {
-				return MonthTarget{}, CronError("step cannot be 0")
-			}
-
-			if err := validateDOM(start); err != nil {
-				return MonthTarget{}, err
-			}
-			if err := validateDOM(end); err != nil {
-				return MonthTarget{}, err
-			}
-
-			for d := start; d <= end; d += step {
-				specs = append(specs, NewSingleDay(d))
-			}
-		} else if strings.Contains(part, "-") {
-			startStr, endStr, _ := strings.Cut(part, "-")
-			start, err := strconv.Atoi(startStr)
-			if err != nil {
-				return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM range start: %s", startStr))
-			}
-			end, err := strconv.Atoi(endStr)
-			if err != nil {
-				return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM range end: %s", endStr))
-			}
-			if start > end {
-				return MonthTarget{}, CronError(fmt.Sprintf("range start must be <= end: %d-%d", start, end))
-			}
-			if err := validateDOM(start); err != nil {
-				return MonthTarget{}, err
-			}
-			if err := validateDOM(end); err != nil {
-				return MonthTarget{}, err
-			}
-			specs = append(specs, NewDayRange(start, end))
-		} else {
-			day, err := strconv.Atoi(part)
-			if err != nil {
-				return MonthTarget{}, CronError(fmt.Sprintf("invalid DOM value: %s", part))
-			}
-			if err := validateDOM(day); err != nil {
-				return MonthTarget{}, err
-			}
-			specs = append(specs, NewSingleDay(day))
-		}
-	}
-
-	return NewDaysTarget(specs), nil
-}
-
-func validateDOM(day int) error {
-	if day < 1 || day > 31 {
-		return CronError(fmt.Sprintf("DOM must be 1-31, got %d", day))
-	}
-	return nil
-}
-
-func parseCronDOW(field string) (DayFilter, error) {
-	if field == "*" {
-		return NewDayFilterEvery(), nil
-	}
-
-	var days []Weekday
-
-	for _, part := range strings.Split(field, ",") {
-		if strings.Contains(part, "/") {
-			rangePart, stepStr, _ := strings.Cut(part, "/")
-			var start, end int
-			if rangePart == "*" {
-				start, end = 0, 6
-			} else if strings.Contains(rangePart, "-") {
-				startStr, endStr, _ := strings.Cut(rangePart, "-")
-				s, err := parseDOWValueRaw(startStr)
-				if err != nil {
-					return DayFilter{}, err
-				}
-				e, err := parseDOWValueRaw(endStr)
-				if err != nil {
-					return DayFilter{}, err
-				}
-				if s > e {
-					return DayFilter{}, CronError(fmt.Sprintf("range start must be <= end: %s-%s", startStr, endStr))
-				}
-				start, end = s, e
-			} else {
-				s, err := parseDOWValueRaw(rangePart)
-				if err != nil {
-					return DayFilter{}, err
-				}
-				start, end = s, 6
-			}
-
-			step, err := strconv.Atoi(stepStr)
-			if err != nil {
-				return DayFilter{}, CronError(fmt.Sprintf("invalid DOW step: %s", stepStr))
-			}
-			if step == 0 {
-				return DayFilter{}, CronError("step cannot be 0")
-			}
-
-			for d := start; d <= end; d += step {
-				wd, err := cronDOWToWeekday(d)
-				if err != nil {
-					return DayFilter{}, err
-				}
-				days = append(days, wd)
-			}
-		} else if strings.Contains(part, "-") {
-			startStr, endStr, _ := strings.Cut(part, "-")
-			// Raw, so a range ending at 7 (Sunday) stays ascending.
-			start, err := parseDOWValueRaw(startStr)
-			if err != nil {
-				return DayFilter{}, err
-			}
-			end, err := parseDOWValueRaw(endStr)
-			if err != nil {
-				return DayFilter{}, err
-			}
-			if start > end {
-				return DayFilter{}, CronError(fmt.Sprintf("range start must be <= end: %s-%s", startStr, endStr))
-			}
-			for d := start; d <= end; d++ {
-				normalized := d
-				if d == 7 {
-					normalized = 0
-				}
-				wd, err := cronDOWToWeekday(normalized)
-				if err != nil {
-					return DayFilter{}, err
-				}
-				days = append(days, wd)
-			}
-		} else {
-			dow, err := parseDOWValue(part)
-			if err != nil {
-				return DayFilter{}, err
-			}
-			wd, err := cronDOWToWeekday(dow)
-			if err != nil {
-				return DayFilter{}, err
-			}
-			days = append(days, wd)
-		}
-	}
-
-	if len(days) == 5 {
-		sorted := make([]Weekday, len(days))
-		copy(sorted, days)
-		sort.Slice(sorted, func(i, j int) bool {
-			return sorted[i].Number() < sorted[j].Number()
-		})
-		weekdays := []Weekday{Monday, Tuesday, Wednesday, Thursday, Friday}
-		if weekdaysEqual(sorted, weekdays) {
-			return NewDayFilterWeekday(), nil
-		}
-	}
-	if len(days) == 2 {
-		sorted := make([]Weekday, len(days))
-		copy(sorted, days)
-		sort.Slice(sorted, func(i, j int) bool {
-			return sorted[i].Number() < sorted[j].Number()
-		})
-		weekend := []Weekday{Saturday, Sunday}
-		if weekdaysEqual(sorted, weekend) {
-			return NewDayFilterWeekend(), nil
-		}
-	}
-
-	return NewDayFilterDays(days), nil
-}
-
-func weekdaysEqual(a, b []Weekday) bool {
-	if len(a) != len(b) {
+func isNumber(text string) bool {
+	if text == "" {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	for i := 0; i < len(text); i++ {
+		if text[i] < '0' || text[i] > '9' {
 			return false
 		}
 	}
 	return true
 }
 
-func parseDOWValue(s string) (int, error) {
-	raw, err := parseDOWValueRaw(s)
-	if err != nil {
-		return 0, err
-	}
-	// Cron allows 7 as well as 0 for Sunday.
-	if raw == 7 {
-		return 0, nil
-	}
-	return raw, nil
+func isValue(text string, field cronField) bool {
+	_, named := nameValue(text, field)
+	return isNumber(text) || named
 }
 
-func parseDOWValueRaw(s string) (int, error) {
-	if n, err := strconv.Atoi(s); err == nil {
-		if n > 7 {
-			return 0, CronError(fmt.Sprintf("DOW must be 0-7, got %d", n))
-		}
-		return n, nil
-	}
-	switch strings.ToUpper(s) {
-	case "SUN":
-		return 0, nil
-	case "MON":
-		return 1, nil
-	case "TUE":
-		return 2, nil
-	case "WED":
-		return 3, nil
-	case "THU":
-		return 4, nil
-	case "FRI":
-		return 5, nil
-	case "SAT":
-		return 6, nil
-	default:
-		return 0, CronError(fmt.Sprintf("invalid DOW: %s", s))
-	}
+func nameValue(text string, field cronField) (int, bool) {
+	index := slices.Index(field.names(), asciiLower(text))
+	return index + field.min(), index >= 0
 }
 
-var cronDOWMap = map[int]Weekday{
-	0: Sunday,
-	1: Monday,
-	2: Tuesday,
-	3: Wednesday,
-	4: Thursday,
-	5: Friday,
-	6: Saturday,
-	7: Sunday,
+func number(digits string) int {
+	n := 0
+	for i := 0; i < len(digits); i++ {
+		n = min(n*10+int(digits[i]-'0'), numberCap)
+	}
+	return n
 }
 
-func cronDOWToWeekday(n int) (Weekday, error) {
-	wd, ok := cronDOWMap[n]
-	if !ok {
-		return 0, CronError(fmt.Sprintf("invalid DOW number: %d", n))
+func fieldValue(text string, field cronField) (int, error) {
+	value, named := nameValue(text, field)
+	if !named {
+		value = number(text)
 	}
-	return wd, nil
-}
-
-func parseSingleValue(field, name string, min, max int) (int, error) {
-	value, err := strconv.Atoi(field)
-	if err != nil {
-		return 0, CronError(fmt.Sprintf("invalid %s field: %s", name, field))
-	}
-	if value < min || value > max {
-		return 0, CronError(fmt.Sprintf("%s must be %d-%d, got %d", name, min, max, value))
+	if value < field.min() || value > field.max() {
+		return 0, CronError(fmt.Sprintf("%s must be %d-%d, got %s", field.name(), field.min(), field.max(), text))
 	}
 	return value, nil
+}
+
+// Folds ASCII letters only: Unicode folding would let `ſ` match `s` and `K` match `k`.
+func asciiLower(text string) string {
+	lower := []byte(text)
+	for i, c := range lower {
+		if 'A' <= c && c <= 'Z' {
+			lower[i] = c + 'a' - 'A'
+		}
+	}
+	return string(lower)
+}
+
+func cutSuffixFold(text, lowerSuffix string) (string, bool) {
+	if strings.HasSuffix(asciiLower(text), lowerSuffix) {
+		return text[:len(text)-len(lowerSuffix)], true
+	}
+	return text, false
+}
+
+func dayExpression(month monthDays, week weekDays) (cronDays, error) {
+	switch {
+	case month.kind == anyMonthDay && week.kind == anyWeekDay:
+		return cronDays{filter: NewDayFilterEvery()}, nil
+	case month.kind == anyMonthDay && week.kind == listedWeekDays:
+		return cronDays{filter: weekdayFilter(week.days)}, nil
+	case month.kind == anyMonthDay:
+		return cronDays{ofMonth: true, target: NewOrdinalWeekdayTarget(week.ordinal, week.weekday)}, nil
+	case week.kind != anyWeekDay:
+		return cronDays{}, CronError(bothDaysRestricted)
+	case month.kind == listedMonthDays && len(month.days) == 31:
+		return cronDays{filter: NewDayFilterEvery()}, nil
+	case month.kind == listedMonthDays:
+		var specs []DayOfMonthSpec
+		for _, run := range runs(sorted(month.days)) {
+			if run[0] == run[1] {
+				specs = append(specs, NewSingleDay(run[0]))
+			} else {
+				specs = append(specs, NewDayRange(run[0], run[1]))
+			}
+		}
+		return cronDays{ofMonth: true, target: NewDaysTarget(specs)}, nil
+	case month.kind == lastMonthDay:
+		return cronDays{ofMonth: true, target: NewLastDayTarget()}, nil
+	case month.kind == lastMonthWeekday:
+		return cronDays{ofMonth: true, target: NewLastWeekdayTarget()}, nil
+	default:
+		return cronDays{ofMonth: true, target: NewNearestWeekdayTarget(month.nearest, NearestNone)}, nil
+	}
+}
+
+func weekdayFilter(days []int) DayFilter {
+	ascending := sorted(days)
+	switch {
+	case slices.Equal(ascending, []int{0, 1, 2, 3, 4, 5, 6}):
+		return NewDayFilterEvery()
+	case slices.Equal(ascending, []int{1, 2, 3, 4, 5}):
+		return NewDayFilterWeekday()
+	case slices.Equal(ascending, []int{0, 6}):
+		return NewDayFilterWeekend()
+	}
+	weekdays := make([]Weekday, len(days))
+	for i, d := range days {
+		weekdays[i] = cronWeekdays[d]
+	}
+	return NewDayFilterDays(weekdays)
+}
+
+func equalGap(times []TimeOfDay) (int, bool) {
+	if len(times) < 3 {
+		return 0, false
+	}
+	gap := times[1].TotalMinutes() - times[0].TotalMinutes()
+	for i := 2; i < len(times); i++ {
+		if times[i].TotalMinutes()-times[i-1].TotalMinutes() != gap {
+			return 0, false
+		}
+	}
+	return gap, true
+}
+
+func interval(times []TimeOfDay, gap int, days DayFilter) ScheduleExpr {
+	from, to := times[0], times[len(times)-1]
+	if from == midnight && to.TotalMinutes()+gap >= minutesPerDay {
+		to = endOfDay
+	}
+	var dayFilter *DayFilter
+	if days.Kind != DayFilterKindEvery {
+		dayFilter = &days
+	}
+	if gap%60 == 0 {
+		return NewIntervalRepeat(gap/60, IntervalHours, from, to, dayFilter)
+	}
+	return NewIntervalRepeat(gap, IntervalMin, from, to, dayFilter)
+}
+
+func tooManyTimes(count int, equalGaps bool) error {
+	if equalGaps {
+		return CronError(intervalDays)
+	}
+	return CronError(fmt.Sprintf("not expressible in hron: %d times a day are too many to list", count))
+}
+
+func yearTarget(days cronDays, months []int) (YearTarget, bool) {
+	if !days.ofMonth || len(months) != 1 {
+		return YearTarget{}, false
+	}
+	month := MonthName(months[0])
+	target := days.target
+	switch target.Kind {
+	case MonthTargetKindDays:
+		if len(target.Specs) == 1 && target.Specs[0].Kind == DayOfMonthSpecKindSingle && target.Specs[0].Day <= maxDay(month) {
+			return NewYearDateTarget(month, target.Specs[0].Day), true
+		}
+	case MonthTargetKindLastWeekday:
+		return NewYearLastWeekdayTarget(month), true
+	case MonthTargetKindOrdinalWeekday:
+		return NewYearOrdinalWeekdayTarget(target.Ordinal, target.Weekday, month), true
+	}
+	return YearTarget{}, false
+}
+
+func maxDay(month MonthName) int {
+	switch month {
+	case Feb:
+		return 29
+	case Apr, Jun, Sep, Nov:
+		return 30
+	default:
+		return 31
+	}
+}
+
+// ToCron is Schedule.ToCron for a ScheduleData.
+func ToCron(schedule *ScheduleData) (string, error) {
+	if len(schedule.Except) > 0 {
+		return "", notExpressible("except clauses not supported")
+	}
+	if schedule.Until != nil {
+		return "", notExpressible("until clauses not supported")
+	}
+	if schedule.Anchor != "" {
+		return "", notExpressible("starting clauses not supported")
+	}
+	dayOfMonth, dayOfWeek, err := dayFields(&schedule.Expr)
+	if err != nil {
+		return "", err
+	}
+	// A schedule built in code can have an empty day list, which writes an empty field.
+	if dayOfMonth == "" || dayOfWeek == "" {
+		return "", notExpressible("schedule has no days")
+	}
+	month, err := monthFieldOf(schedule)
+	if err != nil {
+		return "", err
+	}
+	minute, hour, err := timeFields(&schedule.Expr)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s %s %s %s %s", minute, hour, dayOfMonth, month, dayOfWeek), nil
+}
+
+func notExpressible(reason string) error {
+	return CronError("not expressible as cron: " + reason)
+}
+
+func repeatsOnce(interval int, unit string) error {
+	if interval > 1 {
+		return notExpressible(fmt.Sprintf("multi-%s repeats not supported", unit))
+	}
+	return nil
+}
+
+func dayFields(expr *ScheduleExpr) (string, string, error) {
+	switch expr.Kind {
+	case ScheduleExprKindInterval:
+		if expr.DayFilter == nil {
+			return "*", "*", nil
+		}
+		return "*", filterField(*expr.DayFilter), nil
+	case ScheduleExprKindDay:
+		if err := repeatsOnce(expr.Interval, "day"); err != nil {
+			return "", "", err
+		}
+		return "*", filterField(expr.Days), nil
+	case ScheduleExprKindWeek:
+		if err := repeatsOnce(expr.Interval, "week"); err != nil {
+			return "", "", err
+		}
+		return "*", weekdaysField(expr.WeekDays), nil
+	case ScheduleExprKindMonth:
+		if err := repeatsOnce(expr.Interval, "month"); err != nil {
+			return "", "", err
+		}
+		target := expr.MonthTarget
+		switch target.Kind {
+		case MonthTargetKindDays:
+			return listField(sortedUnique(target.ExpandDays()), 31), "*", nil
+		case MonthTargetKindLastDay:
+			return "L", "*", nil
+		case MonthTargetKindLastWeekday:
+			return "LW", "*", nil
+		case MonthTargetKindNearestWeekday:
+			if target.Direction != NearestNone {
+				return "", "", notExpressible("directional nearest weekday not supported")
+			}
+			return fmt.Sprintf("%dW", target.Day), "*", nil
+		case MonthTargetKindOrdinalWeekday:
+			return "*", ordinalField(target.Ordinal, target.Weekday), nil
+		}
+	case ScheduleExprKindYear:
+		if err := repeatsOnce(expr.Interval, "year"); err != nil {
+			return "", "", err
+		}
+		target := expr.YearTarget
+		switch target.Kind {
+		case YearTargetKindDate, YearTargetKindDayOfMonth:
+			return strconv.Itoa(target.Day), "*", nil
+		case YearTargetKindOrdinalWeekday:
+			return "*", ordinalField(target.Ordinal, target.Weekday), nil
+		case YearTargetKindLastWeekday:
+			return "LW", "*", nil
+		}
+	case ScheduleExprKindSingleDate:
+		if expr.DateSpec.Kind == DateSpecKindISO {
+			return "", "", notExpressible("ISO dates do not repeat")
+		}
+		return strconv.Itoa(expr.DateSpec.Day), "*", nil
+	}
+	return "", "", CronError("invalid schedule: unknown expression or target kind")
+}
+
+func monthFieldOf(schedule *ScheduleData) (string, error) {
+	during := schedule.During
+	month, ok := ownMonth(&schedule.Expr)
+	switch {
+	case ok && len(during) > 0 && !slices.Contains(during, month):
+		return "", notExpressible("during excludes the schedule's month")
+	case ok:
+		return strconv.Itoa(month.Number()), nil
+	case len(during) == 0:
+		return "*", nil
+	}
+	numbers := make([]int, len(during))
+	for i, m := range during {
+		numbers[i] = m.Number()
+	}
+	return listField(sortedUnique(numbers), 12), nil
+}
+
+func ownMonth(expr *ScheduleExpr) (MonthName, bool) {
+	switch {
+	case expr.Kind == ScheduleExprKindYear:
+		return expr.YearTarget.Month, true
+	case expr.Kind == ScheduleExprKindSingleDate && expr.DateSpec.Kind == DateSpecKindNamed:
+		return expr.DateSpec.Month, true
+	}
+	return 0, false
+}
+
+func timeFields(expr *ScheduleExpr) (string, string, error) {
+	times := minutesOfDay(expr)
+	minutes := make([]int, len(times))
+	hours := make([]int, len(times))
+	for i, t := range times {
+		minutes[i], hours[i] = t%60, t/60
+	}
+	minutes, hours = sortedUnique(minutes), sortedUnique(hours)
+	// A schedule built in code can have no times, which no cron writes.
+	if len(times) == 0 {
+		return "", "", notExpressible("schedule has no times")
+	}
+	if len(minutes)*len(hours) != len(times) {
+		return "", "", notExpressible("times are not every combination of their minutes and hours")
+	}
+	return stepField(minutes, 60), stepField(hours, 24), nil
+}
+
+// Reuses the evaluator's slots, so conversion and evaluation agree on any interval.
+func minutesOfDay(expr *ScheduleExpr) []int {
+	var times []int
+	if expr.Kind == ScheduleExprKindInterval {
+		slots := intervalSlots(expr)
+		for k := range slots.count {
+			times = append(times, slots.minute(k))
+		}
+	} else {
+		for _, t := range expr.Times {
+			times = append(times, t.TotalMinutes())
+		}
+	}
+	return sortedUnique(times)
+}
+
+func filterField(filter DayFilter) string {
+	switch filter.Kind {
+	case DayFilterKindEvery:
+		return "*"
+	case DayFilterKindWeekday:
+		return weekdaysField([]Weekday{Monday, Tuesday, Wednesday, Thursday, Friday})
+	case DayFilterKindWeekend:
+		return weekdaysField([]Weekday{Saturday, Sunday})
+	default:
+		return weekdaysField(filter.Days)
+	}
+}
+
+func weekdaysField(days []Weekday) string {
+	numbers := make([]int, len(days))
+	for i, d := range days {
+		numbers[i] = d.CronDOW()
+	}
+	return listField(sortedUnique(numbers), 7)
+}
+
+func ordinalField(ordinal OrdinalPosition, weekday Weekday) string {
+	if ordinal >= First && ordinal <= Fifth {
+		return fmt.Sprintf("%d#%d", weekday.CronDOW(), ordinal)
+	}
+	return fmt.Sprintf("%dL", weekday.CronDOW())
+}
+
+func stepField(values []int, size int) string {
+	first, last := values[0], values[len(values)-1]
+	if len(values) == size {
+		return "*"
+	}
+	if len(values) == 1 {
+		return strconv.Itoa(first)
+	}
+	gap := values[1] - first
+	equalGaps := true
+	for i := 2; i < len(values); i++ {
+		equalGaps = equalGaps && values[i]-values[i-1] == gap
+	}
+	switch {
+	case equalGaps && first == 0 && last+gap == size:
+		return fmt.Sprintf("*/%d", gap)
+	case equalGaps && gap == 1:
+		return fmt.Sprintf("%d-%d", first, last)
+	case equalGaps && len(values) >= 3:
+		return fmt.Sprintf("%d-%d/%d", first, last, gap)
+	default:
+		return listField(values, size)
+	}
+}
+
+func listField(values []int, size int) string {
+	if len(values) == size {
+		return "*"
+	}
+	parts := make([]string, 0, len(values))
+	for _, run := range runs(values) {
+		if run[0] == run[1] {
+			parts = append(parts, strconv.Itoa(run[0]))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d-%d", run[0], run[1]))
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+func runs(sortedValues []int) [][2]int {
+	var runs [][2]int
+	for _, value := range sortedValues {
+		if n := len(runs); n > 0 && runs[n-1][1]+1 == value {
+			runs[n-1][1] = value
+		} else {
+			runs = append(runs, [2]int{value, value})
+		}
+	}
+	return runs
+}
+
+func sorted(values []int) []int {
+	values = slices.Clone(values)
+	slices.Sort(values)
+	return values
+}
+
+func sortedUnique(values []int) []int {
+	return slices.Compact(sorted(values))
 }

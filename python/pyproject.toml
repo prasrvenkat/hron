@@ -1,7 +1,7 @@
 [project]
 name = "hron"
 version = "1.0.0"
-description = "Human-readable cron — a scheduling expression language that is a superset of cron"
+description = "Human-readable cron — scheduling expressions that read like English and convert to and from cron"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"

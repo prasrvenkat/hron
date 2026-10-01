@@ -8,10 +8,10 @@ Gem::Specification.new do |spec|
   spec.authors = ["Prasanna Venkataraman"]
   spec.email = ["pras@simpllyf.io"]
 
-  spec.summary = "Human-readable cron — a scheduling expression language that is a superset of cron"
+  spec.summary = "Human-readable cron — scheduling expressions that read like English and convert to and from cron"
   spec.description = "hron (human-readable cron) is a scheduling expression language " \
-                     "that is designed to be easy to read, write, and understand. It is a superset of cron, " \
-                     "meaning any valid cron expression can be converted to and from hron."
+                     "that is designed to be easy to read, write, and understand. It converts to and from cron " \
+                     "exactly where both can express a schedule, and expresses schedules cron cannot."
   spec.homepage = "https://hron.io"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0.0"

@@ -1,12 +1,12 @@
 # hron
 
-**Human-readable cron** — scheduling expressions that are a superset of what cron can express.
+**Human-readable cron** — scheduling expressions that read like English and convert to and from cron.
 
 ```
 every weekday at 9:00 except dec 25, jan 1 until 2027-12-31 in America/New_York
 ```
 
-hron is a language specification with native implementations for multiple programming languages. It handles everything cron can do and more: multi-week intervals, ordinal weekdays, yearly schedules, exception dates, end dates, and IANA timezone support with full DST awareness.
+hron is a language specification with native implementations for multiple programming languages. It covers most of what cron expresses, and more that cron cannot: multi-week intervals, exception dates, end dates, and IANA timezone support with full DST awareness.
 
 ## Try It
 
@@ -169,7 +169,7 @@ every weekday at 9:00 except dec 25 until 2027-12-31 during jan, dec in UTC
 
 ## Cron Compatibility
 
-hron can convert to and from standard 5-field cron expressions for the expressible subset:
+hron converts to and from standard 5-field cron expressions exactly: the result fires at the same times on the same dates, or the conversion fails with an error that says why. This ignores the timezone and DST transitions, where cron schedulers differ.
 
 | hron | cron |
 |---|---|
@@ -178,10 +178,24 @@ hron can convert to and from standard 5-field cron expressions for the expressib
 | `every weekend at 10:00` | `0 10 * * 0,6` |
 | `every mon, wed, fri at 9:00` | `0 9 * * 1,3,5` |
 | `every 30 min from 00:00 to 23:59` | `*/30 * * * *` |
-| `every 2 hours from 00:00 to 23:59` | `0 */2 * * *` |
+| `every 15 min from 09:00 to 17:45 on weekday` | `*/15 9-17 * * 1-5` |
 | `every month on the 1st at 9:00` | `0 9 1 * *` |
+| `every month on the last friday at 16:00` | `0 16 * * 5L` |
+| `every year on dec 25 at 00:00` | `0 0 25 12 *` |
 
-Expressions that go beyond cron's capabilities (multi-week intervals, ordinals, yearly, `except`, `until`, partial-day windows) will return an error from `to_cron()`.
+`to_cron()` fails for:
+
+- `except`, `until` and `starting`, which cron cannot bound;
+- an ISO date, which does not repeat;
+- a repeat every `n` days, weeks, months or years with `n > 1`, which cron cannot count;
+- a directional nearest weekday (`next nearest`, `previous nearest`);
+- a `during` that excludes a yearly or named date's month;
+- a schedule built in code with no days or no times;
+- times that are not every combination of their minutes and hours (`at 09:00, 17:30`, `every 45 min from 09:00 to 17:00`).
+
+A schedule's timezone is not part of the cron: run the cron in the schedule's timezone.
+
+`from_cron()` fails for crons that restrict both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps). The [spec](spec/README.md#cron-conversion) has the full rules and every error message.
 
 ## Timezone & DST Behavior
 

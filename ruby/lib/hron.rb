@@ -22,7 +22,8 @@ module Hron
       Schedule.validate(input)
     end
 
-    # Parses a 5-field cron expression into a Schedule. Raises HronError if it is invalid.
+    # Converts a 5-field cron expression to a Schedule that fires at the same times. Raises
+    # HronError of kind :cron when it is not valid cron or has no exact hron equivalent.
     def from_cron(cron_expr)
       Schedule.from_cron(cron_expr)
     end

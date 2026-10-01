@@ -2,697 +2,477 @@
 
 require_relative "ast"
 require_relative "error"
+require_relative "evaluator"
 
 module Hron
   module Cron
-    CRON_DOW_MAP = {
-      0 => Weekday::SUNDAY,
-      1 => Weekday::MONDAY,
-      2 => Weekday::TUESDAY,
-      3 => Weekday::WEDNESDAY,
-      4 => Weekday::THURSDAY,
-      5 => Weekday::FRIDAY,
-      6 => Weekday::SATURDAY,
-      7 => Weekday::SUNDAY
+    MAX_LISTED_TIMES = 24
+    BOTH_DAYS_RESTRICTED =
+      "not expressible in hron: cron fires on either the day of month or the day of week"
+    INTERVAL_DAYS =
+      "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days"
+    MINUTES_PER_DAY = 24 * 60
+    MIDNIGHT = TimeOfDay.new(0, 0)
+    END_OF_DAY = TimeOfDay.new(23, 59)
+
+    # Digit strings may be of any length. Every number at or above this cap is out
+    # of every field's range and steps past every range's end, so saturating at it
+    # keeps each comparison exact.
+    NUMBER_CAP = 1000
+
+    MONTH_NAMES = %w[jan feb mar apr may jun jul aug sep oct nov dec].freeze
+    DAY_NAMES = %w[sun mon tue wed thu fri sat].freeze
+    WEEKDAYS = [
+      Weekday::SUNDAY, Weekday::MONDAY, Weekday::TUESDAY, Weekday::WEDNESDAY,
+      Weekday::THURSDAY, Weekday::FRIDAY, Weekday::SATURDAY
+    ].freeze
+    ORDINALS = [
+      OrdinalPosition::FIRST, OrdinalPosition::SECOND, OrdinalPosition::THIRD,
+      OrdinalPosition::FOURTH, OrdinalPosition::FIFTH
+    ].freeze
+
+    SHORTCUTS = {
+      "@yearly" => "0 0 1 1 *",
+      "@annually" => "0 0 1 1 *",
+      "@monthly" => "0 0 1 * *",
+      "@weekly" => "0 0 * * 0",
+      "@daily" => "0 0 * * *",
+      "@midnight" => "0 0 * * *",
+      "@hourly" => "0 * * * *"
     }.freeze
 
-    def self.to_cron(schedule)
-      raise HronError.cron("not expressible as cron (except clauses not supported)") unless schedule.except.empty?
+    Field = Data.define(:name, :min, :max, :star_end, :names)
+    MINUTE = Field.new("minute", 0, 59, 59, [])
+    HOUR = Field.new("hour", 0, 23, 23, [])
+    DAY_OF_MONTH = Field.new("day of month", 1, 31, 31, [])
+    MONTH = Field.new("month", 1, 12, 12, MONTH_NAMES)
+    # 7 is Sunday only where written: `*` and `a/n` end at 6.
+    DAY_OF_WEEK = Field.new("day of week", 0, 7, 6, DAY_NAMES)
 
-      raise HronError.cron("not expressible as cron (until clauses not supported)") if schedule.until
+    Item = Data.define(:bounds, :step)
 
-      raise HronError.cron("not expressible as cron (during clauses not supported)") unless schedule.during.empty?
+    private_constant :MAX_LISTED_TIMES, :BOTH_DAYS_RESTRICTED, :INTERVAL_DAYS, :MINUTES_PER_DAY,
+      :MIDNIGHT, :END_OF_DAY, :NUMBER_CAP, :MONTH_NAMES, :DAY_NAMES, :WEEKDAYS, :ORDINALS,
+      :SHORTCUTS, :Field, :MINUTE, :HOUR, :DAY_OF_MONTH, :MONTH, :DAY_OF_WEEK, :Item
 
-      expr = schedule.expr
+    class << self
+      def from_cron(input)
+        text = trim(utf8(input))
+        text = shortcut(text) if text.start_with?("@")
+        fields = text.split(/[ \t]+/)
+        raise HronError.cron("expected 5 cron fields, got #{fields.length}") unless fields.length == 5
 
-      case expr
-      when DayRepeat
-        raise HronError.cron("not expressible as cron (multi-day intervals not supported)") if expr.interval > 1
-        raise HronError.cron("not expressible as cron (multiple times not supported)") if expr.times.length != 1
+        minute, hour, day_of_month, month, day_of_week = fields
+        minutes = values(minute, MINUTE).sort
+        hours = values(hour, HOUR).sort
+        month_days = parse_day_of_month(day_of_month)
+        months = values(month, MONTH).sort
+        week_days = parse_day_of_week(day_of_week)
+        days = day_expression(month_days, week_days)
+        times = hours.flat_map { |h| minutes.map { |m| TimeOfDay.new(h, m) } }
 
-        time = expr.times[0]
-        dow = day_filter_to_cron_dow(expr.days)
-        "#{time.minute} #{time.hour} * * #{dow}"
-
-      when IntervalRepeat
-        full_day = expr.from_time.hour.zero? && expr.from_time.minute.zero? &&
-          expr.to_time.hour == 23 && expr.to_time.minute == 59
-        raise HronError.cron("not expressible as cron (partial-day interval windows not supported)") unless full_day
-
-        raise HronError.cron("not expressible as cron (interval with day filter not supported)") if expr.day_filter
-
-        if expr.unit == IntervalUnit::MIN
-          if (60 % expr.interval) != 0
-            raise HronError.cron("not expressible as cron (*/#{expr.interval} breaks at hour boundaries)")
-          end
-
-          "*/#{expr.interval} * * * *"
+        gap = equal_gap(times)
+        expr = if days.key?(:of_week) && gap
+          interval(times, gap, days[:of_week])
+        elsif times.length > MAX_LISTED_TIMES
+          raise too_many_times(times.length, gap)
+        elsif (target = year_target(days, months))
+          YearRepeat.new(1, target, times)
+        elsif days.key?(:of_week)
+          DayRepeat.new(1, days[:of_week], times)
         else
-          "0 */#{expr.interval} * * *"
+          MonthRepeat.new(1, days[:of_month], times)
+        end
+        yearly = expr.is_a?(YearRepeat)
+        during = (!yearly && months.length < MonthName::ALL.length) ? months.map { |m| MonthName::ALL[m - 1] } : []
+        ScheduleData.new(expr: expr, during: during)
+      end
+
+      def to_cron(schedule)
+        raise not_expressible("except clauses not supported") unless schedule.except.empty?
+        raise not_expressible("until clauses not supported") if schedule.until
+        raise not_expressible("starting clauses not supported") if schedule.anchor
+
+        day_of_month, day_of_week = day_fields(schedule.expr)
+        # A schedule built in code can have an empty day list, which writes an empty field.
+        raise not_expressible("schedule has no days") if day_of_month.empty? || day_of_week.empty?
+
+        month = month_field(schedule)
+        minute, hour = time_fields(schedule.expr)
+        "#{minute} #{hour} #{day_of_month} #{month} #{day_of_week}"
+      end
+
+      private
+
+      # Error messages echo the input, so they must be valid UTF-8. No byte outside ASCII
+      # is valid cron, so replacing one changes no result. BINARY text, and text in an
+      # encoding Ruby has no converter for, is read as UTF-8.
+      def utf8(input)
+        return as_utf8(input) if input.encoding == Encoding::BINARY
+
+        input.encode(Encoding::UTF_8, invalid: :replace, undef: :replace).scrub
+      rescue Encoding::ConverterNotFoundError
+        as_utf8(input)
+      end
+
+      def as_utf8(input)
+        input.dup.force_encoding(Encoding::UTF_8).scrub
+      end
+
+      # String#strip would also strip NUL, vertical tab and form feed.
+      def trim(text)
+        first = text.index(/[^ \t\r\n]/)
+        first ? text[first..text.rindex(/[^ \t\r\n]/)] : ""
+      end
+
+      def shortcut(input)
+        SHORTCUTS.fetch(input.downcase(:ascii)) do
+          raise HronError.cron("unknown cron shortcut: #{input}")
+        end
+      end
+
+      def parse_day_of_month(text)
+        return :any if text == "*" || text == "?"
+        return :last if text.downcase(:ascii) == "l"
+        return :last_weekday if text.downcase(:ascii) == "lw"
+
+        day = text[0...-1]
+        return {nearest: field_value(day, DAY_OF_MONTH)} if text.end_with?("W", "w") && number?(day)
+
+        {days: values(text, DAY_OF_MONTH)}
+      end
+
+      def parse_day_of_week(text)
+        return :any if text == "*" || text == "?"
+
+        day, hash, nth = text.partition("#")
+        if !hash.empty? && value?(day, DAY_OF_WEEK) && number?(nth)
+          weekday = WEEKDAYS[field_value(day, DAY_OF_WEEK) % 7]
+          n = number(nth)
+          raise HronError.cron("day of week ordinal must be 1-5, got #{nth}") unless n.between?(1, 5)
+
+          return {nth: n, weekday: weekday}
+        end
+        day = text[0...-1]
+        return {last: WEEKDAYS[field_value(day, DAY_OF_WEEK) % 7]} if text.end_with?("L", "l") && value?(day, DAY_OF_WEEK)
+
+        {days: values(text, DAY_OF_WEEK)}
+      end
+
+      # Keeps the order of first appearance, in which from_cron lists days of the week.
+      def values(text, field)
+        items = items(text, field)
+        raise HronError.cron("invalid #{field.name}: #{text}") unless items
+
+        values = []
+        items.each do |item|
+          first, last = case item.bounds
+          in :star
+            [field.min, field.star_end]
+          in [a]
+            first = field_value(a, field)
+            # `7/n` starts past the end of `*`, so it is Sunday alone.
+            [first, item.step ? [first, field.star_end].max : first]
+          in [a, b]
+            first = field_value(a, field)
+            last = field_value(b, field)
+            raise HronError.cron("#{field.name} range must not run backwards: #{a}-#{b}") if first > last
+
+            [first, last]
+          end
+          step = item.step ? number(item.step) : 1
+          raise HronError.cron("#{field.name} step must be at least 1") if step.zero?
+
+          first.step(last, step) do |value|
+            value %= 7 if field == DAY_OF_WEEK
+            values << value unless values.include?(value)
+          end
+        end
+        values
+      end
+
+      def items(text, field)
+        text.split(",", -1).map do |item|
+          range, slash, step = item.partition("/")
+          step = nil if slash.empty?
+          first, dash, last = range.partition("-")
+          bounds = if range == "*"
+            :star
+          elsif dash.empty?
+            [range]
+          else
+            [first, last]
+          end
+          valid = (step.nil? || number?(step)) && (bounds == :star || bounds.all? { |value| value?(value, field) })
+          return nil unless valid
+
+          Item.new(bounds, step)
+        end
+      end
+
+      def number?(text)
+        text.match?(/\A[0-9]+\z/)
+      end
+
+      def value?(text, field)
+        number?(text) || !name_value(text, field).nil?
+      end
+
+      def name_value(text, field)
+        index = field.names.index(text.downcase(:ascii))
+        index && index + field.min
+      end
+
+      def number(digits)
+        digits.each_byte.reduce(0) { |n, digit| [n * 10 + digit - "0".ord, NUMBER_CAP].min }
+      end
+
+      def field_value(text, field)
+        value = name_value(text, field) || number(text)
+        unless value.between?(field.min, field.max)
+          raise HronError.cron("#{field.name} must be #{field.min}-#{field.max}, got #{text}")
         end
 
-      when WeekRepeat
-        raise HronError.cron("not expressible as cron (multi-week intervals not supported)")
+        value
+      end
 
-      when MonthRepeat
-        raise HronError.cron("not expressible as cron (multi-month intervals not supported)") if expr.interval > 1
-        raise HronError.cron("not expressible as cron (multiple times not supported)") if expr.times.length != 1
+      def day_expression(month_days, week_days)
+        case [month_days, week_days]
+        in [:any, :any]
+          {of_week: DayFilterEvery.new}
+        in [:any, {days:}]
+          {of_week: weekday_filter(days)}
+        in [:any, {nth:, weekday:}]
+          {of_month: OrdinalWeekdayTarget.new(ORDINALS[nth - 1], weekday)}
+        in [:any, {last:}]
+          {of_month: OrdinalWeekdayTarget.new(OrdinalPosition::LAST, last)}
+        in [{days:}, :any] if days.length == 31
+          {of_week: DayFilterEvery.new}
+        in [{days:}, :any]
+          specs = runs(days.sort).map { |first, last| (first == last) ? SingleDay.new(first) : DayRange.new(first, last) }
+          {of_month: DaysTarget.new(specs)}
+        in [:last, :any]
+          {of_month: LastDayTarget.new}
+        in [:last_weekday, :any]
+          {of_month: LastWeekdayTarget.new}
+        in [{nearest:}, :any]
+          {of_month: NearestWeekdayTarget.new(nearest, nil)}
+        else
+          raise HronError.cron(BOTH_DAYS_RESTRICTED)
+        end
+      end
 
-        time = expr.times[0]
-        case expr.target
+      def weekday_filter(days)
+        case days.sort
+        in [0, 1, 2, 3, 4, 5, 6] then DayFilterEvery.new
+        in [1, 2, 3, 4, 5] then DayFilterWeekday.new
+        in [0, 6] then DayFilterWeekend.new
+        else DayFilterDays.new(days.map { |d| WEEKDAYS[d] })
+        end
+      end
+
+      def equal_gap(times)
+        return nil if times.length < 2
+
+        minutes = times.map { |t| minute_of_day(t) }
+        gap = minutes[1] - minutes[0]
+        equal = minutes.length >= 3 && minutes.each_cons(2).all? { |a, b| b - a == gap }
+        equal ? gap : nil
+      end
+
+      def interval(times, gap, days)
+        from = times.first
+        last = times.last
+        to = (from == MIDNIGHT && minute_of_day(last) + gap >= MINUTES_PER_DAY) ? END_OF_DAY : last
+        interval, unit = (gap % 60).zero? ? [gap / 60, IntervalUnit::HOURS] : [gap, IntervalUnit::MIN]
+        IntervalRepeat.new(interval, unit, from, to, days.is_a?(DayFilterEvery) ? nil : days)
+      end
+
+      def too_many_times(count, gap)
+        return HronError.cron(INTERVAL_DAYS) if gap
+
+        HronError.cron("not expressible in hron: #{count} times a day are too many to list")
+      end
+
+      def year_target(days, months)
+        target = days[:of_month]
+        return nil unless target && months.length == 1
+
+        month = MonthName::ALL[months[0] - 1]
+        case target
+        in DaysTarget(specs: [SingleDay(day:)]) if day <= max_day(month)
+          YearDateTarget.new(month, day)
+        in LastWeekdayTarget
+          YearLastWeekdayTarget.new(month)
+        in OrdinalWeekdayTarget(ordinal:, weekday:)
+          YearOrdinalWeekdayTarget.new(ordinal, weekday, month)
+        else
+          nil
+        end
+      end
+
+      def max_day(month)
+        case month
+        when MonthName::FEB then 29
+        when MonthName::APR, MonthName::JUN, MonthName::SEP, MonthName::NOV then 30
+        else 31
+        end
+      end
+
+      def not_expressible(reason)
+        HronError.cron("not expressible as cron: #{reason}")
+      end
+
+      def repeats_once(interval, unit)
+        raise not_expressible("multi-#{unit} repeats not supported") if interval > 1
+      end
+
+      def day_fields(expr)
+        case expr
+        when IntervalRepeat
+          ["*", expr.day_filter ? filter_field(expr.day_filter) : "*"]
+        when DayRepeat
+          repeats_once(expr.interval, "day")
+          ["*", filter_field(expr.days)]
+        when WeekRepeat
+          repeats_once(expr.interval, "week")
+          ["*", weekdays_field(expr.days)]
+        when MonthRepeat
+          repeats_once(expr.interval, "month")
+          month_target_fields(expr.target)
+        when YearRepeat
+          repeats_once(expr.interval, "year")
+          year_target_fields(expr.target)
+        when SingleDateExpr
+          raise not_expressible("ISO dates do not repeat") if expr.date.is_a?(IsoDate)
+
+          [expr.date.day.to_s, "*"]
+        end
+      end
+
+      def month_target_fields(target)
+        case target
         when DaysTarget
-          expanded = []
-          expr.target.specs.each do |s|
-            case s
-            when SingleDay
-              expanded << s.day
-            when DayRange
-              (s.start..s.end_day).each { |d| expanded << d }
-            end
-          end
-          dom = expanded.join(",")
-          "#{time.minute} #{time.hour} #{dom} * *"
+          [list_field(Hron.expand_month_target(target).sort.uniq, 31), "*"]
         when LastDayTarget
-          raise HronError.cron("not expressible as cron (last day of month not supported)")
+          ["L", "*"]
         when LastWeekdayTarget
-          raise HronError.cron("not expressible as cron (last weekday of month not supported)")
+          ["LW", "*"]
         when NearestWeekdayTarget
-          if expr.target.direction
-            raise HronError.cron("not expressible as cron (directional nearest weekday not supported)")
-          end
+          raise not_expressible("directional nearest weekday not supported") if target.direction
 
-          "#{time.minute} #{time.hour} #{expr.target.day}W * *"
+          ["#{target.day}W", "*"]
         when OrdinalWeekdayTarget
-          raise HronError.cron("not expressible as cron (ordinal weekday of month not supported)")
+          ["*", ordinal_field(target.ordinal, target.weekday)]
+        end
+      end
+
+      def year_target_fields(target)
+        case target
+        when YearDateTarget, YearDayOfMonthTarget
+          [target.day.to_s, "*"]
+        when YearOrdinalWeekdayTarget
+          ["*", ordinal_field(target.ordinal, target.weekday)]
+        when YearLastWeekdayTarget
+          ["LW", "*"]
+        end
+      end
+
+      def month_field(schedule)
+        during = schedule.during
+        month = own_month(schedule.expr)
+        if month
+          raise not_expressible("during excludes the schedule's month") unless during.empty? || during.include?(month)
+
+          MonthName.number(month).to_s
+        elsif during.empty?
+          "*"
         else
-          raise HronError.cron("not expressible as cron (unsupported month target)")
+          list_field(during.map { |m| MonthName.number(m) }.sort.uniq, 12)
+        end
+      end
+
+      def own_month(expr)
+        case expr
+        when YearRepeat then expr.target.month
+        when SingleDateExpr then expr.date.is_a?(NamedDate) ? expr.date.month : nil
+        end
+      end
+
+      def time_fields(expr)
+        times = daily_times(expr)
+        minutes = times.map { |t| t % 60 }.sort.uniq
+        hours = times.map { |t| t / 60 }.sort.uniq
+        # A schedule built in code can have no times, which no cron writes.
+        raise not_expressible("schedule has no times") if times.empty?
+        if minutes.length * hours.length != times.length
+          raise not_expressible("times are not every combination of their minutes and hours")
         end
 
-      when SingleDateExpr
-        raise HronError.cron("not expressible as cron (single dates are not repeating)")
-
-      when YearRepeat
-        raise HronError.cron("not expressible as cron (yearly schedules not supported in 5-field cron)")
-
-      else
-        raise HronError.cron("unknown expression type: #{expr.class}")
-      end
-    end
-
-    def self.day_filter_to_cron_dow(filter)
-      case filter
-      when DayFilterEvery
-        "*"
-      when DayFilterWeekday
-        "1-5"
-      when DayFilterWeekend
-        "0,6"
-      when DayFilterDays
-        nums = filter.days.map { |d| Weekday.cron_dow(d) }.sort
-        nums.join(",")
-      end
-    end
-
-    DOW_NAME_MAP = {
-      "SUN" => 0, "MON" => 1, "TUE" => 2, "WED" => 3,
-      "THU" => 4, "FRI" => 5, "SAT" => 6
-    }.freeze
-
-    MONTH_NAME_MAP = {
-      "JAN" => 1, "FEB" => 2, "MAR" => 3, "APR" => 4,
-      "MAY" => 5, "JUN" => 6, "JUL" => 7, "AUG" => 8,
-      "SEP" => 9, "OCT" => 10, "NOV" => 11, "DEC" => 12
-    }.freeze
-
-    def self.from_cron(cron_str)
-      cron_str = cron_str.strip
-
-      return parse_cron_shortcut(cron_str) if cron_str.start_with?("@")
-
-      fields = cron_str.split
-      raise HronError.cron("expected 5 cron fields, got #{fields.length}") if fields.length != 5
-
-      minute_field, hour_field, dom_field, month_field, dow_field = fields
-
-      dom_field = "*" if dom_field == "?"
-      dow_field = "*" if dow_field == "?"
-
-      during = parse_month_field(month_field)
-
-      result = try_parse_nth_weekday(minute_field, hour_field, dom_field, dow_field, during)
-      return result if result
-
-      result = try_parse_last_day(minute_field, hour_field, dom_field, dow_field, during)
-      return result if result
-
-      if dom_field.end_with?("W") && dom_field != "LW"
-        result = try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, during)
-        return result if result
+        [step_field(minutes, 60), step_field(hours, 24)]
       end
 
-      result = try_parse_interval(minute_field, hour_field, dom_field, dow_field, during)
-      return result if result
-
-      minute = parse_single_value(minute_field, "minute", 0, 59)
-      hour = parse_single_value(hour_field, "hour", 0, 23)
-      time = TimeOfDay.new(hour, minute)
-
-      if dom_field != "*" && dow_field == "*"
-        target = parse_dom_field(dom_field)
-        return ScheduleData.new(
-          expr: MonthRepeat.new(1, target, [time]),
-          during: during
-        )
-      end
-
-      days = parse_cron_dow(dow_field)
-      ScheduleData.new(
-        expr: DayRepeat.new(1, days, [time]),
-        during: during
-      )
-    end
-
-    def self.parse_cron_shortcut(cron_str)
-      case cron_str.downcase
-      when "@yearly", "@annually"
-        ScheduleData.new(
-          expr: YearRepeat.new(
-            1,
-            YearDateTarget.new(MonthName::JAN, 1),
-            [TimeOfDay.new(0, 0)]
-          )
-        )
-      when "@monthly"
-        ScheduleData.new(
-          expr: MonthRepeat.new(
-            1,
-            DaysTarget.new([SingleDay.new(1)]),
-            [TimeOfDay.new(0, 0)]
-          )
-        )
-      when "@weekly"
-        ScheduleData.new(
-          expr: DayRepeat.new(
-            1,
-            DayFilterDays.new([Weekday::SUNDAY]),
-            [TimeOfDay.new(0, 0)]
-          )
-        )
-      when "@daily", "@midnight"
-        ScheduleData.new(
-          expr: DayRepeat.new(
-            1,
-            DayFilterEvery.new,
-            [TimeOfDay.new(0, 0)]
-          )
-        )
-      when "@hourly"
-        ScheduleData.new(
-          expr: IntervalRepeat.new(
-            1,
-            IntervalUnit::HOURS,
-            TimeOfDay.new(0, 0),
-            TimeOfDay.new(23, 59),
-            nil
-          )
-        )
-      else
-        raise HronError.cron("unknown @ shortcut: #{cron_str}")
-      end
-    end
-
-    def self.parse_month_field(field)
-      return [] if field == "*"
-
-      months = []
-      field.split(",").each do |part|
-        if part.include?("/")
-          range_part, step_str = part.split("/", 2)
-          if range_part == "*"
-            start_num = 1
-            end_num = 12
-          elsif range_part.include?("-")
-            s, e = range_part.split("-", 2)
-            start_num = MonthName.number(parse_month_value(s))
-            end_num = MonthName.number(parse_month_value(e))
-          else
-            raise HronError.cron("invalid month step expression: #{part}")
-          end
-
-          step = begin
-            Integer(step_str)
-          rescue
-            raise(HronError.cron("invalid month step value: #{step_str}"))
-          end
-          raise HronError.cron("step cannot be 0") if step == 0
-
-          n = start_num
-          while n <= end_num
-            months << month_from_number(n)
-            n += step
-          end
-        elsif part.include?("-")
-          start_str, end_str = part.split("-", 2)
-          start_month = parse_month_value(start_str)
-          end_month = parse_month_value(end_str)
-          start_num = MonthName.number(start_month)
-          end_num = MonthName.number(end_month)
-          raise HronError.cron("invalid month range: #{start_str} > #{end_str}") if start_num > end_num
-
-          (start_num..end_num).each { |n| months << month_from_number(n) }
+      def daily_times(expr)
+        times = if expr.is_a?(IntervalRepeat)
+          Evaluator.interval_slots(expr.interval, expr.unit, expr.from_time, expr.to_time)
         else
-          months << parse_month_value(part)
+          expr.times.map { |t| minute_of_day(t) }
+        end
+        times.sort.uniq
+      end
+
+      def filter_field(filter)
+        case filter
+        when DayFilterEvery then "*"
+        when DayFilterWeekday then weekdays_field(Weekday::WEEKDAYS)
+        when DayFilterWeekend then weekdays_field(Weekday::WEEKEND)
+        when DayFilterDays then weekdays_field(filter.days)
         end
       end
 
-      months
-    end
-
-    def self.parse_month_value(s)
-      if /^\d+$/.match?(s)
-        n = Integer(s)
-        return month_from_number(n)
-      end
-      n = MONTH_NAME_MAP[s.upcase]
-      raise HronError.cron("invalid month: #{s}") unless n
-
-      month_from_number(n)
-    end
-
-    def self.month_from_number(n)
-      month = MonthName.from_number(n)
-      raise HronError.cron("invalid month number: #{n}") unless month
-
-      month
-    end
-
-    def self.try_parse_nth_weekday(minute_field, hour_field, dom_field, dow_field, during)
-      if dow_field.include?("#")
-        dow_str, nth_str = dow_field.split("#", 2)
-        dow_num = parse_dow_value(dow_str)
-        weekday = cron_dow_to_weekday(dow_num)
-        nth = begin
-          Integer(nth_str)
-        rescue
-          raise(HronError.cron("invalid nth value: #{nth_str}"))
-        end
-        raise HronError.cron("nth must be 1-5, got #{nth}") if nth < 1 || nth > 5
-
-        ordinal = case nth
-        when 1 then OrdinalPosition::FIRST
-        when 2 then OrdinalPosition::SECOND
-        when 3 then OrdinalPosition::THIRD
-        when 4 then OrdinalPosition::FOURTH
-        when 5 then OrdinalPosition::FIFTH
-        end
-
-        raise HronError.cron("DOM must be * when using # for nth weekday") if dom_field != "*" && dom_field != "?"
-
-        minute = parse_single_value(minute_field, "minute", 0, 59)
-        hour = parse_single_value(hour_field, "hour", 0, 23)
-
-        return ScheduleData.new(
-          expr: MonthRepeat.new(1, OrdinalWeekdayTarget.new(ordinal, weekday), [TimeOfDay.new(hour, minute)]),
-          during: during
-        )
+      def weekdays_field(days)
+        list_field(days.map { |d| Weekday.cron_dow(d) }.sort.uniq, 7)
       end
 
-      if dow_field.end_with?("L") && dow_field.length > 1
-        dow_str = dow_field[0..-2]
-        dow_num = parse_dow_value(dow_str)
-        weekday = cron_dow_to_weekday(dow_num)
-
-        raise HronError.cron("DOM must be * when using nL for last weekday") if dom_field != "*" && dom_field != "?"
-
-        minute = parse_single_value(minute_field, "minute", 0, 59)
-        hour = parse_single_value(hour_field, "hour", 0, 23)
-
-        return ScheduleData.new(
-          expr: MonthRepeat.new(1, OrdinalWeekdayTarget.new(OrdinalPosition::LAST, weekday), [TimeOfDay.new(hour, minute)]),
-          during: during
-        )
+      def ordinal_field(ordinal, weekday)
+        day = Weekday.cron_dow(weekday)
+        n = OrdinalPosition.to_n(ordinal)
+        n ? "#{day}##{n}" : "#{day}L"
       end
 
-      nil
-    end
-
-    def self.try_parse_last_day(minute_field, hour_field, dom_field, dow_field, during)
-      return nil unless dom_field == "L" || dom_field == "LW"
-
-      raise HronError.cron("DOW must be * when using L or LW in DOM") if dow_field != "*" && dow_field != "?"
-
-      minute = parse_single_value(minute_field, "minute", 0, 59)
-      hour = parse_single_value(hour_field, "hour", 0, 23)
-
-      target = (dom_field == "LW") ? LastWeekdayTarget.new : LastDayTarget.new
-
-      ScheduleData.new(
-        expr: MonthRepeat.new(1, target, [TimeOfDay.new(hour, minute)]),
-        during: during
-      )
-    end
-
-    def self.try_parse_nearest_weekday(minute_field, hour_field, dom_field, dow_field, during)
-      return nil unless dom_field.end_with?("W") && dom_field != "LW"
-
-      raise HronError.cron("DOW must be * when using W in DOM") if dow_field != "*" && dow_field != "?"
-
-      day_str = dom_field[0..-2]
-      day = begin
-        Integer(day_str)
-      rescue
-        raise(HronError.cron("invalid W day: #{day_str}"))
-      end
-      raise HronError.cron("W day must be 1-31, got #{day}") if day < 1 || day > 31
-
-      minute = parse_single_value(minute_field, "minute", 0, 59)
-      hour = parse_single_value(hour_field, "hour", 0, 23)
-
-      target = NearestWeekdayTarget.new(day, nil)
-
-      ScheduleData.new(
-        expr: MonthRepeat.new(1, target, [TimeOfDay.new(hour, minute)]),
-        during: during
-      )
-    end
-
-    def self.try_parse_interval(minute_field, hour_field, dom_field, dow_field, during)
-      if minute_field.include?("/")
-        range_part, step_str = minute_field.split("/", 2)
-        interval = begin
-          Integer(step_str)
-        rescue
-          raise(HronError.cron("invalid minute interval value"))
-        end
-        raise HronError.cron("step cannot be 0") if interval == 0
-
-        if range_part == "*"
-          from_minute = 0
-          to_minute = 59
-        elsif range_part.include?("-")
-          s, e = range_part.split("-", 2)
-          from_minute = begin
-            Integer(s)
-          rescue
-            raise(HronError.cron("invalid minute range"))
-          end
-          to_minute = begin
-            Integer(e)
-          rescue
-            raise(HronError.cron("invalid minute range"))
-          end
-          raise HronError.cron("range start must be <= end: #{s}-#{e}") if from_minute > to_minute
+      def step_field(values, size)
+        first = values.first
+        last = values.last
+        gap = (values.length > 1) ? values[1] - first : nil
+        equal_gaps = !gap.nil? && values.each_cons(2).all? { |a, b| b - a == gap }
+        if values.length == size
+          "*"
+        elsif gap.nil?
+          first.to_s
+        elsif equal_gaps && first.zero? && last + gap == size
+          "*/#{gap}"
+        elsif equal_gaps && gap == 1
+          "#{first}-#{last}"
+        elsif equal_gaps && values.length >= 3
+          "#{first}-#{last}/#{gap}"
         else
-          from_minute = begin
-            Integer(range_part)
-          rescue
-            raise(HronError.cron("invalid minute value"))
-          end
-          to_minute = 59
-        end
-
-        if hour_field == "*"
-          from_hour = 0
-          to_hour = 23
-        elsif hour_field.include?("-")
-          s, e = hour_field.split("-", 2)
-          from_hour = begin
-            Integer(s)
-          rescue
-            raise(HronError.cron("invalid hour range"))
-          end
-          to_hour = begin
-            Integer(e)
-          rescue
-            raise(HronError.cron("invalid hour range"))
-          end
-        elsif hour_field.include?("/")
-          return nil
-        else
-          h = begin
-            Integer(hour_field)
-          rescue
-            raise(HronError.cron("invalid hour"))
-          end
-          from_hour = h
-          to_hour = h
-        end
-
-        day_filter = (dow_field == "*") ? nil : parse_cron_dow(dow_field)
-
-        if dom_field == "*" || dom_field == "?"
-          end_minute = if from_minute == 0 && to_minute == 59 && to_hour == 23
-            59
-          elsif from_minute == 0 && to_minute == 59
-            # `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
-            0
-          else
-            to_minute
-          end
-
-          return ScheduleData.new(
-            expr: IntervalRepeat.new(
-              interval,
-              IntervalUnit::MIN,
-              TimeOfDay.new(from_hour, from_minute),
-              TimeOfDay.new(to_hour, end_minute),
-              day_filter
-            ),
-            during: during
-          )
+          list_field(values, size)
         end
       end
 
-      if hour_field.include?("/") && (minute_field == "0" || minute_field == "00")
-        range_part, step_str = hour_field.split("/", 2)
-        interval = begin
-          Integer(step_str)
-        rescue
-          raise(HronError.cron("invalid hour interval value"))
-        end
-        raise HronError.cron("step cannot be 0") if interval == 0
+      def list_field(values, size)
+        return "*" if values.length == size
 
-        if range_part == "*"
-          from_hour = 0
-          to_hour = 23
-        elsif range_part.include?("-")
-          s, e = range_part.split("-", 2)
-          from_hour = begin
-            Integer(s)
-          rescue
-            raise(HronError.cron("invalid hour range"))
-          end
-          to_hour = begin
-            Integer(e)
-          rescue
-            raise(HronError.cron("invalid hour range"))
-          end
-          raise HronError.cron("range start must be <= end: #{s}-#{e}") if from_hour > to_hour
-        else
-          from_hour = begin
-            Integer(range_part)
-          rescue
-            raise(HronError.cron("invalid hour value"))
-          end
-          to_hour = 23
-        end
-
-        if (dom_field == "*" || dom_field == "?") && (dow_field == "*" || dow_field == "?")
-          end_minute = (from_hour == 0 && to_hour == 23) ? 59 : 0
-
-          return ScheduleData.new(
-            expr: IntervalRepeat.new(
-              interval,
-              IntervalUnit::HOURS,
-              TimeOfDay.new(from_hour, 0),
-              TimeOfDay.new(to_hour, end_minute),
-              nil
-            ),
-            during: during
-          )
-        end
+        runs(values).map { |first, last| (first == last) ? first.to_s : "#{first}-#{last}" }.join(",")
       end
 
-      nil
-    end
-
-    def self.parse_dom_field(field)
-      specs = []
-
-      field.split(",").each do |part|
-        if part.include?("/")
-          range_part, step_str = part.split("/", 2)
-          if range_part == "*"
-            start_day = 1
-            end_day = 31
-          elsif range_part.include?("-")
-            s, e = range_part.split("-", 2)
-            start_day = begin
-              Integer(s)
-            rescue
-              raise(HronError.cron("invalid DOM range start: #{s}"))
-            end
-            end_day = begin
-              Integer(e)
-            rescue
-              raise(HronError.cron("invalid DOM range end: #{e}"))
-            end
-            raise HronError.cron("range start must be <= end: #{start_day}-#{end_day}") if start_day > end_day
-          else
-            start_day = begin
-              Integer(range_part)
-            rescue
-              raise(HronError.cron("invalid DOM value: #{range_part}"))
-            end
-            end_day = 31
-          end
-
-          step = begin
-            Integer(step_str)
-          rescue
-            raise(HronError.cron("invalid DOM step: #{step_str}"))
-          end
-          raise HronError.cron("step cannot be 0") if step == 0
-
-          validate_dom(start_day)
-          validate_dom(end_day)
-
-          d = start_day
-          while d <= end_day
-            specs << SingleDay.new(d)
-            d += step
-          end
-        elsif part.include?("-")
-          start_str, end_str = part.split("-", 2)
-          start_day = begin
-            Integer(start_str)
-          rescue
-            raise(HronError.cron("invalid DOM range start: #{start_str}"))
-          end
-          end_day = begin
-            Integer(end_str)
-          rescue
-            raise(HronError.cron("invalid DOM range end: #{end_str}"))
-          end
-          raise HronError.cron("range start must be <= end: #{start_day}-#{end_day}") if start_day > end_day
-          validate_dom(start_day)
-          validate_dom(end_day)
-          specs << DayRange.new(start_day, end_day)
-        else
-          day = begin
-            Integer(part)
-          rescue
-            raise(HronError.cron("invalid DOM value: #{part}"))
-          end
-          validate_dom(day)
-          specs << SingleDay.new(day)
-        end
+      def runs(sorted_values)
+        sorted_values.slice_when { |a, b| b != a + 1 }.map { |run| [run.first, run.last] }
       end
 
-      DaysTarget.new(specs)
-    end
-
-    def self.validate_dom(day)
-      raise HronError.cron("DOM must be 1-31, got #{day}") if day < 1 || day > 31
-    end
-
-    def self.parse_cron_dow(field)
-      return DayFilterEvery.new if field == "*"
-
-      days = []
-
-      field.split(",").each do |part|
-        if part.include?("/")
-          range_part, step_str = part.split("/", 2)
-          if range_part == "*"
-            start_dow = 0
-            end_dow = 6
-          elsif range_part.include?("-")
-            s, e = range_part.split("-", 2)
-            start_dow = parse_dow_value_raw(s)
-            end_dow = parse_dow_value_raw(e)
-            raise HronError.cron("range start must be <= end: #{s}-#{e}") if start_dow > end_dow
-          else
-            start_dow = parse_dow_value_raw(range_part)
-            end_dow = 6
-          end
-
-          step = begin
-            Integer(step_str)
-          rescue
-            raise(HronError.cron("invalid DOW step: #{step_str}"))
-          end
-          raise HronError.cron("step cannot be 0") if step == 0
-
-          d = start_dow
-          while d <= end_dow
-            days << cron_dow_to_weekday(d)
-            d += step
-          end
-        elsif part.include?("-")
-          # Raw, so a range ending at 7 (Sunday), like `5-7`, stays ascending.
-          start_str, end_str = part.split("-", 2)
-          start_dow = parse_dow_value_raw(start_str)
-          end_dow = parse_dow_value_raw(end_str)
-          raise HronError.cron("range start must be <= end: #{start_str}-#{end_str}") if start_dow > end_dow
-
-          (start_dow..end_dow).each do |d|
-            normalized = (d == 7) ? 0 : d
-            days << cron_dow_to_weekday(normalized)
-          end
-        else
-          dow = parse_dow_value(part)
-          days << cron_dow_to_weekday(dow)
-        end
+      def minute_of_day(time)
+        time.hour * 60 + time.minute
       end
-
-      if days.length == 5
-        sorted = days.sort_by { |d| Weekday.number(d) }
-        return DayFilterWeekday.new if sorted == Weekday::WEEKDAYS
-      end
-      if days.length == 2
-        sorted = days.sort_by { |d| Weekday.number(d) }
-        return DayFilterWeekend.new if sorted == Weekday::WEEKEND
-      end
-
-      DayFilterDays.new(days)
-    end
-
-    def self.parse_dow_value(s)
-      raw = parse_dow_value_raw(s)
-      # Normalize 7 to 0 (both mean Sunday)
-      (raw == 7) ? 0 : raw
-    end
-
-    def self.parse_dow_value_raw(s)
-      if /^\d+$/.match?(s)
-        n = Integer(s)
-        raise HronError.cron("DOW must be 0-7, got #{n}") if n > 7
-
-        return n
-      end
-      n = DOW_NAME_MAP[s.upcase]
-      raise HronError.cron("invalid DOW: #{s}") unless n
-
-      n
-    end
-
-    def self.cron_dow_to_weekday(n)
-      result = CRON_DOW_MAP[n]
-      raise HronError.cron("invalid DOW number: #{n}") unless result
-
-      result
-    end
-
-    def self.parse_single_value(field, name, min, max)
-      value = begin
-        Integer(field)
-      rescue
-        raise(HronError.cron("invalid #{name} field: #{field}"))
-      end
-      raise HronError.cron("#{name} must be #{min}-#{max}, got #{value}") if value < min || value > max
-
-      value
     end
   end
 end

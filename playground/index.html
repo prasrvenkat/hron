@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>hron — schedules in plain English</title>
-    <meta name="description" content="hron is a scheduling language that does everything cron can — and the things it can't. Human-readable, with multi-week intervals, ordinals, exception dates, and timezones with DST." />
+    <meta name="description" content="hron is a human-readable scheduling language that converts to and from cron, and says what cron can't: multi-week intervals, exception dates, end dates, and timezones with DST." />
     <meta property="og:title" content="hron — schedules in plain English" />
-    <meta property="og:description" content="A scheduling language that's readable and more powerful than cron." />
+    <meta property="og:description" content="A readable scheduling language that converts to and from cron." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://hron.io" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -45,7 +45,7 @@
       <section class="hero">
         <span class="eyebrow">A scheduling language</span>
         <h1>Schedules in <span class="accent">plain English.</span></h1>
-        <p class="hero-sub">hron does everything cron can — and the things it can't. Write the schedule the way you'd say it out loud.</p>
+        <p class="hero-sub">hron converts to and from cron, and says what cron can't. Write the schedule the way you'd say it out loud.</p>
 
         <div class="translator" id="translator">
           <div class="translator-row is-cron">
@@ -99,11 +99,11 @@
               <div class="versus-colhead">hron <span class="badge">readable</span></div>
               <div class="versus-cell">every weekday at 9:00</div>
               <div class="versus-cell">every weekend at 10:00</div>
-              <div class="versus-cell">every 30 min from 09:00 to 17:00 on weekdays</div>
+              <div class="versus-cell">every 30 min from 09:00 to 17:30 on weekdays</div>
               <div class="versus-cell">every month on the 1st, 15th at 9:00</div>
               <div class="versus-cell beyond">every 2 weeks on monday at 9:00</div>
-              <div class="versus-cell beyond">every month on the first monday at 10:00</div>
-              <div class="versus-cell beyond">every year on dec 25 at 00:00</div>
+              <div class="versus-cell beyond">every weekday at 9:00 except dec 25, jan 1</div>
+              <div class="versus-cell beyond">every 3 days at 09:00</div>
             </div>
           </div>
         </div>
@@ -114,7 +114,7 @@
           <div class="section-head">
             <span class="eyebrow">Beyond cron</span>
             <h2>Things the five-field syntax can't say.</h2>
-            <p>hron is a superset. Compose any of these with <code>except</code>, <code>until</code>, <code>starting</code>, <code>during</code>, and a timezone.</p>
+            <p>Compose any of these with <code>except</code>, <code>until</code>, <code>starting</code>, <code>during</code>, and a timezone.</p>
           </div>
           <div class="features-grid">
             <div class="feature">
@@ -124,13 +124,13 @@
             </div>
             <div class="feature">
               <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-              <h3>Ordinal weekdays</h3>
-              <code>every month on the first monday at 10:00</code>
+              <h3>Every few days</h3>
+              <code>every 3 days at 09:00</code>
             </div>
             <div class="feature">
               <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-              <h3>Yearly schedules</h3>
-              <code>every year on dec 25 at 00:00</code>
+              <h3>Start dates</h3>
+              <code>every 2 weeks on monday at 9:00 starting 2026-03-02</code>
             </div>
             <div class="feature">
               <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
