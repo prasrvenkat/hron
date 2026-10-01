@@ -2800,6 +2800,20 @@
           "description": "146097 days from the epoch is 2370-01-01, excepted: next is 2770-01-01",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2770-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exceptions_three_in_a_row_beyond_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 2400-01-01, 2800-01-01, 3200-01-01 starting 2000-01-01 in UTC",
+          "description": "three excepted occurrences in a row: next is 3600",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "3600-01-01T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exceptions_three_in_a_row_beyond_the_horizon_days",
+          "expression": "every 146097 days at 09:00 except 2370-01-01, 2770-01-01, 3170-01-01 in UTC",
+          "description": "three excepted 400-year day steps in a row: next is 3570-01-01",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "3570-01-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -7311,6 +7325,13 @@
           "now": "9990-01-01T00:00:00+00:00[UTC]",
           "expected": "8800-01-01T00:00:00+00:00[UTC]",
           "description": "two excepted occurrences in a row: previous is 8800"
+        },
+        {
+          "name": "iso_exceptions_three_in_a_row_before_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 8800-01-01, 9200-01-01, 9600-01-01 starting 2000-01-01 in UTC",
+          "now": "9990-01-01T00:00:00+00:00[UTC]",
+          "expected": "8400-01-01T00:00:00+00:00[UTC]",
+          "description": "three excepted occurrences in a row: previous is 8400"
         }
       ]
     },
