@@ -18,7 +18,8 @@ module Hron
       new(Hron.parse(input))
     end
 
-    # Parses a 5-field cron expression. Raises HronError if it is invalid.
+    # Converts a 5-field cron expression to a Schedule that fires at the same times. Raises
+    # HronError of kind :cron when it is not valid cron or has no exact hron equivalent.
     def self.from_cron(cron_expr)
       new(Cron.from_cron(cron_expr))
     end
@@ -63,7 +64,8 @@ module Hron
       Evaluator.between(@data, from, to)
     end
 
-    # Converts to a 5-field cron expression. Raises HronError if there is no cron equivalent.
+    # Converts to a 5-field cron expression that fires at the same times, leaving out the
+    # timezone. Raises HronError of kind :cron when no cron does.
     def to_cron
       Cron.to_cron(@data)
     end

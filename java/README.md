@@ -73,7 +73,20 @@ String cron = s.toCron(); // "0 9 * * *"
 // Convert cron to hron
 Schedule s2 = Schedule.fromCron("0 9 * * 1-5");
 System.out.println(s2); // "every weekday at 09:00"
+
+// Partial-day windows, ordinals and yearly dates convert too
+Schedule.parse("every 15 min from 09:00 to 17:45 on weekday").toCron(); // "*/15 9-17 * * 1-5"
+Schedule.parse("every month on the last friday at 16:00").toCron();     // "0 16 * * 5L"
+Schedule.parse("every year on dec 25 at 00:00").toCron();               // "0 0 25 12 *"
 ```
+
+Both directions are exact: the result fires at the same times on the same dates, or the call throws a `HronException` of kind `CRON` whose message says why. This ignores the timezone and DST transitions, where cron schedulers differ.
+
+- `toCron()` fails for `except`, `until` and `starting`; an ISO date; a repeat every `n > 1` days, weeks, months or years; a directional nearest weekday; a `during` that excludes a yearly or named date's month; a schedule built in code with no days or no times; and times that are not every combination of their minutes and hours (`at 09:00, 17:30`).
+- `fromCron()` fails for a cron that restricts both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps).
+- The timezone is not part of the cron: run the cron in the schedule's timezone.
+
+The [spec](../spec/README.md#cron-conversion) has the full rules and every error message.
 
 ### Validation
 

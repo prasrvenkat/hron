@@ -33,7 +33,7 @@ foreach (var occurrence in nextFive)
 // Check if a time matches
 var isMatch = schedule.Matches(new DateTimeOffset(2026, 2, 10, 9, 0, 0, TimeSpan.FromHours(-5)));
 
-// Convert to cron (if possible)
+// Convert to cron; throws a HronException when no cron fires at exactly the same times
 var cron = schedule.ToCron();
 
 // Get canonical string representation
@@ -78,15 +78,33 @@ capitalization. Which names are accepted follows the platform's tz data.
 
 ## Cron Conversion
 
+Conversion is exact in both directions: the result fires at the same times on the same dates, or
+the method throws a `HronException` of kind `ErrorKind.Cron` whose message says why. This ignores
+the timezone and DST transitions, where cron schedulers differ.
+
 ```csharp
 // From hron to cron
 var schedule = Schedule.Parse("every day at 09:00");
 var cron = schedule.ToCron(); // "0 9 * * *"
+Schedule.Parse("every year on dec 25 at 00:00").ToCron(); // "0 0 25 12 *"
+Schedule.Parse("every 15 min from 09:00 to 17:45 on weekday").ToCron(); // "*/15 9-17 * * 1-5"
 
 // From cron to hron
 var schedule2 = Schedule.FromCron("0 9 * * 1-5");
 Console.WriteLine(schedule2); // "every weekday at 09:00"
+Console.WriteLine(Schedule.FromCron("0 16 * * 5L")); // "every month on the last friday at 16:00"
 ```
+
+`ToCron()` throws for `except`, `until` and `starting`; ISO dates; repeats every `n > 1` days,
+weeks, months or years; a directional nearest weekday; a `during` that excludes a yearly or named
+date's month; a schedule built in code with no days or no times; and times that are not every
+combination of their minutes and hours (`at 09:00, 17:30`). The schedule's timezone is not part of
+the cron: run the cron in the schedule's timezone.
+
+`FromCron()` throws for crons that restrict both the day of month and the day of week
+(`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an
+interval can carry (`*/7 * * * *` fires 216 times at uneven gaps). The [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#cron-conversion)
+has the full rules and every error message.
 
 ## Error Handling
 

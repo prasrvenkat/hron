@@ -141,7 +141,7 @@ A fixed time (`at HH:MM`, including single dates) that does not exist because cl
 
 ### Interval slots in a spring-forward gap
 
-Interval slots are `from + k × interval` in wall-clock time, from the `from` time up to and including the `to` time. A slot whose wall time does not exist is skipped, not shifted: on 2026-03-08 in `America/New_York`, `every 45 min from 00:00 to 04:00` fires at 01:30 EST and then 03:00 EDT (02:15 does not exist). Fixed times shift so a daily event is not lost; interval slots skip because the cadence continues.
+Interval slots are `from + k × interval` in wall-clock time, from the `from` time up to and including the `to` time. An interval below 1, which only a schedule built in code can hold, counts as 1 of its unit: `0 hours` steps by an hour. A slot whose wall time does not exist is skipped, not shifted: on 2026-03-08 in `America/New_York`, `every 45 min from 00:00 to 04:00` fires at 01:30 EST and then 03:00 EDT (02:15 does not exist). Fixed times shift so a daily event is not lost; interval slots skip because the cadence continues.
 
 ### DST fall-back (ambiguous times)
 

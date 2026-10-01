@@ -355,8 +355,14 @@ function dailyTimes(expr: ScheduleExpr): DailyTimes {
   return { kind: "fixed", minutes: expr.times.map(minuteOfDay) };
 }
 
-function intervalSlots({ interval, unit, from, to }: IntervalRepeat): number[] {
-  const step = unit === "min" ? interval : interval * MINUTES_PER_HOUR;
+export function intervalSlots({
+  interval,
+  unit,
+  from,
+  to,
+}: IntervalRepeat): number[] {
+  const atLeastOne = Math.max(1, interval);
+  const step = unit === "min" ? atLeastOne : atLeastOne * MINUTES_PER_HOUR;
   const last = minuteOfDay(to);
   const slots: number[] = [];
   for (let minute = minuteOfDay(from); minute <= last; minute += step) {

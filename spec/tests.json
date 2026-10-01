@@ -10377,6 +10377,11 @@
           "name": "twenty_six_on_day_of_month",
           "cron": "0,10 0-12 1 * *",
           "error": "not expressible in hron: 26 times a day are too many to list"
+        },
+        {
+          "name": "shortcut_kelvin_sign_is_not_k",
+          "cron": "@wee\u212aly",
+          "error": "unknown cron shortcut: @wee\u212aly"
         }
       ]
     },

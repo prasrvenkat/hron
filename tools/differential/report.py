@@ -33,11 +33,13 @@ def show(outcome: dict, width: int = 160) -> str:
 
 
 def agreed(outcome: dict) -> dict:
-    """The spec fixes an error's kind, span and suggestion, but each language words its
-    message."""
+    """The spec fixes an error's kind, span and suggestion, and the message of a cron
+    error; each language words its other messages."""
     if outcome["ok"]:
         return outcome
-    return {"ok": False, "error": {key: outcome["error"].get(key) for key in ERROR_FIELDS}}
+    error = outcome["error"]
+    fields = ERROR_FIELDS + ["message"] if error.get("kind") == "cron" else ERROR_FIELDS
+    return {"ok": False, "error": {key: error.get(key) for key in fields}}
 
 
 def split(case_id: str, outcomes: dict[str, dict]) -> list[list[str]]:

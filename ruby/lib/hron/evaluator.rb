@@ -33,6 +33,14 @@ module Hron
     # Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
     NAMED_UNTIL_MAX_YEARS = 8
 
+    # Shared with Cron.to_cron, so conversion never disagrees with evaluation.
+    def self.interval_slots(interval, unit, from, to)
+      # A schedule built in code can carry an interval below 1, which counts as 1 of its unit.
+      interval = [interval, 1].max
+      step = (unit == IntervalUnit::MIN) ? interval : interval * WallClock::MINUTES_PER_HOUR
+      (WallClock.minute_of_day(from)..WallClock.minute_of_day(to)).step(step).to_a
+    end
+
     def self.next_from(schedule, now)
       Search.new(schedule).nearest(now, Direction::FORWARD) if SUPPORTED_RANGE.cover?(now)
     end
@@ -272,10 +280,7 @@ module Hron
       def self.of(expr)
         return Fixed.new(expr.times) unless expr.is_a?(IntervalRepeat)
 
-        step = (expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * WallClock::MINUTES_PER_HOUR
-        first = WallClock.minute_of_day(expr.from_time)
-        last = WallClock.minute_of_day(expr.to_time)
-        Slots.new((first..last).step(step).to_a)
+        Slots.new(Evaluator.interval_slots(expr.interval, expr.unit, expr.from_time, expr.to_time))
       end
     end
 

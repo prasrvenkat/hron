@@ -32,9 +32,11 @@ public final class Schedule {
   }
 
   /**
-   * Converts a 5-field cron expression to a Schedule.
+   * Converts a 5-field cron expression to the Schedule that fires at the same times on the same
+   * dates.
    *
-   * @throws HronException if the cron expression is invalid
+   * @throws HronException of kind {@code CRON} if the cron is invalid or no hron schedule fires as
+   *     it does
    */
   public static Schedule fromCron(String cronExpr) throws HronException {
     ScheduleData data = CronConverter.fromCron(cronExpr);
@@ -105,9 +107,10 @@ public final class Schedule {
   }
 
   /**
-   * Converts this schedule to a 5-field cron expression.
+   * Converts this schedule to a 5-field cron expression that fires at the same times on the same
+   * dates. The timezone is not part of the cron: run it in the schedule's timezone.
    *
-   * @throws HronException if the schedule cannot be expressed as cron
+   * @throws HronException of kind {@code CRON} if no cron expression fires as this schedule does
    */
   public String toCron() throws HronException {
     return CronConverter.toCron(data);

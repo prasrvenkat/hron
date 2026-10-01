@@ -77,9 +77,9 @@ def _checked_fields(section: str) -> set[str]:
         "eval/occurrences": {"expression", "from", "take", "expected"},
         "eval/between": {"expression", "from", "to", "expected", "expected_count"},
         "cron/to_cron": {"hron", "cron"},
-        "cron/to_cron_errors": {"hron"},
+        "cron/to_cron_errors": {"hron", "error"},
         "cron/from_cron": {"cron", "hron"},
-        "cron/from_cron_errors": {"cron"},
+        "cron/from_cron_errors": {"cron", "error"},
         "cron/roundtrip": {"hron"},
         "invariants": {"expression", "now"},
     }.get(section, _NEXT_FIELDS)
@@ -290,16 +290,19 @@ def test_to_cron(name: str, hron: str, cron: str) -> None:
 
 
 _TO_CRON_ERROR_TESTS = [
-    (tc.get("name", tc["hron"]), tc["hron"]) for tc in _spec["cron"]["to_cron_errors"]["tests"]
+    (tc.get("name", tc["hron"]), tc["hron"], tc["error"])
+    for tc in _spec["cron"]["to_cron_errors"]["tests"]
 ]
 _TO_CRON_ERROR_IDS = [t[0] for t in _TO_CRON_ERROR_TESTS]
 
 
-@pytest.mark.parametrize("name,hron", _TO_CRON_ERROR_TESTS, ids=_TO_CRON_ERROR_IDS)
-def test_to_cron_errors(name: str, hron: str) -> None:
+@pytest.mark.parametrize("name,hron,error", _TO_CRON_ERROR_TESTS, ids=_TO_CRON_ERROR_IDS)
+def test_to_cron_errors(name: str, hron: str, error: str) -> None:
     schedule = Schedule.parse(hron)
-    with pytest.raises(HronError):
+    with pytest.raises(HronError) as raised:
         schedule.to_cron()
+    assert raised.value.kind == "cron"
+    assert str(raised.value) == error
 
 
 _FROM_CRON_TESTS = [
@@ -316,15 +319,18 @@ def test_from_cron(name: str, cron: str, hron: str) -> None:
 
 
 _FROM_CRON_ERROR_TESTS = [
-    (tc.get("name", tc["cron"]), tc["cron"]) for tc in _spec["cron"]["from_cron_errors"]["tests"]
+    (tc.get("name", tc["cron"]), tc["cron"], tc["error"])
+    for tc in _spec["cron"]["from_cron_errors"]["tests"]
 ]
 _FROM_CRON_ERROR_IDS = [t[0] for t in _FROM_CRON_ERROR_TESTS]
 
 
-@pytest.mark.parametrize("name,cron", _FROM_CRON_ERROR_TESTS, ids=_FROM_CRON_ERROR_IDS)
-def test_from_cron_errors(name: str, cron: str) -> None:
-    with pytest.raises(HronError):
+@pytest.mark.parametrize("name,cron,error", _FROM_CRON_ERROR_TESTS, ids=_FROM_CRON_ERROR_IDS)
+def test_from_cron_errors(name: str, cron: str, error: str) -> None:
+    with pytest.raises(HronError) as raised:
         Schedule.from_cron(cron)
+    assert raised.value.kind == "cron"
+    assert str(raised.value) == error
 
 
 _ROUNDTRIP_TESTS = [

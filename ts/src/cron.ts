@@ -5,899 +5,733 @@ import type {
   MonthTarget,
   OrdinalPosition,
   ScheduleData,
+  ScheduleExpr,
   TimeOfDay,
   Weekday,
+  YearTarget,
 } from "./ast.js";
 import {
   ALL_WEEKDAYS,
   ALL_WEEKEND,
   cronDowNumber,
+  expandMonthTarget,
   monthNumber,
   newScheduleData,
-  parseMonthName,
-  weekdayNumber,
 } from "./ast.js";
 import { HronError } from "./error.js";
+import { intervalSlots } from "./eval.js";
+import { MINUTES_PER_HOUR, minuteOfDay } from "./wall-clock.js";
 
-export function toCron(schedule: ScheduleData): string {
-  if (schedule.except.length > 0) {
-    throw HronError.cron(
-      "not expressible as cron (except clauses not supported)",
-    );
+const MAX_LISTED_TIMES = 24;
+const BOTH_DAYS_RESTRICTED =
+  "not expressible in hron: cron fires on either the day of month or the day of week";
+const INTERVAL_DAYS =
+  "not expressible in hron: an interval runs only on every day, weekdays, the weekend or listed days";
+const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
+const TRIMMED = " \t\r\n";
+
+// Digit strings may be of any length. Every number at or above this cap is out
+// of every field's range and steps past every range's end, so saturating at it
+// keeps each comparison exact.
+const NUMBER_CAP = 1000;
+
+const MONTHS: readonly MonthName[] = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+];
+const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const WEEKDAYS: readonly Weekday[] = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
+const ORDINALS: readonly OrdinalPosition[] = [
+  "first",
+  "second",
+  "third",
+  "fourth",
+  "fifth",
+];
+
+interface Field {
+  name: string;
+  min: number;
+  max: number;
+  // In the day of week, 7 is Sunday only where written: `*` and `a/n` end at 6.
+  starEnd: number;
+  names: readonly string[];
+}
+
+const MINUTE: Field = {
+  name: "minute",
+  min: 0,
+  max: 59,
+  starEnd: 59,
+  names: [],
+};
+const HOUR: Field = { name: "hour", min: 0, max: 23, starEnd: 23, names: [] };
+const DAY_OF_MONTH: Field = {
+  name: "day of month",
+  min: 1,
+  max: 31,
+  starEnd: 31,
+  names: [],
+};
+const MONTH: Field = {
+  name: "month",
+  min: 1,
+  max: 12,
+  starEnd: 12,
+  names: MONTHS,
+};
+const DAY_OF_WEEK: Field = {
+  name: "day of week",
+  min: 0,
+  max: 7,
+  starEnd: 6,
+  names: DAY_NAMES,
+};
+
+type Bounds =
+  | { type: "star" }
+  | { type: "value"; a: string }
+  | { type: "range"; a: string; b: string };
+
+interface Item {
+  bounds: Bounds;
+  step: string | null;
+}
+
+type MonthDays =
+  | { type: "any" }
+  | { type: "days"; days: number[] }
+  | { type: "last" }
+  | { type: "lastWeekday" }
+  | { type: "nearest"; day: number };
+
+type WeekDays =
+  | { type: "any" }
+  | { type: "days"; days: number[] }
+  | { type: "nth"; weekday: Weekday; n: number }
+  | { type: "last"; weekday: Weekday };
+
+type Days =
+  | { type: "ofWeek"; filter: DayFilter }
+  | { type: "ofMonth"; target: MonthTarget };
+
+export function fromCron(input: string): ScheduleData {
+  const trimmed = trimCron(input);
+  const text = trimmed.startsWith("@") ? shortcut(trimmed) : trimmed;
+  const fields = text.split(/[ \t]/).filter((field) => field !== "");
+  if (fields.length !== 5) {
+    throw HronError.cron(`expected 5 cron fields, got ${fields.length}`);
   }
-  if (schedule.until) {
-    throw HronError.cron(
-      "not expressible as cron (until clauses not supported)",
-    );
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
+
+  const minutes = sorted(values(minute, MINUTE));
+  const hours = sorted(values(hour, HOUR));
+  const monthDays = parseDayOfMonth(dayOfMonth);
+  const months = sorted(values(month, MONTH));
+  const weekDays = parseDayOfWeek(dayOfWeek);
+  const days = dayExpression(monthDays, weekDays);
+  const times: TimeOfDay[] = hours.flatMap((hour) =>
+    minutes.map((minute) => ({ hour, minute })),
+  );
+
+  const gap = equalGap(times);
+  let expr: ScheduleExpr;
+  if (days.type === "ofWeek" && gap !== null) {
+    expr = interval(times, gap, days.filter);
+  } else if (times.length > MAX_LISTED_TIMES) {
+    throw tooManyTimes(times.length, gap);
+  } else {
+    const target = yearTarget(days, months);
+    if (target !== null) {
+      expr = { type: "yearRepeat", interval: 1, target, times };
+    } else if (days.type === "ofWeek") {
+      expr = { type: "dayRepeat", interval: 1, days: days.filter, times };
+    } else {
+      expr = { type: "monthRepeat", interval: 1, target: days.target, times };
+    }
   }
-  if (schedule.during.length > 0) {
-    throw HronError.cron(
-      "not expressible as cron (during clauses not supported)",
-    );
+  const schedule = newScheduleData(expr);
+  if (expr.type !== "yearRepeat" && months.length < MONTHS.length) {
+    schedule.during = months.map((m) => MONTHS[m - 1]);
   }
+  return schedule;
+}
 
-  const expr = schedule.expr;
+// Exactly the characters the spec trims; String.prototype.trim also strips
+// Unicode spaces such as NBSP.
+function trimCron(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && TRIMMED.includes(text[start])) start++;
+  while (end > start && TRIMMED.includes(text[end - 1])) end--;
+  return text.slice(start, end);
+}
 
-  switch (expr.type) {
-    case "dayRepeat": {
-      if (expr.interval > 1) {
-        throw HronError.cron(
-          "not expressible as cron (multi-day intervals not supported)",
-        );
-      }
-      if (expr.times.length !== 1) {
-        throw HronError.cron(
-          "not expressible as cron (multiple times not supported)",
-        );
-      }
-      const time = expr.times[0];
-      const dow = dayFilterToCronDow(expr.days);
-      return `${time.minute} ${time.hour} * * ${dow}`;
-    }
-
-    case "intervalRepeat": {
-      const fullDay =
-        expr.from.hour === 0 &&
-        expr.from.minute === 0 &&
-        expr.to.hour === 23 &&
-        expr.to.minute === 59;
-      if (!fullDay) {
-        throw HronError.cron(
-          "not expressible as cron (partial-day interval windows not supported)",
-        );
-      }
-      if (expr.dayFilter) {
-        throw HronError.cron(
-          "not expressible as cron (interval with day filter not supported)",
-        );
-      }
-
-      if (expr.unit === "min") {
-        if (60 % expr.interval !== 0) {
-          throw HronError.cron(
-            `not expressible as cron (*/${expr.interval} breaks at hour boundaries)`,
-          );
-        }
-        return `*/${expr.interval} * * * *`;
-      }
-      return `0 */${expr.interval} * * *`;
-    }
-
-    case "weekRepeat":
-      throw HronError.cron(
-        "not expressible as cron (multi-week intervals not supported)",
-      );
-
-    case "monthRepeat": {
-      if (expr.interval > 1) {
-        throw HronError.cron(
-          "not expressible as cron (multi-month intervals not supported)",
-        );
-      }
-      if (expr.times.length !== 1) {
-        throw HronError.cron(
-          "not expressible as cron (multiple times not supported)",
-        );
-      }
-      const time = expr.times[0];
-      const { target } = expr;
-      if (target.type === "days") {
-        const expanded = target.specs.flatMap((s) => {
-          if (s.type === "single") return [s.day];
-          const r: number[] = [];
-          for (let d = s.start; d <= s.end; d++) r.push(d);
-          return r;
-        });
-        const dom = expanded.join(",");
-        return `${time.minute} ${time.hour} ${dom} * *`;
-      }
-      if (target.type === "lastDay") {
-        throw HronError.cron(
-          "not expressible as cron (last day of month not supported)",
-        );
-      }
-      if (target.type === "lastWeekday") {
-        throw HronError.cron(
-          "not expressible as cron (last weekday of month not supported)",
-        );
-      }
-      if (target.type === "ordinalWeekday") {
-        throw HronError.cron(
-          "not expressible as cron (ordinal weekday of month not supported)",
-        );
-      }
-      if (target.direction !== null) {
-        throw HronError.cron(
-          "not expressible as cron (directional nearest weekday not supported)",
-        );
-      }
-      return `${time.minute} ${time.hour} ${target.day}W * *`;
-    }
-
-    case "singleDate":
-      throw HronError.cron(
-        "not expressible as cron (single dates are not repeating)",
-      );
-
-    case "yearRepeat":
-      throw HronError.cron(
-        "not expressible as cron (yearly schedules not supported in 5-field cron)",
-      );
+function shortcut(input: string): string {
+  switch (asciiLowercase(input)) {
+    case "@yearly":
+    case "@annually":
+      return "0 0 1 1 *";
+    case "@monthly":
+      return "0 0 1 * *";
+    case "@weekly":
+      return "0 0 * * 0";
+    case "@daily":
+    case "@midnight":
+      return "0 0 * * *";
+    case "@hourly":
+      return "0 * * * *";
+    default:
+      throw HronError.cron(`unknown cron shortcut: ${input}`);
   }
 }
 
-function dayFilterToCronDow(filter: DayFilter): string {
+function parseDayOfMonth(text: string): MonthDays {
+  if (text === "*" || text === "?") {
+    return { type: "any" };
+  }
+  if (equalsIgnoringAsciiCase(text, "L")) {
+    return { type: "last" };
+  }
+  if (equalsIgnoringAsciiCase(text, "LW")) {
+    return { type: "lastWeekday" };
+  }
+  const day = text.slice(0, -1);
+  if ((text.endsWith("W") || text.endsWith("w")) && isNumber(day)) {
+    return { type: "nearest", day: fieldValue(day, DAY_OF_MONTH) };
+  }
+  return { type: "days", days: values(text, DAY_OF_MONTH) };
+}
+
+function parseDayOfWeek(text: string): WeekDays {
+  const field = DAY_OF_WEEK;
+  if (text === "*" || text === "?") {
+    return { type: "any" };
+  }
+  const hash = text.indexOf("#");
+  if (hash >= 0) {
+    const day = text.slice(0, hash);
+    const nth = text.slice(hash + 1);
+    if (isValue(day, field) && isNumber(nth)) {
+      const weekday = WEEKDAYS[fieldValue(day, field) % 7];
+      const n = number(nth);
+      if (n < 1 || n > 5) {
+        throw HronError.cron(`day of week ordinal must be 1-5, got ${nth}`);
+      }
+      return { type: "nth", weekday, n };
+    }
+  }
+  const day = text.slice(0, -1);
+  if ((text.endsWith("L") || text.endsWith("l")) && isValue(day, field)) {
+    return { type: "last", weekday: WEEKDAYS[fieldValue(day, field) % 7] };
+  }
+  return { type: "days", days: values(text, field) };
+}
+
+// Keeps the order of first appearance, in which fromCron lists days of the week.
+function values(text: string, field: Field): number[] {
+  const parsed = items(text, field);
+  if (parsed === null) {
+    throw HronError.cron(`invalid ${field.name}: ${text}`);
+  }
+  const values: number[] = [];
+  for (const item of parsed) {
+    let first: number;
+    let last: number;
+    const { bounds } = item;
+    if (bounds.type === "star") {
+      first = field.min;
+      last = field.starEnd;
+    } else if (bounds.type === "value") {
+      first = fieldValue(bounds.a, field);
+      // `7/n` starts past the end of `*`, so it is Sunday alone.
+      last = item.step === null ? first : Math.max(first, field.starEnd);
+    } else {
+      first = fieldValue(bounds.a, field);
+      last = fieldValue(bounds.b, field);
+      if (first > last) {
+        throw HronError.cron(
+          `${field.name} range must not run backwards: ${bounds.a}-${bounds.b}`,
+        );
+      }
+    }
+    const step = item.step === null ? 1 : number(item.step);
+    if (step === 0) {
+      throw HronError.cron(`${field.name} step must be at least 1`);
+    }
+    for (let n = first; n <= last; n += step) {
+      const value = field === DAY_OF_WEEK ? n % 7 : n;
+      if (!values.includes(value)) {
+        values.push(value);
+      }
+    }
+  }
+  return values;
+}
+
+function items(text: string, field: Field): Item[] | null {
+  const parsed: Item[] = [];
+  for (const item of text.split(",")) {
+    const slash = item.indexOf("/");
+    const range = slash < 0 ? item : item.slice(0, slash);
+    const step = slash < 0 ? null : item.slice(slash + 1);
+    const dash = range.indexOf("-");
+    let bounds: Bounds;
+    if (range === "*") {
+      bounds = { type: "star" };
+    } else if (dash >= 0) {
+      bounds = {
+        type: "range",
+        a: range.slice(0, dash),
+        b: range.slice(dash + 1),
+      };
+    } else {
+      bounds = { type: "value", a: range };
+    }
+    const valid =
+      (step === null || isNumber(step)) &&
+      (bounds.type === "star" ||
+        (bounds.type === "value" && isValue(bounds.a, field)) ||
+        (bounds.type === "range" &&
+          isValue(bounds.a, field) &&
+          isValue(bounds.b, field)));
+    if (!valid) {
+      return null;
+    }
+    parsed.push({ bounds, step });
+  }
+  return parsed;
+}
+
+function isNumber(text: string): boolean {
+  return /^[0-9]+$/.test(text);
+}
+
+function isValue(text: string, field: Field): boolean {
+  return isNumber(text) || nameValue(text, field) !== null;
+}
+
+function nameValue(text: string, field: Field): number | null {
+  const index = field.names.findIndex((name) =>
+    equalsIgnoringAsciiCase(name, text),
+  );
+  return index < 0 ? null : index + field.min;
+}
+
+// Never parseInt or Number: they accept signs, whitespace and exponents, and
+// lose precision past 2^53.
+function number(digits: string): number {
+  let n = 0;
+  for (let i = 0; i < digits.length; i++) {
+    n = Math.min(n * 10 + digits.charCodeAt(i) - 48, NUMBER_CAP);
+  }
+  return n;
+}
+
+function fieldValue(text: string, field: Field): number {
+  const value = nameValue(text, field) ?? number(text);
+  if (value < field.min || value > field.max) {
+    throw HronError.cron(
+      `${field.name} must be ${field.min}-${field.max}, got ${text}`,
+    );
+  }
+  return value;
+}
+
+// toLowerCase would also fold non-ASCII letters, so `ſ` (U+017F) or `K`
+// (U+212A) could match an ASCII name.
+function asciiLowercase(text: string): string {
+  return text.replace(/[A-Z]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) + 32),
+  );
+}
+
+function equalsIgnoringAsciiCase(a: string, b: string): boolean {
+  return a.length === b.length && asciiLowercase(a) === asciiLowercase(b);
+}
+
+function dayExpression(monthDays: MonthDays, weekDays: WeekDays): Days {
+  if (monthDays.type === "any") {
+    switch (weekDays.type) {
+      case "any":
+        return { type: "ofWeek", filter: { type: "every" } };
+      case "days":
+        return { type: "ofWeek", filter: weekdayFilter(weekDays.days) };
+      case "nth":
+        return {
+          type: "ofMonth",
+          target: {
+            type: "ordinalWeekday",
+            ordinal: ORDINALS[weekDays.n - 1],
+            weekday: weekDays.weekday,
+          },
+        };
+      case "last":
+        return {
+          type: "ofMonth",
+          target: {
+            type: "ordinalWeekday",
+            ordinal: "last",
+            weekday: weekDays.weekday,
+          },
+        };
+    }
+  }
+  if (weekDays.type !== "any") {
+    throw HronError.cron(BOTH_DAYS_RESTRICTED);
+  }
+  switch (monthDays.type) {
+    case "days": {
+      if (monthDays.days.length === 31) {
+        return { type: "ofWeek", filter: { type: "every" } };
+      }
+      const specs = runs(sorted(monthDays.days)).map(
+        ([first, last]): DayOfMonthSpec =>
+          first === last
+            ? { type: "single", day: first }
+            : { type: "range", start: first, end: last },
+      );
+      return { type: "ofMonth", target: { type: "days", specs } };
+    }
+    case "last":
+      return { type: "ofMonth", target: { type: "lastDay" } };
+    case "lastWeekday":
+      return { type: "ofMonth", target: { type: "lastWeekday" } };
+    case "nearest":
+      return {
+        type: "ofMonth",
+        target: { type: "nearestWeekday", day: monthDays.day, direction: null },
+      };
+  }
+}
+
+function weekdayFilter(days: number[]): DayFilter {
+  switch (sorted(days).join(",")) {
+    case "0,1,2,3,4,5,6":
+      return { type: "every" };
+    case "1,2,3,4,5":
+      return { type: "weekday" };
+    case "0,6":
+      return { type: "weekend" };
+    default:
+      return { type: "days", days: days.map((d) => WEEKDAYS[d]) };
+  }
+}
+
+function equalGap(times: TimeOfDay[]): number | null {
+  const minutes = times.map(minuteOfDay);
+  if (minutes.length < 2) {
+    return null;
+  }
+  const gap = minutes[1] - minutes[0];
+  const equal =
+    minutes.length >= 3 &&
+    minutes.every((minute, i) => i === 0 || minute - minutes[i - 1] === gap);
+  return equal ? gap : null;
+}
+
+function interval(
+  times: TimeOfDay[],
+  gap: number,
+  days: DayFilter,
+): ScheduleExpr {
+  const from = times[0];
+  const last = times[times.length - 1];
+  const fromMidnight = from.hour === 0 && from.minute === 0;
+  const to =
+    fromMidnight && minuteOfDay(last) + gap >= MINUTES_PER_DAY
+      ? { hour: 23, minute: 59 }
+      : last;
+  const hours = gap % MINUTES_PER_HOUR === 0;
+  return {
+    type: "intervalRepeat",
+    interval: hours ? gap / MINUTES_PER_HOUR : gap,
+    unit: hours ? "hours" : "min",
+    from,
+    to,
+    dayFilter: days.type === "every" ? null : days,
+  };
+}
+
+function tooManyTimes(count: number, gap: number | null): HronError {
+  if (gap !== null) {
+    return HronError.cron(INTERVAL_DAYS);
+  }
+  return HronError.cron(
+    `not expressible in hron: ${count} times a day are too many to list`,
+  );
+}
+
+function yearTarget(days: Days, months: number[]): YearTarget | null {
+  if (days.type !== "ofMonth" || months.length !== 1) {
+    return null;
+  }
+  const { target } = days;
+  const month = MONTHS[months[0] - 1];
+  switch (target.type) {
+    case "days": {
+      const [spec] = target.specs;
+      if (
+        target.specs.length === 1 &&
+        spec.type === "single" &&
+        spec.day <= maxDay(month)
+      ) {
+        return { type: "date", month, day: spec.day };
+      }
+      return null;
+    }
+    case "lastWeekday":
+      return { type: "lastWeekday", month };
+    case "ordinalWeekday":
+      return {
+        type: "ordinalWeekday",
+        ordinal: target.ordinal,
+        weekday: target.weekday,
+        month,
+      };
+    default:
+      return null;
+  }
+}
+
+function maxDay(month: MonthName): number {
+  switch (month) {
+    case "feb":
+      return 29;
+    case "apr":
+    case "jun":
+    case "sep":
+    case "nov":
+      return 30;
+    default:
+      return 31;
+  }
+}
+
+export function toCron(schedule: ScheduleData): string {
+  if (schedule.except.length > 0) {
+    throw notExpressible("except clauses not supported");
+  }
+  if (schedule.until) {
+    throw notExpressible("until clauses not supported");
+  }
+  if (schedule.anchor) {
+    throw notExpressible("starting clauses not supported");
+  }
+  const [dayOfMonth, dayOfWeek] = dayFields(schedule.expr);
+  // ScheduleData built in code can hold an empty day list, which writes an empty field.
+  if (dayOfMonth === "" || dayOfWeek === "") {
+    throw notExpressible("schedule has no days");
+  }
+  const month = monthField(schedule);
+  const [minute, hour] = timeFields(schedule.expr);
+  return `${minute} ${hour} ${dayOfMonth} ${month} ${dayOfWeek}`;
+}
+
+function notExpressible(reason: string): HronError {
+  return HronError.cron(`not expressible as cron: ${reason}`);
+}
+
+function repeatsOnce(interval: number, unit: string): void {
+  if (interval > 1) {
+    throw notExpressible(`multi-${unit} repeats not supported`);
+  }
+}
+
+function dayFields(expr: ScheduleExpr): [string, string] {
+  switch (expr.type) {
+    case "intervalRepeat":
+      return ["*", expr.dayFilter === null ? "*" : filterField(expr.dayFilter)];
+    case "dayRepeat":
+      repeatsOnce(expr.interval, "day");
+      return ["*", filterField(expr.days)];
+    case "weekRepeat":
+      repeatsOnce(expr.interval, "week");
+      return ["*", weekdaysField(expr.days)];
+    case "monthRepeat": {
+      repeatsOnce(expr.interval, "month");
+      const { target } = expr;
+      switch (target.type) {
+        case "days":
+          return [listField(sortedUnique(expandMonthTarget(target)), 31), "*"];
+        case "lastDay":
+          return ["L", "*"];
+        case "lastWeekday":
+          return ["LW", "*"];
+        case "nearestWeekday":
+          if (target.direction !== null) {
+            throw notExpressible("directional nearest weekday not supported");
+          }
+          return [`${target.day}W`, "*"];
+        case "ordinalWeekday":
+          return ["*", ordinalField(target.ordinal, target.weekday)];
+      }
+      break;
+    }
+    case "yearRepeat": {
+      repeatsOnce(expr.interval, "year");
+      const { target } = expr;
+      switch (target.type) {
+        case "date":
+        case "dayOfMonth":
+          return [String(target.day), "*"];
+        case "ordinalWeekday":
+          return ["*", ordinalField(target.ordinal, target.weekday)];
+        case "lastWeekday":
+          return ["LW", "*"];
+      }
+      break;
+    }
+    case "singleDate":
+      if (expr.date.type === "iso") {
+        throw notExpressible("ISO dates do not repeat");
+      }
+      return [String(expr.date.day), "*"];
+  }
+}
+
+function monthField(schedule: ScheduleData): string {
+  const { during } = schedule;
+  const month = ownMonth(schedule.expr);
+  if (month !== null) {
+    if (during.length > 0 && !during.includes(month)) {
+      throw notExpressible("during excludes the schedule's month");
+    }
+    return String(monthNumber(month));
+  }
+  if (during.length === 0) {
+    return "*";
+  }
+  return listField(sortedUnique(during.map(monthNumber)), 12);
+}
+
+function ownMonth(expr: ScheduleExpr): MonthName | null {
+  if (expr.type === "yearRepeat") {
+    return expr.target.month;
+  }
+  if (expr.type === "singleDate" && expr.date.type === "named") {
+    return expr.date.month;
+  }
+  return null;
+}
+
+function timeFields(expr: ScheduleExpr): [string, string] {
+  const times = dailyTimes(expr);
+  const minutes = sortedUnique(times.map((t) => t % MINUTES_PER_HOUR));
+  const hours = sortedUnique(
+    times.map((t) => Math.floor(t / MINUTES_PER_HOUR)),
+  );
+  // ScheduleData built in code can hold no times, which no cron writes.
+  if (times.length === 0) {
+    throw notExpressible("schedule has no times");
+  }
+  if (minutes.length * hours.length !== times.length) {
+    throw notExpressible(
+      "times are not every combination of their minutes and hours",
+    );
+  }
+  return [stepField(minutes, 60), stepField(hours, 24)];
+}
+
+function dailyTimes(expr: ScheduleExpr): number[] {
+  if (expr.type === "intervalRepeat") {
+    return sortedUnique(intervalSlots(expr));
+  }
+  return sortedUnique(expr.times.map(minuteOfDay));
+}
+
+function filterField(filter: DayFilter): string {
   switch (filter.type) {
     case "every":
       return "*";
     case "weekday":
-      return "1-5";
+      return weekdaysField(ALL_WEEKDAYS);
     case "weekend":
-      return "0,6";
-    case "days": {
-      const nums = filter.days.map((d) => cronDowNumber(d));
-      nums.sort((a, b) => a - b);
-      return nums.join(",");
-    }
+      return weekdaysField(ALL_WEEKEND);
+    case "days":
+      return weekdaysField(filter.days);
   }
 }
 
-export function fromCron(cron: string): ScheduleData {
-  const trimmed = cron.trim();
-
-  if (trimmed.startsWith("@")) {
-    return parseCronShortcut(trimmed);
-  }
-
-  const fields = trimmed.split(/\s+/);
-  if (fields.length !== 5) {
-    throw HronError.cron(`expected 5 cron fields, got ${fields.length}`);
-  }
-
-  const [minuteField, hourField, domFieldRaw, monthField, dowFieldRaw] = fields;
-
-  const domField = domFieldRaw === "?" ? "*" : domFieldRaw;
-  const dowField = dowFieldRaw === "?" ? "*" : dowFieldRaw;
-
-  const during = parseMonthField(monthField);
-
-  const nthWeekdayResult = tryParseNthWeekday(
-    minuteField,
-    hourField,
-    domField,
-    dowField,
-    during,
-  );
-  if (nthWeekdayResult) return nthWeekdayResult;
-
-  const lastDayResult = tryParseLastDay(
-    minuteField,
-    hourField,
-    domField,
-    dowField,
-    during,
-  );
-  if (lastDayResult) return lastDayResult;
-
-  if (domField.endsWith("W") && domField !== "LW") {
-    const nearestWeekdayResult = tryParseNearestWeekday(
-      minuteField,
-      hourField,
-      domField,
-      dowField,
-      during,
-    );
-    if (nearestWeekdayResult) return nearestWeekdayResult;
-  }
-
-  const intervalResult = tryParseInterval(
-    minuteField,
-    hourField,
-    domField,
-    dowField,
-    during,
-  );
-  if (intervalResult) return intervalResult;
-
-  const minute = parseSingleValue(minuteField, "minute", 0, 59);
-  const hour = parseSingleValue(hourField, "hour", 0, 23);
-  const time: TimeOfDay = { hour, minute };
-
-  if (domField !== "*" && dowField === "*") {
-    const target = parseDomField(domField);
-    const schedule = newScheduleData({
-      type: "monthRepeat",
-      interval: 1,
-      target,
-      times: [time],
-    });
-    schedule.during = during;
-    return schedule;
-  }
-
-  const days = parseCronDow(dowField);
-  const schedule = newScheduleData({
-    type: "dayRepeat",
-    interval: 1,
-    days,
-    times: [time],
-  });
-  schedule.during = during;
-  return schedule;
+function weekdaysField(days: Weekday[]): string {
+  return listField(sortedUnique(days.map(cronDowNumber)), 7);
 }
 
-function parseCronShortcut(cron: string): ScheduleData {
-  switch (cron.toLowerCase()) {
-    case "@yearly":
-    case "@annually":
-      return newScheduleData({
-        type: "yearRepeat",
-        interval: 1,
-        target: { type: "date", month: "jan", day: 1 },
-        times: [{ hour: 0, minute: 0 }],
-      });
-    case "@monthly":
-      return newScheduleData({
-        type: "monthRepeat",
-        interval: 1,
-        target: { type: "days", specs: [{ type: "single", day: 1 }] },
-        times: [{ hour: 0, minute: 0 }],
-      });
-    case "@weekly":
-      return newScheduleData({
-        type: "dayRepeat",
-        interval: 1,
-        days: { type: "days", days: ["sunday"] },
-        times: [{ hour: 0, minute: 0 }],
-      });
-    case "@daily":
-    case "@midnight":
-      return newScheduleData({
-        type: "dayRepeat",
-        interval: 1,
-        days: { type: "every" },
-        times: [{ hour: 0, minute: 0 }],
-      });
-    case "@hourly":
-      return newScheduleData({
-        type: "intervalRepeat",
-        interval: 1,
-        unit: "hours",
-        from: { hour: 0, minute: 0 },
-        to: { hour: 23, minute: 59 },
-        dayFilter: null,
-      });
-    default:
-      throw HronError.cron(`unknown @ shortcut: ${cron}`);
-  }
+function ordinalField(ordinal: OrdinalPosition, weekday: Weekday): string {
+  const day = cronDowNumber(weekday);
+  const index = ORDINALS.indexOf(ordinal);
+  return index < 0 ? `${day}L` : `${day}#${index + 1}`;
 }
 
-function parseMonthField(field: string): MonthName[] {
-  if (field === "*") return [];
+function stepField(values: number[], size: number): string {
+  const first = values[0];
+  const last = values[values.length - 1];
+  const gap = values.length > 1 ? values[1] - first : null;
+  const equalGaps =
+    gap !== null &&
+    values.every((value, i) => i === 0 || value - values[i - 1] === gap);
+  if (values.length === size) {
+    return "*";
+  }
+  if (gap === null) {
+    return String(first);
+  }
+  if (equalGaps && first === 0 && last + gap === size) {
+    return `*/${gap}`;
+  }
+  if (equalGaps && gap === 1) {
+    return `${first}-${last}`;
+  }
+  if (equalGaps && values.length >= 3) {
+    return `${first}-${last}/${gap}`;
+  }
+  return listField(values, size);
+}
 
-  const months: MonthName[] = [];
+function listField(values: number[], size: number): string {
+  if (values.length === size) {
+    return "*";
+  }
+  return runs(values)
+    .map(([first, last]) => (first === last ? `${first}` : `${first}-${last}`))
+    .join(",");
+}
 
-  for (const part of field.split(",")) {
-    // Before the range check: a stepped range like `1-12/3` also contains `-`.
-    if (part.includes("/")) {
-      const [rangePart, stepStr] = part.split("/");
-      let start: number, end: number;
-
-      if (rangePart === "*") {
-        start = 1;
-        end = 12;
-      } else if (rangePart.includes("-")) {
-        const [s, e] = rangePart.split("-");
-        start = monthNumber(parseMonthValue(s));
-        end = monthNumber(parseMonthValue(e));
-      } else {
-        throw HronError.cron(`invalid month step expression: ${part}`);
-      }
-
-      const step = parseInt(stepStr, 10);
-      if (Number.isNaN(step)) {
-        throw HronError.cron(`invalid month step value: ${stepStr}`);
-      }
-      if (step === 0) {
-        throw HronError.cron("step cannot be 0");
-      }
-
-      for (let n = start; n <= end; n += step) {
-        months.push(monthFromNumber(n));
-      }
-    } else if (part.includes("-")) {
-      const [startStr, endStr] = part.split("-");
-      const startMonth = parseMonthValue(startStr);
-      const endMonth = parseMonthValue(endStr);
-      const startNum = monthNumber(startMonth);
-      const endNum = monthNumber(endMonth);
-
-      if (startNum > endNum) {
-        throw HronError.cron(`invalid month range: ${startStr} > ${endStr}`);
-      }
-
-      for (let n = startNum; n <= endNum; n++) {
-        months.push(monthFromNumber(n));
-      }
+function runs(sortedValues: number[]): [number, number][] {
+  const runs: [number, number][] = [];
+  for (const value of sortedValues) {
+    const run = runs[runs.length - 1];
+    if (run !== undefined && run[1] + 1 === value) {
+      run[1] = value;
     } else {
-      months.push(parseMonthValue(part));
+      runs.push([value, value]);
     }
   }
-
-  return months;
+  return runs;
 }
 
-function parseMonthValue(s: string): MonthName {
-  const n = parseInt(s, 10);
-  if (!Number.isNaN(n)) {
-    return monthFromNumber(n);
-  }
-  const name = parseMonthName(s);
-  if (!name) {
-    throw HronError.cron(`invalid month: ${s}`);
-  }
-  return name;
+function sorted(values: number[]): number[] {
+  return [...values].sort((a, b) => a - b);
 }
 
-function monthFromNumber(n: number): MonthName {
-  const map: Record<number, MonthName> = {
-    1: "jan",
-    2: "feb",
-    3: "mar",
-    4: "apr",
-    5: "may",
-    6: "jun",
-    7: "jul",
-    8: "aug",
-    9: "sep",
-    10: "oct",
-    11: "nov",
-    12: "dec",
-  };
-  const result = map[n];
-  if (!result) {
-    throw HronError.cron(`invalid month number: ${n}`);
-  }
-  return result;
-}
-
-function tryParseNthWeekday(
-  minuteField: string,
-  hourField: string,
-  domField: string,
-  dowField: string,
-  during: MonthName[],
-): ScheduleData | null {
-  if (dowField.includes("#")) {
-    const [dowStr, nthStr] = dowField.split("#");
-    const dowNum = parseDowValue(dowStr);
-    const weekday = cronDowToWeekday(dowNum);
-    const nth = parseInt(nthStr, 10);
-
-    if (Number.isNaN(nth) || nth < 1 || nth > 5) {
-      throw HronError.cron(`nth must be 1-5, got ${nthStr}`);
-    }
-
-    if (domField !== "*" && domField !== "?") {
-      throw HronError.cron("DOM must be * when using # for nth weekday");
-    }
-
-    const minute = parseSingleValue(minuteField, "minute", 0, 59);
-    const hour = parseSingleValue(hourField, "hour", 0, 23);
-
-    const ordinalMap: Record<number, OrdinalPosition> = {
-      1: "first",
-      2: "second",
-      3: "third",
-      4: "fourth",
-      5: "fifth",
-    };
-
-    const schedule = newScheduleData({
-      type: "monthRepeat",
-      interval: 1,
-      target: { type: "ordinalWeekday", ordinal: ordinalMap[nth], weekday },
-      times: [{ hour, minute }],
-    });
-    schedule.during = during;
-    return schedule;
-  }
-
-  if (dowField.endsWith("L") && dowField.length > 1) {
-    const dowStr = dowField.slice(0, -1);
-    const dowNum = parseDowValue(dowStr);
-    const weekday = cronDowToWeekday(dowNum);
-
-    if (domField !== "*" && domField !== "?") {
-      throw HronError.cron("DOM must be * when using nL for last weekday");
-    }
-
-    const minute = parseSingleValue(minuteField, "minute", 0, 59);
-    const hour = parseSingleValue(hourField, "hour", 0, 23);
-
-    const schedule = newScheduleData({
-      type: "monthRepeat",
-      interval: 1,
-      target: { type: "ordinalWeekday", ordinal: "last", weekday },
-      times: [{ hour, minute }],
-    });
-    schedule.during = during;
-    return schedule;
-  }
-
-  return null;
-}
-
-function tryParseLastDay(
-  minuteField: string,
-  hourField: string,
-  domField: string,
-  dowField: string,
-  during: MonthName[],
-): ScheduleData | null {
-  if (domField !== "L" && domField !== "LW") {
-    return null;
-  }
-
-  if (dowField !== "*" && dowField !== "?") {
-    throw HronError.cron("DOW must be * when using L or LW in DOM");
-  }
-
-  const minute = parseSingleValue(minuteField, "minute", 0, 59);
-  const hour = parseSingleValue(hourField, "hour", 0, 23);
-
-  const target: MonthTarget =
-    domField === "LW" ? { type: "lastWeekday" } : { type: "lastDay" };
-
-  const schedule = newScheduleData({
-    type: "monthRepeat",
-    interval: 1,
-    target,
-    times: [{ hour, minute }],
-  });
-  schedule.during = during;
-  return schedule;
-}
-
-function tryParseNearestWeekday(
-  minuteField: string,
-  hourField: string,
-  domField: string,
-  dowField: string,
-  during: MonthName[],
-): ScheduleData | null {
-  if (!domField.endsWith("W") || domField === "LW") {
-    return null;
-  }
-
-  if (dowField !== "*" && dowField !== "?") {
-    throw HronError.cron("DOW must be * when using W in DOM");
-  }
-
-  const dayStr = domField.slice(0, -1);
-  const day = parseInt(dayStr, 10);
-
-  if (Number.isNaN(day)) {
-    throw HronError.cron(`invalid W day: ${dayStr}`);
-  }
-
-  if (day < 1 || day > 31) {
-    throw HronError.cron(`W day must be 1-31, got ${day}`);
-  }
-
-  const minute = parseSingleValue(minuteField, "minute", 0, 59);
-  const hour = parseSingleValue(hourField, "hour", 0, 23);
-
-  const target: MonthTarget = {
-    type: "nearestWeekday",
-    day,
-    direction: null,
-  };
-
-  const schedule = newScheduleData({
-    type: "monthRepeat",
-    interval: 1,
-    target,
-    times: [{ hour, minute }],
-  });
-  schedule.during = during;
-  return schedule;
-}
-
-function tryParseInterval(
-  minuteField: string,
-  hourField: string,
-  domField: string,
-  dowField: string,
-  during: MonthName[],
-): ScheduleData | null {
-  if (minuteField.includes("/")) {
-    const [rangePart, stepStr] = minuteField.split("/");
-    const interval = parseInt(stepStr, 10);
-
-    if (Number.isNaN(interval)) {
-      throw HronError.cron("invalid minute interval value");
-    }
-    if (interval === 0) {
-      throw HronError.cron("step cannot be 0");
-    }
-
-    let fromMinute: number, toMinute: number;
-    if (rangePart === "*") {
-      fromMinute = 0;
-      toMinute = 59;
-    } else if (rangePart.includes("-")) {
-      const [s, e] = rangePart.split("-");
-      fromMinute = parseInt(s, 10);
-      toMinute = parseInt(e, 10);
-      if (Number.isNaN(fromMinute) || Number.isNaN(toMinute)) {
-        throw HronError.cron("invalid minute range");
-      }
-      if (fromMinute > toMinute) {
-        throw HronError.cron(
-          `range start must be <= end: ${fromMinute}-${toMinute}`,
-        );
-      }
-    } else {
-      fromMinute = parseInt(rangePart, 10);
-      if (Number.isNaN(fromMinute)) {
-        throw HronError.cron("invalid minute value");
-      }
-      toMinute = 59;
-    }
-
-    let fromHour: number, toHour: number;
-    if (hourField === "*") {
-      fromHour = 0;
-      toHour = 23;
-    } else if (hourField.includes("-") && !hourField.includes("/")) {
-      const [s, e] = hourField.split("-");
-      fromHour = parseInt(s, 10);
-      toHour = parseInt(e, 10);
-      if (Number.isNaN(fromHour) || Number.isNaN(toHour)) {
-        throw HronError.cron("invalid hour range");
-      }
-    } else if (hourField.includes("/")) {
-      // A step in both the minute and hour fields is not supported.
-      return null;
-    } else {
-      const h = parseInt(hourField, 10);
-      if (Number.isNaN(h)) {
-        throw HronError.cron("invalid hour");
-      }
-      fromHour = h;
-      toHour = h;
-    }
-
-    const dayFilter = dowField === "*" ? null : parseCronDow(dowField);
-
-    if (domField === "*" || domField === "?") {
-      let endMinute: number;
-      if (fromMinute === 0 && toMinute === 59 && toHour === 23) {
-        endMinute = 59;
-      } else if (fromMinute === 0 && toMinute === 59) {
-        // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
-        endMinute = 0;
-      } else {
-        endMinute = toMinute;
-      }
-
-      const schedule = newScheduleData({
-        type: "intervalRepeat",
-        interval,
-        unit: "min",
-        from: { hour: fromHour, minute: fromMinute },
-        to: { hour: toHour, minute: endMinute },
-        dayFilter,
-      });
-      schedule.during = during;
-      return schedule;
-    }
-  }
-
-  if (
-    hourField.includes("/") &&
-    (minuteField === "0" || minuteField === "00")
-  ) {
-    const [rangePart, stepStr] = hourField.split("/");
-    const interval = parseInt(stepStr, 10);
-
-    if (Number.isNaN(interval)) {
-      throw HronError.cron("invalid hour interval value");
-    }
-    if (interval === 0) {
-      throw HronError.cron("step cannot be 0");
-    }
-
-    let fromHour: number, toHour: number;
-    if (rangePart === "*") {
-      fromHour = 0;
-      toHour = 23;
-    } else if (rangePart.includes("-")) {
-      const [s, e] = rangePart.split("-");
-      fromHour = parseInt(s, 10);
-      toHour = parseInt(e, 10);
-      if (Number.isNaN(fromHour) || Number.isNaN(toHour)) {
-        throw HronError.cron("invalid hour range");
-      }
-      if (fromHour > toHour) {
-        throw HronError.cron(
-          `range start must be <= end: ${fromHour}-${toHour}`,
-        );
-      }
-    } else {
-      fromHour = parseInt(rangePart, 10);
-      if (Number.isNaN(fromHour)) {
-        throw HronError.cron("invalid hour value");
-      }
-      toHour = 23;
-    }
-
-    if (
-      (domField === "*" || domField === "?") &&
-      (dowField === "*" || dowField === "?")
-    ) {
-      const endMinute = fromHour === 0 && toHour === 23 ? 59 : 0;
-
-      const schedule = newScheduleData({
-        type: "intervalRepeat",
-        interval,
-        unit: "hours",
-        from: { hour: fromHour, minute: 0 },
-        to: { hour: toHour, minute: endMinute },
-        dayFilter: null,
-      });
-      schedule.during = during;
-      return schedule;
-    }
-  }
-
-  return null;
-}
-
-function parseDomField(field: string): MonthTarget {
-  const specs: DayOfMonthSpec[] = [];
-
-  for (const part of field.split(",")) {
-    if (part.includes("/")) {
-      const [rangePart, stepStr] = part.split("/");
-      let start: number, end: number;
-
-      if (rangePart === "*") {
-        start = 1;
-        end = 31;
-      } else if (rangePart.includes("-")) {
-        const [s, e] = rangePart.split("-");
-        start = parseInt(s, 10);
-        end = parseInt(e, 10);
-        if (Number.isNaN(start)) {
-          throw HronError.cron(`invalid DOM range start: ${s}`);
-        }
-        if (Number.isNaN(end)) {
-          throw HronError.cron(`invalid DOM range end: ${e}`);
-        }
-        if (start > end) {
-          throw HronError.cron(`range start must be <= end: ${start}-${end}`);
-        }
-      } else {
-        start = parseInt(rangePart, 10);
-        if (Number.isNaN(start)) {
-          throw HronError.cron(`invalid DOM value: ${rangePart}`);
-        }
-        end = 31;
-      }
-
-      const step = parseInt(stepStr, 10);
-      if (Number.isNaN(step)) {
-        throw HronError.cron(`invalid DOM step: ${stepStr}`);
-      }
-      if (step === 0) {
-        throw HronError.cron("step cannot be 0");
-      }
-
-      validateDom(start);
-      validateDom(end);
-
-      for (let d = start; d <= end; d += step) {
-        specs.push({ type: "single", day: d });
-      }
-    } else if (part.includes("-")) {
-      const [startStr, endStr] = part.split("-");
-      const start = parseInt(startStr, 10);
-      const end = parseInt(endStr, 10);
-      if (Number.isNaN(start)) {
-        throw HronError.cron(`invalid DOM range start: ${startStr}`);
-      }
-      if (Number.isNaN(end)) {
-        throw HronError.cron(`invalid DOM range end: ${endStr}`);
-      }
-      if (start > end) {
-        throw HronError.cron(`range start must be <= end: ${start}-${end}`);
-      }
-      validateDom(start);
-      validateDom(end);
-      specs.push({ type: "range", start, end });
-    } else {
-      const day = parseInt(part, 10);
-      if (Number.isNaN(day)) {
-        throw HronError.cron(`invalid DOM value: ${part}`);
-      }
-      validateDom(day);
-      specs.push({ type: "single", day });
-    }
-  }
-
-  return { type: "days", specs };
-}
-
-function validateDom(day: number): void {
-  if (day < 1 || day > 31) {
-    throw HronError.cron(`DOM must be 1-31, got ${day}`);
-  }
-}
-
-function parseCronDow(field: string): DayFilter {
-  if (field === "*") return { type: "every" };
-
-  const days: Weekday[] = [];
-
-  for (const part of field.split(",")) {
-    if (part.includes("/")) {
-      const [rangePart, stepStr] = part.split("/");
-      let start: number, end: number;
-
-      if (rangePart === "*") {
-        start = 0;
-        end = 6;
-      } else if (rangePart.includes("-")) {
-        const [s, e] = rangePart.split("-");
-        start = parseDowValueRaw(s);
-        end = parseDowValueRaw(e);
-        if (start > end) {
-          throw HronError.cron(`range start must be <= end: ${s}-${e}`);
-        }
-      } else {
-        start = parseDowValueRaw(rangePart);
-        end = 6;
-      }
-
-      const step = parseInt(stepStr, 10);
-      if (Number.isNaN(step)) {
-        throw HronError.cron(`invalid DOW step: ${stepStr}`);
-      }
-      if (step === 0) {
-        throw HronError.cron("step cannot be 0");
-      }
-
-      for (let d = start; d <= end; d += step) {
-        const normalized = d === 7 ? 0 : d;
-        days.push(cronDowToWeekday(normalized));
-      }
-    } else if (part.includes("-")) {
-      // Parsed raw so a range ending in 7 (Sunday), like `5-7`, stays ascending.
-      const [startStr, endStr] = part.split("-");
-      const start = parseDowValueRaw(startStr);
-      const end = parseDowValueRaw(endStr);
-      if (start > end) {
-        throw HronError.cron(
-          `range start must be <= end: ${startStr}-${endStr}`,
-        );
-      }
-      for (let d = start; d <= end; d++) {
-        const normalized = d === 7 ? 0 : d;
-        days.push(cronDowToWeekday(normalized));
-      }
-    } else {
-      const dow = parseDowValue(part);
-      days.push(cronDowToWeekday(dow));
-    }
-  }
-
-  if (days.length === 5) {
-    const sorted = [...days].sort(
-      (a, b) => weekdayNumber(a) - weekdayNumber(b),
-    );
-    const weekdays = [...ALL_WEEKDAYS].sort(
-      (a, b) => weekdayNumber(a) - weekdayNumber(b),
-    );
-    if (JSON.stringify(sorted) === JSON.stringify(weekdays)) {
-      return { type: "weekday" };
-    }
-  }
-  if (days.length === 2) {
-    const sorted = [...days].sort(
-      (a, b) => weekdayNumber(a) - weekdayNumber(b),
-    );
-    const weekend = [...ALL_WEEKEND].sort(
-      (a, b) => weekdayNumber(a) - weekdayNumber(b),
-    );
-    if (JSON.stringify(sorted) === JSON.stringify(weekend)) {
-      return { type: "weekend" };
-    }
-  }
-
-  return { type: "days", days };
-}
-
-function parseDowValue(s: string): number {
-  const raw = parseDowValueRaw(s);
-  return raw === 7 ? 0 : raw;
-}
-
-function parseDowValueRaw(s: string): number {
-  const n = parseInt(s, 10);
-  if (!Number.isNaN(n)) {
-    if (n > 7) {
-      throw HronError.cron(`DOW must be 0-7, got ${n}`);
-    }
-    return n;
-  }
-  const map: Record<string, number> = {
-    SUN: 0,
-    MON: 1,
-    TUE: 2,
-    WED: 3,
-    THU: 4,
-    FRI: 5,
-    SAT: 6,
-  };
-  const result = map[s.toUpperCase()];
-  if (result === undefined) {
-    throw HronError.cron(`invalid DOW: ${s}`);
-  }
-  return result;
-}
-
-function cronDowToWeekday(n: number): Weekday {
-  const map: Record<number, Weekday> = {
-    0: "sunday",
-    1: "monday",
-    2: "tuesday",
-    3: "wednesday",
-    4: "thursday",
-    5: "friday",
-    6: "saturday",
-    7: "sunday",
-  };
-  const result = map[n];
-  if (!result) {
-    throw HronError.cron(`invalid DOW number: ${n}`);
-  }
-  return result;
-}
-
-function parseSingleValue(
-  field: string,
-  name: string,
-  min: number,
-  max: number,
-): number {
-  const value = parseInt(field, 10);
-  if (Number.isNaN(value)) {
-    throw HronError.cron(`invalid ${name} field: ${field}`);
-  }
-  if (value < min || value > max) {
-    throw HronError.cron(`${name} must be ${min}-${max}, got ${value}`);
-  }
-  return value;
+function sortedUnique(values: number[]): number[] {
+  return sorted([...new Set(values)]);
 }

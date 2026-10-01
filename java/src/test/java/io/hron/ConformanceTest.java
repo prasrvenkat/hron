@@ -24,6 +24,7 @@ import org.junit.jupiter.api.DynamicContainer;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.api.function.Executable;
 
 public class ConformanceTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -309,10 +310,10 @@ public class ConformanceTest {
             cases(
                 cron.get("to_cron_errors"),
                 "cron/to_cron_errors",
-                Set.of("hron"),
+                Set.of("hron", "error"),
                 (tc, label) -> {
                   Schedule s = Schedule.parse(text(tc, "hron", label));
-                  assertThrows(HronException.class, s::toCron, label);
+                  assertCronError(text(tc, "error", label), s::toCron, label);
                 }),
             cases(
                 cron.get("from_cron"),
@@ -326,10 +327,10 @@ public class ConformanceTest {
             cases(
                 cron.get("from_cron_errors"),
                 "cron/from_cron_errors",
-                Set.of("cron"),
+                Set.of("cron", "error"),
                 (tc, label) ->
-                    assertThrows(
-                        HronException.class,
+                    assertCronError(
+                        text(tc, "error", label),
                         () -> Schedule.fromCron(text(tc, "cron", label)),
                         label)),
             cases(
@@ -341,6 +342,12 @@ public class ConformanceTest {
                   assertEquals(c, Schedule.fromCron(c).toCron(), label);
                 }))
         .flatMap(tests -> tests);
+  }
+
+  private static void assertCronError(String expected, Executable conversion, String label) {
+    HronException e = assertThrows(HronException.class, conversion, label);
+    assertEquals(ErrorKind.CRON, e.kind(), label + ": kind");
+    assertEquals(expected, e.getMessage(), label + ": message");
   }
 
   private record Invariant(String name, String expression, ZonedDateTime now, int count) {

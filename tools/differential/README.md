@@ -30,7 +30,7 @@ The exit status is 0 when every language agrees (with `--compare`, when every ou
 
 Generated cases whose expression is meant to parse but fails to in every language are reported as a warning, since they would otherwise pass as agreement.
 
-Divergences are grouped by operation and by how the languages split, largest group first, so a bug shows up as one group for each operation it affects, however many cases hit it. Languages agree on an error when its kind, span and suggestion match; the spec leaves the message's wording to each language.
+Divergences are grouped by operation and by how the languages split, largest group first, so a bug shows up as one group for each operation it affects, however many cases hit it. Languages agree on an error when its kind, span and suggestion match, and for a cron error its message too; the spec leaves the wording of other messages to each language.
 
 ## Cases
 

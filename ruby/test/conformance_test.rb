@@ -76,6 +76,12 @@ class ConformanceTest < Minitest::Test
     assert_equal expected, actual.map { |t| format_like(t, sample) }, label
   end
 
+  def assert_cron_error(expected)
+    error = assert_raises(Hron::HronError) { yield }
+    assert_equal :cron, error.kind, "error kind"
+    assert_equal expected, error.message, "error message"
+  end
+
   def require_assertion(tc, fields)
     flunk "no assertion field this runner understands (expected one of #{fields.join(", ")})" if (tc.keys & fields).empty?
   end
@@ -249,11 +255,10 @@ class ConformanceTest < Minitest::Test
 
   SPEC["cron"]["to_cron_errors"]["tests"].each do |tc|
     test_name = tc["name"] || tc["hron"]
-    define_case("test_to_cron_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[hron]) do
+    define_case("test_to_cron_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[hron error]) do
+      require_assertion(tc, %w[error])
       schedule = Hron::Schedule.parse(tc["hron"])
-      assert_raises(Hron::HronError) do
-        schedule.to_cron
-      end
+      assert_cron_error(tc["error"]) { schedule.to_cron }
     end
   end
 
@@ -267,10 +272,9 @@ class ConformanceTest < Minitest::Test
 
   SPEC["cron"]["from_cron_errors"]["tests"].each do |tc|
     test_name = tc["name"] || tc["cron"]
-    define_case("test_from_cron_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[cron]) do
-      assert_raises(Hron::HronError) do
-        Hron::Schedule.from_cron(tc["cron"])
-      end
+    define_case("test_from_cron_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[cron error]) do
+      require_assertion(tc, %w[error])
+      assert_cron_error(tc["error"]) { Hron::Schedule.from_cron(tc["cron"]) }
     end
   end
 

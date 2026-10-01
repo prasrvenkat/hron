@@ -1,6 +1,6 @@
 # hron
 
-**Human-readable cron** — scheduling expressions that are a superset of what cron can express.
+**Human-readable cron** — scheduling expressions that read like English and convert to and from cron.
 
 ```ruby
 require 'hron'
@@ -62,7 +62,7 @@ See the full [expression reference](https://github.com/simpllyf/hron#expression-
 Parse an hron expression string.
 
 ### `Hron::Schedule.from_cron(cron_expr) -> Schedule`
-Convert a 5-field cron expression to a Schedule.
+Convert a 5-field cron expression to a Schedule that fires at the same times. This ignores the timezone and DST transitions, where cron schedulers differ. Raises `Hron::HronError` with `kind` `:cron` for invalid cron, for crons that restrict both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps).
 
 ### `Hron::Schedule.validate(input) -> Boolean`
 Check if an input string is a valid hron expression.
@@ -77,7 +77,7 @@ Compute the next `n` occurrences after `now`.
 Check if a time matches this schedule.
 
 ### `schedule.to_cron -> String`
-Convert to a 5-field cron expression. Raises `Hron::HronError` if the schedule can't be expressed as cron.
+Convert to a 5-field cron expression that fires at the same times. Yearly schedules, ordinal weekdays and partial-day intervals convert (`every 15 min from 09:00 to 17:45 on weekday` is `*/15 9-17 * * 1-5`). Raises `Hron::HronError` with `kind` `:cron` when no cron fires at the same times, as for `except`, `until`, `starting`, ISO dates, repeats every `n > 1` days, weeks, months or years, a directional nearest weekday, a `during` that excludes a yearly or named date's month, a schedule built in code with no days or no times, and times that are not every combination of their minutes and hours (`at 09:00, 17:30`). The timezone is not part of the cron: run it in the schedule's timezone. The [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#cron-conversion) has the full rules and every error message.
 
 ### `schedule.to_s -> String`
 Render as the canonical string form (roundtrip-safe).

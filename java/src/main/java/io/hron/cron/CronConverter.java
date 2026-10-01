@@ -1,818 +1,743 @@
 package io.hron.cron;
 
 import io.hron.HronException;
-import io.hron.ast.*;
+import io.hron.ast.DateSpec;
+import io.hron.ast.DayFilter;
+import io.hron.ast.DayOfMonthSpec;
+import io.hron.ast.DayRepeat;
+import io.hron.ast.IntervalRepeat;
+import io.hron.ast.IntervalUnit;
+import io.hron.ast.MonthName;
+import io.hron.ast.MonthRepeat;
+import io.hron.ast.MonthTarget;
+import io.hron.ast.OrdinalPosition;
+import io.hron.ast.ScheduleData;
+import io.hron.ast.ScheduleExpr;
+import io.hron.ast.SingleDate;
+import io.hron.ast.TimeOfDay;
+import io.hron.ast.WeekRepeat;
+import io.hron.ast.Weekday;
+import io.hron.ast.YearRepeat;
+import io.hron.ast.YearTarget;
+import io.hron.eval.Evaluator;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.OptionalInt;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 public final class CronConverter {
   private CronConverter() {}
 
-  public static String toCron(ScheduleData data) throws HronException {
-    if (!data.except().isEmpty()) {
-      throw HronException.cron("not expressible as cron (except clauses not supported)");
-    }
-    if (data.until() != null) {
-      throw HronException.cron("not expressible as cron (until clauses not supported)");
-    }
-    if (!data.during().isEmpty()) {
-      throw HronException.cron("not expressible as cron (during clauses not supported)");
+  private static final int MAX_LISTED_TIMES = 24;
+  private static final String BOTH_DAYS_RESTRICTED =
+      "not expressible in hron: cron fires on either the day of month or the day of week";
+  private static final String INTERVAL_DAYS =
+      "not expressible in hron: an interval runs only on every day, weekdays, the weekend or"
+          + " listed days";
+  private static final int MINUTES_PER_DAY = 24 * 60;
+  private static final TimeOfDay MIDNIGHT = new TimeOfDay(0, 0);
+  private static final TimeOfDay END_OF_DAY = new TimeOfDay(23, 59);
+
+  // Digit strings may be of any length. Every number at or above this cap is out of every field's
+  // range and steps past every range's end, so saturating at it keeps each comparison exact
+  // without overflow.
+  private static final int NUMBER_CAP = 1000;
+
+  private static final String[] MONTH_NAMES = {
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"
+  };
+  private static final String[] DAY_NAMES = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
+  private static final MonthName[] MONTHS = MonthName.values();
+  private static final Weekday[] WEEKDAYS = {
+    Weekday.SUNDAY,
+    Weekday.MONDAY,
+    Weekday.TUESDAY,
+    Weekday.WEDNESDAY,
+    Weekday.THURSDAY,
+    Weekday.FRIDAY,
+    Weekday.SATURDAY
+  };
+  private static final OrdinalPosition[] ORDINALS = {
+    OrdinalPosition.FIRST,
+    OrdinalPosition.SECOND,
+    OrdinalPosition.THIRD,
+    OrdinalPosition.FOURTH,
+    OrdinalPosition.FIFTH
+  };
+
+  private enum Field {
+    MINUTE("minute", 0, 59, new String[0]),
+    HOUR("hour", 0, 23, new String[0]),
+    DAY_OF_MONTH("day of month", 1, 31, new String[0]),
+    MONTH("month", 1, 12, MONTH_NAMES),
+    DAY_OF_WEEK("day of week", 0, 7, DAY_NAMES);
+
+    final String label;
+    final int min;
+    final int max;
+    final String[] names;
+
+    Field(String label, int min, int max, String[] names) {
+      this.label = label;
+      this.min = min;
+      this.max = max;
+      this.names = names;
     }
 
-    return switch (data.expr()) {
-      case DayRepeat dr -> dayRepeatToCron(dr);
-      case IntervalRepeat ir -> intervalRepeatToCron(ir);
-      case WeekRepeat _ ->
-          throw HronException.cron("not expressible as cron (multi-week intervals not supported)");
-      case MonthRepeat mr -> monthRepeatToCron(mr);
-      case SingleDate _ ->
-          throw HronException.cron("not expressible as cron (single dates are not repeating)");
-      case YearRepeat _ ->
-          throw HronException.cron(
-              "not expressible as cron (yearly schedules not supported in 5-field cron)");
-    };
+    // In the day of week, 7 is Sunday only where written: `*` and `a/n` end at 6.
+    int starEnd() {
+      return this == DAY_OF_WEEK ? 6 : max;
+    }
   }
 
-  private static String dayRepeatToCron(DayRepeat dr) throws HronException {
-    if (dr.interval() > 1) {
-      throw HronException.cron("not expressible as cron (multi-day intervals not supported)");
-    }
-    if (dr.times().size() != 1) {
-      throw HronException.cron("not expressible as cron (multiple times not supported)");
-    }
+  private sealed interface Bounds {
+    record Star() implements Bounds {}
 
-    TimeOfDay t = dr.times().getFirst();
-    String dow = dayFilterToCronDOW(dr.days());
+    record Value(String a) implements Bounds {}
 
-    return String.format("%d %d * * %s", t.minute(), t.hour(), dow);
+    record Range(String a, String b) implements Bounds {}
   }
 
-  private static String intervalRepeatToCron(IntervalRepeat ir) throws HronException {
-    boolean fullDay =
-        ir.fromTime().hour() == 0
-            && ir.fromTime().minute() == 0
-            && ir.toTime().hour() == 23
-            && ir.toTime().minute() == 59;
+  private record Item(Bounds bounds, String step) {}
 
-    if (!fullDay) {
-      throw HronException.cron(
-          "not expressible as cron (partial-day interval windows not supported)");
-    }
-    if (ir.dayFilter() != null) {
-      throw HronException.cron("not expressible as cron (interval with day filter not supported)");
-    }
+  private sealed interface MonthDays {
+    record Any() implements MonthDays {}
 
-    if (ir.unit() == IntervalUnit.MINUTES) {
-      if (60 % ir.interval() != 0) {
-        throw HronException.cron(
-            "not expressible as cron (*/" + ir.interval() + " breaks at hour boundaries)");
-      }
-      return String.format("*/%d * * * *", ir.interval());
-    }
+    record Days(List<Integer> days) implements MonthDays {}
 
-    return String.format("0 */%d * * *", ir.interval());
+    record Last() implements MonthDays {}
+
+    record LastWeekday() implements MonthDays {}
+
+    record Nearest(int day) implements MonthDays {}
   }
 
-  private static String monthRepeatToCron(MonthRepeat mr) throws HronException {
-    if (mr.interval() > 1) {
-      throw HronException.cron("not expressible as cron (multi-month intervals not supported)");
-    }
-    if (mr.times().size() != 1) {
-      throw HronException.cron("not expressible as cron (multiple times not supported)");
-    }
+  private sealed interface WeekDays {
+    record Any() implements WeekDays {}
 
-    TimeOfDay t = mr.times().getFirst();
+    record Days(List<Integer> days) implements WeekDays {}
 
-    return switch (mr.target().kind()) {
-      case DAYS -> {
-        List<Integer> days = mr.target().expandDays();
-        String dom = formatIntList(days);
-        yield String.format("%d %d %s * *", t.minute(), t.hour(), dom);
-      }
-      case LAST_DAY ->
-          throw HronException.cron("not expressible as cron (last day of month not supported)");
-      case LAST_WEEKDAY ->
-          throw HronException.cron("not expressible as cron (last weekday of month not supported)");
-      case NEAREST_WEEKDAY -> {
-        if (mr.target().nearestDirection() != null) {
-          throw HronException.cron(
-              "not expressible as cron (directional nearest weekday not supported)");
-        }
-        yield String.format("%d %d %dW * *", t.minute(), t.hour(), mr.target().nearestWeekdayDay());
-      }
-      case ORDINAL_WEEKDAY ->
-          throw HronException.cron(
-              "not expressible as cron (ordinal weekday of month not supported)");
-    };
+    record Nth(Weekday weekday, int n) implements WeekDays {}
+
+    record Last(Weekday weekday) implements WeekDays {}
   }
 
-  private static String dayFilterToCronDOW(DayFilter f) {
-    return switch (f.kind()) {
-      case EVERY -> "*";
-      case WEEKDAY -> "1-5";
-      case WEEKEND -> "0,6";
-      case DAYS -> {
-        List<Integer> nums = f.days().stream().map(Weekday::cronDOW).sorted().toList();
-        yield formatIntList(nums);
-      }
-    };
+  private sealed interface Days {
+    record OfWeek(DayFilter filter) implements Days {}
+
+    record OfMonth(MonthTarget target) implements Days {}
   }
 
-  private static String formatIntList(List<Integer> nums) {
-    return nums.stream().map(String::valueOf).collect(Collectors.joining(","));
-  }
+  private record DayFields(String dayOfMonth, String dayOfWeek) {}
 
-  public static ScheduleData fromCron(String cron) throws HronException {
-    cron = cron.trim();
+  private record TimeFields(String minute, String hour) {}
 
-    if (cron.startsWith("@")) {
-      return parseCronShortcut(cron);
+  public static ScheduleData fromCron(String input) throws HronException {
+    String trimmed = trimCron(input);
+    String text = trimmed.startsWith("@") ? shortcut(trimmed) : trimmed;
+    List<String> fields = splitFields(text);
+    if (fields.size() != 5) {
+      throw HronException.cron("expected 5 cron fields, got " + fields.size());
     }
 
-    String[] fields = cron.split("\\s+");
-    if (fields.length != 5) {
-      throw HronException.cron("expected 5 cron fields, got " + fields.length);
-    }
-
-    String minuteField = fields[0];
-    String hourField = fields[1];
-    String domField = fields[2];
-    String monthField = fields[3];
-    String dowField = fields[4];
-
-    // Cron's `?` means the same as `*` here.
-    if (domField.equals("?")) {
-      domField = "*";
-    }
-    if (dowField.equals("?")) {
-      dowField = "*";
-    }
-
-    List<MonthName> during = parseMonthField(monthField);
-
-    ScheduleData nthResult = tryParseNthWeekday(minuteField, hourField, domField, dowField, during);
-    if (nthResult != null) {
-      return nthResult;
-    }
-
-    ScheduleData lastResult = tryParseLastDay(minuteField, hourField, domField, dowField, during);
-    if (lastResult != null) {
-      return lastResult;
-    }
-
-    if (domField.endsWith("W") && !domField.equals("LW")) {
-      ScheduleData wResult =
-          tryParseNearestWeekday(minuteField, hourField, domField, dowField, during);
-      if (wResult != null) {
-        return wResult;
+    List<Integer> minutes = sorted(values(fields.get(0), Field.MINUTE));
+    List<Integer> hours = sorted(values(fields.get(1), Field.HOUR));
+    MonthDays monthDays = parseDayOfMonth(fields.get(2));
+    List<Integer> months = sorted(values(fields.get(3), Field.MONTH));
+    WeekDays weekDays = parseDayOfWeek(fields.get(4));
+    Days days = dayExpression(monthDays, weekDays);
+    List<TimeOfDay> times = new ArrayList<>();
+    for (int hour : hours) {
+      for (int minute : minutes) {
+        times.add(new TimeOfDay(hour, minute));
       }
     }
 
-    ScheduleData intervalResult =
-        tryParseInterval(minuteField, hourField, domField, dowField, during);
-    if (intervalResult != null) {
-      return intervalResult;
-    }
-
-    int minute = parseSingleValue(minuteField, "minute", 0, 59);
-    int hour = parseSingleValue(hourField, "hour", 0, 23);
-    TimeOfDay time = new TimeOfDay(hour, minute);
-
-    if (!domField.equals("*") && dowField.equals("*")) {
-      MonthTarget target = parseDomField(domField);
-      ScheduleExpr expr = new MonthRepeat(1, target, List.of(time));
-      return new ScheduleData(expr, null, List.of(), null, null, during);
-    }
-
-    DayFilter days = parseCronDOW(dowField);
-    ScheduleExpr expr = new DayRepeat(1, days, List.of(time));
-    return new ScheduleData(expr, null, List.of(), null, null, during);
-  }
-
-  private static ScheduleData parseCronShortcut(String cron) throws HronException {
-    String lower = cron.toLowerCase();
-    return switch (lower) {
-      case "@yearly", "@annually" ->
-          ScheduleData.of(
-              new YearRepeat(
-                  1, YearTarget.date(MonthName.JANUARY, 1), List.of(new TimeOfDay(0, 0))));
-      case "@monthly" ->
-          ScheduleData.of(
-              new MonthRepeat(
-                  1,
-                  MonthTarget.days(List.of(DayOfMonthSpec.single(1))),
-                  List.of(new TimeOfDay(0, 0))));
-      case "@weekly" ->
-          ScheduleData.of(
-              new DayRepeat(
-                  1, DayFilter.days(List.of(Weekday.SUNDAY)), List.of(new TimeOfDay(0, 0))));
-      case "@daily", "@midnight" ->
-          ScheduleData.of(new DayRepeat(1, DayFilter.every(), List.of(new TimeOfDay(0, 0))));
-      case "@hourly" ->
-          ScheduleData.of(
-              new IntervalRepeat(
-                  1, IntervalUnit.HOURS, new TimeOfDay(0, 0), new TimeOfDay(23, 59), null));
-      default -> throw HronException.cron("unknown @ shortcut: " + cron);
-    };
-  }
-
-  private static List<MonthName> parseMonthField(String field) throws HronException {
-    if (field.equals("*")) {
-      return List.of();
-    }
-
-    List<MonthName> months = new ArrayList<>();
-    for (String part : field.split(",")) {
-      // Before the range check: a step such as 1-12/3 also contains '-'.
-      if (part.contains("/")) {
-        String[] stepParts = part.split("/", 2);
-        String rangePart = stepParts[0];
-        String stepStr = stepParts[1];
-
-        int start, end;
-        if (rangePart.equals("*")) {
-          start = 1;
-          end = 12;
-        } else if (rangePart.contains("-")) {
-          String[] rangeBounds = rangePart.split("-", 2);
-          MonthName startMonth = parseMonthValue(rangeBounds[0]);
-          MonthName endMonth = parseMonthValue(rangeBounds[1]);
-          start = startMonth.number();
-          end = endMonth.number();
-        } else {
-          throw HronException.cron("invalid month step expression: " + part);
-        }
-
-        int step;
-        try {
-          step = Integer.parseInt(stepStr);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid month step value: " + stepStr);
-        }
-        if (step == 0) {
-          throw HronException.cron("step cannot be 0");
-        }
-
-        for (int n = start; n <= end; n += step) {
-          months.add(monthFromNumber(n));
-        }
-      } else if (part.contains("-")) {
-        String[] rangeBounds = part.split("-", 2);
-        MonthName startMonth = parseMonthValue(rangeBounds[0]);
-        MonthName endMonth = parseMonthValue(rangeBounds[1]);
-        int startNum = startMonth.number();
-        int endNum = endMonth.number();
-        if (startNum > endNum) {
-          throw HronException.cron(
-              "invalid month range: " + rangeBounds[0] + " > " + rangeBounds[1]);
-        }
-        for (int n = startNum; n <= endNum; n++) {
-          months.add(monthFromNumber(n));
-        }
-      } else {
-        months.add(parseMonthValue(part));
-      }
-    }
-
-    return months;
-  }
-
-  private static MonthName parseMonthValue(String s) throws HronException {
-    try {
-      int n = Integer.parseInt(s);
-      return monthFromNumber(n);
-    } catch (NumberFormatException e) {
-      // Not a number, try as name
-    }
-    return parseMonthName(s);
-  }
-
-  private static MonthName monthFromNumber(int n) throws HronException {
-    return switch (n) {
-      case 1 -> MonthName.JANUARY;
-      case 2 -> MonthName.FEBRUARY;
-      case 3 -> MonthName.MARCH;
-      case 4 -> MonthName.APRIL;
-      case 5 -> MonthName.MAY;
-      case 6 -> MonthName.JUNE;
-      case 7 -> MonthName.JULY;
-      case 8 -> MonthName.AUGUST;
-      case 9 -> MonthName.SEPTEMBER;
-      case 10 -> MonthName.OCTOBER;
-      case 11 -> MonthName.NOVEMBER;
-      case 12 -> MonthName.DECEMBER;
-      default -> throw HronException.cron("invalid month number: " + n);
-    };
-  }
-
-  private static MonthName parseMonthName(String s) throws HronException {
-    return MonthName.parse(s).orElseThrow(() -> HronException.cron("invalid month: " + s));
-  }
-
-  private static ScheduleData tryParseNthWeekday(
-      String minuteField,
-      String hourField,
-      String domField,
-      String dowField,
-      List<MonthName> during)
-      throws HronException {
-    if (dowField.contains("#")) {
-      String[] parts = dowField.split("#", 2);
-      String dowStr = parts[0];
-      String nthStr = parts[1];
-
-      int dowNum = parseDowValue(dowStr);
-      Weekday weekday = cronDowToWeekday(dowNum);
-
-      int nth;
-      try {
-        nth = Integer.parseInt(nthStr);
-      } catch (NumberFormatException e) {
-        throw HronException.cron("invalid nth value: " + nthStr);
-      }
-      if (nth < 1 || nth > 5) {
-        throw HronException.cron("nth must be 1-5, got " + nth);
-      }
-
-      OrdinalPosition ordinal =
-          switch (nth) {
-            case 1 -> OrdinalPosition.FIRST;
-            case 2 -> OrdinalPosition.SECOND;
-            case 3 -> OrdinalPosition.THIRD;
-            case 4 -> OrdinalPosition.FOURTH;
-            case 5 -> OrdinalPosition.FIFTH;
-            default -> throw HronException.cron("invalid nth value: " + nth);
+    OptionalInt gap = equalGap(times);
+    ScheduleExpr expr;
+    if (days instanceof Days.OfWeek(DayFilter filter) && gap.isPresent()) {
+      expr = interval(times, gap.getAsInt(), filter);
+    } else if (times.size() > MAX_LISTED_TIMES) {
+      throw tooManyTimes(times.size(), gap);
+    } else if (yearTarget(days, months) instanceof YearTarget target) {
+      expr = new YearRepeat(1, target, times);
+    } else {
+      expr =
+          switch (days) {
+            case Days.OfWeek(DayFilter filter) -> new DayRepeat(1, filter, times);
+            case Days.OfMonth(MonthTarget target) -> new MonthRepeat(1, target, times);
           };
-
-      if (!domField.equals("*") && !domField.equals("?")) {
-        throw HronException.cron("DOM must be * when using # for nth weekday");
+    }
+    boolean yearly = expr instanceof YearRepeat;
+    List<MonthName> during = new ArrayList<>();
+    if (!yearly && months.size() < MONTHS.length) {
+      for (int month : months) {
+        during.add(MONTHS[month - 1]);
       }
-
-      int minute = parseSingleValue(minuteField, "minute", 0, 59);
-      int hour = parseSingleValue(hourField, "hour", 0, 23);
-
-      MonthTarget target = MonthTarget.ordinalWeekday(ordinal, weekday);
-      ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
-      return new ScheduleData(expr, null, List.of(), null, null, during);
     }
-
-    if (dowField.endsWith("L") && dowField.length() > 1) {
-      String dowStr = dowField.substring(0, dowField.length() - 1);
-      int dowNum = parseDowValue(dowStr);
-      Weekday weekday = cronDowToWeekday(dowNum);
-
-      if (!domField.equals("*") && !domField.equals("?")) {
-        throw HronException.cron("DOM must be * when using nL for last weekday");
-      }
-
-      int minute = parseSingleValue(minuteField, "minute", 0, 59);
-      int hour = parseSingleValue(hourField, "hour", 0, 23);
-
-      MonthTarget target = MonthTarget.ordinalWeekday(OrdinalPosition.LAST, weekday);
-      ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
-      return new ScheduleData(expr, null, List.of(), null, null, during);
-    }
-
-    return null;
-  }
-
-  private static ScheduleData tryParseLastDay(
-      String minuteField,
-      String hourField,
-      String domField,
-      String dowField,
-      List<MonthName> during)
-      throws HronException {
-    if (!domField.equals("L") && !domField.equals("LW")) {
-      return null;
-    }
-
-    if (!dowField.equals("*") && !dowField.equals("?")) {
-      throw HronException.cron("DOW must be * when using L or LW in DOM");
-    }
-
-    int minute = parseSingleValue(minuteField, "minute", 0, 59);
-    int hour = parseSingleValue(hourField, "hour", 0, 23);
-
-    MonthTarget target = domField.equals("LW") ? MonthTarget.lastWeekday() : MonthTarget.lastDay();
-
-    ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
     return new ScheduleData(expr, null, List.of(), null, null, during);
   }
 
-  private static ScheduleData tryParseNearestWeekday(
-      String minuteField,
-      String hourField,
-      String domField,
-      String dowField,
-      List<MonthName> during)
-      throws HronException {
-    if (!domField.endsWith("W") || domField.equals("LW")) {
-      return null;
-    }
-
-    if (!dowField.equals("*") && !dowField.equals("?")) {
-      throw HronException.cron("DOW must be * when using W in DOM");
-    }
-
-    String dayStr = domField.substring(0, domField.length() - 1);
-    int day;
-    try {
-      day = Integer.parseInt(dayStr);
-    } catch (NumberFormatException e) {
-      throw HronException.cron("invalid W day: " + dayStr);
-    }
-
-    if (day < 1 || day > 31) {
-      throw HronException.cron("W day must be 1-31, got " + day);
-    }
-
-    int minute = parseSingleValue(minuteField, "minute", 0, 59);
-    int hour = parseSingleValue(hourField, "hour", 0, 23);
-
-    MonthTarget target = MonthTarget.nearestWeekday(day);
-    ScheduleExpr expr = new MonthRepeat(1, target, List.of(new TimeOfDay(hour, minute)));
-    return new ScheduleData(expr, null, List.of(), null, null, during);
+  private static boolean isCronSpace(char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
   }
 
-  private static ScheduleData tryParseInterval(
-      String minuteField,
-      String hourField,
-      String domField,
-      String dowField,
-      List<MonthName> during)
-      throws HronException {
-    if (minuteField.contains("/")) {
-      String[] parts = minuteField.split("/", 2);
-      String rangePart = parts[0];
-      String stepStr = parts[1];
+  private static String trimCron(String input) {
+    int start = 0;
+    int end = input.length();
+    while (start < end && isCronSpace(input.charAt(start))) {
+      start++;
+    }
+    while (end > start && isCronSpace(input.charAt(end - 1))) {
+      end--;
+    }
+    return input.substring(start, end);
+  }
 
-      int interval;
-      try {
-        interval = Integer.parseInt(stepStr);
-      } catch (NumberFormatException e) {
-        throw HronException.cron("invalid minute interval value");
-      }
-
-      if (interval == 0) {
-        throw HronException.cron("step cannot be 0");
-      }
-
-      int fromMinute, toMinute;
-      if (rangePart.equals("*")) {
-        fromMinute = 0;
-        toMinute = 59;
-      } else if (rangePart.contains("-")) {
-        String[] rangeBounds = rangePart.split("-", 2);
-        try {
-          fromMinute = Integer.parseInt(rangeBounds[0]);
-          toMinute = Integer.parseInt(rangeBounds[1]);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid minute range");
+  private static List<String> splitFields(String text) {
+    List<String> fields = new ArrayList<>();
+    int start = 0;
+    for (int i = 0; i <= text.length(); i++) {
+      if (i == text.length() || text.charAt(i) == ' ' || text.charAt(i) == '\t') {
+        if (i > start) {
+          fields.add(text.substring(start, i));
         }
-        if (fromMinute > toMinute) {
-          throw HronException.cron("range start must be <= end: " + fromMinute + "-" + toMinute);
+        start = i + 1;
+      }
+    }
+    return fields;
+  }
+
+  private static String shortcut(String input) throws HronException {
+    return switch (asciiLowercase(input)) {
+      case "@yearly", "@annually" -> "0 0 1 1 *";
+      case "@monthly" -> "0 0 1 * *";
+      case "@weekly" -> "0 0 * * 0";
+      case "@daily", "@midnight" -> "0 0 * * *";
+      case "@hourly" -> "0 * * * *";
+      default -> throw HronException.cron("unknown cron shortcut: " + input);
+    };
+  }
+
+  private static MonthDays parseDayOfMonth(String text) throws HronException {
+    if (text.equals("*") || text.equals("?")) {
+      return new MonthDays.Any();
+    }
+    if (asciiEqualsIgnoreCase(text, "L")) {
+      return new MonthDays.Last();
+    }
+    if (asciiEqualsIgnoreCase(text, "LW")) {
+      return new MonthDays.LastWeekday();
+    }
+    if (endsWithAsciiLetter(text, 'w') && isNumber(withoutLast(text))) {
+      return new MonthDays.Nearest(fieldValue(withoutLast(text), Field.DAY_OF_MONTH));
+    }
+    return new MonthDays.Days(values(text, Field.DAY_OF_MONTH));
+  }
+
+  private static WeekDays parseDayOfWeek(String text) throws HronException {
+    Field field = Field.DAY_OF_WEEK;
+    if (text.equals("*") || text.equals("?")) {
+      return new WeekDays.Any();
+    }
+    int hash = text.indexOf('#');
+    if (hash >= 0
+        && isValue(text.substring(0, hash), field)
+        && isNumber(text.substring(hash + 1))) {
+      String day = text.substring(0, hash);
+      String nth = text.substring(hash + 1);
+      Weekday weekday = WEEKDAYS[fieldValue(day, field) % 7];
+      int n = number(nth);
+      if (n < 1 || n > 5) {
+        throw HronException.cron("day of week ordinal must be 1-5, got " + nth);
+      }
+      return new WeekDays.Nth(weekday, n);
+    }
+    if (endsWithAsciiLetter(text, 'l') && isValue(withoutLast(text), field)) {
+      return new WeekDays.Last(WEEKDAYS[fieldValue(withoutLast(text), field) % 7]);
+    }
+    return new WeekDays.Days(values(text, field));
+  }
+
+  private static boolean endsWithAsciiLetter(String text, char lower) {
+    return !text.isEmpty() && asciiLowercase(text.charAt(text.length() - 1)) == lower;
+  }
+
+  private static String withoutLast(String text) {
+    return text.substring(0, text.length() - 1);
+  }
+
+  // Keeps the order of first appearance, in which fromCron lists days of the week.
+  private static List<Integer> values(String text, Field field) throws HronException {
+    List<Item> items = items(text, field);
+    if (items == null) {
+      throw HronException.cron("invalid " + field.label + ": " + text);
+    }
+    List<Integer> values = new ArrayList<>();
+    for (Item item : items) {
+      int first;
+      int last;
+      switch (item.bounds()) {
+        case Bounds.Star _ -> {
+          first = field.min;
+          last = field.starEnd();
         }
+        case Bounds.Value(String a) -> {
+          first = fieldValue(a, field);
+          // `7/n` starts past the end of `*`, so it is Sunday alone.
+          last = item.step() != null ? Math.max(first, field.starEnd()) : first;
+        }
+        case Bounds.Range(String a, String b) -> {
+          first = fieldValue(a, field);
+          last = fieldValue(b, field);
+          if (first > last) {
+            throw HronException.cron(field.label + " range must not run backwards: " + a + "-" + b);
+          }
+        }
+      }
+      int step = item.step() == null ? 1 : number(item.step());
+      if (step == 0) {
+        throw HronException.cron(field.label + " step must be at least 1");
+      }
+      for (int value = first; value <= last; value += step) {
+        int kept = field == Field.DAY_OF_WEEK ? value % 7 : value;
+        if (!values.contains(kept)) {
+          values.add(kept);
+        }
+      }
+    }
+    return values;
+  }
+
+  private static List<Item> items(String text, Field field) {
+    List<Item> items = new ArrayList<>();
+    for (String item : text.split(",", -1)) {
+      int slash = item.indexOf('/');
+      String range = slash >= 0 ? item.substring(0, slash) : item;
+      String step = slash >= 0 ? item.substring(slash + 1) : null;
+      int dash = range.indexOf('-');
+      Bounds bounds;
+      if (range.equals("*")) {
+        bounds = new Bounds.Star();
+      } else if (dash >= 0) {
+        bounds = new Bounds.Range(range.substring(0, dash), range.substring(dash + 1));
       } else {
-        // In cron, N/step starts at N and runs to the end of the field.
-        try {
-          fromMinute = Integer.parseInt(rangePart);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid minute value");
-        }
-        toMinute = 59;
+        bounds = new Bounds.Value(range);
       }
-
-      int fromHour, toHour;
-      if (hourField.equals("*")) {
-        fromHour = 0;
-        toHour = 23;
-      } else if (hourField.contains("-")) {
-        String[] rangeBounds = hourField.split("-", 2);
-        try {
-          fromHour = Integer.parseInt(rangeBounds[0]);
-          toHour = Integer.parseInt(rangeBounds[1]);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid hour range");
-        }
-      } else if (hourField.contains("/")) {
+      boolean valid =
+          (step == null || isNumber(step))
+              && switch (bounds) {
+                case Bounds.Star _ -> true;
+                case Bounds.Value(String a) -> isValue(a, field);
+                case Bounds.Range(String a, String b) -> isValue(a, field) && isValue(b, field);
+              };
+      if (!valid) {
         return null;
-      } else {
-        try {
-          fromHour = toHour = Integer.parseInt(hourField);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid hour");
-        }
       }
-
-      DayFilter dayFilter = null;
-      if (!dowField.equals("*")) {
-        dayFilter = parseCronDOW(dowField);
-      }
-
-      if (domField.equals("*") || domField.equals("?")) {
-        int endMinute;
-        if (fromMinute == 0 && toMinute == 59 && toHour == 23) {
-          endMinute = 59;
-        } else if (fromMinute == 0 && toMinute == 59) {
-          // `9-17` ends at 17:00, not 17:59 (spec/tests.json `interval_with_hour_range`).
-          endMinute = 0;
-        } else {
-          endMinute = toMinute;
-        }
-
-        ScheduleExpr expr =
-            new IntervalRepeat(
-                interval,
-                IntervalUnit.MINUTES,
-                new TimeOfDay(fromHour, fromMinute),
-                new TimeOfDay(toHour, endMinute),
-                dayFilter);
-        return new ScheduleData(expr, null, List.of(), null, null, during);
-      }
+      items.add(new Item(bounds, step));
     }
-
-    if (hourField.contains("/") && (minuteField.equals("0") || minuteField.equals("00"))) {
-      String[] parts = hourField.split("/", 2);
-      String rangePart = parts[0];
-      String stepStr = parts[1];
-
-      int interval;
-      try {
-        interval = Integer.parseInt(stepStr);
-      } catch (NumberFormatException e) {
-        throw HronException.cron("invalid hour interval value");
-      }
-
-      if (interval == 0) {
-        throw HronException.cron("step cannot be 0");
-      }
-
-      int fromHour, toHour;
-      if (rangePart.equals("*")) {
-        fromHour = 0;
-        toHour = 23;
-      } else if (rangePart.contains("-")) {
-        String[] rangeBounds = rangePart.split("-", 2);
-        try {
-          fromHour = Integer.parseInt(rangeBounds[0]);
-          toHour = Integer.parseInt(rangeBounds[1]);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid hour range");
-        }
-        if (fromHour > toHour) {
-          throw HronException.cron("range start must be <= end: " + fromHour + "-" + toHour);
-        }
-      } else {
-        try {
-          fromHour = Integer.parseInt(rangePart);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid hour value");
-        }
-        toHour = 23;
-      }
-
-      if ((domField.equals("*") || domField.equals("?"))
-          && (dowField.equals("*") || dowField.equals("?"))) {
-        int endMinute = (fromHour == 0 && toHour == 23) ? 59 : 0;
-
-        ScheduleExpr expr =
-            new IntervalRepeat(
-                interval,
-                IntervalUnit.HOURS,
-                new TimeOfDay(fromHour, 0),
-                new TimeOfDay(toHour, endMinute),
-                null);
-        return new ScheduleData(expr, null, List.of(), null, null, during);
-      }
-    }
-
-    return null;
+    return items;
   }
 
-  private static MonthTarget parseDomField(String field) throws HronException {
-    List<DayOfMonthSpec> specs = new ArrayList<>();
-
-    for (String part : field.split(",")) {
-      if (part.contains("/")) {
-        String[] stepParts = part.split("/", 2);
-        String rangePart = stepParts[0];
-        String stepStr = stepParts[1];
-
-        int start, end;
-        if (rangePart.equals("*")) {
-          start = 1;
-          end = 31;
-        } else if (rangePart.contains("-")) {
-          String[] rangeBounds = rangePart.split("-", 2);
-          try {
-            start = Integer.parseInt(rangeBounds[0]);
-            end = Integer.parseInt(rangeBounds[1]);
-          } catch (NumberFormatException e) {
-            throw HronException.cron("invalid DOM range: " + rangePart);
-          }
-          if (start > end) {
-            throw HronException.cron("range start must be <= end: " + start + "-" + end);
-          }
-        } else {
-          try {
-            start = Integer.parseInt(rangePart);
-          } catch (NumberFormatException e) {
-            throw HronException.cron("invalid DOM value: " + rangePart);
-          }
-          end = 31;
-        }
-
-        int step;
-        try {
-          step = Integer.parseInt(stepStr);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid DOM step: " + stepStr);
-        }
-        if (step == 0) {
-          throw HronException.cron("step cannot be 0");
-        }
-
-        validateDom(start);
-        validateDom(end);
-
-        for (int d = start; d <= end; d += step) {
-          specs.add(DayOfMonthSpec.single(d));
-        }
-      } else if (part.contains("-")) {
-        String[] rangeBounds = part.split("-", 2);
-        int start, end;
-        try {
-          start = Integer.parseInt(rangeBounds[0]);
-          end = Integer.parseInt(rangeBounds[1]);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid DOM range: " + part);
-        }
-        if (start > end) {
-          throw HronException.cron("range start must be <= end: " + start + "-" + end);
-        }
-        validateDom(start);
-        validateDom(end);
-        specs.add(DayOfMonthSpec.range(start, end));
-      } else {
-        int day;
-        try {
-          day = Integer.parseInt(part);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid DOM value: " + part);
-        }
-        validateDom(day);
-        specs.add(DayOfMonthSpec.single(day));
+  private static boolean isNumber(String text) {
+    if (text.isEmpty()) {
+      return false;
+    }
+    for (int i = 0; i < text.length(); i++) {
+      char ch = text.charAt(i);
+      if (ch < '0' || ch > '9') {
+        return false;
       }
     }
-
-    return MonthTarget.days(specs);
+    return true;
   }
 
-  private static void validateDom(int day) throws HronException {
-    if (day < 1 || day > 31) {
-      throw HronException.cron("DOM must be 1-31, got " + day);
-    }
+  private static boolean isValue(String text, Field field) {
+    return isNumber(text) || nameValue(text, field).isPresent();
   }
 
-  private static DayFilter parseCronDOW(String field) throws HronException {
-    if (field.equals("*")) {
-      return DayFilter.every();
-    }
-
-    List<Weekday> days = new ArrayList<>();
-
-    for (String part : field.split(",")) {
-      if (part.contains("/")) {
-        String[] stepParts = part.split("/", 2);
-        String rangePart = stepParts[0];
-        String stepStr = stepParts[1];
-
-        int start, end;
-        if (rangePart.equals("*")) {
-          start = 0;
-          end = 6;
-        } else if (rangePart.contains("-")) {
-          String[] rangeBounds = rangePart.split("-", 2);
-          start = parseDowValueRaw(rangeBounds[0]);
-          end = parseDowValueRaw(rangeBounds[1]);
-          if (start > end) {
-            throw HronException.cron(
-                "range start must be <= end: " + rangeBounds[0] + "-" + rangeBounds[1]);
-          }
-        } else {
-          start = parseDowValueRaw(rangePart);
-          end = 6;
-        }
-
-        int step;
-        try {
-          step = Integer.parseInt(stepStr);
-        } catch (NumberFormatException e) {
-          throw HronException.cron("invalid DOW step: " + stepStr);
-        }
-        if (step == 0) {
-          throw HronException.cron("step cannot be 0");
-        }
-
-        for (int d = start; d <= end; d += step) {
-          days.add(cronDowToWeekday(d));
-        }
-      } else if (part.contains("-")) {
-        // Keep 7 as Sunday here so that a range such as 5-7 stays ascending.
-        String[] rangeBounds = part.split("-", 2);
-        int start = parseDowValueRaw(rangeBounds[0]);
-        int end = parseDowValueRaw(rangeBounds[1]);
-        if (start > end) {
-          throw HronException.cron(
-              "range start must be <= end: " + rangeBounds[0] + "-" + rangeBounds[1]);
-        }
-        for (int d = start; d <= end; d++) {
-          int normalized = (d == 7) ? 0 : d;
-          days.add(cronDowToWeekday(normalized));
-        }
-      } else {
-        int dow = parseDowValue(part);
-        days.add(cronDowToWeekday(dow));
+  private static OptionalInt nameValue(String text, Field field) {
+    for (int index = 0; index < field.names.length; index++) {
+      if (asciiEqualsIgnoreCase(field.names[index], text)) {
+        return OptionalInt.of(index + field.min);
       }
     }
-
-    if (days.size() == 5) {
-      List<Weekday> sorted = new ArrayList<>(days);
-      sorted.sort((a, b) -> Integer.compare(a.number(), b.number()));
-      List<Weekday> weekdays =
-          List.of(
-              Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY);
-      if (sorted.equals(weekdays)) {
-        return DayFilter.weekday();
-      }
-    }
-    if (days.size() == 2) {
-      List<Weekday> sorted = new ArrayList<>(days);
-      sorted.sort((a, b) -> Integer.compare(a.number(), b.number()));
-      List<Weekday> weekend = List.of(Weekday.SATURDAY, Weekday.SUNDAY);
-      if (sorted.equals(weekend)) {
-        return DayFilter.weekend();
-      }
-    }
-
-    return DayFilter.days(days);
+    return OptionalInt.empty();
   }
 
-  private static int parseDowValue(String s) throws HronException {
-    int raw = parseDowValueRaw(s);
-    // 7 and 0 both mean Sunday.
-    return (raw == 7) ? 0 : raw;
-  }
-
-  private static int parseDowValueRaw(String s) throws HronException {
-    try {
-      int n = Integer.parseInt(s);
-      if (n > 7) {
-        throw HronException.cron("DOW must be 0-7, got " + n);
-      }
-      return n;
-    } catch (NumberFormatException e) {
-      // Not a number, try as name
+  private static int number(String digits) {
+    int n = 0;
+    for (int i = 0; i < digits.length(); i++) {
+      n = Math.min(n * 10 + (digits.charAt(i) - '0'), NUMBER_CAP);
     }
-    String upper = s.toUpperCase();
-    return switch (upper) {
-      case "SUN" -> 0;
-      case "MON" -> 1;
-      case "TUE" -> 2;
-      case "WED" -> 3;
-      case "THU" -> 4;
-      case "FRI" -> 5;
-      case "SAT" -> 6;
-      default -> throw HronException.cron("invalid DOW: " + s);
-    };
+    return n;
   }
 
-  private static Weekday cronDowToWeekday(int n) throws HronException {
-    return switch (n) {
-      case 0, 7 -> Weekday.SUNDAY;
-      case 1 -> Weekday.MONDAY;
-      case 2 -> Weekday.TUESDAY;
-      case 3 -> Weekday.WEDNESDAY;
-      case 4 -> Weekday.THURSDAY;
-      case 5 -> Weekday.FRIDAY;
-      case 6 -> Weekday.SATURDAY;
-      default -> throw HronException.cron("invalid DOW number: " + n);
-    };
-  }
-
-  private static int parseSingleValue(String field, String name, int min, int max)
-      throws HronException {
-    int value;
-    try {
-      value = Integer.parseInt(field);
-    } catch (NumberFormatException e) {
-      throw HronException.cron("invalid " + name + " field: " + field);
-    }
-    if (value < min || value > max) {
-      throw HronException.cron(name + " must be " + min + "-" + max + ", got " + value);
+  private static int fieldValue(String text, Field field) throws HronException {
+    int value = nameValue(text, field).orElseGet(() -> number(text));
+    if (value < field.min || value > field.max) {
+      throw HronException.cron(
+          field.label + " must be " + field.min + "-" + field.max + ", got " + text);
     }
     return value;
+  }
+
+  private static char asciiLowercase(char ch) {
+    return ch >= 'A' && ch <= 'Z' ? (char) (ch + ('a' - 'A')) : ch;
+  }
+
+  private static String asciiLowercase(String text) {
+    StringBuilder out = new StringBuilder(text.length());
+    for (int i = 0; i < text.length(); i++) {
+      out.append(asciiLowercase(text.charAt(i)));
+    }
+    return out.toString();
+  }
+
+  private static boolean asciiEqualsIgnoreCase(String a, String b) {
+    if (a.length() != b.length()) {
+      return false;
+    }
+    for (int i = 0; i < a.length(); i++) {
+      if (asciiLowercase(a.charAt(i)) != asciiLowercase(b.charAt(i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static Days dayExpression(MonthDays monthDays, WeekDays weekDays) throws HronException {
+    if (!(monthDays instanceof MonthDays.Any) && !(weekDays instanceof WeekDays.Any)) {
+      throw HronException.cron(BOTH_DAYS_RESTRICTED);
+    }
+    return switch (monthDays) {
+      case MonthDays.Any _ ->
+          switch (weekDays) {
+            case WeekDays.Any _ -> new Days.OfWeek(DayFilter.every());
+            case WeekDays.Days(List<Integer> days) -> new Days.OfWeek(weekdayFilter(days));
+            case WeekDays.Nth(Weekday weekday, int n) ->
+                new Days.OfMonth(MonthTarget.ordinalWeekday(ORDINALS[n - 1], weekday));
+            case WeekDays.Last(Weekday weekday) ->
+                new Days.OfMonth(MonthTarget.ordinalWeekday(OrdinalPosition.LAST, weekday));
+          };
+      case MonthDays.Days(List<Integer> days) when days.size() == 31 ->
+          new Days.OfWeek(DayFilter.every());
+      case MonthDays.Days(List<Integer> days) -> {
+        List<DayOfMonthSpec> specs = new ArrayList<>();
+        for (int[] run : runs(sorted(days))) {
+          specs.add(
+              run[0] == run[1]
+                  ? DayOfMonthSpec.single(run[0])
+                  : DayOfMonthSpec.range(run[0], run[1]));
+        }
+        yield new Days.OfMonth(MonthTarget.days(specs));
+      }
+      case MonthDays.Last _ -> new Days.OfMonth(MonthTarget.lastDay());
+      case MonthDays.LastWeekday _ -> new Days.OfMonth(MonthTarget.lastWeekday());
+      case MonthDays.Nearest(int day) -> new Days.OfMonth(MonthTarget.nearestWeekday(day));
+    };
+  }
+
+  private static DayFilter weekdayFilter(List<Integer> days) {
+    List<Integer> ascending = sorted(days);
+    if (ascending.equals(List.of(0, 1, 2, 3, 4, 5, 6))) {
+      return DayFilter.every();
+    }
+    if (ascending.equals(List.of(1, 2, 3, 4, 5))) {
+      return DayFilter.weekday();
+    }
+    if (ascending.equals(List.of(0, 6))) {
+      return DayFilter.weekend();
+    }
+    return DayFilter.days(days.stream().map(d -> WEEKDAYS[d]).toList());
+  }
+
+  private static OptionalInt equalGap(List<TimeOfDay> times) {
+    if (times.size() < 3) {
+      return OptionalInt.empty();
+    }
+    int gap = times.get(1).totalMinutes() - times.get(0).totalMinutes();
+    for (int i = 1; i < times.size(); i++) {
+      if (times.get(i).totalMinutes() - times.get(i - 1).totalMinutes() != gap) {
+        return OptionalInt.empty();
+      }
+    }
+    return OptionalInt.of(gap);
+  }
+
+  private static IntervalRepeat interval(List<TimeOfDay> times, int gap, DayFilter days) {
+    TimeOfDay from = times.getFirst();
+    TimeOfDay last = times.getLast();
+    TimeOfDay to =
+        from.equals(MIDNIGHT) && last.totalMinutes() + gap >= MINUTES_PER_DAY ? END_OF_DAY : last;
+    boolean hours = gap % 60 == 0;
+    return new IntervalRepeat(
+        hours ? gap / 60 : gap,
+        hours ? IntervalUnit.HOURS : IntervalUnit.MINUTES,
+        from,
+        to,
+        days.equals(DayFilter.every()) ? null : days);
+  }
+
+  private static HronException tooManyTimes(int count, OptionalInt gap) {
+    if (gap.isPresent()) {
+      return HronException.cron(INTERVAL_DAYS);
+    }
+    return HronException.cron(
+        "not expressible in hron: " + count + " times a day are too many to list");
+  }
+
+  private static YearTarget yearTarget(Days days, List<Integer> months) {
+    if (!(days instanceof Days.OfMonth(MonthTarget target)) || months.size() != 1) {
+      return null;
+    }
+    MonthName month = MONTHS[months.getFirst() - 1];
+    return switch (target.kind()) {
+      case DAYS -> {
+        List<DayOfMonthSpec> specs = target.specs();
+        if (specs.size() == 1
+            && specs.getFirst().kind() == DayOfMonthSpec.Kind.SINGLE
+            && specs.getFirst().day() <= maxDay(month)) {
+          yield YearTarget.date(month, specs.getFirst().day());
+        }
+        yield null;
+      }
+      case LAST_WEEKDAY -> YearTarget.lastWeekday(month);
+      case ORDINAL_WEEKDAY -> YearTarget.ordinalWeekday(target.ordinal(), target.weekday(), month);
+      case LAST_DAY, NEAREST_WEEKDAY -> null;
+    };
+  }
+
+  private static int maxDay(MonthName month) {
+    return switch (month) {
+      case FEBRUARY -> 29;
+      case APRIL, JUNE, SEPTEMBER, NOVEMBER -> 30;
+      default -> 31;
+    };
+  }
+
+  public static String toCron(ScheduleData data) throws HronException {
+    if (!data.except().isEmpty()) {
+      throw notExpressible("except clauses not supported");
+    }
+    if (data.until() != null) {
+      throw notExpressible("until clauses not supported");
+    }
+    if (data.anchor() != null) {
+      throw notExpressible("starting clauses not supported");
+    }
+    DayFields days = dayFields(data.expr());
+    // A schedule built in code can have an empty day list, which writes an empty field.
+    if (days.dayOfMonth().isEmpty() || days.dayOfWeek().isEmpty()) {
+      throw notExpressible("schedule has no days");
+    }
+    String month = monthField(data);
+    TimeFields times = timeFields(data.expr());
+    return times.minute()
+        + " "
+        + times.hour()
+        + " "
+        + days.dayOfMonth()
+        + " "
+        + month
+        + " "
+        + days.dayOfWeek();
+  }
+
+  private static HronException notExpressible(String reason) {
+    return HronException.cron("not expressible as cron: " + reason);
+  }
+
+  private static void repeatsOnce(int interval, String unit) throws HronException {
+    if (interval > 1) {
+      throw notExpressible("multi-" + unit + " repeats not supported");
+    }
+  }
+
+  private static DayFields dayFields(ScheduleExpr expr) throws HronException {
+    return switch (expr) {
+      case IntervalRepeat ir ->
+          new DayFields("*", ir.dayFilter() == null ? "*" : filterField(ir.dayFilter()));
+      case DayRepeat dr -> {
+        repeatsOnce(dr.interval(), "day");
+        yield new DayFields("*", filterField(dr.days()));
+      }
+      case WeekRepeat wr -> {
+        repeatsOnce(wr.interval(), "week");
+        yield new DayFields("*", weekdaysField(wr.weekDays()));
+      }
+      case MonthRepeat mr -> {
+        repeatsOnce(mr.interval(), "month");
+        MonthTarget target = mr.target();
+        yield switch (target.kind()) {
+          case DAYS -> new DayFields(listField(sortedUnique(target.expandDays()), 31), "*");
+          case LAST_DAY -> new DayFields("L", "*");
+          case LAST_WEEKDAY -> new DayFields("LW", "*");
+          case NEAREST_WEEKDAY -> {
+            if (target.nearestDirection() != null) {
+              throw notExpressible("directional nearest weekday not supported");
+            }
+            yield new DayFields(target.nearestWeekdayDay() + "W", "*");
+          }
+          case ORDINAL_WEEKDAY ->
+              new DayFields("*", ordinalField(target.ordinal(), target.weekday()));
+        };
+      }
+      case YearRepeat yr -> {
+        repeatsOnce(yr.interval(), "year");
+        YearTarget target = yr.target();
+        yield switch (target.kind()) {
+          case DATE, DAY_OF_MONTH -> new DayFields(String.valueOf(target.day()), "*");
+          case ORDINAL_WEEKDAY ->
+              new DayFields("*", ordinalField(target.ordinal(), target.weekday()));
+          case LAST_WEEKDAY -> new DayFields("LW", "*");
+        };
+      }
+      case SingleDate sd when sd.dateSpec().kind() == DateSpec.Kind.ISO ->
+          throw notExpressible("ISO dates do not repeat");
+      case SingleDate sd -> new DayFields(String.valueOf(sd.dateSpec().day()), "*");
+    };
+  }
+
+  private static String monthField(ScheduleData data) throws HronException {
+    List<MonthName> during = data.during();
+    MonthName month = ownMonth(data.expr());
+    if (month != null && !during.isEmpty() && !during.contains(month)) {
+      throw notExpressible("during excludes the schedule's month");
+    }
+    if (month != null) {
+      return String.valueOf(month.number());
+    }
+    if (during.isEmpty()) {
+      return "*";
+    }
+    return listField(sortedUnique(during.stream().map(MonthName::number).toList()), 12);
+  }
+
+  private static MonthName ownMonth(ScheduleExpr expr) {
+    return switch (expr) {
+      case YearRepeat yr -> yr.target().month();
+      case SingleDate sd when sd.dateSpec().kind() == DateSpec.Kind.NAMED -> sd.dateSpec().month();
+      default -> null;
+    };
+  }
+
+  private static TimeFields timeFields(ScheduleExpr expr) throws HronException {
+    List<Integer> times = dailyTimes(expr);
+    List<Integer> minutes = sortedUnique(times.stream().map(t -> t % 60).toList());
+    List<Integer> hours = sortedUnique(times.stream().map(t -> t / 60).toList());
+    // A schedule built in code can have no times, which no cron writes.
+    if (times.isEmpty()) {
+      throw notExpressible("schedule has no times");
+    }
+    if (minutes.size() * hours.size() != times.size()) {
+      throw notExpressible("times are not every combination of their minutes and hours");
+    }
+    return new TimeFields(stepField(minutes, 60), stepField(hours, 24));
+  }
+
+  private static List<Integer> dailyTimes(ScheduleExpr expr) {
+    List<TimeOfDay> times;
+    switch (expr) {
+      case IntervalRepeat ir -> {
+        return Arrays.stream(Evaluator.intervalSlots(ir)).boxed().toList();
+      }
+      case DayRepeat dr -> times = dr.times();
+      case WeekRepeat wr -> times = wr.times();
+      case MonthRepeat mr -> times = mr.times();
+      case YearRepeat yr -> times = yr.times();
+      case SingleDate sd -> times = sd.times();
+    }
+    return sortedUnique(times.stream().map(TimeOfDay::totalMinutes).toList());
+  }
+
+  private static String filterField(DayFilter filter) {
+    return switch (filter.kind()) {
+      case EVERY -> "*";
+      case WEEKDAY ->
+          weekdaysField(
+              List.of(
+                  Weekday.MONDAY,
+                  Weekday.TUESDAY,
+                  Weekday.WEDNESDAY,
+                  Weekday.THURSDAY,
+                  Weekday.FRIDAY));
+      case WEEKEND -> weekdaysField(List.of(Weekday.SATURDAY, Weekday.SUNDAY));
+      case DAYS -> weekdaysField(filter.days());
+    };
+  }
+
+  private static String weekdaysField(List<Weekday> days) {
+    return listField(sortedUnique(days.stream().map(Weekday::cronDOW).toList()), 7);
+  }
+
+  private static String ordinalField(OrdinalPosition ordinal, Weekday weekday) {
+    int day = weekday.cronDOW();
+    for (int index = 0; index < ORDINALS.length; index++) {
+      if (ORDINALS[index] == ordinal) {
+        return day + "#" + (index + 1);
+      }
+    }
+    return day + "L";
+  }
+
+  private static String stepField(List<Integer> values, int size) {
+    int first = values.getFirst();
+    int last = values.getLast();
+    Integer gap = values.size() > 1 ? values.get(1) - first : null;
+    boolean equalGaps = gap != null;
+    for (int i = 1; equalGaps && i < values.size(); i++) {
+      equalGaps = values.get(i) - values.get(i - 1) == gap;
+    }
+    if (values.size() == size) {
+      return "*";
+    }
+    if (gap == null) {
+      return String.valueOf(first);
+    }
+    if (equalGaps && first == 0 && last + gap == size) {
+      return "*/" + gap;
+    }
+    if (equalGaps && gap == 1) {
+      return first + "-" + last;
+    }
+    if (equalGaps && values.size() >= 3) {
+      return first + "-" + last + "/" + gap;
+    }
+    return listField(values, size);
+  }
+
+  private static String listField(List<Integer> values, int size) {
+    if (values.size() == size) {
+      return "*";
+    }
+    return runs(values).stream()
+        .map(run -> run[0] == run[1] ? String.valueOf(run[0]) : run[0] + "-" + run[1])
+        .collect(Collectors.joining(","));
+  }
+
+  private static List<int[]> runs(List<Integer> sortedValues) {
+    List<int[]> runs = new ArrayList<>();
+    for (int value : sortedValues) {
+      if (!runs.isEmpty() && runs.getLast()[1] + 1 == value) {
+        runs.getLast()[1] = value;
+      } else {
+        runs.add(new int[] {value, value});
+      }
+    }
+    return runs;
+  }
+
+  private static List<Integer> sorted(List<Integer> values) {
+    List<Integer> copy = new ArrayList<>(values);
+    copy.sort(null);
+    return copy;
+  }
+
+  private static List<Integer> sortedUnique(Collection<Integer> values) {
+    return new ArrayList<>(new TreeSet<>(values));
   }
 }

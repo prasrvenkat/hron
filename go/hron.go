@@ -53,8 +53,10 @@ func ParseSchedule(input string) (*Schedule, error) {
 	return NewSchedule(data)
 }
 
-// FromCronExpr converts a 5-field cron expression to a Schedule.
-// The error is a *HronError.
+// FromCronExpr converts a 5-field cron expression, or an @ shortcut, to the
+// Schedule that fires at the same times on the same dates. The error is a
+// *HronError of kind cron when the syntax is invalid or no hron schedule fires
+// exactly as the cron does.
 func FromCronExpr(cronExpr string) (*Schedule, error) {
 	data, err := FromCron(cronExpr)
 	if err != nil {
@@ -112,8 +114,9 @@ func (s *Schedule) Between(from, to time.Time) iter.Seq[time.Time] {
 	return Between(s, from, to)
 }
 
-// ToCron converts this schedule to a 5-field cron expression.
-// Returns an error if the schedule is not expressible as cron.
+// ToCron converts this schedule to the 5-field cron expression that fires at
+// the same times on the same dates, in the schedule's timezone. The error is a
+// *HronError of kind cron when no cron fires exactly as the schedule does.
 func (s *Schedule) ToCron() (string, error) {
 	return ToCron(s.data)
 }

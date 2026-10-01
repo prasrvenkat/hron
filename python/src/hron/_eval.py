@@ -361,12 +361,12 @@ _DailyTimes = _FixedTimes | _Slots
 def _daily_times(expr: ScheduleExpr) -> _DailyTimes:
     match expr:
         case IntervalRepeat(interval=interval, unit=unit, from_time=start, to_time=end):
-            return _Slots(_interval_slots(interval, unit, start, end))
+            return _Slots(interval_slots(interval, unit, start, end))
         case _:
             return _FixedTimes(tuple(civil_time(t) for t in expr.times))
 
 
-def _interval_slots(
+def interval_slots(
     interval: int, unit: IntervalUnit, start: TimeOfDay, end: TimeOfDay
 ) -> tuple[int, ...]:
     step = max(interval, 1) * (1 if unit == IntervalUnit.MIN else MINUTES_PER_HOUR)

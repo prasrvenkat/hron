@@ -769,23 +769,51 @@ fn naive_matcher_agrees_with_known_dates() {
 }
 
 #[test]
-fn to_cron_of_a_built_schedule_with_interval_0_steps_by_1_as_evaluation_does() {
-    let schedule = Schedule::new(ScheduleExpr::IntervalRepeat {
+fn to_cron_of_a_built_schedule_with_interval_0_steps_by_1_of_its_unit_as_evaluation_does() {
+    let minutes = Schedule::new(ScheduleExpr::IntervalRepeat {
         interval: 0,
         unit: IntervalUnit::Minutes,
         from: TimeOfDay { hour: 9, minute: 0 },
         to: TimeOfDay { hour: 9, minute: 2 },
         day_filter: None,
     });
-    assert_eq!(schedule.to_cron().unwrap(), "0-2 9 * * *");
+    assert_eq!(minutes.to_cron().unwrap(), "0-2 9 * * *");
     let from = utc(WINDOW_START, 9, 0);
-    let fires: Vec<_> = schedule
+    let fires: Vec<_> = minutes
         .next_n_from(&from, 2)
         .unwrap()
         .iter()
         .map(wall)
         .collect();
     assert_eq!(fires, [(WINDOW_START, (9, 1)), (WINDOW_START, (9, 2))]);
+
+    let hours = Schedule::new(ScheduleExpr::IntervalRepeat {
+        interval: 0,
+        unit: IntervalUnit::Hours,
+        from: TimeOfDay { hour: 9, minute: 0 },
+        to: TimeOfDay {
+            hour: 10,
+            minute: 0,
+        },
+        day_filter: None,
+    });
+    assert_eq!(hours.to_cron().unwrap(), "0 9-10 * * *");
+    let from = utc(WINDOW_START, 8, 0);
+    let fires: Vec<_> = hours
+        .next_n_from(&from, 3)
+        .unwrap()
+        .iter()
+        .map(wall)
+        .collect();
+    let next_day = WINDOW_START.tomorrow().unwrap();
+    assert_eq!(
+        fires,
+        [
+            (WINDOW_START, (9, 0)),
+            (WINDOW_START, (10, 0)),
+            (next_day, (9, 0))
+        ]
+    );
 }
 
 #[test]

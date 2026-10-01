@@ -29,9 +29,9 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Converts a 5-field cron expression to a Schedule.
+    /// Converts a 5-field cron expression to a Schedule that fires at the same times.
     /// </summary>
-    /// <exception cref="HronException">If the cron expression is invalid</exception>
+    /// <exception cref="HronException">A cron error when the input is not valid cron or has no exact hron equivalent</exception>
     public static Schedule FromCron(string cronExpr)
     {
         var data = CronConverter.FromCron(cronExpr);
@@ -110,9 +110,10 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Converts this schedule to a 5-field cron expression.
+    /// Converts this schedule to a 5-field cron expression that fires at the same times.
+    /// The schedule's timezone is not part of the cron.
     /// </summary>
-    /// <exception cref="HronException">If the schedule cannot be expressed as cron</exception>
+    /// <exception cref="HronException">A cron error when cron cannot fire at exactly the same times</exception>
     public string ToCron() => CronConverter.ToCron(_data);
 
     /// <summary>

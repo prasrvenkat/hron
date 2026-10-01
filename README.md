@@ -169,7 +169,7 @@ every weekday at 9:00 except dec 25 until 2027-12-31 during jan, dec in UTC
 
 ## Cron Compatibility
 
-hron converts to and from standard 5-field cron expressions exactly: the result fires at the same times on the same dates, or the conversion fails with an error that says why.
+hron converts to and from standard 5-field cron expressions exactly: the result fires at the same times on the same dates, or the conversion fails with an error that says why. This ignores the timezone and DST transitions, where cron schedulers differ.
 
 | hron | cron |
 |---|---|
@@ -195,7 +195,7 @@ hron converts to and from standard 5-field cron expressions exactly: the result 
 
 A schedule's timezone is not part of the cron: run the cron in the schedule's timezone.
 
-`from_cron()` fails for crons that restrict both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day that no hron interval can write on their days (`*/7 * * * *`). The [spec](spec/README.md#cron-conversion) has the full rules and every error message.
+`from_cron()` fails for crons that restrict both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps). The [spec](spec/README.md#cron-conversion) has the full rules and every error message.
 
 ## Timezone & DST Behavior
 

@@ -73,7 +73,9 @@ class Schedule:
 
     @classmethod
     def from_cron(cls, cron_expr: str) -> Schedule:
-        """Raises HronError for an invalid 5-field cron expression or @ shortcut."""
+        """Convert a 5-field cron expression or @ shortcut to a Schedule that fires at the same
+        times. Raises HronError of kind "cron" when the input is not valid cron or has no exact
+        hron equivalent."""
         return cls(from_cron(cron_expr))
 
     @classmethod
@@ -113,7 +115,8 @@ class Schedule:
         return _between(self._prepared, from_, to)
 
     def to_cron(self) -> str:
-        """Raises HronError when the schedule has no cron equivalent."""
+        """Convert to a 5-field cron expression that fires at the same times. Raises HronError of
+        kind "cron" when no cron does. The schedule's timezone is not part of the cron."""
         return to_cron(self._data)
 
     def __str__(self) -> str:

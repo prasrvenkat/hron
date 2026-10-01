@@ -24,7 +24,10 @@ export class Schedule {
     return new Schedule(parse(input));
   }
 
-  /** Convert a 5-field cron expression to a Schedule. Throws `HronError` if it is invalid. */
+  /**
+   * Convert a 5-field cron expression to a Schedule that fires at the same times.
+   * Throws a `cron` `HronError` when the input is not valid cron or has no exact hron equivalent.
+   */
   static fromCron(cronExpr: string): Schedule {
     return new Schedule(fromCron(cronExpr));
   }
@@ -77,7 +80,10 @@ export class Schedule {
     yield* between(this.data, from, to);
   }
 
-  /** Convert this schedule to a 5-field cron expression. Throws `HronError` if it has no cron equivalent. */
+  /**
+   * Convert this schedule to a 5-field cron expression that fires at the same times.
+   * Throws a `cron` `HronError` when no cron does. The schedule's timezone is not part of the cron.
+   */
   toCron(): string {
     return toCron(this.data);
   }

@@ -1,6 +1,6 @@
 # hron
 
-**Human-readable cron** — scheduling expressions that are a superset of what cron can express.
+**Human-readable cron** — scheduling expressions that read like English and convert to and from cron.
 
 ```python
 from hron import Schedule
@@ -41,8 +41,8 @@ schedule.matches(datetime(2026, 2, 9, 9, 0, tzinfo=ZoneInfo("America/New_York"))
 simple = Schedule.parse("every day at 9:00")
 print(simple.to_cron())  # "0 9 * * *"
 
-from_cron = Schedule.from_cron("*/30 * * * *")
-print(from_cron)  # "every 30 min from 00:00 to 23:59"
+from_cron = Schedule.from_cron("*/15 9-17 * * 1-5")
+print(from_cron)  # "every 15 min from 09:00 to 17:45 on weekday"
 
 # Validate without exceptions
 Schedule.validate("every day at 9:00")  # True
@@ -59,7 +59,7 @@ See the full [expression reference](https://github.com/simpllyf/hron#expression-
 Parse an hron expression string.
 
 ### `Schedule.from_cron(cron_expr: str) -> Schedule`
-Convert a 5-field cron expression to a Schedule.
+Convert a 5-field cron expression or `@` shortcut to a Schedule that fires at the same times. This ignores the timezone and DST transitions, where cron schedulers differ. Raises `HronError` with `kind == "cron"` when the input is not valid cron or has no exact hron equivalent: a cron that restricts both the day of month and the day of week (`0 9 15 * 1`), or more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps).
 
 ### `Schedule.validate(input: str) -> bool`
 Check if an input string is a valid hron expression.
@@ -74,7 +74,7 @@ Compute the next `n` occurrences after `now`.
 Check if a datetime matches this schedule.
 
 ### `schedule.to_cron() -> str`
-Convert to a 5-field cron expression. Raises `HronError` if the schedule can't be expressed as cron.
+Convert to a 5-field cron expression that fires at the same times. Raises `HronError` with `kind == "cron"` for `except`, `until`, `starting`, an ISO date, a repeat every `n > 1` days, weeks, months or years, a directional nearest weekday, a `during` that excludes a yearly or named date's month, a schedule built in code with no days or no times, and times that are not every combination of their minutes and hours (`at 09:00, 17:30`). The schedule's timezone is not part of the cron: run it in the schedule's timezone. The [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#cron-conversion) has the full rules and every error message.
 
 ### `str(schedule) -> str`
 Render as the canonical string form (roundtrip-safe).

@@ -1,5 +1,7 @@
 package io.hron.eval;
 
+import io.hron.ast.IntervalRepeat;
+import io.hron.ast.IntervalUnit;
 import io.hron.ast.ScheduleData;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -69,6 +71,26 @@ public final class Evaluator {
         .nearest(minute.minusNanos(1), Direction.FORWARD)
         .filter(minute::isEqual)
         .isPresent();
+  }
+
+  /**
+   * The minutes of the day an interval repeat fires at, ascending. toCron shares it so that it
+   * writes the slots evaluation steps through; the step is a long, as 2147483647 hours in minutes
+   * overflows an int.
+   */
+  public static int[] intervalSlots(IntervalRepeat ir) {
+    long minutesPerUnit = ir.unit() == IntervalUnit.HOURS ? WallClock.MINUTES_PER_HOUR : 1;
+    long step = Math.max(ir.interval(), 1) * minutesPerUnit;
+    int from = ir.fromTime().totalMinutes();
+    int to = ir.toTime().totalMinutes();
+    if (to < from) {
+      return new int[0];
+    }
+    int[] minutes = new int[(int) ((to - from) / step) + 1];
+    for (int k = 0; k < minutes.length; k++) {
+      minutes[k] = (int) (from + k * step);
+    }
+    return minutes;
   }
 
   static boolean inSupportedRange(ZonedDateTime t) {

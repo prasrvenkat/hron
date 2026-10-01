@@ -65,7 +65,7 @@ func main() {
 
 - `ParseSchedule(input string) (*Schedule, error)` - Parse an hron expression
 - `MustParse(input string) *Schedule` - Parse an hron expression, panics on error
-- `FromCronExpr(cronExpr string) (*Schedule, error)` - Convert a 5-field cron expression to a Schedule
+- `FromCronExpr(cronExpr string) (*Schedule, error)` - Convert a 5-field cron expression, or an `@` shortcut, to the Schedule that fires at the same times on the same dates
 - `Validate(input string) bool` - Check if an input string is a valid hron expression
 
 ### Schedule Methods
@@ -73,7 +73,7 @@ func main() {
 - `NextFrom(now time.Time) *time.Time` - Compute the next occurrence after now
 - `NextNFrom(now time.Time, n int) []time.Time` - Compute the next n occurrences after now
 - `Matches(dt time.Time) bool` - Report whether the minute containing `dt` (seconds dropped, on the schedule's wall clock) is an occurrence
-- `ToCron() (string, error)` - Convert this schedule to a 5-field cron expression
+- `ToCron() (string, error)` - Convert this schedule to the 5-field cron expression that fires at the same times on the same dates; run it in the schedule's timezone
 - `String() string` - Render as canonical string (roundtrip-safe)
 - `Timezone() string` - Get the IANA timezone name with its canonical capitalization, or empty string if not specified
 
@@ -94,6 +94,8 @@ Error kinds:
 - `ErrorKindParse` - Parser error (invalid syntax)
 - `ErrorKindEval` - Evaluation error
 - `ErrorKindCron` - Cron conversion error
+
+Cron conversion is exact or fails with an `ErrorKindCron` error that says why. This ignores the timezone and DST transitions, where cron schedulers differ. Yearly schedules, ordinal weekdays and partial-day intervals convert; `except`, `until`, `starting`, ISO dates, repeats every `n > 1` days, weeks, months or years, directional nearest weekdays, a `during` that excludes a yearly or named date's month, schedules built in code with no days or no times, and times that are not every combination of their minutes and hours do not. From cron, `*/7 * * * *` (216 unevenly spaced times a day, too many to list) and crons that restrict both the day of month and the day of week fail. The [spec](../spec/README.md#cron-conversion) has every rule and message.
 
 ## Expression Syntax
 
