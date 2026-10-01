@@ -5514,6 +5514,62 @@
           "description": "us/eastern is the IANA link US/Eastern; it keeps its own name",
           "now": "2026-02-06T12:00:00+00:00[UTC]",
           "next": "2026-02-06T09:00:00-05:00[US/Eastern]"
+        },
+        {
+          "name": "next_n_zero_is_empty",
+          "expression": "every day at 09:00",
+          "description": "nextNFrom with n = 0 returns an empty list (spec/README.md, Timestamps and counts)",
+          "next_n_count": 0,
+          "next_n": []
+        },
+        {
+          "name": "now_in_another_zone_returns_schedule_zone",
+          "expression": "every day at 09:00 in America/New_York",
+          "description": "now is written in Tokyo; results are in the schedule's timezone (spec/README.md, Timestamps and counts)",
+          "now": "2026-02-06T21:00:00+09:00[Asia/Tokyo]",
+          "next_n": [
+            "2026-02-06T09:00:00-05:00[America/New_York]",
+            "2026-02-07T09:00:00-05:00[America/New_York]"
+          ]
+        },
+        {
+          "name": "now_in_another_zone_returns_utc",
+          "expression": "every day at 09:00",
+          "description": "only now's instant counts; a schedule without a timezone returns UTC",
+          "now": "2026-02-06T21:00:00+09:00[Asia/Tokyo]",
+          "next": "2026-02-07T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "next_n_negative_is_empty",
+          "expression": "every day at 09:00",
+          "description": "nextNFrom with n < 0 returns an empty list",
+          "next_n_count": -1,
+          "next_n": []
+        },
+        {
+          "name": "next_n_huge_single_date",
+          "expression": "on 2026-03-01 at 09:00",
+          "description": "n only caps the count; no room is reserved for it",
+          "next_n_count": 2147483647,
+          "next_n": [
+            "2026-03-01T09:00:00+00:00[UTC]"
+          ]
+        },
+        {
+          "name": "next_n_huge_runs_to_range_end",
+          "expression": "every 1000 years on jan 1 at 00:00",
+          "description": "a huge n returns every occurrence through the end of the supported range",
+          "next_n_count": 2147483647,
+          "next_n": [
+            "2970-01-01T00:00:00+00:00[UTC]",
+            "3970-01-01T00:00:00+00:00[UTC]",
+            "4970-01-01T00:00:00+00:00[UTC]",
+            "5970-01-01T00:00:00+00:00[UTC]",
+            "6970-01-01T00:00:00+00:00[UTC]",
+            "7970-01-01T00:00:00+00:00[UTC]",
+            "8970-01-01T00:00:00+00:00[UTC]",
+            "9970-01-01T00:00:00+00:00[UTC]"
+          ]
         }
       ]
     },
@@ -8276,6 +8332,20 @@
           "description": "00:00 -02:30 on 2010-11-07 is the first pass and an occurrence",
           "datetime": "2010-11-07T00:00:00-02:30[America/St_Johns]",
           "expected": true
+        },
+        {
+          "name": "datetime_in_another_zone",
+          "expression": "every day at 09:00 in America/New_York",
+          "description": "23:00:30 in Tokyo is 09:00:30 in New York",
+          "datetime": "2026-02-06T23:00:30+09:00[Asia/Tokyo]",
+          "expected": true
+        },
+        {
+          "name": "datetime_at_09_00_in_another_zone",
+          "expression": "every day at 09:00 in America/New_York",
+          "description": "09:00 in Tokyo is 19:00 the day before in New York",
+          "datetime": "2026-02-06T09:00:30+09:00[Asia/Tokyo]",
+          "expected": false
         }
       ]
     },
@@ -9950,6 +10020,16 @@
           "from": "9999-12-28T08:00:00+00:00[UTC]",
           "to": "9999-12-30T00:00:00+00:00[UTC]",
           "expected": []
+        },
+        {
+          "name": "bounds_in_other_zones",
+          "expression": "every day at 09:00 in America/New_York",
+          "from": "2026-02-06T21:00:00+09:00[Asia/Tokyo]",
+          "to": "2026-02-07T15:00:00+01:00[Europe/Berlin]",
+          "expected": [
+            "2026-02-06T09:00:00-05:00[America/New_York]",
+            "2026-02-07T09:00:00-05:00[America/New_York]"
+          ]
         }
       ]
     },
@@ -11236,6 +11316,12 @@
           "now": "9990-01-01T00:00:00+00:00[UTC]",
           "expected": "8400-01-01T00:00:00+00:00[UTC]",
           "description": "backward, the span runs past the first ISO exception by date, 8800-01-01, not the first one written"
+        },
+        {
+          "name": "now_in_another_zone",
+          "expression": "every day at 09:00 in America/New_York",
+          "now": "2026-02-06T21:00:00+09:00[Asia/Tokyo]",
+          "expected": "2026-02-05T09:00:00-05:00[America/New_York]"
         }
       ]
     },

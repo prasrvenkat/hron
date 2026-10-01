@@ -115,7 +115,7 @@
     ]
   },
   "notes": {
-    "wasm": "WASM uses string-based ZonedDateTime params (ISO 8601 format). Also exposes toJSON() as a WASM-specific extra.",
+    "wasm": "WASM takes and returns timestamps as strings (spec/README.md, \"Timestamps and counts\"). occurrences(from, limit) and between(from, to) return arrays rather than iterators, and occurrences needs a limit. fromCron is a top-level function. Also exposes toJSON() as a WASM-specific extra.",
     "rust": "Rust expresses getters as accessor methods: expr(), timezone(), except(), until(), anchor(), during(). Also exposes builder methods: with_anchor(), with_timezone(), with_except(), with_until(), with_during(). Additional Rust-specific: explain_cron(), Schedule::new().",
     "dart_exception": "Dart names the Exception AST type 'ExceptionSpec' to avoid conflict with dart:core.Exception."
   }

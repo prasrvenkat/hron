@@ -44,7 +44,7 @@ When adding new test cases to `tests.json`:
 
 ### Writing a runner
 
-A conformance runner must fail any case it cannot check: a section it does not know, a case with no assertion field it understands, or an invariant rule it does not implement. Silently skipping is a pass that checked nothing. A field that is present with the value `null` or `[]` is an assertion (no occurrence, empty list), not an absent field. The assertion fields per `eval` section are:
+A conformance runner must fail any case it cannot check: a section it does not know, a case with no assertion field it understands, or an invariant rule it does not implement. Silently skipping is a pass that checked nothing. A field that is present with the value `null` or `[]` is an assertion (no occurrence, empty list), not an absent field. A runner compares each returned timestamp with the expected string in full, offset and zone included, so a result in the wrong zone fails (C# compares the offset, as `DateTimeOffset` has no zone name). `next_n_count` may be 0, negative or larger than the list; a runner whose `n` cannot be negative (Rust's `usize`) checks a negative count as 0. The assertion fields per `eval` section are:
 
 - **`matches`** - `datetime`; asserts `expected` (boolean) for `matches(datetime)`.
 - **`previous_from`** - `now`; asserts `expected` (timestamp or null) for `previousFrom(now)`.
@@ -86,7 +86,7 @@ Each error has:
 4. **input** (`lex` and `parse` only): the input as given.
 5. **suggestion** (`parse` only, and only where this spec gives one): text to put in place of the span, where `YYYY-MM-DD` is left for the user to fill in.
 
-Every invalid expression fails in `parse` (and `validate` returns false) with a `lex` or `parse` error; evaluating a parsed schedule never fails, and no input raises any other exception. `eval` is reserved for schedules built in code.
+Every invalid expression fails in `parse` (and `validate` returns false) with a `lex` or `parse` error; evaluating a parsed schedule never fails, and apart from the usage errors in "Timestamps and counts", no input raises any other exception. `eval` is reserved for schedules built in code.
 
 ### Words
 
@@ -268,7 +268,31 @@ Implementations must find any occurrence that exists. The (proleptic) Gregorian 
 
 ### Supported range
 
-Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z` (proleptic Gregorian calendar). The day of margin at each end lets every platform represent the local time of any supported instant in any timezone. An occurrence outside the range does not exist, so the result is null: `every 9000 years on jan 1 at 09:00` has no next occurrence after 1970 (the next aligned year would be 10970), while `every 8000 years on jan 1 at 09:00` next fires in 9970. A `now`, `from`, `to` or `datetime` outside the range is not an error: `nextFrom` and `previousFrom` return null, `matches` returns false, and `nextNFrom`, `occurrences` and `between` return nothing.
+Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z` (proleptic Gregorian calendar). The day of margin at each end lets every platform represent the local time of any supported instant in any timezone. An occurrence outside the range does not exist, so the result is null: `every 9000 years on jan 1 at 09:00` has no next occurrence after 1970 (the next aligned year would be 10970), while `every 8000 years on jan 1 at 09:00` next fires in 9970. A `now`, `from`, `to` or `datetime` outside the range is not an error, even at the platform's own limits: `nextFrom` and `previousFrom` return null, `matches` returns false, and `nextNFrom`, `occurrences` and `between` return nothing.
+
+### Timestamps and counts
+
+`now`, `from`, `to` and `datetime` each identify an instant, and only the instant matters: the zone or offset they are written in changes nothing. Each language takes and returns its zoned type:
+
+| Language | Type |
+|---|---|
+| Rust | `jiff::Zoned` |
+| TypeScript | `Temporal.ZonedDateTime`, native or polyfill |
+| Python | an aware `datetime` |
+| Go | `time.Time` |
+| Java | `ZonedDateTime` |
+| C# | `DateTimeOffset`, which carries an offset but no zone name |
+| Ruby | `Time` |
+| Dart | `TZDateTime` |
+| WebAssembly and the CLI | a string (below) |
+
+- Every returned timestamp is in the schedule's timezone, or UTC when it has none: a Python `datetime` with that `ZoneInfo`, a Go `time.Time` with that `Location`, a Ruby `Time` whose `zone` is that `TZInfo::Timezone`, and so on.
+- No method modifies its arguments.
+- Only Python (a naive `datetime`) and .NET (a `DateTime`, which C# converts to `DateTimeOffset` before hron sees it) accept a value without an offset; both read it as the host's local time.
+- `nextNFrom(now, n)` returns no more than `n` occurrences, and none when `n <= 0`. `n` only caps the count: no implementation reserves room for it, so `n = 2147483647` returns at once, with every occurrence through the end of the supported range. Where a caller can pass a non-integer `n` (JavaScript, Python, Ruby, WebAssembly), that is a usage error; an integer is what `Number.isInteger`, `operator.index` or `Integer` accepts. WebAssembly's `occurrences(from, limit)` treats `limit` the same way.
+- A usage error is the platform's own error for a bad argument, never a hron error: in JavaScript a `TypeError` for a value of the wrong type (null and `undefined` included) and a `RangeError` for a bad value; in Python and Ruby a `TypeError`; in Java a `NullPointerException` for null. The CLI prints it and exits with status 2. The static types in Rust, Go, C# and Dart rule the others out.
+- WebAssembly and the CLI take a timestamp as an RFC 9557 or RFC 3339 string with an offset or `Z`, in either case (`2026-02-06T12:00:00+09:00[Asia/Tokyo]`, `2026-02-06T03:00:00Z`, `2026-02-06t03:00:00.000z`). The offset decides the instant: a zone in brackets that disagrees with it is ignored, unless it is marked critical (`[!Asia/Tokyo]`), which is a usage error. Other bracketed tags such as `[u-ca=hebrew]` are ignored unless critical. A string without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`) names no instant, or two at a DST change, so it is a usage error, as is an unknown zone. Six-digit years (`+010000-01-01T00:00:00Z`, as `Date.prototype.toISOString` writes them) are read and lie outside the supported range.
+- WebAssembly and the CLI write every timestamp as `2026-02-06T09:00:00-05:00[America/New_York]`: seconds always, the offset as `±HH:MM` (`+00:00`, never `Z`), and the schedule's zone or `UTC` in brackets.
 
 ### Timezone data
 
