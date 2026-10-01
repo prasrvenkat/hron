@@ -36,6 +36,24 @@ const fromCron = Schedule.fromCron("0 9 * * 1-5"); // every weekday at 09:00
 console.log(schedule.toString());
 ```
 
+## Timestamps
+
+Every method takes a `Temporal.ZonedDateTime` or a `Temporal.Instant`, either the polyfill's (exported as `Temporal`) or the engine's native one, and returns `Temporal.ZonedDateTime`. Only the instant counts, not the zone it is written in, and every result is in the schedule's timezone, or UTC when it has none:
+
+```typescript
+const tokyo = Temporal.ZonedDateTime.from("2026-02-06T21:00:00+09:00[Asia/Tokyo]");
+Schedule.parse("every day at 09:00 in America/New_York").nextFrom(tokyo)?.toString();
+// "2026-02-06T09:00:00-05:00[America/New_York]"
+Schedule.parse("every day at 09:00").nextFrom(tokyo)?.toString();
+// "2026-02-07T09:00:00+00:00[UTC]"
+Schedule.parse("every day at 09:00").nextFrom(tokyo.toInstant())?.toString();
+// "2026-02-07T09:00:00+00:00[UTC]"
+```
+
+`nextNFrom(now, n)` returns up to `n` occurrences and `[]` when `n <= 0`. A huge `n` costs nothing up front: it returns every occurrence through the end of the supported range.
+
+Any other timestamp (a `Date`, a string, a `PlainDateTime`, `null`, `undefined`) throws a `TypeError` when the method is called, even `occurrences` and `between`, which are lazy. An `n` that is not a number throws a `TypeError`, and one that is not an integer (`1.5`, `NaN`, `Infinity`) a `RangeError`. These are usage errors, never a `HronError`.
+
 ## Errors
 
 `Schedule.parse` throws a `HronError` whose `kind` is `"lex"` or `"parse"`, with the exact message of the spec, the `input`, and a `span` of `{ start, end }`. A parse error may carry a `suggestion`. `displayRich()` renders the error with carets under the span:

@@ -68,7 +68,7 @@ Check if an input string is a valid hron expression.
 Compute the next occurrence after `now`.
 
 ### `schedule.next_n_from(now: datetime, n: int) -> list[datetime]`
-Compute the next `n` occurrences after `now`.
+Compute the next `n` occurrences after `now`: fewer if the schedule ends, none if `n <= 0`. `n` only caps the count, so a huge `n` returns every occurrence through the end of the supported range. Raises `TypeError` if `n` is not an integer, that is, anything `operator.index` rejects, such as `2.0`.
 
 ### `schedule.matches(dt: datetime) -> bool`
 Check if a datetime matches this schedule.
@@ -84,6 +84,23 @@ The IANA timezone name with its canonical capitalization, if specified.
 
 ### `schedule.expression -> ScheduleExpr`
 The underlying schedule expression AST.
+
+## Timestamps
+
+Each `now`, `from_`, `to` and `dt` names an instant, and the zone it is written in changes nothing. A naive `datetime` is read as the host's local time. Every returned `datetime` is aware and in the schedule's `ZoneInfo`, or `ZoneInfo("UTC")` when it has none. No method modifies its arguments.
+
+```python
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from hron import Schedule
+
+schedule = Schedule.parse("every day at 09:00 in America/New_York")
+tokyo = datetime(2026, 2, 6, 21, 0, tzinfo=ZoneInfo("Asia/Tokyo"))  # 07:00 in New York
+print(schedule.next_from(tokyo))  # 2026-02-06 09:00:00-05:00
+schedule.next_from(tokyo).tzinfo  # zoneinfo.ZoneInfo(key='America/New_York')
+```
+
+A timestamp outside the supported range, `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z`, is not an error, even at `datetime.min` and `datetime.max`: `next_from` and `previous_from` return `None`, `matches` returns `False`, and `next_n_from`, `occurrences` and `between` return nothing. A timestamp that is not a `datetime`, such as a `str`, a `date` or `None`, raises `TypeError`, and so does `occurrences` or `between` at the call, before anything is iterated.
 
 ## Errors
 

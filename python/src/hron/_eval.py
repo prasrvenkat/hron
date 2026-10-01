@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import operator
+import sys
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -101,12 +103,14 @@ class PreparedSchedule:
 
 
 def next_from(schedule: PreparedSchedule, now: datetime) -> datetime | None:
+    _require_datetime("now", now)
     if not _in_supported_range(now):
         return None
     return schedule.search().nearest(now, _Direction.FORWARD)
 
 
 def previous_from(schedule: PreparedSchedule, now: datetime) -> datetime | None:
+    _require_datetime("now", now)
     if not _in_supported_range(now):
         return None
     return schedule.search().nearest(now, _Direction.BACKWARD)
@@ -115,6 +119,7 @@ def previous_from(schedule: PreparedSchedule, now: datetime) -> datetime | None:
 def matches(schedule: PreparedSchedule, dt: datetime) -> bool:
     """Defined through the forward search, so the two can never disagree (spec/README.md,
     "matches is true exactly when the minute containing t is an occurrence")."""
+    _require_datetime("dt", dt)
     if not _in_supported_range(dt):
         return False
     search = schedule.search()
@@ -131,10 +136,28 @@ def matches(schedule: PreparedSchedule, dt: datetime) -> bool:
 
 
 def next_n_from(schedule: PreparedSchedule, now: datetime, n: int) -> list[datetime]:
-    return list(islice(occurrences(schedule, now), max(n, 0)))
+    _require_datetime("now", now)
+    # islice rejects a stop beyond sys.maxsize, more than a list can hold.
+    count = min(max(operator.index(n), 0), sys.maxsize)
+    return list(islice(_occurrences_after(schedule, now), count))
 
 
 def occurrences(schedule: PreparedSchedule, from_: datetime) -> Iterator[datetime]:
+    # Checked outside the generator, so a bad argument fails at the call, not at next().
+    _require_datetime("from_", from_)
+    return _occurrences_after(schedule, from_)
+
+
+def between(schedule: PreparedSchedule, from_: datetime, to: datetime) -> Iterator[datetime]:
+    _require_datetime("from_", from_)
+    _require_datetime("to", to)
+    if not _in_supported_range(to):
+        return iter(())
+    end = to.astimezone(UTC)
+    return takewhile(lambda t: t <= end, _occurrences_after(schedule, from_))
+
+
+def _occurrences_after(schedule: PreparedSchedule, from_: datetime) -> Iterator[datetime]:
     if not _in_supported_range(from_):
         return
     search = schedule.search()
@@ -144,17 +167,17 @@ def occurrences(schedule: PreparedSchedule, from_: datetime) -> Iterator[datetim
         current = search.nearest(current, _Direction.FORWARD)
 
 
-def between(schedule: PreparedSchedule, from_: datetime, to: datetime) -> Iterator[datetime]:
-    if not _in_supported_range(to):
-        return iter(())
-    end = to.astimezone(UTC)
-    return takewhile(lambda t: t <= end, occurrences(schedule, from_))
+def _require_datetime(name: str, value: object) -> None:
+    if not isinstance(value, datetime):
+        raise TypeError(f"{name} must be a datetime, not {type(value).__name__}")
 
 
 def _in_supported_range(t: datetime) -> bool:
+    # Near datetime.min or max, converting to UTC can leave the years datetime holds:
+    # OverflowError, or ValueError for a naive datetime read as host local time.
     try:
         return _RANGE_START <= t.astimezone(UTC) < _RANGE_END
-    except OverflowError:
+    except (OverflowError, ValueError):
         return False
 
 

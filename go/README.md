@@ -71,11 +71,24 @@ func main() {
 ### Schedule Methods
 
 - `NextFrom(now time.Time) *time.Time` - Compute the next occurrence after now
-- `NextNFrom(now time.Time, n int) []time.Time` - Compute the next n occurrences after now
+- `NextNFrom(now time.Time, n int) []time.Time` - Compute up to n occurrences after now, none when `n <= 0`
 - `Matches(dt time.Time) bool` - Report whether the minute containing `dt` (seconds dropped, on the schedule's wall clock) is an occurrence
 - `ToCron() (string, error)` - Convert this schedule to the 5-field cron expression that fires at the same times on the same dates; run it in the schedule's timezone
 - `String() string` - Render as canonical string (roundtrip-safe)
 - `Timezone() string` - Get the IANA timezone name with its canonical capitalization, or empty string if not specified
+
+### Timestamps
+
+Every method reads only the instant of a `time.Time` you pass, whatever its `Location`, and returns times in the schedule's timezone, or UTC when it has none:
+
+```go
+s := hron.MustParse("every day at 09:00 in America/New_York")
+tokyo, _ := time.LoadLocation("Asia/Tokyo")
+next := s.NextFrom(time.Date(2026, 2, 6, 21, 0, 0, 0, tokyo))
+fmt.Println(next.Location(), next) // America/New_York 2026-02-06 09:00:00 -0500 EST
+```
+
+`n` in `NextNFrom` only caps the count; no room is reserved for it. A time outside the supported range, `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z`, the zero `time.Time` included, is not an error: `NextFrom` and `PreviousFrom` return nil, `Matches` returns false, and `NextNFrom`, `Occurrences` and `Between` return nothing. An occurrence outside the range does not exist ([spec](../spec/README.md#supported-range)).
 
 ### Error Handling
 

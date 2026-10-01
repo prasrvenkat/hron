@@ -18,8 +18,8 @@ import { Schedule, fromCron, explainCron } from "hron-wasm";
 // Parse an expression
 const schedule = Schedule.parse("every weekday at 9:00 in America/New_York");
 
-// Next occurrence from a given datetime (RFC 9557 string with a [zone])
-const now = `${new Date().toISOString()}[UTC]`;
+// Next occurrence after a timestamp string (see "Timestamps" below)
+const now = new Date().toISOString();
 const next = schedule.nextFrom(now);
 
 // Next N occurrences
@@ -31,11 +31,11 @@ const prev = schedule.previousFrom(now);
 // Check if a datetime matches
 const isMatch = schedule.matches(now);
 
-// Lazy iteration: occurrences after `from`, limited to `limit` results
+// Occurrences after `from`, limited to `limit` results
 const occ = schedule.occurrences(now, 10);
 
 // Bounded range: occurrences where from < t <= to
-const range = schedule.between("2026-01-01T00:00:00Z[UTC]", "2026-12-31T23:59:59Z[UTC]");
+const range = schedule.between("2026-01-01T00:00:00Z", "2026-12-31T23:59:59Z");
 
 // Convert to cron (if expressible)
 const cron = schedule.toCron();
@@ -46,7 +46,7 @@ const fromCronSchedule = fromCron("0 9 * * *");
 // Explain a cron expression in human-readable form
 const explanation = explainCron("0 9 * * 1-5");
 
-// Structured JSON representation
+// Structured JSON representation, as a plain object; JSON.stringify(schedule) uses it
 const json = schedule.toJSON();
 
 // Canonical string (roundtrip-safe)
@@ -59,9 +59,28 @@ const valid = Schedule.validate("every day at 9:00");
 const tz = schedule.timezone; // "America/New_York" or undefined
 ```
 
+## Timestamps
+
+Every method takes and returns timestamps as strings ([spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#timestamps-and-counts)):
+
+- A timestamp you pass needs a UTC offset or `Z`, in either case: `2026-02-06T12:00:00+09:00[Asia/Tokyo]`, `2026-02-06T03:00:00Z` and `2026-02-06t03:00:00.000z` all name the same instant, and only the instant matters. The offset decides it: a zone in brackets that disagrees with the offset is ignored, unless it is marked critical (`[!Asia/Tokyo]`).
+- `new Date().toISOString()` gives a valid timestamp. Its six-digit years (`+010000-01-01T00:00:00.000Z`) lie outside the supported range, 0001-01-02 to 9999-12-30, where `nextFrom` and `previousFrom` return `undefined`, `matches` returns `false`, and the others return `[]`.
+- Every returned timestamp has seconds, an offset as `±HH:MM` and the schedule's timezone, or `UTC` when it has none: `2026-02-06T09:00:00-05:00[America/New_York]`, `2026-02-07T09:00:00+00:00[UTC]`.
+- `nextNFrom(now, n)` and `occurrences(from, limit)` return at most `n` or `limit` results, and `[]` when it is 0 or less. A large count only caps the results.
+
+```javascript
+const daily = Schedule.parse("every day at 09:00");
+daily.nextFrom("2026-02-06T12:00:00+09:00[Asia/Tokyo]"); // "2026-02-06T09:00:00+00:00[UTC]"
+daily.nextFrom("2026-02-06T08:59:00+00:00[Asia/Tokyo]"); // "2026-02-06T09:00:00+00:00[UTC]"
+daily.nextFrom("+010000-01-01T00:00:00.000Z");           // undefined
+daily.nextNFrom("2026-02-06T03:00:00Z", -1);             // []
+```
+
+A bad argument throws the platform's own error, with no `kind`: a `TypeError` for a value of the wrong type, such as a `Date`, a number or `undefined` where a timestamp string goes, or a string where `n` or `limit` goes; and a `RangeError` for a bad value, such as a timestamp without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`), an unknown timezone, an offset that disagrees with a critical zone, or an `n` or `limit` that is not an integer.
+
 ## Errors
 
-Methods throw an `Error` whose `message` is the hron error message and whose `kind` says what failed:
+Apart from the bad arguments above, methods throw an `Error` whose `message` is the hron error message and whose `kind` says what failed:
 
 | `kind` | Thrown by |
 |---|---|
@@ -111,8 +130,6 @@ const text = input.slice(index(error.span.start), index(error.span.end));
 ```
 
 Strings reach WebAssembly as UTF-8, so a lone surrogate arrives as U+FFFD: it is reported as `unexpected character U+FFFD`, one code point wide, and U+FFFD also stands in its place in `error.input`, in any text the message echoes (such as a timezone) and in `displayRich()`.
-
-A datetime argument that cannot be parsed throws a plain `Error` with no `kind`.
 
 ## License
 

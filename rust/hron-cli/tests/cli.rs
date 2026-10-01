@@ -286,3 +286,156 @@ fn test_to_cron_day_range() {
 fn test_no_expression() {
     hron().assert().failure();
 }
+
+fn occurrences_between(from: &str, to: &str, expression: &str) -> assert_cmd::assert::Assert {
+    hron()
+        .args(["--from", from, "--to", to, expression])
+        .assert()
+}
+
+#[test]
+fn writes_timestamps_in_the_schedule_zone_with_seconds_and_offset() {
+    occurrences_between(
+        "2026-02-06T21:00:00+09:00[Asia/Tokyo]",
+        "2026-02-07T15:00:00+01:00[Europe/Berlin]",
+        "every day at 09:00 in America/New_York",
+    )
+    .success()
+    .stdout("2026-02-06T09:00:00-05:00[America/New_York]\n2026-02-07T09:00:00-05:00[America/New_York]\n");
+}
+
+#[test]
+fn writes_utc_as_plus_zero_not_z() {
+    occurrences_between(
+        "2026-02-06T03:00:00Z",
+        "2026-02-07T12:00:00Z",
+        "every day at 09:00",
+    )
+    .success()
+    .stdout("2026-02-06T09:00:00+00:00[UTC]\n2026-02-07T09:00:00+00:00[UTC]\n");
+}
+
+#[test]
+fn writes_json_in_the_same_form() {
+    hron()
+        .args([
+            "--json",
+            "--from",
+            "2026-02-05T20:00:00Z",
+            "--to",
+            "2026-02-06T03:00:00Z",
+            "every day at 09:00 in Asia/Tokyo",
+        ])
+        .assert()
+        .success()
+        .stdout("[\"2026-02-06T09:00:00+09:00[Asia/Tokyo]\"]\n");
+}
+
+// Each names 2026-02-06T03:00:00Z, so the next 09:00 UTC is the same day.
+#[test]
+fn reads_every_accepted_form_as_its_instant() {
+    for from in [
+        "2026-02-06T12:00:00+09:00[Asia/Tokyo]",
+        "2026-02-06T03:00:00Z",
+        "2026-02-06t03:00:00.000z",
+        "2026-02-06T03:00:00+00:00[Asia/Tokyo]",
+        "2026-02-06T12:00:00+09:00[!Asia/Tokyo]",
+        "2026-02-06T03:00:00Z[!Asia/Tokyo]",
+        "2026-02-06T03:00:00+00:00[u-ca=hebrew]",
+        "2026-02-06T12:00:00+09:00[Asia/Tokyo][u-ca=japanese]",
+        "2026-02-06T12:00:00+09:00[+09:00]",
+        "+002026-02-06T03:00:00Z",
+    ] {
+        occurrences_between(from, "2026-02-06T23:00:00Z", "every day at 09:00")
+            .success()
+            .stdout("2026-02-06T09:00:00+00:00[UTC]\n");
+    }
+}
+
+#[test]
+fn lets_the_offset_decide_the_instant_over_a_disagreeing_zone() {
+    occurrences_between(
+        "2026-02-06T08:59:00+00:00[Asia/Tokyo]",
+        "2026-02-06T09:00:00+00:00[America/New_York]",
+        "every day at 09:00",
+    )
+    .success()
+    .stdout("2026-02-06T09:00:00+00:00[UTC]\n");
+}
+
+#[test]
+fn exits_with_status_2_on_a_timestamp_it_cannot_read() {
+    for bad in [
+        "2026-02-06T12:00:00[Asia/Tokyo]",
+        "2026-02-06T03:00:00+00:00[!Asia/Tokyo]",
+        "2026-02-06T03:00:00+00:00[Nope/Zone]",
+        "2026-02-06T03:00:00+00:00[!u-ca=hebrew]",
+        "2026-02-06",
+        "tomorrow",
+        "+010000-01-01T00:00:00[UTC]",
+        "+010000-01-01T00:00:00+00:00[Nope/Zone]",
+        "9999-12-31T12:00:00+00:00[Nope/Zone]",
+    ] {
+        hron()
+            .args(["--from", bad, "every day at 09:00"])
+            .assert()
+            .code(2)
+            .stdout("")
+            .stderr(predicate::str::starts_with(format!(
+                "error: --from: invalid timestamp \"{bad}\": "
+            )));
+    }
+    occurrences_between("2026-02-06T03:00:00Z", "noon", "every day at 09:00")
+        .code(2)
+        .stderr(predicate::str::starts_with("error: --to: "));
+}
+
+#[test]
+fn finds_nothing_for_a_timestamp_outside_the_supported_range() {
+    for from in [
+        "+010000-01-01T00:00:00Z",
+        "-010000-01-01T00:00:00Z",
+        "+275760-09-13T00:00:00.000Z",
+        "9999-12-31T12:00:00+00:00[UTC]",
+        "-009999-01-01T00:00:00+00:00[UTC]",
+        "0001-01-01T00:00:00Z",
+    ] {
+        hron()
+            .args(["--from", from, "every day at 09:00"])
+            .assert()
+            .success()
+            .stdout("")
+            .stderr("no occurrences in range\n");
+    }
+    occurrences_between(
+        "2026-02-06T03:00:00Z",
+        "+010000-01-01T00:00:00Z",
+        "every day at 09:00",
+    )
+    .success()
+    .stdout("")
+    .stderr("no occurrences in range\n");
+}
+
+#[test]
+fn exits_with_status_1_on_a_hron_error() {
+    hron().arg("every blorp").assert().code(1);
+}
+
+#[test]
+fn exits_with_status_2_without_an_expression() {
+    hron().assert().code(2);
+}
+
+#[test]
+fn exits_quietly_when_the_reader_has_gone() {
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hron"))
+        .args(["-n", "3", "every day at 09:00"])
+        .stdout(writer)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success(), "{:?}", output.status);
+}

@@ -81,6 +81,31 @@ seconds (local mean time before standard time was adopted, into the 1950s in som
 up to a minute off, or skipped when the rounding moves it past `now`. The spec leaves such offsets
 out of scope.
 
+## Timestamps
+
+Every method takes a `DateTimeOffset`, and only its instant matters: the offset it is written in
+changes nothing. Every result has the offset of the schedule's timezone at that instant, or
+`+00:00` when the schedule has none. `DateTimeOffset` has no zone name; `schedule.Timezone` gives it.
+
+```csharp
+var schedule = Schedule.Parse("every day at 09:00 in America/New_York");
+var tokyo = new DateTimeOffset(2026, 2, 6, 21, 0, 0, TimeSpan.FromHours(9));
+Console.WriteLine(schedule.NextFrom(tokyo)?.ToString("o")); // 2026-02-06T09:00:00.0000000-05:00
+```
+
+A `DateTime` converts to `DateTimeOffset` implicitly, as the host's local time unless its `Kind` is
+`Utc`. Pass a `DateTimeOffset`, or a `DateTime` whose `Kind` is `Utc`, when the host's timezone
+should not matter.
+
+`NextNFrom(now, count)` returns at most `count` occurrences, and none when `count <= 0`. `count`
+only caps the list, so `int.MaxValue` returns at once, with every occurrence through the end of the
+supported range.
+
+The supported range is `0001-01-02T00:00:00Z` up to but not including `9999-12-30T00:00:00Z`. An
+argument outside it, `DateTimeOffset.MinValue` and `MaxValue` included, is not an error: `NextFrom`
+and `PreviousFrom` return null, `Matches` returns false, and `NextNFrom`, `Occurrences` and
+`Between` return nothing.
+
 ## Cron Conversion
 
 Conversion is exact in both directions: the result fires at the same times on the same dates, or

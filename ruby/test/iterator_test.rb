@@ -237,11 +237,11 @@ class IteratorTest < Minitest::Test
 
     results = schedule.occurrences(from).first(3)
 
-    results.each do |dt|
-      formatted = TestHelper.format_zoned(dt, "America/New_York")
-      assert formatted.include?("[America/New_York]"), "Expected America/New_York timezone"
-      assert formatted.include?("T09:00:00"), "Expected 09:00 time"
-    end
+    assert_equal %w[
+      2026-02-01T09:00:00-05:00[America/New_York]
+      2026-02-02T09:00:00-05:00[America/New_York]
+      2026-02-03T09:00:00-05:00[America/New_York]
+    ], results.map { |dt| TestHelper.format_zoned(dt) }
   end
 
   def test_between_handles_dst_transition
@@ -251,16 +251,12 @@ class IteratorTest < Minitest::Test
 
     results = schedule.between(from, to).to_a
 
-    assert_equal 3, results.length
-
-    formatted0 = TestHelper.format_zoned(results[0], "America/New_York")
-    formatted1 = TestHelper.format_zoned(results[1], "America/New_York")
-    formatted2 = TestHelper.format_zoned(results[2], "America/New_York")
-
     # March 8, 2026 springs forward in New York, so 02:30 that day shifts to 03:30.
-    assert formatted0.include?("T02:30:00"), "Mar 7 should be 02:30, got #{formatted0}"
-    assert formatted1.include?("T03:30:00"), "Mar 8 should be 03:30 (DST shift), got #{formatted1}"
-    assert formatted2.include?("T02:30:00"), "Mar 9 should be 02:30, got #{formatted2}"
+    assert_equal %w[
+      2026-03-07T02:30:00-05:00[America/New_York]
+      2026-03-08T03:30:00-04:00[America/New_York]
+      2026-03-09T02:30:00-04:00[America/New_York]
+    ], results.map { |dt| TestHelper.format_zoned(dt) }
   end
 
   def test_occurrences_multiple_times_per_day

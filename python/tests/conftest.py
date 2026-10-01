@@ -21,12 +21,10 @@ def parse_zoned(s: str) -> datetime:
 
 
 def format_zoned(dt: datetime) -> str:
-    tz = dt.tzinfo
-    if tz is None:
-        raise ValueError("datetime must be timezone-aware")
-    tz_name = tz.key if hasattr(tz, "key") else str(tz)
-    iso = dt.isoformat()
-    return f"{iso}[{tz_name}]"
+    # Results carry a ZoneInfo (spec/README.md, "Timestamps and counts"); str() of another
+    # tzinfo, such as datetime.UTC, could still print a matching name.
+    assert isinstance(dt.tzinfo, ZoneInfo), f"{dt!r} is not in a ZoneInfo"
+    return f"{dt.isoformat()}[{dt.tzinfo.key}]"
 
 
 @pytest.fixture(scope="session")

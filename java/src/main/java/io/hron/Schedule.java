@@ -8,9 +8,14 @@ import io.hron.parser.Parser;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+/**
+ * A parsed hron schedule. Only the instant of a timestamp argument matters, not its zone; every
+ * returned timestamp is in the schedule's timezone, or {@code ZoneId.of("UTC")} when it has none.
+ */
 public final class Schedule {
   private final ScheduleData data;
   private final ZoneId zoneId;
@@ -55,55 +60,65 @@ public final class Schedule {
   }
 
   /**
-   * Computes the next occurrence strictly after the given time.
+   * Computes the next occurrence strictly after {@code now}.
    *
    * @return the next occurrence, or empty if none exists or now is outside the supported range
+   * @throws NullPointerException if now is null
    */
   public Optional<ZonedDateTime> nextFrom(ZonedDateTime now) {
-    ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
-    return Evaluator.nextFrom(data, nowInTz, zoneId);
-  }
-
-  /** Computes the next n occurrences strictly after the given time. */
-  public List<ZonedDateTime> nextNFrom(ZonedDateTime now, int n) {
-    ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
-    return Evaluator.nextNFrom(data, nowInTz, n, zoneId);
+    return Evaluator.nextFrom(data, Objects.requireNonNull(now, "now"), zoneId);
   }
 
   /**
-   * Computes the most recent occurrence strictly before the given time.
+   * Computes the next occurrences strictly after {@code now}.
    *
-   * @return the previous occurrence, or empty if none exists or now is outside the supported range
+   * @return at most n occurrences, none when n &lt;= 0 or now is outside the supported range
+   * @throws NullPointerException if now is null
    */
-  public Optional<ZonedDateTime> previousFrom(ZonedDateTime now) {
-    ZonedDateTime nowInTz = now.withZoneSameInstant(zoneId);
-    return Evaluator.previousFrom(data, nowInTz, zoneId);
+  public List<ZonedDateTime> nextNFrom(ZonedDateTime now, int n) {
+    return Evaluator.nextNFrom(data, Objects.requireNonNull(now, "now"), n, zoneId);
   }
 
-  /** Returns whether the minute containing {@code datetime} is an occurrence. */
+  /**
+   * Computes the most recent occurrence strictly before {@code now}.
+   *
+   * @return the previous occurrence, or empty if none exists or now is outside the supported range
+   * @throws NullPointerException if now is null
+   */
+  public Optional<ZonedDateTime> previousFrom(ZonedDateTime now) {
+    return Evaluator.previousFrom(data, Objects.requireNonNull(now, "now"), zoneId);
+  }
+
+  /**
+   * Returns whether the minute containing {@code datetime} is an occurrence; false if datetime is
+   * outside the supported range.
+   *
+   * @throws NullPointerException if datetime is null
+   */
   public boolean matches(ZonedDateTime datetime) {
-    ZonedDateTime dtInTz = datetime.withZoneSameInstant(zoneId);
-    return Evaluator.matches(data, dtInTz, zoneId);
+    return Evaluator.matches(data, Objects.requireNonNull(datetime, "datetime"), zoneId);
   }
 
   /**
    * Returns a lazy stream of occurrences strictly after {@code from}, empty if {@code from} is
    * outside the supported range.
+   *
+   * @throws NullPointerException if from is null
    */
   public Stream<ZonedDateTime> occurrences(ZonedDateTime from) {
-    ZonedDateTime fromInTz = from.withZoneSameInstant(zoneId);
-    return Evaluator.occurrences(data, fromInTz, zoneId);
+    return Evaluator.occurrences(data, Objects.requireNonNull(from, "from"), zoneId);
   }
 
   /**
    * Returns a lazy stream of occurrences where from &lt; occurrence &lt;= to.
    *
    * @return the occurrences in the range, empty if either bound is outside the supported range
+   * @throws NullPointerException if from or to is null
    */
   public Stream<ZonedDateTime> between(ZonedDateTime from, ZonedDateTime to) {
-    ZonedDateTime fromInTz = from.withZoneSameInstant(zoneId);
-    ZonedDateTime toInTz = to.withZoneSameInstant(zoneId);
-    return Evaluator.between(data, fromInTz, toInTz, zoneId);
+    Objects.requireNonNull(from, "from");
+    Objects.requireNonNull(to, "to");
+    return Evaluator.between(data, from, to, zoneId);
   }
 
   /**

@@ -3,6 +3,7 @@ package hron
 import (
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 	"time"
 )
@@ -52,6 +53,33 @@ func TestHandBuiltIntervals(t *testing.T) {
 				t.Errorf("NextFrom = %s, want %s", got, c.next)
 			}
 			if got := formatOrNil(s.PreviousFrom(friday)); got != c.prev {
+				t.Errorf("PreviousFrom = %s, want %s", got, c.prev)
+			}
+		})
+	}
+}
+
+// The parser's largest intervals step periods past 32 bits; run with GOARCH=386 too.
+func TestLargestIntervalsOn32Bit(t *testing.T) {
+	yearOne := time.Date(1, 6, 1, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		expression string
+		now        time.Time
+		next, prev string
+	}{
+		{"every 306783379 weeks on monday at 09:00", friday, "nil", "1970-01-05T09:00:00Z"},
+		{"every 613566757 weeks on monday at 09:00", friday, "nil", "1970-01-05T09:00:00Z"},
+		{"every 2147483647 years on jan 1 at 09:00", yearOne, "1970-01-01T09:00:00Z", "nil"},
+		{"every 2147483647 months on the 1st at 09:00", friday, "nil", "1970-01-01T09:00:00Z"},
+		{"every 2147483647 days at 09:00", friday, "nil", "1970-01-01T09:00:00Z"},
+	}
+	for _, c := range cases {
+		t.Run(c.expression, func(t *testing.T) {
+			s := MustParse(c.expression)
+			if got := formatOrNil(s.NextFrom(c.now)); got != c.next {
+				t.Errorf("NextFrom = %s, want %s", got, c.next)
+			}
+			if got := formatOrNil(s.PreviousFrom(c.now)); got != c.prev {
 				t.Errorf("PreviousFrom = %s, want %s", got, c.prev)
 			}
 		})
@@ -203,4 +231,117 @@ func TestSearchesBeforeTheUnixEpoch(t *testing.T) {
 			t.Errorf("PreviousFrom(%v) = %v, want %v", now, prev, now.Add(-10*time.Minute))
 		}
 	}
+}
+
+func TestFirstNStopsAtN(t *testing.T) {
+	for _, n := range []int{math.MinInt, -1, 0, 1, 3} {
+		pulled := 0
+		hourly := func(yield func(time.Time) bool) {
+			for i := 0; ; i++ {
+				pulled++
+				if !yield(friday.Add(time.Duration(i) * time.Hour)) {
+					return
+				}
+			}
+		}
+		got := firstN(hourly, n)
+		if want := max(n, 0); len(got) != want || pulled != want {
+			t.Errorf("firstN(n = %d) returned %d and pulled %d, want %d of each", n, len(got), pulled, want)
+		}
+	}
+}
+
+func TestNextNFromCounts(t *testing.T) {
+	daily := MustParse("every day at 09:00")
+	for _, n := range []int{math.MinInt, -1, 0} {
+		if got := daily.NextNFrom(friday, n); len(got) != 0 {
+			t.Errorf("NextNFrom(n = %d) = %v, want none", n, got)
+		}
+	}
+	once := MustParse("on 2026-03-01 at 09:00")
+	if got := once.NextNFrom(friday, math.MaxInt); len(got) != 1 {
+		t.Errorf("NextNFrom(n = MaxInt) = %v, want the one occurrence", got)
+	}
+}
+
+// Kiritimati (+14) and Etc/GMT+12 (-12) put the wall clock of an instant
+// furthest from its UTC date, at the range ends and at the platform's limits.
+func TestInstantsOutsideTheSupportedRange(t *testing.T) {
+	kiritimati := mustLoadLocation(t, "Pacific/Kiritimati")
+	westmost := mustLoadLocation(t, "Etc/GMT+12")
+	instants := []time.Time{
+		{},
+		rangeStart.Add(-time.Nanosecond).In(kiritimati),
+		rangeStart.Add(-time.Nanosecond).In(westmost),
+		rangeEnd.In(kiritimati),
+		rangeEnd.In(westmost),
+		time.Unix(math.MinInt64, 0).In(kiritimati),
+		time.Unix(math.MaxInt64, 999999999).In(westmost),
+		time.Unix(1<<62, 0).In(kiritimati),
+		time.Unix(-1<<62, 0).In(westmost),
+	}
+	for _, expression := range []string{"every day at 09:00", "every 30 min from 00:00 to 23:59 in Pacific/Kiritimati", "every year on dec 31 at 23:59 in Etc/GMT+12"} {
+		s := MustParse(expression)
+		for _, at := range instants {
+			if got := s.NextFrom(at); got != nil {
+				t.Errorf("%q: NextFrom(%v) = %v, want nil", expression, at, *got)
+			}
+			if got := s.PreviousFrom(at); got != nil {
+				t.Errorf("%q: PreviousFrom(%v) = %v, want nil", expression, at, *got)
+			}
+			if s.Matches(at) {
+				t.Errorf("%q: Matches(%v) = true, want false", expression, at)
+			}
+			if got := s.NextNFrom(at, 3); len(got) != 0 {
+				t.Errorf("%q: NextNFrom(%v) = %v, want none", expression, at, got)
+			}
+			if got := slices.Collect(s.Occurrences(at)); len(got) != 0 {
+				t.Errorf("%q: Occurrences(%v) = %v, want none", expression, at, got)
+			}
+			if got := slices.Collect(s.Between(friday, at)); len(got) != 0 {
+				t.Errorf("%q: Between(friday, %v) = %v, want none", expression, at, got)
+			}
+			if got := slices.Collect(s.Between(at, friday)); len(got) != 0 {
+				t.Errorf("%q: Between(%v, friday) = %v, want none", expression, at, got)
+			}
+		}
+	}
+}
+
+func TestResultsAreInTheScheduleZone(t *testing.T) {
+	tokyo := time.Date(2026, 2, 6, 21, 0, 0, 0, mustLoadLocation(t, "Asia/Tokyo"))
+	cases := map[string]string{
+		"every day at 09:00":                              "UTC",
+		"every day at 09:00 in utc":                       "UTC",
+		"every day at 09:00 in America/New_York":          "America/New_York",
+		"every 2 hours from 00:00 to 23:59 in us/eastern": "US/Eastern",
+	}
+	for expression, zone := range cases {
+		s := MustParse(expression)
+		next, prev := s.NextFrom(tokyo), s.PreviousFrom(tokyo)
+		if next == nil || prev == nil {
+			t.Fatalf("%q: NextFrom = %v, PreviousFrom = %v", expression, next, prev)
+		}
+		results := []time.Time{*next, *prev}
+		results = append(results, s.NextNFrom(tokyo, 2)...)
+		results = append(results, firstN(s.Occurrences(tokyo), 2)...)
+		results = append(results, slices.Collect(s.Between(tokyo, tokyo.AddDate(0, 0, 2)))...)
+		if len(results) < 8 {
+			t.Fatalf("%q: only %d results", expression, len(results))
+		}
+		for _, result := range results {
+			if got := result.Location().String(); got != zone {
+				t.Errorf("%q: result %v is in %s, want %s", expression, result, got, zone)
+			}
+		}
+	}
+}
+
+func mustLoadLocation(t *testing.T, name string) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loc
 }

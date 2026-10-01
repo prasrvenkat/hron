@@ -9,6 +9,8 @@ categories = ["wasm", "date-and-time"]
 repository = "https://github.com/simpllyf/hron"
 homepage = "https://github.com/simpllyf/hron"
 readme = "README.md"
+# Published to npm only; src/lib.rs includes a file from hron-cli, which crates.io packaging cannot follow.
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
@@ -17,6 +19,5 @@ crate-type = ["cdylib"]
 hron = { path = "../hron", version = "1.0.0", default-features = false, features = ["serde"] }
 wasm-bindgen = "0.2"
 js-sys = "0.3"
-serde-wasm-bindgen = "0.6"
 serde_json = "1"
 jiff = { version = "0.2", features = ["js"] }

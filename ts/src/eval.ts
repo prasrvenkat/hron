@@ -18,6 +18,7 @@ import {
 import { DAY_MS, MINUTES_PER_HOUR, minuteOfDay, Zone } from "./wall-clock.js";
 
 type ZDT = Temporal.ZonedDateTime;
+type Timestamp = Temporal.ZonedDateTime | Temporal.Instant;
 type IntervalRepeat = Extract<ScheduleExpr, { type: "intervalRepeat" }>;
 
 /** Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment"). */
@@ -60,12 +61,15 @@ const NAMED_UNTIL_MAX_YEARS = 8;
  */
 const RESOLVED_DATES_KEPT = 8;
 
-export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
+export function nextFrom(schedule: ScheduleData, now: Timestamp): ZDT | null {
   if (!inSupportedRange(floorMs(now))) return null;
   return searchFrom(schedule, floorMs(now), Direction.Forward);
 }
 
-export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
+export function previousFrom(
+  schedule: ScheduleData,
+  now: Timestamp,
+): ZDT | null {
   if (!inSupportedRange(floorMs(now))) return null;
   return searchFrom(schedule, ceilMs(now), Direction.Backward);
 }
@@ -84,7 +88,7 @@ function searchFrom(
  * Defined through the forward search, so the two cannot disagree about what an
  * occurrence is.
  */
-export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
+export function matches(schedule: ScheduleData, datetime: Timestamp): boolean {
   const ms = floorMs(datetime);
   if (!inSupportedRange(ms)) return false;
   const search = new Search(schedule);
@@ -97,7 +101,7 @@ export function matches(schedule: ScheduleData, datetime: ZDT): boolean {
 
 export function* occurrences(
   schedule: ScheduleData,
-  from: ZDT,
+  from: Timestamp,
 ): Generator<ZDT, void, unknown> {
   const fromMs = floorMs(from);
   if (!inSupportedRange(fromMs)) return;
@@ -109,7 +113,11 @@ export function* occurrences(
   }
 }
 
-export function nextNFrom(schedule: ScheduleData, now: ZDT, n: number): ZDT[] {
+export function nextNFrom(
+  schedule: ScheduleData,
+  now: Timestamp,
+  n: number,
+): ZDT[] {
   const results: ZDT[] = [];
   if (n <= 0) return results;
   for (const t of occurrences(schedule, now)) {
@@ -121,8 +129,8 @@ export function nextNFrom(schedule: ScheduleData, now: ZDT, n: number): ZDT[] {
 
 export function* between(
   schedule: ScheduleData,
-  from: ZDT,
-  to: ZDT,
+  from: Timestamp,
+  to: Timestamp,
 ): Generator<ZDT, void, unknown> {
   if (!inSupportedRange(floorMs(to))) return;
   const toNs = to.epochNanoseconds;
@@ -325,13 +333,13 @@ const NS_PER_MS = 1_000_000n;
 // Occurrences fall on whole milliseconds, so one is after `t` exactly when it
 // is after floorMs(t), and before `t` exactly when it is before ceilMs(t).
 
-function floorMs(t: ZDT): number {
+function floorMs(t: Timestamp): number {
   const ns = t.epochNanoseconds;
   const ms = ns / NS_PER_MS;
   return Number(ns % NS_PER_MS < 0n ? ms - 1n : ms);
 }
 
-function ceilMs(t: ZDT): number {
+function ceilMs(t: Timestamp): number {
   const ns = t.epochNanoseconds;
   const ms = ns / NS_PER_MS;
   return Number(ns % NS_PER_MS > 0n ? ms + 1n : ms);

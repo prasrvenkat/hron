@@ -23,19 +23,13 @@ module TestHelper
     raise "invalid timezone: #{tz_name} - #{e.message}"
   end
 
-  def self.format_zoned(time, tz_name = "UTC")
-    tz = TZInfo::Timezone.get(tz_name)
-    local_time = tz.utc_to_local(time.utc)
-
-    period = tz.period_for_utc(time.utc)
-    offset = period.offset.utc_total_offset
-    offset_hours = offset.abs / 3600
-    offset_mins = (offset.abs % 3600) / 60
-    offset_sign = (offset >= 0) ? "+" : "-"
-    offset_str = format("%<sign>s%<hours>02d:%<mins>02d", sign: offset_sign, hours: offset_hours, mins: offset_mins)
-
-    iso = local_time.strftime("%Y-%m-%dT%H:%M:%S") + offset_str
-    "#{iso}[#{tz_name}]"
+  # Written in the time's own zone, so a result in the wrong zone fails (spec/README.md,
+  # "Writing a runner").
+  def self.format_zoned(time)
+    zone = time.zone
+    name = zone.respond_to?(:identifier) ? zone.identifier : zone
+    offset = (time.utc_offset % 60).zero? ? "%:z" : "%::z"
+    "#{time.strftime("%Y-%m-%dT%H:%M:%S#{offset}")}[#{name}]"
   end
 
   def self.load_spec

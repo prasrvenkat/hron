@@ -1,38 +1,27 @@
 use wasm_bindgen::prelude::*;
 
-/// jiff rejects an instant beyond its own range, which extends past the
-/// supported range on both sides. A timestamp with a numeric offset and a known
-/// zone whose instant is beyond jiff's range becomes jiff's nearest extreme, so
-/// every method returns nothing for it instead of throwing (spec/README.md,
-/// "Supported range"). Any other input that jiff rejects keeps jiff's error.
-fn parse_zoned(s: &str) -> Result<jiff::Zoned, JsError> {
-    let error = match s.parse::<jiff::Zoned>() {
-        Ok(zoned) => return Ok(zoned),
-        Err(e) => JsError::new(&e.to_string()),
+#[path = "../../hron-cli/src/timestamp.rs"]
+mod timestamp;
+
+fn timestamp_argument(name: &str, value: &JsValue) -> Result<jiff::Zoned, JsValue> {
+    let Some(text) = value.as_string() else {
+        return Err(js_sys::TypeError::new(&format!("{name} must be a string")).into());
     };
-    let Ok(pieces) = jiff::fmt::temporal::Pieces::parse(s) else {
-        return Err(error);
+    timestamp::parse_timestamp(&text).map_err(|message| js_sys::RangeError::new(&message).into())
+}
+
+/// A count of zero or less asks for nothing, and one beyond `usize` only caps
+/// what is returned (spec/README.md, "Timestamps and counts"); `as` saturates.
+fn count_argument(name: &str, value: &JsValue) -> Result<usize, JsValue> {
+    let Some(count) = value.as_f64() else {
+        return Err(js_sys::TypeError::new(&format!("{name} must be a number")).into());
     };
-    let (Some(offset), Ok(Some(_))) = (pieces.to_numeric_offset(), pieces.to_time_zone()) else {
-        return Err(error);
-    };
-    let time = pieces.time().unwrap_or(jiff::civil::Time::midnight());
-    let Ok(days) = jiff::civil::date(1970, 1, 1).until(pieces.date()) else {
-        return Err(error);
-    };
-    let seconds = i128::from(days.get_days()) * 86_400
-        + i128::from(time.hour()) * 3_600
-        + i128::from(time.minute()) * 60
-        + i128::from(time.second())
-        - i128::from(offset.seconds());
-    let extreme = if seconds < i128::from(jiff::Timestamp::MIN.as_second()) {
-        jiff::Timestamp::MIN
-    } else if seconds > i128::from(jiff::Timestamp::MAX.as_second()) {
-        jiff::Timestamp::MAX
-    } else {
-        return Err(error);
-    };
-    Ok(extreme.to_zoned(jiff::tz::TimeZone::UTC))
+    if !js_sys::Number::is_integer(value) {
+        return Err(
+            js_sys::RangeError::new(&format!("{name} must be an integer, not {count}")).into(),
+        );
+    }
+    Ok(count.max(0.0) as usize)
 }
 
 fn set(target: &JsValue, key: &str, value: impl Into<JsValue>) {
@@ -95,47 +84,59 @@ impl Schedule {
     }
 
     /// Compute the next occurrence strictly after `now`.
-    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
+    /// Throws a TypeError when `now` is not a string, and a RangeError when it is not a valid timestamp.
     #[wasm_bindgen(js_name = "nextFrom")]
-    pub fn next_from(&self, now: &str) -> Result<Option<String>, JsValue> {
-        let now = parse_zoned(now)?;
+    pub fn next_from(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "string")] now: JsValue,
+    ) -> Result<Option<String>, JsValue> {
+        let now = timestamp_argument("now", &now)?;
         let result = self.inner.next_from(&now).map_err(hron_error)?;
         Ok(result.map(|z| z.to_string()))
     }
 
-    /// Compute the next `n` occurrences strictly after `now`.
-    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
+    /// Compute up to `n` occurrences strictly after `now`, none when `n <= 0`.
+    /// Throws a TypeError for an argument of the wrong type, and a RangeError for a
+    /// timestamp that is not valid, or an `n` that is not an integer.
     #[wasm_bindgen(js_name = "nextNFrom")]
-    pub fn next_n_from(&self, now: &str, n: u32) -> Result<JsValue, JsValue> {
-        let now = parse_zoned(now)?;
-        let results = self
-            .inner
-            .next_n_from(&now, n as usize)
-            .map_err(hron_error)?;
-        let strings: Vec<String> = results.iter().map(|z| z.to_string()).collect();
-        serde_wasm_bindgen::to_value(&strings).map_err(|e| JsError::new(&e.to_string()).into())
+    pub fn next_n_from(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "string")] now: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] n: JsValue,
+    ) -> Result<Vec<String>, JsValue> {
+        let now = timestamp_argument("now", &now)?;
+        let n = count_argument("n", &n)?;
+        let results = self.inner.next_n_from(&now, n).map_err(hron_error)?;
+        Ok(results.iter().map(|z| z.to_string()).collect())
     }
 
     /// Compute the most recent occurrence strictly before `now`.
-    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
+    /// Throws a TypeError when `now` is not a string, and a RangeError when it is not a valid timestamp.
     #[wasm_bindgen(js_name = "previousFrom")]
-    pub fn previous_from(&self, now: &str) -> Result<Option<String>, JsValue> {
-        let now = parse_zoned(now)?;
+    pub fn previous_from(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "string")] now: JsValue,
+    ) -> Result<Option<String>, JsValue> {
+        let now = timestamp_argument("now", &now)?;
         let result = self.inner.previous_from(&now).map_err(hron_error)?;
         Ok(result.map(|z| z.to_string()))
     }
 
     /// Check whether the minute containing `datetime` is an occurrence (seconds are ignored).
-    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
-    pub fn matches(&self, datetime: &str) -> Result<bool, JsValue> {
-        let dt = parse_zoned(datetime)?;
+    /// Throws a TypeError when `datetime` is not a string, and a RangeError when it is not a valid timestamp.
+    pub fn matches(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "string")] datetime: JsValue,
+    ) -> Result<bool, JsValue> {
+        let dt = timestamp_argument("datetime", &datetime)?;
         self.inner.matches(&dt).map_err(hron_error)
     }
 
-    /// Get the structured JSON representation.
+    /// Get the structured JSON representation as a plain object, which `JSON.stringify` uses.
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> Result<JsValue, JsError> {
-        serde_wasm_bindgen::to_value(&self.inner).map_err(|e| JsError::new(&e.to_string()))
+    pub fn to_json(&self) -> JsValue {
+        let json = serde_json::to_string(&self.inner).expect("a schedule serializes");
+        js_sys::JSON::parse(&json).expect("serde_json writes valid JSON")
     }
 
     /// Convert this schedule to a cron expression that fires at the same times.
@@ -161,34 +162,38 @@ impl Schedule {
         self.inner.timezone().map(|s| s.to_string())
     }
 
-    /// Returns occurrences strictly after `from`, limited to `limit` results.
-    /// Returns an array of datetime strings.
-    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
-    pub fn occurrences(&self, from: &str, limit: u32) -> Result<JsValue, JsValue> {
-        let from = parse_zoned(from)?;
-        let results: Vec<String> = self
-            .inner
+    /// Returns up to `limit` occurrences strictly after `from`, none when `limit <= 0`.
+    /// Throws a TypeError for an argument of the wrong type, and a RangeError for a
+    /// timestamp that is not valid, or a `limit` that is not an integer.
+    pub fn occurrences(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "string")] from: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "number")] limit: JsValue,
+    ) -> Result<Vec<String>, JsValue> {
+        let from = timestamp_argument("from", &from)?;
+        let limit = count_argument("limit", &limit)?;
+        self.inner
             .occurrences(&from)
-            .take(limit as usize)
+            .take(limit)
             .map(|r| r.map(|z| z.to_string()))
             .collect::<Result<_, _>>()
-            .map_err(hron_error)?;
-        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()).into())
+            .map_err(hron_error)
     }
 
     /// Returns occurrences in the range (from, to], where from is exclusive and to is inclusive.
-    /// Returns an array of datetime strings.
-    /// Throws a plain Error, with no `kind`, on a datetime it cannot parse.
-    pub fn between(&self, from: &str, to: &str) -> Result<JsValue, JsValue> {
-        let from = parse_zoned(from)?;
-        let to = parse_zoned(to)?;
-        let results: Vec<String> = self
-            .inner
+    /// Throws a TypeError when `from` or `to` is not a string, and a RangeError when one is not a valid timestamp.
+    pub fn between(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "string")] from: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "string")] to: JsValue,
+    ) -> Result<Vec<String>, JsValue> {
+        let from = timestamp_argument("from", &from)?;
+        let to = timestamp_argument("to", &to)?;
+        self.inner
             .between(&from, &to)
             .map(|r| r.map(|z| z.to_string()))
             .collect::<Result<_, _>>()
-            .map_err(hron_error)?;
-        serde_wasm_bindgen::to_value(&results).map_err(|e| JsError::new(&e.to_string()).into())
+            .map_err(hron_error)
     }
 }
 

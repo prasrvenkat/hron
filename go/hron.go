@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// Schedule is a parsed hron expression. Its methods read only the instant of
+// each time.Time passed in, and return times in the schedule's timezone, or UTC
+// when it has none.
 type Schedule struct {
 	data     *ScheduleData
 	tzName   string
@@ -77,17 +80,22 @@ func (s *Schedule) NextFrom(now time.Time) *time.Time {
 	return nextFrom(s.data, s.location, now)
 }
 
-// NextNFrom computes the next n occurrences strictly after now.
+// NextNFrom returns the next n occurrences strictly after now, fewer if the
+// schedule ends first, and none when n <= 0.
 func (s *Schedule) NextNFrom(now time.Time, n int) []time.Time {
+	return firstN(s.Occurrences(now), n)
+}
+
+func firstN(occurrences iter.Seq[time.Time], n int) []time.Time {
 	if n <= 0 {
 		return nil
 	}
 	var results []time.Time
-	for t := range s.Occurrences(now) {
-		if len(results) >= n {
+	for t := range occurrences {
+		results = append(results, t)
+		if len(results) == n {
 			break
 		}
-		results = append(results, t)
 	}
 	return results
 }

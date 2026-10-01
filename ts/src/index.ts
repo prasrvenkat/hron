@@ -12,6 +12,14 @@ import {
 } from "./eval.js";
 import { parse } from "./parser.js";
 
+type Timestamp = Temporal.ZonedDateTime | Temporal.Instant;
+
+/**
+ * Every timestamp argument must be a `Temporal.ZonedDateTime` or a
+ * `Temporal.Instant`, native or polyfill, or the method throws a `TypeError`
+ * when called; only its instant matters. Every returned timestamp is a
+ * `Temporal.ZonedDateTime` in the schedule's timezone, or UTC when it has none.
+ */
 export class Schedule {
   private data: ScheduleData;
 
@@ -43,41 +51,48 @@ export class Schedule {
   }
 
   /** Compute the next occurrence strictly after `now`, or null if there is none. */
-  nextFrom(now: Temporal.ZonedDateTime): Temporal.ZonedDateTime | null {
-    return nextFrom(this.data, now);
+  nextFrom(now: Timestamp): Temporal.ZonedDateTime | null {
+    return nextFrom(this.data, timestamp(now, "now"));
   }
 
-  /** Compute up to `n` occurrences strictly after `now`; fewer if the schedule ends first. */
-  nextNFrom(now: Temporal.ZonedDateTime, n: number): Temporal.ZonedDateTime[] {
-    return nextNFrom(this.data, now, n);
+  /**
+   * Up to `n` occurrences strictly after `now`; fewer if the schedule ends
+   * first, and none when `n <= 0`. Throws a `TypeError` when `n` is not a
+   * number and a `RangeError` when it is not an integer.
+   */
+  nextNFrom(now: Timestamp, n: number): Temporal.ZonedDateTime[] {
+    const from = timestamp(now, "now");
+    if (typeof n !== "number") throw new TypeError("n must be a number");
+    if (!Number.isInteger(n)) throw new RangeError("n must be an integer");
+    return nextNFrom(this.data, from, n);
   }
 
   /** Compute the most recent occurrence strictly before `now`, or null if there is none. */
-  previousFrom(now: Temporal.ZonedDateTime): Temporal.ZonedDateTime | null {
-    return previousFrom(this.data, now);
+  previousFrom(now: Timestamp): Temporal.ZonedDateTime | null {
+    return previousFrom(this.data, timestamp(now, "now"));
   }
 
   /** True when the minute containing `datetime` is an occurrence (seconds are ignored). */
-  matches(datetime: Temporal.ZonedDateTime): boolean {
-    return matches(this.data, datetime);
+  matches(datetime: Timestamp): boolean {
+    return matches(this.data, timestamp(datetime, "datetime"));
   }
 
   /**
    * Lazily yields occurrences strictly after `from`. Unbounded for repeating
    * schedules unless an `until` clause ends them.
    */
-  *occurrences(
-    from: Temporal.ZonedDateTime,
+  occurrences(
+    from: Timestamp,
   ): Generator<Temporal.ZonedDateTime, void, unknown> {
-    yield* occurrences(this.data, from);
+    return occurrences(this.data, timestamp(from, "from"));
   }
 
   /** Yields occurrences where `from < occurrence <= to`. */
-  *between(
-    from: Temporal.ZonedDateTime,
-    to: Temporal.ZonedDateTime,
+  between(
+    from: Timestamp,
+    to: Timestamp,
   ): Generator<Temporal.ZonedDateTime, void, unknown> {
-    yield* between(this.data, from, to);
+    return between(this.data, timestamp(from, "from"), timestamp(to, "to"));
   }
 
   /**
@@ -101,6 +116,24 @@ export class Schedule {
   get expression(): ScheduleExpr {
     return this.data.expr;
   }
+}
+
+const TIMESTAMP_TAGS = [
+  "[object Temporal.ZonedDateTime]",
+  "[object Temporal.Instant]",
+];
+
+/**
+ * Checked by its tag rather than `instanceof`, which a native Temporal object
+ * fails against the polyfill's class.
+ */
+function timestamp(value: unknown, name: string): Timestamp {
+  if (!TIMESTAMP_TAGS.includes(Object.prototype.toString.call(value))) {
+    throw new TypeError(
+      `${name} must be a Temporal.ZonedDateTime or Temporal.Instant`,
+    );
+  }
+  return value as Timestamp;
 }
 
 export { Temporal } from "@js-temporal/polyfill";

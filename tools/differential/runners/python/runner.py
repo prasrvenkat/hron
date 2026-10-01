@@ -20,7 +20,8 @@ def parse_zoned(s: str) -> datetime:
 def format_zoned(t: datetime | None) -> str | None:
     if t is None:
         return None
-    return f"{t.isoformat()}[{getattr(t.tzinfo, 'key', t.tzinfo)}]"
+    assert isinstance(t.tzinfo, ZoneInfo), f"{t!r} is not in a ZoneInfo"
+    return f"{t.isoformat()}[{t.tzinfo.key}]"
 
 
 def evaluate(case: dict[str, Any]) -> object:

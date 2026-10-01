@@ -42,6 +42,30 @@ void main() {
 }
 ```
 
+## Timestamps
+
+Every method takes and returns `TZDateTime`. An argument stands for its instant: the location it is in changes no result. Every result is in the schedule's timezone, or in a location named `UTC` when the expression has no `in` clause:
+
+```dart
+final tokyo = TZDateTime(getLocation('Asia/Tokyo'), 2026, 2, 6, 21);
+
+final schedule = Schedule.parse('every day at 09:00 in America/New_York');
+final next = schedule.nextFrom(tokyo)!;
+print(next); // 2026-02-06 09:00:00.000-0500
+print(next.location.name); // America/New_York
+
+final utc = Schedule.parse('every day at 09:00').nextFrom(tokyo)!;
+print(utc.location.name); // UTC
+print(utc.isUtc); // false
+print(utc.toUtc().isUtc); // true
+```
+
+That `UTC` location is hron's own: the `timezone` package names its `UTC` location `Etc/UTC`, and only that one makes `isUtc` true, so call `toUtc()` when you need it.
+
+`nextNFrom(now, n)` returns no more than `n` occurrences, and none when `n <= 0`. A large `n` only caps the count, with no room reserved for it, so `nextNFrom(now, 2147483647)` returns every occurrence through the end of the supported range.
+
+The supported range is `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z`. A `now`, `from`, `to` or `datetime` outside it is not an error, even at the limits of `DateTime`: `nextFrom` and `previousFrom` return `null`, `matches` returns `false`, and `nextNFrom`, `occurrences` and `between` return nothing.
+
 ## Errors
 
 `Schedule.parse` throws a `HronError` of kind `HronErrorKind.lex` or `HronErrorKind.parse`, with the exact message of the [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#error-message-format), the `input`, and a `span`. A parse error may carry a `suggestion`. `displayRich()` renders the error with carets under the span:
