@@ -107,7 +107,7 @@ Comments follow the rule in [AGENTS.md](AGENTS.md#comments).
 Every evaluator has the same design, written in its language's idiom. Rust ([rust/hron/src/eval/](rust/hron/src/eval/)) is the reference. One search finds the occurrence nearest an instant, in either direction:
 
 1. Clamp the instant's local date by `starting` (forward) or `until` (backward), and start one period against the search direction: a nearest weekday or a DST shift can move an occurrence out of the period it is scheduled in.
-2. Walk the cadence's aligned periods in the search direction: `per_400_years / gcd(per_400_years, interval)` of them plus `HORIZON_MARGIN_PERIODS`, extended to the farthest ISO `except` date (spec/README.md, "Search horizon"), and ending early at the edge of the calendar the platform can represent.
+2. Walk the cadence's aligned periods in the search direction: `per_400_years / gcd(per_400_years, interval)` of them plus `HORIZON_MARGIN_PERIODS`, extended to the farthest ISO `except` date (spec/README.md, "Search horizon"). The walk ends early at the calendar's edge: the first period past years 1 to 9999, with one period of slack on each side (a nearest weekday in December of year 0 lands on 0001-01-01), or sooner where the platform's dates end.
 3. Take each period's candidate dates in direction order. Stop once a candidate's date is more than `MAX_SHIFT_DAYS` beyond the best occurrence's scheduled date (`could_beat`), or past the clause bound the search moves toward (`ends_search`). Skip a candidate the clauses reject. Otherwise find its occurrence nearest the instant (`nearest_on_date`), and replace the best only when it is strictly nearer.
 
 Each concept has one name, in the language's casing:
@@ -126,11 +126,19 @@ Each concept has one name, in the language's casing:
 
 And it follows these rules:
 
-- Direction enters only through `Direction` and the clause and cadence primitives. The one mirrored algorithm is the interval-slot scan on a date, because a fall-back overlap is not symmetric.
+- Direction enters only through `Direction` and the clause and cadence primitives. Only the interval-slot scan on a date may be mirrored, because a fall-back overlap is not symmetric; a scan that keeps a date's slots in instant order (each slot's first-pass instant, or its gap's end) and searches them needs no mirror.
 - A search prepares its schedule once: zone, cadence, times and clauses, with ISO dates parsed once.
 - Numbers that bound a loop are named constants with their reason: `HORIZON_MARGIN_PERIODS`, `MAX_SHIFT_DAYS`, `NAMED_UNTIL_MAX_YEARS`. There are no fixed scan spans.
 - Calendar arithmetic and wall-clock resolution live in their own units, apart from the search.
 - `matches` is defined through the forward search, so the two cannot disagree.
+
+Implementations may also take these shortcuts, each proven not to change a result:
+
+- Number periods by their calendar index instead of their first date, where a date type cannot hold December of year 0 or building dates is costly.
+- Skip a candidate more than `MAX_SHIFT_DAYS` behind the instant's local date, and a month `during` rejects before computing its dates.
+- Bound `could_beat` by the times' own shift: `MAX_SHIFT_DAYS` for fixed times, which a gap pushes forward, and 0 for interval slots, which a gap skips.
+- End `matches`' forward search on the minute's wall date: an occurrence never lands before the date it is scheduled on.
+- Drop an instant outside the supported range where it is resolved instead of filtering the result: the nearest instant is out of range only when every farther one is.
 
 ## Pull Requests
 
