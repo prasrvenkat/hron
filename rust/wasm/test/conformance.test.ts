@@ -38,7 +38,6 @@ it("spec has no section this runner does not know", () => {
   expect(unknown).toEqual([]);
 });
 
-// `parse_errors` passes no assertion fields: the section itself asserts the error.
 function checkFields(tc: Record<string, unknown>, inputs: string[], assertions: string[]) {
   for (const key of Object.keys(tc)) {
     const known = ["name", "description", ...inputs, ...assertions].includes(key);
@@ -75,9 +74,25 @@ describe("parse errors", () => {
   for (const tc of tests) {
     const name = tc.name ?? tc.input;
     it(name, () => {
-      checkFields(tc, ["input", "error_contains"], []);
+      checkFields(tc, ["input"], ["error", "display"]);
+      for (const key of Object.keys(tc.error)) {
+        expect(["kind", "message", "span", "suggestion"], `error field '${key}'`).toContain(key);
+      }
       expect(Schedule.validate(tc.input)).toBe(false);
-      expect(() => Schedule.parse(tc.input)).toThrow(tc.error_contains ?? "");
+      let error: any;
+      try {
+        Schedule.parse(tc.input);
+      } catch (e) {
+        error = e;
+      }
+      expect(error, "parse did not throw").toBeInstanceOf(Error);
+      expect(error.kind).toBe(tc.error.kind);
+      expect(error.message).toBe(tc.error.message);
+      expect([error.span.start, error.span.end]).toEqual(tc.error.span);
+      expect(error.suggestion).toBe(tc.error.suggestion);
+      if ("display" in tc) {
+        expect(error.displayRich()).toBe(tc.display);
+      }
     });
   }
 });

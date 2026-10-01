@@ -222,11 +222,22 @@ describe("parse errors", () => {
   for (const tc of tests) {
     const name = tc.name ?? tc.input;
     it(name, () => {
-      checkFields(tc, ["input", "error_contains"]);
+      checkFields(tc, ["input", "error", "display"]);
+      const errorFields = ["kind", "message", "span", "suggestion"];
+      expect(
+        Object.keys(tc.error).filter((key) => !errorFields.includes(key)),
+        "error fields this runner does not check",
+      ).toEqual([]);
       const error = hronError(() => Schedule.parse(tc.input));
       expect(Schedule.validate(tc.input), "validate").toBe(false);
-      if ("error_contains" in tc) {
-        expect(error.message).toContain(tc.error_contains);
+      expect(error.kind, "kind").toBe(tc.error.kind);
+      expect(error.message, "message").toBe(tc.error.message);
+      expect(error.span && [error.span.start, error.span.end], "span").toEqual(
+        tc.error.span,
+      );
+      expect(error.suggestion, "suggestion").toBe(tc.error.suggestion);
+      if ("display" in tc) {
+        expect(error.displayRich(), "displayRich").toBe(tc.display);
       }
     });
   }

@@ -30,7 +30,7 @@ The exit status is 0 when every language agrees (with `--compare`, when every ou
 
 Generated cases whose expression is meant to parse but fails to in every language are reported as a warning, since they would otherwise pass as agreement.
 
-Divergences are grouped by operation and by how the languages split, largest group first, so a bug shows up as one group for each operation it affects, however many cases hit it. Languages agree on an error when its kind, span and suggestion match, and for a cron error its message too; the spec leaves the wording of other messages to each language.
+Divergences are grouped by operation and by how the languages split, largest group first, so a bug shows up as one group for each operation it affects, however many cases hit it. Languages agree on an error when its kind, message, span and suggestion all match, as the spec fixes each of them.
 
 ## Cases
 
@@ -57,7 +57,7 @@ A case is a JSON object:
 
 Timestamps use the spec's form, `2026-03-08T03:30:00-04:00[America/New_York]`.
 
-A runner answers each case with one line, `{"id", "ok": true, "result", "micros"}` or `{"id", "ok": false, "error", "micros"}`, where `micros` is how long it took to evaluate the case. For a hron error, `error` is `{"kind", "message", "span", "suggestion"}`, where `kind` is `lex`, `parse`, `eval` or `cron`, `span` is `[start, end]` or `null`, and `suggestion` is a string or `null`. Any other exception is `{"kind": "crash", "message"}`. The driver records `timeout` for a case that hangs and `crash` for one that kills the runner, then restarts the runner from the next case; a runner that hangs or dies on its first two cases stops the run. Each runner's stderr goes to `.build/<lang>.log`.
+A runner answers each case with one line, `{"id", "ok": true, "result", "micros"}` or `{"id", "ok": false, "error", "micros"}`, where `micros` is how long it took to evaluate the case. For a hron error, `error` is `{"kind", "message", "span", "suggestion"}`, where `kind` is `lex`, `parse`, `eval` or `cron`, `span` is `[start, end]` in code points or `null`, and `suggestion` is a string or `null`. Any other exception is `{"kind": "crash", "message"}`. The driver records `timeout` for a case that hangs and `crash` for one that kills the runner, then restarts the runner from the next case; a runner that hangs or dies on its first two cases stops the run. Each runner's stderr goes to `.build/<lang>.log`.
 
 ## Adding a language
 

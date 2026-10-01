@@ -181,55 +181,6 @@ export function monthNumber(month: MonthName): number {
   return map[month];
 }
 
-export function parseWeekday(s: string): Weekday | null {
-  const map: Record<string, Weekday> = {
-    monday: "monday",
-    mon: "monday",
-    tuesday: "tuesday",
-    tue: "tuesday",
-    wednesday: "wednesday",
-    wed: "wednesday",
-    thursday: "thursday",
-    thu: "thursday",
-    friday: "friday",
-    fri: "friday",
-    saturday: "saturday",
-    sat: "saturday",
-    sunday: "sunday",
-    sun: "sunday",
-  };
-  return map[s.toLowerCase()] ?? null;
-}
-
-export function parseMonthName(s: string): MonthName | null {
-  const map: Record<string, MonthName> = {
-    january: "jan",
-    jan: "jan",
-    february: "feb",
-    feb: "feb",
-    march: "mar",
-    mar: "mar",
-    april: "apr",
-    apr: "apr",
-    may: "may",
-    june: "jun",
-    jun: "jun",
-    july: "jul",
-    jul: "jul",
-    august: "aug",
-    aug: "aug",
-    september: "sep",
-    sep: "sep",
-    october: "oct",
-    oct: "oct",
-    november: "nov",
-    nov: "nov",
-    december: "dec",
-    dec: "dec",
-  };
-  return map[s.toLowerCase()] ?? null;
-}
-
 export function expandDaySpec(spec: DayOfMonthSpec): number[] {
   if (spec.type === "single") {
     return [spec.day];

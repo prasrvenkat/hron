@@ -1,10 +1,55 @@
 using Hron.Ast;
 using Hron.Lexer;
+using static System.FormattableString;
 
 namespace Hron.Parser;
 
 public sealed class Parser
 {
+    /// <summary>
+    /// The <c>{what}</c> of each <c>expected {what}, got ...</c> error, one per phrase in the
+    /// position table of spec/README.md, "Parse errors".
+    /// </summary>
+    private static class Expected
+    {
+        public const string EveryOrOn = "'every' or 'on'";
+        public const string Repeater = "'day', 'weekday', 'weekend', a day name, 'week', 'month', 'year' or a number";
+        public const string Unit = "a unit ('min', 'hours', 'days', 'weeks', 'months' or 'years')";
+        public const string At = "'at'";
+        public const string Time = "a time (HH:MM)";
+        public const string From = "'from'";
+        public const string To = "'to'";
+        public const string DayTarget = "'day', 'weekday', 'weekend' or a day name";
+        public const string On = "'on'";
+        public const string DayName = "a day name";
+        public const string The = "'the'";
+        public const string MonthTarget = "a day such as 15th, 'last', an ordinal such as 'first', 'next', 'previous' or 'nearest'";
+        public const string MonthLast = "'day', 'weekday' or a day name";
+        public const string Nearest = "'nearest'";
+        public const string Weekday = "'weekday'";
+        public const string DayOfMonth = "a day such as 15th";
+        public const string YearTarget = "a month name or 'the'";
+        public const string YearThe = "a day such as 15th, 'last' or an ordinal such as 'first'";
+        public const string YearLast = "'weekday' or a day name";
+        public const string Of = "'of'";
+        public const string MonthName = "a month name";
+        public const string DayNumber = "a day number";
+        public const string Date = "a date (YYYY-MM-DD, or a month and day)";
+        public const string IsoDate = "a date (YYYY-MM-DD)";
+        public const string Timezone = "a timezone";
+    }
+
+    private static readonly (TokenKind Kind, string Keyword)[] ClauseOrder =
+    [
+        (TokenKind.Except, "except"),
+        (TokenKind.Until, "until"),
+        (TokenKind.Starting, "starting"),
+        (TokenKind.During, "during"),
+        (TokenKind.In, "in"),
+    ];
+
+    private static readonly int[] MaxDays = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
     private readonly string _input;
     private readonly List<Token> _tokens;
     private int _pos;
@@ -13,743 +58,551 @@ public sealed class Parser
     {
         _input = input;
         _tokens = tokens;
-        _pos = 0;
     }
 
     public static ScheduleData Parse(string input)
     {
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            throw HronException.Parse("empty input", new Span(0, 0), input ?? "");
-        }
-
+        input ??= "";
         var tokens = Lexer.Lexer.Tokenize(input);
         if (tokens.Count == 0)
         {
-            throw HronException.Parse("empty input", new Span(0, 0), input);
+            throw HronException.Parse("empty expression", new Span(0, 0), input);
         }
 
-        return new Parser(input, tokens).ParseSchedule();
+        var parser = new Parser(input, tokens);
+        var expr = parser.ParseExpression();
+        var (schedule, untilOffsets) = parser.ParseClauses(expr);
+        if (parser.Peek() is not null)
+        {
+            throw parser.Leftover(schedule);
+        }
+        // spec/README.md, "Parse errors": every other error wins over a named until without starting.
+        parser.CheckNamedUntil(schedule, untilOffsets);
+        return schedule;
     }
 
-    private ScheduleData ParseSchedule()
+    private IScheduleExpr ParseExpression()
     {
-        var expr = ParseExpr();
-
-        IReadOnlyList<ExceptionSpec> except = [];
-        UntilSpec? until = null;
-        string? anchor = null;
-        IReadOnlyList<MonthName> during = [];
-        string? timezone = null;
-        var untilSpan = new Span(0, 0);
-
-        while (_pos < _tokens.Count)
+        if (Eat(TokenKind.Every))
         {
-            var tok = _tokens[_pos];
-            switch (tok.Kind)
-            {
-                case TokenKind.Except:
-                    if (except.Count > 0)
-                        throw ParseError("duplicate except clause", tok.Span);
-                    if (until is not null)
-                        throw ParseError("wrong clause order: until before except", tok.Span);
-                    if (anchor is not null)
-                        throw ParseError("wrong clause order: starting before except", tok.Span);
-                    if (during.Count > 0)
-                        throw ParseError("wrong clause order: during before except", tok.Span);
-                    if (timezone is not null)
-                        throw ParseError("wrong clause order: in before except", tok.Span);
-                    _pos++;
-                    except = ParseExceptions();
-                    break;
+            return ParseEvery();
+        }
+        if (Eat(TokenKind.On))
+        {
+            return ParseSingleDate();
+        }
+        throw ExpectedError(Expected.EveryOrOn);
+    }
 
-                case TokenKind.Until:
-                    if (until is not null)
-                        throw ParseError("duplicate until clause", tok.Span);
-                    if (anchor is not null)
-                        throw ParseError("wrong clause order: starting before until", tok.Span);
-                    if (during.Count > 0)
-                        throw ParseError("wrong clause order: during before until", tok.Span);
-                    if (timezone is not null)
-                        throw ParseError("wrong clause order: in before until", tok.Span);
-                    _pos++;
-                    until = ParseUntil();
-                    untilSpan = new Span(tok.Span.Start, _tokens[_pos - 1].Span.End);
-                    break;
+    private (ScheduleData Schedule, Span? UntilSpan) ParseClauses(IScheduleExpr expr)
+    {
+        var schedule = ScheduleData.Of(expr);
+        Span? untilOffsets = null;
 
-                case TokenKind.Starting:
-                    if (anchor is not null)
-                        throw ParseError("duplicate starting clause", tok.Span);
-                    if (during.Count > 0)
-                        throw ParseError("wrong clause order: during before starting", tok.Span);
-                    if (timezone is not null)
-                        throw ParseError("wrong clause order: in before starting", tok.Span);
-                    _pos++;
-                    anchor = ParseStarting();
-                    break;
-
-                case TokenKind.During:
-                    if (during.Count > 0)
-                        throw ParseError("duplicate during clause", tok.Span);
-                    if (timezone is not null)
-                        throw ParseError("wrong clause order: in before during", tok.Span);
-                    _pos++;
-                    during = ParseDuring();
-                    break;
-
-                case TokenKind.In:
-                    _pos++;
-                    timezone = ParseTimezone();
-                    break;
-
-                default:
-                    throw ParseError("unexpected token", tok.Span);
-            }
+        if (Eat(TokenKind.Except))
+        {
+            schedule = schedule.WithExcept(ParseExceptions());
         }
 
-        if (until is { Kind: UntilSpecKind.Named } && anchor is null)
+        if (Peek() is { Kind: TokenKind.Until } untilToken)
         {
+            _pos++;
+            var date = ParseDate();
+            schedule = schedule.WithUntil(date.Kind == DateSpecKind.Iso
+                ? UntilSpec.Iso(date.Date!)
+                : UntilSpec.Named(date.Month!.Value, date.Day));
+            untilOffsets = new Span(untilToken.Span.Start, Previous().Span.End);
+        }
+
+        if (Eat(TokenKind.Starting))
+        {
+            var token = Peek() is { Kind: TokenKind.IsoDate } iso ? iso : throw ExpectedError(Expected.IsoDate);
+            _pos++;
+            schedule = schedule.WithAnchor(CheckIsoDate(token));
+        }
+
+        if (Eat(TokenKind.During))
+        {
+            schedule = schedule.WithDuring(ParseMonthList());
+        }
+
+        if (Eat(TokenKind.In))
+        {
+            var token = Peek() is { Kind: TokenKind.Timezone } zone ? zone : throw ExpectedError(Expected.Timezone);
+            _pos++;
+            schedule = schedule.WithTimezone(CheckTimezone(token));
+        }
+
+        return (schedule, untilOffsets);
+    }
+
+    private HronException Leftover(ScheduleData schedule)
+    {
+        var token = _tokens[_pos];
+        // Every clause holds at least one item, so a clause was read exactly when its field is set.
+        bool[] read =
+        [
+            schedule.Except.Count > 0,
+            schedule.Until is not null,
+            schedule.Anchor is not null,
+            schedule.During.Count > 0,
+            schedule.Timezone is not null,
+        ];
+        var clause = Array.FindIndex(ClauseOrder, c => c.Kind == token.Kind);
+        var lastRead = Array.LastIndexOf(read, true);
+        var message = clause >= 0 && read[clause] ? $"duplicate '{ClauseOrder[clause].Keyword}' clause"
+            : clause >= 0 && lastRead >= 0 ? $"'{ClauseOrder[clause].Keyword}' must come before '{ClauseOrder[lastRead].Keyword}'"
+            : $"unexpected '{Text(token)}' after the schedule";
+        return Error(message, token, token);
+    }
+
+    private void CheckNamedUntil(ScheduleData schedule, Span? untilOffsets)
+    {
+        if (schedule.Until is { Kind: UntilSpecKind.Named } until && schedule.Anchor is null && untilOffsets is { } span)
+        {
+            var month = until.Month!.Value.ToDisplayString();
             throw HronException.Parse(
-                "a named until date has no year, so it needs a starting date",
-                untilSpan,
+                Invariant($"until {month} {until.Day} has no year: add a starting date, or use an ISO date"),
+                Span.FromUtf16Range(_input, span.Start, span.End),
                 _input,
-                $"until {until.Month!.Value.ToDisplayString()} {until.Day} starting YYYY-MM-DD");
+                Invariant($"until {month} {until.Day} starting YYYY-MM-DD"));
         }
-
-        return new ScheduleData(expr, timezone, except, until, anchor, during);
     }
 
-    private IScheduleExpr ParseExpr()
+    private IReadOnlyList<ExceptionSpec> ParseExceptions()
     {
-        var tok = Peek();
-        if (tok is null)
+        var exceptions = new List<ExceptionSpec> { ParseException() };
+        while (Eat(TokenKind.Comma))
         {
-            throw ParseError("unexpected end of input", EndSpan());
+            exceptions.Add(ParseException());
         }
-
-        return tok.Kind switch
-        {
-            TokenKind.Every => ParseEveryExpr(),
-            TokenKind.On => ParseSingleDate(),
-            _ => throw ParseError("expected 'every' or 'on'", tok.Span)
-        };
+        return exceptions;
     }
 
-    private IScheduleExpr ParseEveryExpr()
+    private ExceptionSpec ParseException()
     {
-        Expect(TokenKind.Every);
-
-        var next = Peek();
-        if (next is null)
-        {
-            throw ParseError("unexpected end of input after 'every'", EndSpan());
-        }
-
-        return next.Kind switch
-        {
-            TokenKind.Number => ParseEveryNumber(),
-            TokenKind.Day or TokenKind.Weekday or TokenKind.Weekend or TokenKind.DayName => ParseDayRepeat(),
-            TokenKind.Weeks => ParseWeeksWithInterval(1),
-            TokenKind.Year => ParseYearRepeat(),
-            TokenKind.Month => ParseMonthRepeat(),
-            _ => throw ParseError("unexpected token after 'every'", next.Span)
-        };
+        var date = ParseDate();
+        return date.Kind == DateSpecKind.Iso
+            ? ExceptionSpec.Iso(date.Date!)
+            : ExceptionSpec.Named(date.Month!.Value, date.Day);
     }
 
-    private IScheduleExpr ParseEveryNumber()
+    private DateSpec ParseDate()
     {
-        var numTok = Expect(TokenKind.Number);
-        var interval = numTok.NumberVal;
+        switch (Peek())
+        {
+            case { Kind: TokenKind.IsoDate } token:
+                _pos++;
+                return DateSpec.Iso(CheckIsoDate(token));
+            case { Kind: TokenKind.MonthName } token:
+                _pos++;
+                var month = token.MonthNameVal!.Value;
+                return DateSpec.Named(month, ParseDayOf(month));
+            default:
+                throw ExpectedError(Expected.Date);
+        }
+    }
 
+    private string CheckIsoDate(Token token)
+    {
+        var text = Text(token);
+        if (!IsoDate.TryParse(text, out _))
+        {
+            throw Error($"date must be a calendar date from 0001-01-01 to 9999-12-31, got {text}", token, token);
+        }
+        return text;
+    }
+
+    private string CheckTimezone(Token token)
+    {
+        var name = Text(token);
+        return TimezoneNames.Canonical(name)
+            ?? throw Error($"timezone must be UTC or an Area/Location name such as America/New_York, got {name}", token, token);
+    }
+
+    private IScheduleExpr ParseEvery()
+    {
+        var token = Peek();
+        switch (token?.Kind)
+        {
+            case TokenKind.Day:
+                _pos++;
+                return ParseDayRepeat(1, DayFilter.Every());
+            case TokenKind.Weekday:
+                _pos++;
+                return ParseDayRepeat(1, DayFilter.Weekday());
+            case TokenKind.Weekend:
+                _pos++;
+                return ParseDayRepeat(1, DayFilter.Weekend());
+            case TokenKind.DayName:
+                return ParseDayRepeat(1, DayFilter.SpecificDays(ParseDayList()));
+            case TokenKind.Weeks:
+                _pos++;
+                return ParseWeekRepeat(1);
+            case TokenKind.Month:
+                _pos++;
+                return ParseMonthRepeat(1);
+            case TokenKind.Year:
+                _pos++;
+                return ParseYearRepeat(1);
+            case TokenKind.Number:
+                return ParseNumberRepeat(token!);
+            default:
+                throw ExpectedError(Expected.Repeater);
+        }
+    }
+
+    private IScheduleExpr ParseDayRepeat(int interval, DayFilter days)
+    {
+        Expect(TokenKind.At, Expected.At);
+        return new DayRepeat(interval, days, ParseTimeList());
+    }
+
+    private IScheduleExpr ParseNumberRepeat(Token number)
+    {
+        _pos++;
+        var interval = number.NumberVal;
         if (interval == 0)
         {
-            throw ParseError("zero interval", numTok.Span);
+            throw Error($"interval must be 1-2147483647, got {Text(number)}", number, number);
         }
 
-        var next = Peek();
-        if (next is null)
+        var token = Peek();
+        switch (token?.Kind)
         {
-            throw ParseError("unexpected end of input after number", EndSpan());
-        }
-
-        return next.Kind switch
-        {
-            TokenKind.IntervalUnit => ParseIntervalRepeat(interval),
-            TokenKind.Day => ParseDayWithInterval(interval),
-            TokenKind.Weeks => ParseWeeksWithInterval(interval),
-            TokenKind.Month => ParseMonthWithInterval(interval),
-            TokenKind.Year => ParseYearWithInterval(interval),
-            _ => throw ParseError("expected unit (min/hours/day/weeks/month/year) after number", next.Span)
-        };
-    }
-
-    private IScheduleExpr ParseDayWithInterval(int interval)
-    {
-        _pos++;
-        var days = DayFilter.Every();
-        var times = ParseAtTimes();
-        return new DayRepeat(interval, days, times);
-    }
-
-    private IScheduleExpr ParseWeeksWithInterval(int interval)
-    {
-        _pos++;
-        Expect(TokenKind.On);
-        var weekDays = ParseDayList();
-        var times = ParseAtTimes();
-        return new WeekRepeat(interval, weekDays, times);
-    }
-
-    private IScheduleExpr ParseMonthWithInterval(int interval)
-    {
-        _pos++;
-        Expect(TokenKind.On);
-        Expect(TokenKind.The);
-        var target = ParseMonthTarget();
-        var times = ParseAtTimes();
-        return new MonthRepeat(interval, target, times);
-    }
-
-    private IScheduleExpr ParseYearWithInterval(int interval)
-    {
-        _pos++;
-        Expect(TokenKind.On);
-        var target = ParseYearTarget();
-        var times = ParseAtTimes();
-        return new YearRepeat(interval, target, times);
-    }
-
-    private IScheduleExpr ParseDayRepeat()
-    {
-        var days = ParseDayFilter();
-        var times = ParseAtTimes();
-        return new DayRepeat(1, days, times);
-    }
-
-    private DayFilter ParseDayFilter()
-    {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("unexpected end of input", EndSpan());
-        }
-
-        return tok.Kind switch
-        {
-            TokenKind.Day => AdvanceAndReturn(DayFilter.Every()),
-            TokenKind.Weekday => AdvanceAndReturn(DayFilter.Weekday()),
-            TokenKind.Weekend => AdvanceAndReturn(DayFilter.Weekend()),
-            TokenKind.DayName => DayFilter.SpecificDays(ParseDayList()),
-            _ => throw ParseError("expected day filter", tok.Span)
-        };
-    }
-
-    private T AdvanceAndReturn<T>(T value)
-    {
-        _pos++;
-        return value;
-    }
-
-    private IReadOnlyList<Weekday> ParseDayList()
-    {
-        var days = new List<Weekday>();
-
-        var tok = Expect(TokenKind.DayName);
-        days.Add(tok.DayNameVal!.Value);
-
-        while (Check(TokenKind.Comma))
-        {
-            _pos++;
-            tok = Expect(TokenKind.DayName);
-            days.Add(tok.DayNameVal!.Value);
-        }
-
-        return days;
-    }
-
-    private IScheduleExpr ParseIntervalRepeat(int interval)
-    {
-        var unitTok = Expect(TokenKind.IntervalUnit);
-        var unit = unitTok.UnitVal!.Value;
-
-        var fromTok = Expect(TokenKind.From);
-        var fromTime = ParseTime();
-        Expect(TokenKind.To);
-        var toTime = ParseTime();
-        if (fromTime.TotalMinutes > toTime.TotalMinutes)
-        {
-            throw ParseError($"time range is reversed: from {fromTime} is after to {toTime}, and a window cannot cross midnight", new Span(fromTok.Span.Start, _tokens[_pos - 1].Span.End));
-        }
-
-        DayFilter? dayFilter = null;
-        if (Check(TokenKind.On))
-        {
-            _pos++;
-            dayFilter = ParseDayFilterForInterval();
-        }
-
-        return new IntervalRepeat(interval, unit, fromTime, toTime, dayFilter);
-    }
-
-    private DayFilter ParseDayFilterForInterval()
-    {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("unexpected end of input after 'on'", EndSpan());
-        }
-
-        return tok.Kind switch
-        {
-            TokenKind.Day => AdvanceAndReturn(DayFilter.Every()),
-            TokenKind.Weekday => AdvanceAndReturn(DayFilter.Weekday()),
-            TokenKind.Weekend => AdvanceAndReturn(DayFilter.Weekend()),
-            TokenKind.DayName => DayFilter.SpecificDays(ParseDayList()),
-            _ => throw ParseError("expected day filter after 'on'", tok.Span)
-        };
-    }
-
-    private IScheduleExpr ParseMonthRepeat()
-    {
-        Expect(TokenKind.Month);
-        Expect(TokenKind.On);
-        Expect(TokenKind.The);
-
-        var target = ParseMonthTarget();
-        var times = ParseAtTimes();
-
-        return new MonthRepeat(1, target, times);
-    }
-
-    private MonthTarget ParseMonthTarget()
-    {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("unexpected end of input", EndSpan());
-        }
-
-        if (tok.Kind == TokenKind.Last)
-        {
-            _pos++;
-            var next = Peek();
-            if (next is not null && next.Kind == TokenKind.Day)
-            {
+            case TokenKind.Weeks:
                 _pos++;
-                return MonthTarget.LastDay();
-            }
-            if (next is not null && next.Kind == TokenKind.Weekday)
-            {
+                return ParseWeekRepeat(interval);
+            case TokenKind.IntervalUnit:
                 _pos++;
-                return MonthTarget.LastWeekday();
-            }
-            if (next is not null && next.Kind == TokenKind.DayName)
-            {
-                var weekday = _tokens[_pos++].DayNameVal!.Value;
-                return MonthTarget.OrdinalWeekday(OrdinalPosition.Last, weekday);
-            }
-            throw ParseError("expected 'day', 'weekday', or day name after 'last'", next?.Span ?? EndSpan());
+                return ParseIntervalRepeat(interval, token!.UnitVal!.Value);
+            case TokenKind.Day:
+                _pos++;
+                return ParseDayRepeat(interval, DayFilter.Every());
+            case TokenKind.Month:
+                _pos++;
+                return ParseMonthRepeat(interval);
+            case TokenKind.Year:
+                _pos++;
+                return ParseYearRepeat(interval);
+            default:
+                throw ExpectedError(Expected.Unit);
         }
+    }
 
-        if (tok.Kind == TokenKind.Ordinal)
+    private IScheduleExpr ParseIntervalRepeat(int interval, IntervalUnit unit)
+    {
+        Expect(TokenKind.From, Expected.From);
+        var from = ParseTime();
+        var fromToken = Previous();
+        Expect(TokenKind.To, Expected.To);
+        var to = ParseTime();
+        var toToken = Previous();
+        if (from.TotalMinutes > to.TotalMinutes)
         {
-            var ordinal = _tokens[_pos++].OrdinalVal!.Value;
-            var dayTok = Expect(TokenKind.DayName);
-            return MonthTarget.OrdinalWeekday(ordinal, dayTok.DayNameVal!.Value);
+            throw Error(
+                $"time window must not run backwards: {Text(fromToken)} to {Text(toToken)} (a window cannot cross midnight)",
+                fromToken,
+                toToken);
         }
 
-        if (tok.Kind == TokenKind.Next || tok.Kind == TokenKind.Previous || tok.Kind == TokenKind.Nearest)
+        var dayFilter = Eat(TokenKind.On) ? ParseDayTarget() : null;
+        return new IntervalRepeat(interval, unit, from, to, dayFilter);
+    }
+
+    private IScheduleExpr ParseWeekRepeat(int interval)
+    {
+        Expect(TokenKind.On, Expected.On);
+        var days = ParseDayList();
+        Expect(TokenKind.At, Expected.At);
+        return new WeekRepeat(interval, days, ParseTimeList());
+    }
+
+    private IScheduleExpr ParseMonthRepeat(int interval)
+    {
+        Expect(TokenKind.On, Expected.On);
+        Expect(TokenKind.The, Expected.The);
+
+        MonthTarget target;
+        var token = Peek();
+        switch (token?.Kind)
         {
-            return ParseNearestWeekdayTarget();
+            case TokenKind.Last:
+                _pos++;
+                var last = Peek();
+                target = last?.Kind switch
+                {
+                    TokenKind.Day => MonthTarget.LastDay(),
+                    TokenKind.Weekday => MonthTarget.LastWeekday(),
+                    TokenKind.DayName => MonthTarget.OrdinalWeekday(OrdinalPosition.Last, last!.DayNameVal!.Value),
+                    _ => throw ExpectedError(Expected.MonthLast),
+                };
+                _pos++;
+                break;
+            case TokenKind.Ordinal:
+                _pos++;
+                target = MonthTarget.OrdinalWeekday(token!.OrdinalVal!.Value, ParseDayName());
+                break;
+            case TokenKind.OrdinalNumber:
+                target = MonthTarget.Days(ParseOrdinalDayList());
+                break;
+            case TokenKind.Next or TokenKind.Previous or TokenKind.Nearest:
+                target = ParseNearestWeekdayTarget();
+                break;
+            default:
+                throw ExpectedError(Expected.MonthTarget);
         }
 
-        var specs = ParseDayOfMonthSpecs();
-        return MonthTarget.Days(specs);
+        Expect(TokenKind.At, Expected.At);
+        return new MonthRepeat(interval, target, ParseTimeList());
     }
 
     private MonthTarget ParseNearestWeekdayTarget()
     {
-        NearestDirection? direction = null;
-        var tok = Peek();
-
-        if (tok is not null && tok.Kind == TokenKind.Next)
-        {
-            _pos++;
-            direction = NearestDirection.Next;
-        }
-        else if (tok is not null && tok.Kind == TokenKind.Previous)
-        {
-            _pos++;
-            direction = NearestDirection.Previous;
-        }
-
-        Expect(TokenKind.Nearest);
-        Expect(TokenKind.Weekday);
-        Expect(TokenKind.To);
-
-        var dayTok = Expect(TokenKind.OrdinalNumber);
-        var day = dayTok.NumberVal;
-        if (day < 1 || day > 31)
-        {
-            throw ParseError($"invalid day number {day} (must be 1-31)", dayTok.Span);
-        }
-
+        NearestDirection? direction = Eat(TokenKind.Next) ? NearestDirection.Next
+            : Eat(TokenKind.Previous) ? NearestDirection.Previous
+            : null;
+        Expect(TokenKind.Nearest, Expected.Nearest);
+        Expect(TokenKind.Weekday, Expected.Weekday);
+        Expect(TokenKind.To, Expected.To);
+        var (day, _) = ParseOrdinalDay();
         return MonthTarget.NearestWeekday(day, direction);
     }
 
-    private IReadOnlyList<DayOfMonthSpec> ParseDayOfMonthSpecs()
+    private IReadOnlyList<DayOfMonthSpec> ParseOrdinalDayList()
     {
-        var specs = new List<DayOfMonthSpec> { ParseDayOfMonthSpec() };
-
-        while (Check(TokenKind.Comma))
+        var specs = new List<DayOfMonthSpec> { ParseOrdinalDaySpec() };
+        while (Eat(TokenKind.Comma))
         {
-            _pos++;
-            specs.Add(ParseDayOfMonthSpec());
+            specs.Add(ParseOrdinalDaySpec());
         }
-
         return specs;
     }
 
-    private DayOfMonthSpec ParseDayOfMonthSpec()
+    private DayOfMonthSpec ParseOrdinalDaySpec()
     {
-        var tok = Expect(TokenKind.OrdinalNumber);
-        var start = tok.NumberVal;
-
-        if (start < 1 || start > 31)
+        var (start, startToken) = ParseOrdinalDay();
+        if (!Eat(TokenKind.To))
         {
-            throw ParseError($"invalid day number {start} (must be 1-31)", tok.Span);
+            return DayOfMonthSpec.Single(start);
         }
-
-        if (Check(TokenKind.To))
+        var (end, endToken) = ParseOrdinalDay();
+        if (start > end)
         {
-            _pos++;
-            var endTok = Expect(TokenKind.OrdinalNumber);
-            var end = endTok.NumberVal;
-            if (end < 1 || end > 31)
-            {
-                throw ParseError($"invalid day number {end} (must be 1-31)", endTok.Span);
-            }
-            if (start > end)
-            {
-                throw ParseError($"invalid day range: {start} to {end} (start must be <= end)", tok.Span);
-            }
-            return DayOfMonthSpec.Range(start, end);
+            throw Error($"day range must not run backwards: {Text(startToken)} to {Text(endToken)}", startToken, endToken);
         }
-
-        return DayOfMonthSpec.Single(start);
+        return DayOfMonthSpec.Range(start, end);
     }
 
-    private IScheduleExpr ParseYearRepeat()
+    private (int Day, Token Token) ParseOrdinalDay()
     {
-        Expect(TokenKind.Year);
-        Expect(TokenKind.On);
-
-        var target = ParseYearTarget();
-        var times = ParseAtTimes();
-
-        return new YearRepeat(1, target, times);
+        var token = Peek() is { Kind: TokenKind.OrdinalNumber } day ? day : throw ExpectedError(Expected.DayOfMonth);
+        _pos++;
+        return (CheckDayOfMonth(token), token);
     }
 
-    private YearTarget ParseYearTarget()
+    private int ParseDayOf(MonthName month)
     {
-        var tok = Peek();
-        if (tok is null)
+        var token = Peek() is { Kind: TokenKind.Number or TokenKind.OrdinalNumber } day
+            ? day
+            : throw ExpectedError(Expected.DayNumber);
+        _pos++;
+        var value = CheckDayOfMonth(token);
+        CheckDayInMonth(value, token, month);
+        return value;
+    }
+
+    private int CheckDayOfMonth(Token token)
+    {
+        if (token.NumberVal is < 1 or > 31)
         {
-            throw ParseError("unexpected end of input after 'on'", EndSpan());
+            throw Error($"day must be 1-31, got {Text(token)}", token, token);
+        }
+        return token.NumberVal;
+    }
+
+    private void CheckDayInMonth(int day, Token token, MonthName month)
+    {
+        var max = MaxDays[(int)month];
+        if (day > max)
+        {
+            throw Error(Invariant($"day must be 1-{max} for {month.ToDisplayString()}, got {Text(token)}"), token, token);
+        }
+    }
+
+    private IScheduleExpr ParseYearRepeat(int interval)
+    {
+        Expect(TokenKind.On, Expected.On);
+
+        YearTarget target;
+        switch (Peek())
+        {
+            case { Kind: TokenKind.The }:
+                _pos++;
+                target = ParseYearTargetAfterThe();
+                break;
+            case { Kind: TokenKind.MonthName } token:
+                _pos++;
+                var month = token.MonthNameVal!.Value;
+                target = YearTarget.Date(month, ParseDayOf(month));
+                break;
+            default:
+                throw ExpectedError(Expected.YearTarget);
         }
 
-        if (tok.Kind == TokenKind.The)
-        {
-            _pos++;
-            return ParseYearTargetAfterThe();
-        }
-
-        var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = ParseDayNumber();
-        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
-        return YearTarget.Date(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
+        Expect(TokenKind.At, Expected.At);
+        return new YearRepeat(interval, target, ParseTimeList());
     }
 
     private YearTarget ParseYearTargetAfterThe()
     {
-        var tok = Peek();
-        if (tok is null)
+        var token = Peek();
+        switch (token?.Kind)
         {
-            throw ParseError("unexpected end of input after 'the'", EndSpan());
-        }
-
-        if (tok.Kind == TokenKind.Last)
-        {
-            _pos++;
-            var next = Peek();
-            if (next is not null && next.Kind == TokenKind.DayName)
-            {
-                var weekday = _tokens[_pos++].DayNameVal!.Value;
-                Expect(TokenKind.Of);
-                var monthTok = Expect(TokenKind.MonthName);
-                return YearTarget.OrdinalWeekday(OrdinalPosition.Last, weekday, monthTok.MonthNameVal!.Value);
-            }
-            if (next is not null && next.Kind == TokenKind.Weekday)
-            {
+            case TokenKind.Last:
                 _pos++;
-                Expect(TokenKind.Of);
-                var monthTok = Expect(TokenKind.MonthName);
-                return YearTarget.LastWeekday(monthTok.MonthNameVal!.Value);
-            }
-            throw ParseError("expected day name or 'weekday' after 'last'", next?.Span ?? EndSpan());
+                var last = Peek();
+                switch (last?.Kind)
+                {
+                    case TokenKind.Weekday:
+                        _pos++;
+                        Expect(TokenKind.Of, Expected.Of);
+                        return YearTarget.LastWeekday(ParseMonthName());
+                    case TokenKind.DayName:
+                        _pos++;
+                        Expect(TokenKind.Of, Expected.Of);
+                        return YearTarget.OrdinalWeekday(OrdinalPosition.Last, last!.DayNameVal!.Value, ParseMonthName());
+                    default:
+                        throw ExpectedError(Expected.YearLast);
+                }
+            case TokenKind.Ordinal:
+                _pos++;
+                var weekday = ParseDayName();
+                Expect(TokenKind.Of, Expected.Of);
+                return YearTarget.OrdinalWeekday(token!.OrdinalVal!.Value, weekday, ParseMonthName());
+            case TokenKind.OrdinalNumber:
+                var (day, dayToken) = ParseOrdinalDay();
+                Expect(TokenKind.Of, Expected.Of);
+                var month = ParseMonthName();
+                CheckDayInMonth(day, dayToken, month);
+                return YearTarget.DayOfMonth(day, month);
+            default:
+                throw ExpectedError(Expected.YearThe);
         }
+    }
 
-        if (tok.Kind == TokenKind.Ordinal)
+    private MonthName ParseMonthName()
+    {
+        var token = Peek() is { Kind: TokenKind.MonthName } month ? month : throw ExpectedError(Expected.MonthName);
+        _pos++;
+        return token.MonthNameVal!.Value;
+    }
+
+    private IReadOnlyList<MonthName> ParseMonthList()
+    {
+        var months = new List<MonthName> { ParseMonthName() };
+        while (Eat(TokenKind.Comma))
         {
-            var ordinal = _tokens[_pos++].OrdinalVal!.Value;
-            var dayTok = Expect(TokenKind.DayName);
-            Expect(TokenKind.Of);
-            var monthTok = Expect(TokenKind.MonthName);
-            return YearTarget.OrdinalWeekday(ordinal, dayTok.DayNameVal!.Value, monthTok.MonthNameVal!.Value);
+            months.Add(ParseMonthName());
         }
-
-        if (tok.Kind == TokenKind.OrdinalNumber)
-        {
-            var day = _tokens[_pos++].NumberVal;
-            Expect(TokenKind.Of);
-            var monthTok = Expect(TokenKind.MonthName);
-            ValidateNamedDate(monthTok.MonthNameVal!.Value, day, tok.Span);
-            return YearTarget.DayOfMonth(day, monthTok.MonthNameVal!.Value);
-        }
-
-        throw ParseError("expected ordinal, ordinal number, or 'last' after 'the'", tok.Span);
+        return months;
     }
 
     private IScheduleExpr ParseSingleDate()
     {
-        Expect(TokenKind.On);
-
-        var dateSpec = ParseDateSpec();
-        var times = ParseAtTimes();
-
-        return new SingleDate(dateSpec, times);
+        var date = ParseDate();
+        Expect(TokenKind.At, Expected.At);
+        return new SingleDate(date, ParseTimeList());
     }
 
-    private void ValidateIsoDate(string dateStr, Span span)
+    private DayFilter ParseDayTarget()
     {
-        if (!IsoDate.TryParse(dateStr, out _))
+        switch (Peek()?.Kind)
         {
-            throw ParseError($"invalid date: {dateStr}", span);
+            case TokenKind.Day:
+                _pos++;
+                return DayFilter.Every();
+            case TokenKind.Weekday:
+                _pos++;
+                return DayFilter.Weekday();
+            case TokenKind.Weekend:
+                _pos++;
+                return DayFilter.Weekend();
+            case TokenKind.DayName:
+                return DayFilter.SpecificDays(ParseDayList());
+            default:
+                throw ExpectedError(Expected.DayTarget);
         }
     }
 
-    private DateSpec ParseDateSpec()
+    private Weekday ParseDayName()
     {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("unexpected end of input", EndSpan());
-        }
-
-        if (tok.Kind == TokenKind.IsoDate)
-        {
-            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
-            _pos++;
-            return DateSpec.Iso(tok.IsoDateVal!);
-        }
-
-        var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = ParseDayNumber();
-        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
-        return DateSpec.Named(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
+        var token = Peek() is { Kind: TokenKind.DayName } day ? day : throw ExpectedError(Expected.DayName);
+        _pos++;
+        return token.DayNameVal!.Value;
     }
 
-    private IReadOnlyList<TimeOfDay> ParseAtTimes()
+    private IReadOnlyList<Weekday> ParseDayList()
     {
-        Expect(TokenKind.At);
-        return ParseTimeList();
+        var days = new List<Weekday> { ParseDayName() };
+        while (Eat(TokenKind.Comma))
+        {
+            days.Add(ParseDayName());
+        }
+        return days;
     }
 
     private IReadOnlyList<TimeOfDay> ParseTimeList()
     {
         var times = new List<TimeOfDay> { ParseTime() };
-
-        while (Check(TokenKind.Comma))
+        while (Eat(TokenKind.Comma))
         {
-            _pos++;
             times.Add(ParseTime());
         }
-
         return times;
     }
 
     private TimeOfDay ParseTime()
     {
-        var tok = Expect(TokenKind.Time);
-        return new TimeOfDay(tok.TimeHour, tok.TimeMinute);
-    }
-
-    private IReadOnlyList<ExceptionSpec> ParseExceptions()
-    {
-        var exceptions = new List<ExceptionSpec> { ParseExceptionSpec() };
-
-        while (Check(TokenKind.Comma))
-        {
-            _pos++;
-            exceptions.Add(ParseExceptionSpec());
-        }
-
-        return exceptions;
-    }
-
-    private ExceptionSpec ParseExceptionSpec()
-    {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("unexpected end of input after 'except'", EndSpan());
-        }
-
-        if (tok.Kind == TokenKind.IsoDate)
-        {
-            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
-            _pos++;
-            return ExceptionSpec.Iso(tok.IsoDateVal!);
-        }
-
-        var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = ParseDayNumber();
-        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
-        return ExceptionSpec.Named(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
-    }
-
-    private UntilSpec ParseUntil()
-    {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("unexpected end of input after 'until'", EndSpan());
-        }
-
-        if (tok.Kind == TokenKind.IsoDate)
-        {
-            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
-            _pos++;
-            return UntilSpec.Iso(tok.IsoDateVal!);
-        }
-
-        var monthTok = Expect(TokenKind.MonthName);
-        var dayTok = ParseDayNumber();
-        ValidateNamedDate(monthTok.MonthNameVal!.Value, dayTok.NumberVal, dayTok.Span);
-        return UntilSpec.Named(monthTok.MonthNameVal!.Value, dayTok.NumberVal);
-    }
-
-    private string ParseStarting()
-    {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("unexpected end of input after 'starting'", EndSpan());
-        }
-
-        if (tok.Kind == TokenKind.IsoDate)
-        {
-            ValidateIsoDate(tok.IsoDateVal!, tok.Span);
-            _pos++;
-            return tok.IsoDateVal!;
-        }
-
-        throw ParseError("starting only accepts ISO dates", tok.Span);
-    }
-
-    private IReadOnlyList<MonthName> ParseDuring()
-    {
-        var months = new List<MonthName>();
-
-        var tok = Expect(TokenKind.MonthName);
-        months.Add(tok.MonthNameVal!.Value);
-
-        while (Check(TokenKind.Comma))
-        {
-            _pos++;
-            tok = Expect(TokenKind.MonthName);
-            months.Add(tok.MonthNameVal!.Value);
-        }
-
-        return months;
-    }
-
-    private string ParseTimezone()
-    {
-        var tok = Peek();
-        if (tok is null || tok.Kind != TokenKind.Timezone)
-        {
-            throw ParseError("expected timezone after 'in'", tok?.Span ?? EndSpan());
-        }
+        var token = Peek() is { Kind: TokenKind.Time } time ? time : throw ExpectedError(Expected.Time);
         _pos++;
-        return TimezoneNames.Canonical(tok.TimezoneVal!) ?? throw ParseError(
-            $"unknown timezone '{tok.TimezoneVal}': use UTC or an IANA Area/Location name such as America/New_York", tok.Span);
-    }
-
-    private static readonly int[] MaxDays = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-    private void ValidateNamedDate(MonthName month, int day, Span span)
-    {
-        var maxDay = MaxDays[(int)month];
-        if (day < 1 || day > maxDay)
-        {
-            throw ParseError($"invalid day {day} for {month.ToDisplayString()} (max {maxDay})", span);
-        }
-    }
-
-    private Token ParseDayNumber()
-    {
-        var tok = Peek();
-        if (tok is null)
-        {
-            throw ParseError("expected day number but reached end of input", EndSpan());
-        }
-        if (tok.Kind != TokenKind.Number && tok.Kind != TokenKind.OrdinalNumber)
-        {
-            throw ParseError($"expected day number but got {tok.Kind}", tok.Span);
-        }
-        _pos++;
-        var day = tok.NumberVal;
-        if (day < 1 || day > 31)
-        {
-            throw ParseError($"invalid day number {day} (must be 1-31)", tok.Span);
-        }
-        return tok;
+        return new TimeOfDay(token.TimeHour, token.TimeMinute);
     }
 
     private Token? Peek() => _pos < _tokens.Count ? _tokens[_pos] : null;
 
-    private bool Check(TokenKind kind)
+    private Token Previous() => _tokens[_pos - 1];
+
+    private bool Eat(TokenKind kind)
     {
-        var tok = Peek();
-        return tok is not null && tok.Kind == kind;
+        var found = Peek()?.Kind == kind;
+        if (found)
+        {
+            _pos++;
+        }
+        return found;
     }
 
-    private Token Expect(TokenKind kind)
+    private void Expect(TokenKind kind, string what)
     {
-        var tok = Peek();
-        if (tok is null)
+        if (!Eat(kind))
         {
-            throw ParseError($"expected {kind} but reached end of input", EndSpan());
+            throw ExpectedError(what);
         }
-        if (tok.Kind != kind)
-        {
-            throw ParseError($"expected {kind} but got {tok.Kind}", tok.Span);
-        }
-        _pos++;
-        return tok;
     }
 
-    private Span EndSpan()
-    {
-        if (_tokens.Count == 0)
-        {
-            return new Span(0, 0);
-        }
-        var lastSpan = _tokens[^1].Span;
-        return new Span(lastSpan.End, lastSpan.End);
-    }
+    private string Text(Token token) => _input[token.Span.Start..token.Span.End];
 
-    private HronException ParseError(string message, Span span)
-        => HronException.Parse(message, span, _input);
+    private HronException Error(string message, Token first, Token last)
+        => HronException.Parse(message, Span.FromUtf16Range(_input, first.Span.Start, last.Span.End), _input);
+
+    private HronException ExpectedError(string what)
+    {
+        if (Peek() is { } token)
+        {
+            return Error($"expected {what}, got '{Text(token)}'", token, token);
+        }
+        var end = _tokens[^1].Span.End;
+        return HronException.Parse($"expected {what}, got end of input", Span.FromUtf16Range(_input, end, end), _input);
+    }
 }

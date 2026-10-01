@@ -80,20 +80,27 @@ func main() {
 ### Error Handling
 
 ```go
-schedule, err := hron.ParseSchedule("invalid expression")
-if err != nil {
-    if hronErr, ok := err.(*hron.HronError); ok {
-        fmt.Println("Error kind:", hronErr.Kind)
-        fmt.Println("Rich error:", hronErr.DisplayRich())
-    }
+_, err := hron.ParseSchedule("every weekday at 09:00 until dec 31")
+var hronErr *hron.HronError
+if errors.As(err, &hronErr) {
+    fmt.Println(hronErr.Kind, hronErr.Message, *hronErr.Span, hronErr.Suggestion)
+    fmt.Println(hronErr.DisplayRich())
 }
 ```
 
+```text
+error: until dec 31 has no year: add a starting date, or use an ISO date
+  every weekday at 09:00 until dec 31
+                         ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"
+```
+
 Error kinds:
-- `ErrorKindLex` - Lexer error (invalid characters)
-- `ErrorKindParse` - Parser error (invalid syntax)
+- `ErrorKindLex` - Lexer error (invalid characters, unknown words, malformed times and numbers)
+- `ErrorKindParse` - Parser error (invalid syntax or values)
 - `ErrorKindEval` - Evaluation error
 - `ErrorKindCron` - Cron conversion error
+
+A lex or parse error carries the exact message the [spec](../spec/README.md#error-message-format) gives, the `Input`, a `Span` and, for some parse errors, a `Suggestion`. `Span` is `[Start, End)` counted in Unicode code points, not bytes: each invalid UTF-8 byte counts as one. `string([]rune(input)[span.Start:span.End])` is the spanned text, with any invalid byte as U+FFFD.
 
 Cron conversion is exact or fails with an `ErrorKindCron` error that says why. This ignores the timezone and DST transitions, where cron schedulers differ. Yearly schedules, ordinal weekdays and partial-day intervals convert; `except`, `until`, `starting`, ISO dates, repeats every `n > 1` days, weeks, months or years, directional nearest weekdays, a `during` that excludes a yearly or named date's month, schedules built in code with no days or no times, and times that are not every combination of their minutes and hours do not. From cron, `*/7 * * * *` (216 unevenly spaced times a day, too many to list) and crons that restrict both the day of month and the day of week fail. The [spec](../spec/README.md#cron-conversion) has every rule and message.
 

@@ -103,12 +103,25 @@ class ConformanceTest < Minitest::Test
     end
   end
 
+  ERROR_FIELDS = %w[kind message span suggestion].freeze
+
   SPEC["parse_errors"]["tests"].each do |tc|
     test_name = tc["name"] || tc["input"]
-    define_case("test_parse_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[input error_contains]) do
+    define_case("test_parse_error_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[input error display]) do
+      expected = tc.fetch("error")
+      assert_empty expected.keys - ERROR_FIELDS, "error fields this runner does not check"
+
       error = assert_raises(Hron::HronError) { Hron::Schedule.parse(tc["input"]) }
-      assert_includes error.message, tc["error_contains"] if tc.key?("error_contains")
+      assert_equal expected.fetch("kind"), error.kind.to_s, "kind"
+      assert_equal expected.fetch("message"), error.message, "message"
+      assert_equal expected.fetch("span"), [error.span.start, error.span.end_pos], "span"
+      if expected.key?("suggestion")
+        assert_equal expected["suggestion"], error.suggestion, "suggestion"
+      else
+        assert_nil error.suggestion, "suggestion"
+      end
       assert_equal false, Hron::Schedule.validate(tc["input"]), "validate"
+      assert_equal tc["display"], error.display_rich, "display_rich" if tc.key?("display")
     end
   end
 

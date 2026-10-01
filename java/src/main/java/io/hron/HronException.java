@@ -62,25 +62,22 @@ public final class HronException extends Exception {
   }
 
   /**
-   * Formats the error for display. Lex and parse errors show the input with the span underlined,
-   * followed by the suggestion if there is one; other errors show the message alone.
+   * The message, then for lex and parse errors the input and a line of carets under the span, and
+   * any suggestion as {@code try: "..."}. Lines are joined by {@code \n}, with no trailing newline.
    */
   public String displayRich() {
-    if ((kind == ErrorKind.LEX || kind == ErrorKind.PARSE) && span != null && input != null) {
-      StringBuilder sb = new StringBuilder();
-      sb.append("error: ").append(getMessage()).append("\n");
-      sb.append("  ").append(input).append("\n");
-
-      sb.append(" ".repeat(span.start() + 2));
-      sb.append("^".repeat(span.length()));
-
-      if (suggestion != null && !suggestion.isEmpty()) {
-        sb.append(" try: \"").append(suggestion).append("\"");
-      }
-
-      return sb.toString();
+    if (span == null || input == null) {
+      return "error: " + getMessage();
     }
-
-    return "error: " + getMessage();
+    // A tab, CR or LF would move the input off the line the carets are aligned to.
+    String shown = input.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ');
+    StringBuilder out = new StringBuilder();
+    out.append("error: ").append(getMessage()).append('\n');
+    out.append("  ").append(shown).append('\n');
+    out.append("  ").append(" ".repeat(span.start())).append("^".repeat(span.length()));
+    if (suggestion != null) {
+      out.append(" try: \"").append(suggestion).append('"');
+    }
+    return out.toString();
   }
 }

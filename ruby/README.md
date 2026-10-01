@@ -59,7 +59,7 @@ See the full [expression reference](https://github.com/simpllyf/hron#expression-
 ## API
 
 ### `Hron::Schedule.parse(input) -> Schedule`
-Parse an hron expression string.
+Parse an hron expression string. Raises `Hron::HronError` with `kind` `:lex` or `:parse` when it is invalid (see [Errors](#errors)).
 
 ### `Hron::Schedule.from_cron(cron_expr) -> Schedule`
 Convert a 5-field cron expression to a Schedule that fires at the same times. This ignores the timezone and DST transitions, where cron schedulers differ. Raises `Hron::HronError` with `kind` `:cron` for invalid cron, for crons that restrict both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps).
@@ -87,6 +87,18 @@ The IANA timezone name with its canonical capitalization (`in utc` gives `"UTC"`
 
 ### `schedule.expression -> ScheduleExpr`
 The underlying schedule expression AST.
+
+## Errors
+
+`Hron::Schedule.parse` raises `Hron::HronError` with `kind` `:lex` or `:parse`, the exact `message` of the [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#error-message-format), the `input` as given, a `span`, and for some parse errors a `suggestion` (otherwise `nil`). `display_rich` renders the error with carets under the span:
+
+```text
+error: until dec 31 has no year: add a starting date, or use an ISO date
+  every weekday at 09:00 until dec 31
+                         ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"
+```
+
+`span.start` and `span.end_pos` mark `[start, end_pos)` in code points, which for a valid UTF-8 string are Ruby's own character indices: `error.input[error.span.start...error.span.end_pos]` is the text the error points at. Each byte of invalid UTF-8 counts as one code point and is reported as `unexpected character U+FFFD`. A binary (`ASCII-8BIT`) string is read as UTF-8 bytes, and a string in any other encoding is converted to UTF-8 first, so a lone UTF-16 surrogate is also U+FFFD.
 
 ## Requirements
 

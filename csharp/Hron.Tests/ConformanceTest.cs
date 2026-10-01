@@ -51,32 +51,44 @@ public partial class ConformanceTest
         Assert.Equal(canonical, s2.ToString());
     }
 
-    public static TheoryData<string, string, string?> GetParseErrorTests()
+    private static JsonElement ParseErrorCases => Spec.RootElement.GetProperty("parse_errors").GetProperty("tests");
+
+    public static TheoryData<string, int> GetParseErrorTests()
     {
-        var data = new TheoryData<string, string, string?>();
-        var tests = Spec.RootElement.GetProperty("parse_errors").GetProperty("tests");
-
-        foreach (var tc in tests.EnumerateArray())
+        var data = new TheoryData<string, int>();
+        var index = 0;
+        foreach (var tc in ParseErrorCases.EnumerateArray())
         {
-            var name = tc.GetProperty("name").GetString()!;
-            var input = tc.GetProperty("input").GetString()!;
-            var errorContains = tc.TryGetProperty("error_contains", out var ec) ? ec.GetString() : null;
-            data.Add(name, input, errorContains);
+            data.Add(tc.GetProperty("name").GetString()!, index++);
         }
-
         return data;
     }
 
+    private static readonly string[] ErrorFields = ["kind", "message", "span", "suggestion"];
+
     [Theory]
     [MemberData(nameof(GetParseErrorTests))]
-    public void ParseErrorTests(string _name, string input, string? errorContains)
+    public void ParseErrorTests(string _name, int index)
     {
         _ = _name;
+        var tc = ParseErrorCases[index];
+        var input = tc.GetProperty("input").GetString()!;
+        var expected = tc.GetProperty("error");
+        var unknown = expected.EnumerateObject().Select(f => f.Name).Except(ErrorFields).ToList();
+        Assert.True(unknown.Count == 0, $"error fields this runner does not know: {string.Join(", ", unknown)}");
+
+        Assert.False(Schedule.Validate(input), $"Validate(\"{input}\") is true");
         var error = Assert.Throws<HronException>(() => Schedule.Parse(input));
-        Assert.False(Schedule.Validate(input));
-        if (errorContains is not null)
+        Assert.Equal(expected.GetProperty("kind").GetString(), error.Kind.ToValue());
+        Assert.Equal(expected.GetProperty("message").GetString(), error.Message);
+        var span = expected.GetProperty("span").EnumerateArray().Select(e => e.GetInt32()).ToArray();
+        Assert.Equal(2, span.Length);
+        Assert.Equal(new Span(span[0], span[1]), error.Span);
+        var suggestion = expected.TryGetProperty("suggestion", out var s) ? s.GetString() : null;
+        Assert.Equal(suggestion, error.Suggestion);
+        if (tc.TryGetProperty("display", out var display))
         {
-            Assert.Contains(errorContains, error.Message);
+            Assert.Equal(display.GetString(), error.DisplayRich());
         }
     }
 
@@ -564,7 +576,7 @@ public partial class ConformanceTest
     // parse.* sections use ParseShape and eval sections not named here use NextShape.
     private static readonly Dictionary<string, CaseShape> CaseShapes = new()
     {
-        ["parse_errors"] = new(["input", "error_contains"], tc => Has(tc, "input")),
+        ["parse_errors"] = new(["input", "error", "display"], tc => Has(tc, "input", "error")),
         ["cron/to_cron"] = new(["hron", "cron"], tc => Has(tc, "hron", "cron")),
         ["cron/to_cron_errors"] = new(["hron", "error"], tc => Has(tc, "hron", "error")),
         ["cron/from_cron"] = new(["cron", "hron"], tc => Has(tc, "cron", "hron")),

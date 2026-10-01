@@ -39,10 +39,18 @@ type ParseTest struct {
 }
 
 type ParseErrorTest struct {
-	Name          string `json:"name"`
-	Input         string `json:"input"`
-	Description   string `json:"description"`
-	ErrorContains string `json:"error_contains"`
+	Name        string                     `json:"name"`
+	Input       string                     `json:"input"`
+	Description string                     `json:"description"`
+	Error       map[string]json.RawMessage `json:"error"`
+	Display     *string                    `json:"display"`
+}
+
+type expectedParseError struct {
+	Kind       string  `json:"kind"`
+	Message    string  `json:"message"`
+	Span       [2]int  `json:"span"`
+	Suggestion *string `json:"suggestion"`
 }
 
 type EvalTest struct {
@@ -245,20 +253,62 @@ func TestParse(t *testing.T) {
 func TestParseErrors(t *testing.T) {
 	spec := loadSpec(t)
 
-	for _, tc := range decodeCases[ParseErrorTest](t, spec.ParseErrors, "input", "error_contains") {
+	for _, tc := range decodeCases[ParseErrorTest](t, spec.ParseErrors, "input", "error", "display") {
 		t.Run(tc.Name, func(t *testing.T) {
-			_, err := ParseSchedule(tc.Input)
-			if err == nil {
-				t.Fatalf("expected parse error for %q (%s)", tc.Input, tc.Description)
-			}
+			want := decodeExpectedParseError(t, tc.Error)
 			if Validate(tc.Input) {
 				t.Errorf("Validate(%q) = true, want false", tc.Input)
 			}
-			if !strings.Contains(err.Error(), tc.ErrorContains) {
-				t.Errorf("parse error for %q is %q, want it to contain %q", tc.Input, err, tc.ErrorContains)
+			_, err := ParseSchedule(tc.Input)
+			var got *HronError
+			if !errors.As(err, &got) {
+				t.Fatalf("ParseSchedule(%q) error = %v, want a *HronError", tc.Input, err)
+			}
+			if string(got.Kind) != want.Kind {
+				t.Errorf("kind for %q = %q, want %q", tc.Input, got.Kind, want.Kind)
+			}
+			if got.Message != want.Message {
+				t.Errorf("message for %q = %q, want %q", tc.Input, got.Message, want.Message)
+			}
+			if got.Span == nil || [2]int{got.Span.Start, got.Span.End} != want.Span {
+				t.Errorf("span for %q = %v, want %v", tc.Input, got.Span, want.Span)
+			}
+			wantSuggestion := ""
+			if want.Suggestion != nil {
+				wantSuggestion = *want.Suggestion
+			}
+			if got.Suggestion != wantSuggestion {
+				t.Errorf("suggestion for %q = %q, want %q", tc.Input, got.Suggestion, wantSuggestion)
+			}
+			if tc.Display != nil && got.DisplayRich() != *tc.Display {
+				t.Errorf("DisplayRich for %q =\n%s\nwant\n%s", tc.Input, got.DisplayRich(), *tc.Display)
 			}
 		})
 	}
+}
+
+// Fails on a field inside "error" that this runner does not check (spec/README.md, "Writing a runner").
+func decodeExpectedParseError(t *testing.T, fields map[string]json.RawMessage) expectedParseError {
+	t.Helper()
+	for _, required := range []string{"kind", "message", "span"} {
+		if _, ok := fields[required]; !ok {
+			t.Fatalf("error has no %q field", required)
+		}
+	}
+	for field := range fields {
+		if !slices.Contains([]string{"kind", "message", "span", "suggestion"}, field) {
+			t.Fatalf("error field %q is not checked by this runner", field)
+		}
+	}
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want expectedParseError
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatalf("failed to decode error %s: %v", raw, err)
+	}
+	return want
 }
 
 func TestEval(t *testing.T) {

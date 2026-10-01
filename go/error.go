@@ -1,8 +1,8 @@
 package hron
 
 import (
-	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 type ErrorKind string
@@ -14,10 +14,18 @@ const (
 	ErrorKindCron  ErrorKind = "cron"
 )
 
-// Span is a byte range in the input: Start inclusive, End exclusive.
+// Span is the part of the input an error points at, [Start, End), counted in
+// Unicode code points: each invalid UTF-8 byte counts as one. The spans of
+// the tokens Tokenize returns count bytes instead.
 type Span struct {
 	Start int
 	End   int
+}
+
+// RuneCountInString counts each invalid UTF-8 byte as one code point, as the spec does.
+func codePointSpan(input string, start, end int) Span {
+	startRunes := utf8.RuneCountInString(input[:start])
+	return Span{startRunes, startRunes + utf8.RuneCountInString(input[start:end])}
 }
 
 type HronError struct {
@@ -65,28 +73,21 @@ func CronError(message string) *HronError {
 	}
 }
 
-// DisplayRich formats a rich error message with underline and optional suggestion.
+// A tab, CR or LF would move the input off the line the carets are aligned to.
+var lineBreaksAsSpaces = strings.NewReplacer("\t", " ", "\r", " ", "\n", " ")
+
+// DisplayRich returns "error: " and the message, then for a lex or parse error
+// the input and a line of carets under the span, and any suggestion as
+// ` try: "..."`. Lines are joined by "\n", with no trailing newline.
 func (e *HronError) DisplayRich() string {
-	if (e.Kind == ErrorKindLex || e.Kind == ErrorKindParse) && e.Span != nil && e.Input != "" {
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("error: %s\n", e.Message))
-		sb.WriteString(fmt.Sprintf("  %s\n", e.Input))
-
-		padding := strings.Repeat(" ", e.Span.Start+2)
-		underlineLen := e.Span.End - e.Span.Start
-		if underlineLen < 1 {
-			underlineLen = 1
-		}
-		underline := strings.Repeat("^", underlineLen)
-		sb.WriteString(padding)
-		sb.WriteString(underline)
-
-		if e.Suggestion != "" {
-			sb.WriteString(fmt.Sprintf(" try: \"%s\"", e.Suggestion))
-		}
-
-		return sb.String()
+	if (e.Kind != ErrorKindLex && e.Kind != ErrorKindParse) || e.Span == nil {
+		return "error: " + e.Message
 	}
-
-	return fmt.Sprintf("error: %s", e.Message)
+	carets := max(e.Span.End-e.Span.Start, 1)
+	out := "error: " + e.Message + "\n  " + lineBreaksAsSpaces.Replace(e.Input) + "\n  " +
+		strings.Repeat(" ", e.Span.Start) + strings.Repeat("^", carets)
+	if e.Suggestion != "" {
+		out += ` try: "` + e.Suggestion + `"`
+	}
+	return out
 }

@@ -2,6 +2,7 @@ package hron
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 )
@@ -26,6 +27,9 @@ func mustSchedule(t *testing.T, data *ScheduleData) *Schedule {
 
 func TestHandBuiltIntervals(t *testing.T) {
 	nine := []TimeOfDay{{9, 0}}
+	// 1<<62 + 7 and 1<<58 where int is 64 bits; scaled down so the test also builds for GOARCH=386.
+	huge := math.MaxInt>>1 + 8
+	large := math.MaxInt>>5 + 1
 	cases := []struct {
 		name       string
 		expr       func(interval int) ScheduleExpr
@@ -34,12 +38,12 @@ func TestHandBuiltIntervals(t *testing.T) {
 	}{
 		{"week", weekOnMonday, 0, "2026-02-09T09:00:00Z", "2026-02-02T09:00:00Z"},
 		{"week", weekOnMonday, -3, "2026-02-09T09:00:00Z", "2026-02-02T09:00:00Z"},
-		{"week", weekOnMonday, 1<<62 + 7, "nil", "1970-01-05T09:00:00Z"},
+		{"week", weekOnMonday, huge, "nil", "1970-01-05T09:00:00Z"},
 		{"minutes", minutesFromNine, 0, "2026-02-07T09:00:00Z", "2026-02-06T10:00:00Z"},
 		{"minutes", minutesFromNine, -3, "2026-02-07T09:00:00Z", "2026-02-06T10:00:00Z"},
-		{"minutes", minutesFromNine, 1<<62 + 7, "2026-02-07T09:00:00Z", "2026-02-06T09:00:00Z"},
-		{"hours", hoursFromNine, 1 << 58, "2026-02-07T09:00:00Z", "2026-02-06T09:00:00Z"},
-		{"day", func(n int) ScheduleExpr { return NewDayRepeat(n, NewDayFilterEvery(), nine) }, 1<<62 + 7, "nil", "1970-01-01T09:00:00Z"},
+		{"minutes", minutesFromNine, huge, "2026-02-07T09:00:00Z", "2026-02-06T09:00:00Z"},
+		{"hours", hoursFromNine, large, "2026-02-07T09:00:00Z", "2026-02-06T09:00:00Z"},
+		{"day", func(n int) ScheduleExpr { return NewDayRepeat(n, NewDayFilterEvery(), nine) }, huge, "nil", "1970-01-01T09:00:00Z"},
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%s %d", c.name, c.interval), func(t *testing.T) {

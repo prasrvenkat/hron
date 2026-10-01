@@ -31,8 +31,8 @@ const maxOverlapDays = 1
 const namedUntilMaxYears = 8
 
 // The parser's limit on an interval. A schedule built by hand can exceed it;
-// any larger interval fires as this one does in the supported range, and
-// period arithmetic on it cannot overflow.
+// any larger interval fires as this one does in the supported range, and with
+// a 64-bit int period arithmetic on it cannot overflow.
 const maxInterval = math.MaxInt32
 
 // Default anchors for day, month and year intervals, and for week intervals
@@ -295,7 +295,9 @@ type slots struct {
 }
 
 func intervalSlots(expr *ScheduleExpr) slots {
-	step := min(max(expr.Interval, 1), maxInterval)
+	// Any step longer than a day leaves only the from slot, and this cap keeps the hours
+	// conversion within a 32-bit int.
+	step := min(max(expr.Interval, 1), minutesPerDay+1)
 	if expr.Unit == IntervalHours {
 		step *= minutesPerHour
 	}

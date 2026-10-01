@@ -1,6 +1,7 @@
 use std::fmt;
 
-/// Byte range within the input string.
+/// The part of the input an error points at: `[start, end)` counted in code
+/// points (`char`s), not bytes or UTF-16 units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
@@ -10,6 +11,11 @@ pub struct Span {
 impl Span {
     pub fn new(start: usize, end: usize) -> Self {
         Self { start, end }
+    }
+
+    pub(crate) fn from_byte_range(input: &str, start: usize, end: usize) -> Self {
+        let start_chars = input[..start].chars().count();
+        Self::new(start_chars, start_chars + input[start..end].chars().count())
     }
 }
 
@@ -86,41 +92,44 @@ impl ScheduleError {
         }
     }
 
-    /// Format a rich error with underline and optional suggestion.
+    /// The message, then for `lex` and `parse` errors the input and a line of
+    /// carets under the span, and any suggestion as ` try: "..."`. No trailing newline.
     pub fn display_rich(&self) -> String {
         match self {
             Self::Lex {
                 message,
                 span,
                 input,
-            } => format_span_error("error", message, span, input, None),
+            } => format_span_error(message, span, input, None),
             Self::Parse {
                 message,
                 span,
                 input,
                 suggestion,
-            } => format_span_error("error", message, span, input, suggestion.as_deref()),
+            } => format_span_error(message, span, input, suggestion.as_deref()),
             Self::Eval { message } => format!("error: {message}"),
             Self::Cron { message } => format!("error: {message}"),
         }
     }
 }
 
-fn format_span_error(
-    prefix: &str,
-    message: &str,
-    span: &Span,
-    input: &str,
-    suggestion: Option<&str>,
-) -> String {
-    let mut out = format!("{prefix}: {message}\n");
-    out.push_str(&format!("  {input}\n"));
-    let padding = " ".repeat(span.start + 2);
-    let underline = "^".repeat((span.end - span.start).max(1));
-    out.push_str(&padding);
-    out.push_str(&underline);
-    if let Some(sug) = suggestion {
-        out.push_str(&format!(" try: \"{sug}\""));
+fn format_span_error(message: &str, span: &Span, input: &str, suggestion: Option<&str>) -> String {
+    // A tab, CR or LF would move the input off the line the carets are aligned to.
+    let shown: String = input
+        .chars()
+        .map(|c| {
+            if matches!(c, '\t' | '\r' | '\n') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let spaces = " ".repeat(span.start);
+    let carets = "^".repeat(span.end.saturating_sub(span.start).max(1));
+    let mut out = format!("error: {message}\n  {shown}\n  {spaces}{carets}");
+    if let Some(suggestion) = suggestion {
+        out.push_str(&format!(" try: \"{suggestion}\""));
     }
     out
 }
@@ -128,5 +137,22 @@ fn format_span_error(
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}..{}", self.start, self.end)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_eval_and_cron_errors_render_their_message_alone() {
+        assert_eq!(
+            ScheduleError::eval("no zone").display_rich(),
+            "error: no zone"
+        );
+        assert_eq!(
+            ScheduleError::cron("bad cron").display_rich(),
+            "error: bad cron"
+        );
     }
 }

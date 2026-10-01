@@ -106,12 +106,29 @@ import io.hron.HronException;
 import io.hron.ErrorKind;
 
 try {
-    Schedule.parse("invalid expression");
+    Schedule.parse("every weekday at 09:00 until dec 31");
 } catch (HronException e) {
-    System.out.println("Error kind: " + e.kind()); // PARSE
+    System.out.println("Error kind: " + e.kind()); // parse
     System.out.println("Message: " + e.getMessage());
-    System.out.println(e.displayRich()); // Rich formatted error with underline
+    System.out.println(e.displayRich());
 }
+```
+
+`Schedule.parse` throws a `HronException` of kind `LEX` or `PARSE` with the exact message of the [spec](../spec/README.md#error-message-format), the `input`, and a `span` that counts Unicode code points, not UTF-16 `char`s; a parse error may carry a `suggestion`. `displayRich()` renders the error with carets under the span:
+
+```text
+error: until dec 31 has no year: add a starting date, or use an ISO date
+  every weekday at 09:00 until dec 31
+                         ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"
+```
+
+`span()` and `input()` are empty only for eval and cron errors. To slice the input with the span, convert each end to a `String` index:
+
+```java
+String input = e.input().orElseThrow();
+Span span = e.span().orElseThrow();
+String spanned =
+    input.substring(input.offsetByCodePoints(0, span.start()), input.offsetByCodePoints(0, span.end()));
 ```
 
 ## API Reference
@@ -155,7 +172,7 @@ Exception thrown for parsing, evaluation, and conversion errors.
 | Method | Description |
 |--------|-------------|
 | `kind()` | Get the error kind (LEX, PARSE, EVAL, CRON) |
-| `span()` | Get the error location (Optional) |
+| `span()` | Get the error location in code points (Optional) |
 | `input()` | Get the original input (Optional) |
 | `suggestion()` | Get a suggested fix (Optional) |
 | `displayRich()` | Format a rich error message with underline |

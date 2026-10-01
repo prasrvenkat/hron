@@ -71,7 +71,7 @@ def _checked_fields(section: str) -> set[str]:
     if section.startswith("parse/"):
         return {"input", "canonical"}
     return {
-        "parse_errors": {"input", "error_contains"},
+        "parse_errors": {"input", "error", "display"},
         "eval/matches": {"expression", "datetime", "expected"},
         "eval/previous_from": {"expression", "now", "expected"},
         "eval/occurrences": {"expression", "from", "take", "expected"},
@@ -135,11 +135,21 @@ _PARSE_ERROR_IDS = [t[0] for t in _PARSE_ERROR_TESTS]
 
 @pytest.mark.parametrize("name,tc", _PARSE_ERROR_TESTS, ids=_PARSE_ERROR_IDS)
 def test_parse_errors(name: str, tc: dict[str, Any]) -> None:
-    with pytest.raises(HronError) as error:
-        Schedule.parse(tc["input"])
+    expected = tc["error"]
+    unknown = expected.keys() - {"kind", "message", "span", "suggestion"}
+    assert not unknown, f"error fields this runner does not know: {sorted(unknown)}"
+
     assert not Schedule.validate(tc["input"])
-    if "error_contains" in tc:
-        assert tc["error_contains"] in str(error.value)
+    with pytest.raises(HronError) as raised:
+        Schedule.parse(tc["input"])
+    error = raised.value
+    assert error.kind == expected["kind"]
+    assert str(error) == expected["message"]
+    assert error.span is not None
+    assert [error.span.start, error.span.end] == expected["span"]
+    assert error.suggestion == expected.get("suggestion")
+    if "display" in tc:
+        assert error.display_rich() == tc["display"]
 
 
 _NEXT_ASSERTIONS = {"next", "next_date", "next_n", "next_n_length"}

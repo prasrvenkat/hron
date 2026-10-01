@@ -1,8 +1,10 @@
 package hron
 
 import (
-	"strconv"
+	"fmt"
+	"math"
 	"strings"
+	"unicode/utf8"
 )
 
 type TokenKind int
@@ -58,11 +60,12 @@ type Token struct {
 }
 
 type lexer struct {
-	input   string
-	pos     int
-	afterIn bool
+	input string
+	pos   int
 }
 
+// Tokenize splits input into tokens, or returns a lex *HronError. Token spans
+// are byte offsets into input.
 func Tokenize(input string) ([]Token, error) {
 	l := &lexer{input: input}
 	return l.tokenize()
@@ -71,155 +74,139 @@ func Tokenize(input string) ([]Token, error) {
 func (l *lexer) tokenize() ([]Token, error) {
 	var tokens []Token
 	for {
-		l.skipWhitespace()
+		l.advanceWhile(isWhitespace)
 		if l.pos >= len(l.input) {
-			break
+			return tokens, nil
 		}
-
-		if l.afterIn {
-			l.afterIn = false
-			tok, err := l.lexTimezone()
-			if err != nil {
-				return nil, err
-			}
-			tokens = append(tokens, tok)
-			continue
-		}
-
 		start := l.pos
-		ch := l.input[l.pos]
-
-		if ch == ',' {
+		c := l.input[l.pos]
+		var tok Token
+		var err error
+		switch {
+		case len(tokens) > 0 && tokens[len(tokens)-1].Kind == TokenIn:
+			l.advanceWhile(func(b byte) bool { return !isWhitespace(b) })
+			tok = Token{Kind: TokenTimezone, TimezoneVal: l.input[start:l.pos]}
+		case c == ',':
 			l.pos++
-			tokens = append(tokens, Token{Kind: TokenComma, Span: Span{start, l.pos}})
-			continue
+			tok = Token{Kind: TokenComma}
+		case isAlpha(c):
+			tok, err = l.word(start)
+		case isDigit(c):
+			tok, err = l.digits(start)
+		default:
+			return nil, l.unexpectedCharacter(start)
 		}
-
-		if isDigit(ch) {
-			tok, err := l.lexNumberOrTimeOrDate()
-			if err != nil {
-				return nil, err
-			}
-			tokens = append(tokens, tok)
-			continue
+		if err != nil {
+			return nil, err
 		}
-
-		if isAlpha(ch) {
-			tok, err := l.lexWord()
-			if err != nil {
-				return nil, err
-			}
-			tokens = append(tokens, tok)
-			continue
-		}
-
-		return nil, LexError("unexpected character '"+string(ch)+"'", Span{start, start + 1}, l.input)
+		tok.Span = Span{start, l.pos}
+		tokens = append(tokens, tok)
 	}
-
-	return tokens, nil
 }
 
-func (l *lexer) skipWhitespace() {
-	for l.pos < len(l.input) && isWhitespace(l.input[l.pos]) {
+func (l *lexer) advanceWhile(matches func(byte) bool) {
+	for l.pos < len(l.input) && matches(l.input[l.pos]) {
 		l.pos++
 	}
 }
 
-func (l *lexer) lexTimezone() (Token, error) {
-	l.skipWhitespace()
-	start := l.pos
-	for l.pos < len(l.input) && !isWhitespace(l.input[l.pos]) {
-		l.pos++
-	}
-	tz := l.input[start:l.pos]
-	if len(tz) == 0 {
-		return Token{}, LexError("expected timezone after 'in'", Span{start, start + 1}, l.input)
-	}
-	return Token{Kind: TokenTimezone, Span: Span{start, l.pos}, TimezoneVal: tz}, nil
+func (l *lexer) error(message string, start int) error {
+	return LexError(message, codePointSpan(l.input, start, l.pos), l.input)
 }
 
-func (l *lexer) lexNumberOrTimeOrDate() (Token, error) {
-	start := l.pos
-
-	numStart := l.pos
-	for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
-		l.pos++
-	}
-	digits := l.input[numStart:l.pos]
-
-	if len(digits) == 4 && l.pos < len(l.input) && l.input[l.pos] == '-' {
-		remaining := l.input[start:]
-		if len(remaining) >= 10 &&
-			remaining[4] == '-' &&
-			isDigit(remaining[5]) &&
-			isDigit(remaining[6]) &&
-			remaining[7] == '-' &&
-			isDigit(remaining[8]) &&
-			isDigit(remaining[9]) {
-			l.pos = start + 10
-			return Token{Kind: TokenISODate, Span: Span{start, l.pos}, ISODateVal: l.input[start:l.pos]}, nil
-		}
-	}
-
-	if (len(digits) == 1 || len(digits) == 2) && l.pos < len(l.input) && l.input[l.pos] == ':' {
-		l.pos++
-		minStart := l.pos
-		for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
-			l.pos++
-		}
-		minDigits := l.input[minStart:l.pos]
-		if len(minDigits) == 2 {
-			hour, err := strconv.Atoi(digits)
-			if err != nil {
-				return Token{}, LexError("invalid time hour", Span{start, l.pos}, l.input)
-			}
-			minute, err := strconv.Atoi(minDigits)
-			if err != nil {
-				return Token{}, LexError("invalid time minute", Span{start, l.pos}, l.input)
-			}
-			if hour > 23 || minute > 59 {
-				return Token{}, LexError("invalid time", Span{start, l.pos}, l.input)
-			}
-			return Token{Kind: TokenTime, Span: Span{start, l.pos}, TimeHour: hour, TimeMinute: minute}, nil
-		}
-	}
-
-	num, err := strconv.Atoi(digits)
-	if err != nil {
-		return Token{}, LexError("number too large", Span{start, l.pos}, l.input)
-	}
-
-	if l.pos+1 < len(l.input) {
-		suffix := strings.ToLower(l.input[l.pos : l.pos+2])
-		if suffix == "st" || suffix == "nd" || suffix == "rd" || suffix == "th" {
-			l.pos += 2
-			return Token{Kind: TokenOrdinalNumber, Span: Span{start, l.pos}, NumberVal: num}, nil
-		}
-	}
-
-	return Token{Kind: TokenNumber, Span: Span{start, l.pos}, NumberVal: num}, nil
-}
-
-func (l *lexer) lexWord() (Token, error) {
-	start := l.pos
-	for l.pos < len(l.input) && (isAlphanumeric(l.input[l.pos]) || l.input[l.pos] == '_') {
-		l.pos++
-	}
-	word := strings.ToLower(l.input[start:l.pos])
-	span := Span{start, l.pos}
-
-	tok, ok := keywordMap[word]
+func (l *lexer) word(start int) (Token, error) {
+	l.advanceWhile(func(b byte) bool { return isAlphanumeric(b) || b == '_' })
+	text := l.input[start:l.pos]
+	tok, ok := keywordMap[asciiLower(text)]
 	if !ok {
-		return Token{}, LexError("unknown keyword '"+word+"'", span, l.input)
+		return Token{}, l.error("unknown keyword '"+text+"'", start)
 	}
-
-	tok.Span = span
-
-	if tok.Kind == TokenIn {
-		l.afterIn = true
-	}
-
 	return tok, nil
+}
+
+func (l *lexer) digits(start int) (Token, error) {
+	l.advanceWhile(isDigit)
+	digits := l.input[start:l.pos]
+	rest := l.input[l.pos:]
+	if len(digits) == 4 && isISODateTail(rest) {
+		l.pos += len("-MM-DD")
+		return Token{Kind: TokenISODate, ISODateVal: l.input[start:l.pos]}, nil
+	}
+	if strings.HasPrefix(rest, ":") {
+		return l.time(start)
+	}
+	value, ok := numberValue(digits)
+	if !ok {
+		return Token{}, l.error("number must be at most 2147483647", start)
+	}
+	if isOrdinalSuffix(rest) {
+		l.pos += 2
+		return Token{Kind: TokenOrdinalNumber, NumberVal: value}, nil
+	}
+	return Token{Kind: TokenNumber, NumberVal: value}, nil
+}
+
+func (l *lexer) time(start int) (Token, error) {
+	colon := l.pos
+	l.pos++
+	l.advanceWhile(isDigit)
+	hour, minute, text := l.input[start:colon], l.input[colon+1:l.pos], l.input[start:l.pos]
+	if len(hour) > 2 || len(minute) != 2 {
+		return Token{}, l.error("time must be H:MM or HH:MM, got "+text, start)
+	}
+	h, m := twoDigitValue(hour), twoDigitValue(minute)
+	if h > 23 || m > 59 {
+		return Token{}, l.error("time must be 00:00-23:59, got "+text, start)
+	}
+	return Token{Kind: TokenTime, TimeHour: h, TimeMinute: m}, nil
+}
+
+func (l *lexer) unexpectedCharacter(start int) error {
+	c, size := utf8.DecodeRuneInString(l.input[start:])
+	shown := fmt.Sprintf("U+%04X", c)
+	// `'` is excluded because `'''` would not read as a quoted character.
+	if c >= '!' && c <= '~' && c != '\'' {
+		shown = "'" + string(c) + "'"
+	}
+	return LexError("unexpected character "+shown, codePointSpan(l.input, start, start+size), l.input)
+}
+
+func isISODateTail(rest string) bool {
+	return len(rest) >= 6 && rest[0] == '-' && isDigit(rest[1]) && isDigit(rest[2]) &&
+		rest[3] == '-' && isDigit(rest[4]) && isDigit(rest[5])
+}
+
+// Checked before each digit is added, so n never exceeds math.MaxInt32 and cannot overflow
+// even where int is 32 bits.
+func numberValue(digits string) (int, bool) {
+	n := 0
+	for i := 0; i < len(digits); i++ {
+		digit := int(digits[i] - '0')
+		if n > (math.MaxInt32-digit)/10 {
+			return 0, false
+		}
+		n = n*10 + digit
+	}
+	return n, true
+}
+
+func twoDigitValue(digits string) int {
+	n := 0
+	for i := 0; i < len(digits); i++ {
+		n = n*10 + int(digits[i]-'0')
+	}
+	return n
+}
+
+func isOrdinalSuffix(rest string) bool {
+	if len(rest) < 2 {
+		return false
+	}
+	switch asciiLower(rest[:2]) {
+	case "st", "nd", "rd", "th":
+		return true
+	}
+	return false
 }
 
 var keywordMap = map[string]Token{
@@ -320,6 +307,7 @@ func isAlphanumeric(b byte) bool {
 	return isAlpha(b) || isDigit(b)
 }
 
+// Only these four separate tokens; any other whitespace is an unexpected character.
 func isWhitespace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }

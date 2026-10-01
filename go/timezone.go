@@ -2,7 +2,6 @@ package hron
 
 import (
 	"archive/zip"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,30 +18,30 @@ func resolveTimezone(tzName string) (*time.Location, string, error) {
 	}
 	canonical, ok := canonicalTimezone(tzName)
 	if !ok {
-		return nil, "", &HronError{Kind: ErrorKindParse, Message: unknownTimezoneMessage(tzName)}
+		return nil, "", &HronError{Kind: ErrorKindParse, Message: invalidTimezoneMessage(tzName)}
 	}
 	loc, err := time.LoadLocation(canonical)
 	if err != nil {
-		return nil, "", &HronError{Kind: ErrorKindParse, Message: unknownTimezoneMessage(tzName)}
+		return nil, "", &HronError{Kind: ErrorKindParse, Message: invalidTimezoneMessage(tzName)}
 	}
 	return loc, canonical, nil
 }
 
-func unknownTimezoneMessage(name string) string {
-	return fmt.Sprintf("unknown timezone %q: use UTC or an IANA Area/Location name such as America/New_York", name)
+func invalidTimezoneMessage(name string) string {
+	return "timezone must be UTC or an Area/Location name such as America/New_York, got " + name
 }
 
 // Names match in any case. The SystemV, posix and right trees that some
 // systems ship are rejected (spec/README.md, "Parse-time validation").
 func canonicalTimezone(name string) (string, bool) {
-	if strings.EqualFold(name, "UTC") {
+	if asciiLower(name) == "utc" {
 		return "UTC", true
 	}
 	area, _, found := strings.Cut(name, "/")
 	if !found || !isASCII(name) {
 		return "", false
 	}
-	switch strings.ToLower(area) {
+	switch asciiLower(area) {
 	case "systemv", "posix", "right":
 		return "", false
 	}
@@ -53,7 +52,7 @@ func canonicalTimezone(name string) (string, bool) {
 		_, err := time.LoadLocation(name)
 		return name, err == nil
 	}
-	canonical, ok := index[strings.ToLower(name)]
+	canonical, ok := index[asciiLower(name)]
 	if !ok {
 		return "", false
 	}
@@ -67,8 +66,8 @@ func canonicalTimezone(name string) (string, bool) {
 var zoneNameIndex = sync.OnceValue(func() map[string]string {
 	index := map[string]string{}
 	add := func(name string) {
-		if _, seen := index[strings.ToLower(name)]; !seen {
-			index[strings.ToLower(name)] = name
+		if _, seen := index[asciiLower(name)]; !seen {
+			index[asciiLower(name)] = name
 		}
 	}
 	sources := []string{os.Getenv("ZONEINFO"), "/usr/share/zoneinfo", "/usr/share/lib/zoneinfo", "/usr/lib/locale/TZ", "/etc/zoneinfo"}

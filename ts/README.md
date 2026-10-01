@@ -11,7 +11,7 @@ npm install hron-ts
 ## Usage
 
 ```typescript
-import { Schedule, Temporal } from "hron-ts";
+import { HronError, Schedule, Temporal } from "hron-ts";
 
 // Parse an expression
 const schedule = Schedule.parse("every weekday at 9:00 in America/New_York");
@@ -36,6 +36,26 @@ const fromCron = Schedule.fromCron("0 9 * * 1-5"); // every weekday at 09:00
 console.log(schedule.toString());
 ```
 
+## Errors
+
+`Schedule.parse` throws a `HronError` whose `kind` is `"lex"` or `"parse"`, with the exact message of the spec, the `input`, and a `span` of `{ start, end }`. A parse error may carry a `suggestion`. `displayRich()` renders the error with carets under the span:
+
+```text
+error: until dec 31 has no year: add a starting date, or use an ISO date
+  every weekday at 09:00 until dec 31
+                         ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"
+```
+
+A span counts code points, not UTF-16 units as string indexes do, so an emoji before it counts once. Index the code points to get the text it covers:
+
+```typescript
+if (error.input !== undefined && error.span !== undefined) {
+  const spanned = Array.from(error.input).slice(error.span.start, error.span.end).join("");
+}
+```
+
+Every message is in the spec, under [Error Message Format](https://github.com/simpllyf/hron/blob/main/spec/README.md#error-message-format).
+
 ## Cron Conversion
 
 `fromCron` and `toCron` convert exactly: the result fires at the same times on the same dates, or the call throws a `HronError` whose `kind` is `"cron"` and whose message says why. This ignores the timezone and DST transitions, where cron schedulers differ. Yearly dates, ordinal weekdays (`1#2`, `5L`) and partial-day intervals convert:
@@ -53,8 +73,10 @@ Some crons have no hron equivalent:
 try {
   Schedule.fromCron("0 9 15 * 1");
 } catch (error) {
-  error.kind; // "cron"
-  error.message; // "not expressible in hron: cron fires on either the day of month or the day of week"
+  if (error instanceof HronError) {
+    error.kind; // "cron"
+    error.message; // "not expressible in hron: cron fires on either the day of month or the day of week"
+  }
 }
 ```
 

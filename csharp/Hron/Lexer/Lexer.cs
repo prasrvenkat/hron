@@ -5,15 +5,14 @@ namespace Hron.Lexer;
 
 public sealed class Lexer
 {
+    private const int MaxNumber = int.MaxValue;
+
     private readonly string _input;
     private int _pos;
-    private bool _afterIn;
 
     private Lexer(string input)
     {
         _input = input;
-        _pos = 0;
-        _afterIn = false;
     }
 
     public static List<Token> Tokenize(string input)
@@ -24,185 +23,166 @@ public sealed class Lexer
         var tokens = new List<Token>();
         while (true)
         {
-            SkipWhitespace();
+            AdvanceWhile(IsWhitespace);
             if (_pos >= _input.Length)
             {
                 break;
             }
 
-            if (_afterIn)
-            {
-                _afterIn = false;
-                tokens.Add(LexTimezone());
-                continue;
-            }
-
             var start = _pos;
             var ch = _input[_pos];
-
-            if (ch == ',')
+            if (tokens.Count > 0 && tokens[^1].Kind == TokenKind.In)
+            {
+                AdvanceWhile(c => !IsWhitespace(c));
+                tokens.Add(Token.Timezone(_input[start.._pos], new Span(start, _pos)));
+            }
+            else if (ch == ',')
             {
                 _pos++;
                 tokens.Add(Token.Comma(new Span(start, _pos)));
-                continue;
             }
-
-            if (IsDigit(ch))
+            else if (IsAlpha(ch))
             {
-                tokens.Add(LexNumberOrTimeOrDate());
-                continue;
+                tokens.Add(LexWord(start));
             }
-
-            if (IsAlpha(ch))
+            else if (IsDigit(ch))
             {
-                tokens.Add(LexWord());
-                continue;
+                tokens.Add(LexDigits(start));
             }
-
-            throw HronException.Lex($"unexpected character '{ch}'", new Span(start, start + 1), _input);
+            else
+            {
+                throw UnexpectedCharacter(start);
+            }
         }
 
         return tokens;
     }
 
-    private void SkipWhitespace()
+    private void AdvanceWhile(Func<char, bool> matches)
     {
-        while (_pos < _input.Length && IsWhitespace(_input[_pos]))
+        while (_pos < _input.Length && matches(_input[_pos]))
         {
             _pos++;
         }
     }
 
-    private Token LexTimezone()
+    private HronException Error(string message, int start)
+        => HronException.Lex(message, Span.FromUtf16Range(_input, start, _pos), _input);
+
+    private Token LexWord(int start)
     {
-        SkipWhitespace();
-        var start = _pos;
-        while (_pos < _input.Length && !IsWhitespace(_input[_pos]))
+        AdvanceWhile(c => IsAlphanumeric(c) || c == '_');
+        var word = _input[start.._pos];
+        if (!KeywordMap.TryGetValue(AsciiLower(word), out var template))
         {
-            _pos++;
+            throw Error($"unknown keyword '{word}'", start);
         }
-        var tz = _input[start.._pos];
-        if (tz.Length == 0)
-        {
-            throw HronException.Lex("expected timezone after 'in'", new Span(start, start + 1), _input);
-        }
-        return Token.Timezone(tz, new Span(start, _pos));
+        return template with { Span = new Span(start, _pos) };
     }
 
-    private Token LexNumberOrTimeOrDate()
+    private Token LexDigits(int start)
     {
-        var start = _pos;
-
-        var numStart = _pos;
-        while (_pos < _input.Length && IsDigit(_input[_pos]))
+        AdvanceWhile(IsDigit);
+        var digitsEnd = _pos;
+        if (digitsEnd - start == 4 && IsIsoDateTail())
         {
-            _pos++;
+            _pos += "-MM-DD".Length;
+            return Token.IsoDate(_input[start.._pos], new Span(start, _pos));
         }
-        var digits = _input[numStart.._pos];
-
-        if (digits.Length == 4 && _pos < _input.Length && _input[_pos] == '-')
+        if (_pos < _input.Length && _input[_pos] == ':')
         {
-            var remaining = _input[start..];
-            if (remaining.Length >= 10
-                && remaining[4] == '-'
-                && IsDigit(remaining[5])
-                && IsDigit(remaining[6])
-                && remaining[7] == '-'
-                && IsDigit(remaining[8])
-                && IsDigit(remaining[9]))
+            return LexTime(start);
+        }
+
+        var value = NumberValue(start, digitsEnd) ?? throw Error("number must be at most 2147483647", start);
+        if (_pos + 2 <= _input.Length && AsciiLower(_input.Substring(_pos, 2)) is "st" or "nd" or "rd" or "th")
+        {
+            _pos += 2;
+            return Token.OrdinalNumber(value, new Span(start, _pos));
+        }
+        return Token.Number(value, new Span(start, _pos));
+    }
+
+    private Token LexTime(int start)
+    {
+        var colon = _pos;
+        _pos++;
+        AdvanceWhile(IsDigit);
+        var text = _input[start.._pos];
+        var hourDigits = colon - start;
+        var minuteDigits = _pos - colon - 1;
+        if (hourDigits is < 1 or > 2 || minuteDigits != 2)
+        {
+            throw Error($"time must be H:MM or HH:MM, got {text}", start);
+        }
+        var hour = NumberValue(start, colon)!.Value;
+        var minute = NumberValue(colon + 1, _pos)!.Value;
+        if (hour > 23 || minute > 59)
+        {
+            throw Error($"time must be 00:00-23:59, got {text}", start);
+        }
+        return Token.Time(hour, minute, new Span(start, _pos));
+    }
+
+    private HronException UnexpectedCharacter(int start)
+    {
+        var length = char.IsSurrogatePair(_input, start) ? 2 : 1;
+        // A lone surrogate is reported by its own value, which ConvertToUtf32 would reject.
+        int codePoint = length == 2 ? char.ConvertToUtf32(_input, start) : _input[start];
+        // `'` is excluded because `'''` would not read as a quoted character.
+        var shown = codePoint is >= '!' and <= '~' and not '\''
+            ? $"'{(char)codePoint}'"
+            : "U+" + codePoint.ToString("X4", CultureInfo.InvariantCulture);
+        _pos = start + length;
+        return Error($"unexpected character {shown}", start);
+    }
+
+    private bool IsIsoDateTail()
+    {
+        var rest = _input.AsSpan(_pos);
+        return rest.Length >= 6 && rest[0] == '-' && IsDigit(rest[1]) && IsDigit(rest[2])
+            && rest[3] == '-' && IsDigit(rest[4]) && IsDigit(rest[5]);
+    }
+
+    /// <summary>
+    /// Checked at every digit, so a run of any length cannot overflow.
+    /// </summary>
+    private int? NumberValue(int start, int end)
+    {
+        long value = 0;
+        for (var i = start; i < end; i++)
+        {
+            value = value * 10 + (_input[i] - '0');
+            if (value > MaxNumber)
             {
-                _pos = start + 10;
-                return Token.IsoDate(_input[start.._pos], new Span(start, _pos));
+                return null;
             }
         }
-
-        if ((digits.Length == 1 || digits.Length == 2)
-            && _pos < _input.Length
-            && _input[_pos] == ':')
-        {
-            _pos++;
-            var minStart = _pos;
-            while (_pos < _input.Length && IsDigit(_input[_pos]))
-            {
-                _pos++;
-            }
-            var minDigits = _input[minStart.._pos];
-            if (minDigits.Length == 2)
-            {
-                var hour = ParseNumber(digits, start);
-                var minute = ParseNumber(minDigits, minStart);
-                if (hour > 23 || minute > 59)
-                {
-                    throw HronException.Lex("invalid time", new Span(start, _pos), _input);
-                }
-                return Token.Time(hour, minute, new Span(start, _pos));
-            }
-        }
-
-        var num = ParseNumber(digits, start);
-
-        if (_pos + 1 < _input.Length)
-        {
-            var suffix = _input[_pos..(_pos + 2)].ToLowerInvariant();
-            if (suffix is "st" or "nd" or "rd" or "th")
-            {
-                _pos += 2;
-                return Token.OrdinalNumber(num, new Span(start, _pos));
-            }
-        }
-
-        return Token.Number(num, new Span(start, _pos));
+        return (int)value;
     }
 
-    private Token LexWord()
-    {
-        var start = _pos;
-        while (_pos < _input.Length && (IsAlphanumeric(_input[_pos]) || _input[_pos] == '_'))
+    // Culture-aware lowering would map other letters onto ASCII ones (the Kelvin sign to k).
+    private static string AsciiLower(string text)
+        => string.Create(text.Length, text, (chars, source) =>
         {
-            _pos++;
-        }
-        var word = _input[start.._pos].ToLowerInvariant();
-        var span = new Span(start, _pos);
-
-        if (!KeywordMap.TryGetValue(word, out var template))
-        {
-            throw HronException.Lex($"unknown keyword '{word}'", span, _input);
-        }
-
-        var result = template.Kind switch
-        {
-            TokenKind.DayName => Token.DayName(template.DayNameVal!.Value, span),
-            TokenKind.MonthName => Token.MonthName(template.MonthNameVal!.Value, span),
-            TokenKind.Ordinal => Token.Ordinal(template.OrdinalVal!.Value, span),
-            TokenKind.IntervalUnit => Token.IntervalUnit(template.UnitVal!.Value, span),
-            _ => Token.Keyword(template.Kind, span)
-        };
-
-        if (template.Kind == TokenKind.In)
-        {
-            _afterIn = true;
-        }
-
-        return result;
-    }
-
-    private int ParseNumber(string digits, int start)
-    {
-        if (!int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
-        {
-            throw HronException.Lex("number too large", new Span(start, start + digits.Length), _input);
-        }
-        return number;
-    }
+            for (var i = 0; i < source.Length; i++)
+            {
+                chars[i] = source[i] is >= 'A' and <= 'Z' ? (char)(source[i] + ('a' - 'A')) : source[i];
+            }
+        });
 
     private static bool IsDigit(char c) => c is >= '0' and <= '9';
-    private static bool IsAlpha(char c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    private static bool IsAlpha(char c) => c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z');
     private static bool IsAlphanumeric(char c) => IsAlpha(c) || IsDigit(c);
+
+    /// <summary>
+    /// Only these four separate tokens; any other whitespace is an unexpected character.
+    /// </summary>
     private static bool IsWhitespace(char c) => c is ' ' or '\t' or '\n' or '\r';
 
     private static readonly Span DummySpan = new(0, 0);
 
-    private static readonly Dictionary<string, Token> KeywordMap = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, Token> KeywordMap = new(StringComparer.Ordinal)
     {
         ["every"] = Token.Keyword(TokenKind.Every, DummySpan),
         ["on"] = Token.Keyword(TokenKind.On, DummySpan),

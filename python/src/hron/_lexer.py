@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import string
 from dataclasses import dataclass
 
 from ._ast import IntervalUnit, MonthName, OrdinalPosition, Weekday
@@ -154,7 +155,7 @@ class TTime:
 
 @dataclass(frozen=True, slots=True)
 class TIsoDate:
-    date: str
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,7 +165,7 @@ class TComma:
 
 @dataclass(frozen=True, slots=True)
 class TTimezone:
-    tz: str
+    pass
 
 
 TokenKind = (
@@ -291,131 +292,117 @@ _KEYWORD_MAP: dict[str, TokenKind] = {
 }
 
 
+_MAX_NUMBER = 2147483647
+_ASCII_DIGITS = frozenset(string.digits)
+_ASCII_LETTERS = frozenset(string.ascii_letters)
+_WORD_CHARS = _ASCII_LETTERS | _ASCII_DIGITS | {"_"}
+# Only these four separate tokens; any other whitespace is an unexpected character.
+_WHITESPACE = frozenset(" \t\r\n")
+_ORDINAL_SUFFIXES = frozenset({"st", "nd", "rd", "th"})
+
+
+def _ascii_lower(text: str) -> str:
+    # str.lower() would also fold non-ASCII letters, such as the Kelvin sign into "k".
+    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
+
+
+def _number_value(digits: str) -> int | None:
+    # A digit loop, because int() refuses a run of more than 4300 digits.
+    value = 0
+    for d in digits:
+        value = value * 10 + ord(d) - ord("0")
+        if value > _MAX_NUMBER:
+            return None
+    return value
+
+
 class _Lexer:
     def __init__(self, input_text: str) -> None:
         self._input = input_text
         self._pos = 0
-        self._after_in = False
 
     def tokenize(self) -> list[Token]:
         tokens: list[Token] = []
         while True:
-            self._skip_whitespace()
+            self._advance_while(_WHITESPACE)
             if self._pos >= len(self._input):
-                break
-
-            if self._after_in:
-                self._after_in = False
-                tokens.append(self._lex_timezone())
-                continue
-
+                return tokens
             start = self._pos
-            ch = self._input[self._pos]
-
-            if ch == ",":
+            c = self._input[start]
+            if tokens and isinstance(tokens[-1].kind, TIn):
+                self._advance_until(_WHITESPACE)
+                kind: TokenKind = TTimezone()
+            elif c == ",":
                 self._pos += 1
-                tokens.append(Token(TComma(), Span(start, self._pos)))
-                continue
+                kind = TComma()
+            elif c in _ASCII_LETTERS:
+                kind = self._word(start)
+            elif c in _ASCII_DIGITS:
+                kind = self._digits(start)
+            else:
+                raise self._unexpected_character(c, start)
+            tokens.append(Token(kind, Span(start, self._pos)))
 
-            if ch.isdigit():
-                tokens.append(self._lex_number_or_time_or_date())
-                continue
-
-            if ch.isascii() and ch.isalpha():
-                tokens.append(self._lex_word())
-                continue
-
-            raise HronError.lex(
-                f"unexpected character '{ch}'",
-                Span(start, start + 1),
-                self._input,
-            )
-
-        return tokens
-
-    def _skip_whitespace(self) -> None:
-        while self._pos < len(self._input) and self._input[self._pos] in " \t\n\r":
+    def _advance_while(self, chars: frozenset[str]) -> None:
+        while self._pos < len(self._input) and self._input[self._pos] in chars:
             self._pos += 1
 
-    def _lex_timezone(self) -> Token:
-        self._skip_whitespace()
-        start = self._pos
-        while self._pos < len(self._input) and self._input[self._pos] not in " \t\n\r":
+    def _advance_until(self, chars: frozenset[str]) -> None:
+        while self._pos < len(self._input) and self._input[self._pos] not in chars:
             self._pos += 1
-        tz = self._input[start : self._pos]
-        if len(tz) == 0:
-            raise HronError.lex(
-                "expected timezone after 'in'",
-                Span(start, start + 1),
-                self._input,
-            )
-        return Token(TTimezone(tz), Span(start, self._pos))
 
-    def _lex_number_or_time_or_date(self) -> Token:
-        start = self._pos
-        num_start = self._pos
-        while self._pos < len(self._input) and self._input[self._pos].isdigit():
-            self._pos += 1
-        digits = self._input[num_start : self._pos]
+    def _error(self, message: str, start: int) -> HronError:
+        return HronError.lex(message, Span(start, self._pos), self._input)
 
-        if len(digits) == 4 and self._pos < len(self._input) and self._input[self._pos] == "-":
-            remaining = self._input[start:]
-            if (
-                len(remaining) >= 10
-                and remaining[4] == "-"
-                and remaining[5].isdigit()
-                and remaining[6].isdigit()
-                and remaining[7] == "-"
-                and remaining[8].isdigit()
-                and remaining[9].isdigit()
-            ):
-                self._pos = start + 10
-                return Token(TIsoDate(self._input[start : self._pos]), Span(start, self._pos))
-
-        if len(digits) in (1, 2) and self._pos < len(self._input) and self._input[self._pos] == ":":
-            self._pos += 1
-            min_start = self._pos
-            while self._pos < len(self._input) and self._input[self._pos].isdigit():
-                self._pos += 1
-            min_digits = self._input[min_start : self._pos]
-            if len(min_digits) == 2:
-                hour = int(digits)
-                minute = int(min_digits)
-                if hour > 23 or minute > 59:
-                    raise HronError.lex("invalid time", Span(start, self._pos), self._input)
-                return Token(TTime(hour, minute), Span(start, self._pos))
-
-        # No field takes more than 10 digits; this also keeps int() within its digit limit.
-        if len(digits.lstrip("0")) > 10:
-            raise HronError.lex("number too large", Span(start, self._pos), self._input)
-        num = int(digits)
-
-        if self._pos + 1 < len(self._input):
-            suffix = self._input[self._pos : self._pos + 2].lower()
-            if suffix in ("st", "nd", "rd", "th"):
-                self._pos += 2
-                return Token(TOrdinalNumber(num), Span(start, self._pos))
-
-        return Token(TNumber(num), Span(start, self._pos))
-
-    def _lex_word(self) -> Token:
-        start = self._pos
-        while self._pos < len(self._input) and (
-            (self._input[self._pos].isascii() and self._input[self._pos].isalnum())
-            or self._input[self._pos] == "_"
-        ):
-            self._pos += 1
-        word = self._input[start : self._pos].lower()
-        span = Span(start, self._pos)
-
-        kind = _KEYWORD_MAP.get(word)
+    def _word(self, start: int) -> TokenKind:
+        self._advance_while(_WORD_CHARS)
+        text = self._input[start : self._pos]
+        kind = _KEYWORD_MAP.get(_ascii_lower(text))
         if kind is None:
-            raise HronError.lex(f"unknown keyword '{word}'", span, self._input)
+            raise self._error(f"unknown keyword '{text}'", start)
+        return kind
 
-        if isinstance(kind, TIn):
-            self._after_in = True
+    def _digits(self, start: int) -> TokenKind:
+        self._advance_while(_ASCII_DIGITS)
+        digits = self._input[start : self._pos]
+        if len(digits) == 4 and self._at_iso_date_tail():
+            self._pos += len("-MM-DD")
+            return TIsoDate()
+        if self._input.startswith(":", self._pos):
+            return self._time(start)
+        value = _number_value(digits)
+        if value is None:
+            raise self._error("number must be at most 2147483647", start)
+        if _ascii_lower(self._input[self._pos : self._pos + 2]) in _ORDINAL_SUFFIXES:
+            self._pos += 2
+            return TOrdinalNumber(value)
+        return TNumber(value)
 
-        return Token(kind, span)
+    def _at_iso_date_tail(self) -> bool:
+        tail = self._input[self._pos : self._pos + 6]
+        return (
+            len(tail) == 6
+            and tail[0] == "-"
+            and tail[3] == "-"
+            and all(c in _ASCII_DIGITS for c in tail[1:3] + tail[4:6])
+        )
+
+    def _time(self, start: int) -> TokenKind:
+        colon = self._pos
+        self._pos += 1
+        self._advance_while(_ASCII_DIGITS)
+        hour, minute = self._input[start:colon], self._input[colon + 1 : self._pos]
+        text = self._input[start : self._pos]
+        if len(hour) not in (1, 2) or len(minute) != 2:
+            raise self._error(f"time must be H:MM or HH:MM, got {text}", start)
+        if int(hour) > 23 or int(minute) > 59:
+            raise self._error(f"time must be 00:00-23:59, got {text}", start)
+        return TTime(int(hour), int(minute))
+
+    def _unexpected_character(self, c: str, start: int) -> HronError:
+        # `'` is excluded because `'''` would not read as a quoted character.
+        shown = f"'{c}'" if "!" <= c <= "~" and c != "'" else f"U+{ord(c):04X}"
+        return HronError.lex(f"unexpected character {shown}", Span(start, start + 1), self._input)
 
 
 def tokenize(input_text: str) -> list[Token]:

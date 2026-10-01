@@ -97,201 +97,155 @@ class TimezoneToken extends TokenKind {
 
 class Token {
   final TokenKind kind;
-  final Span span;
-  Token(this.kind, this.span);
+
+  /// UTF-16 offsets into the input. Errors convert them to code points.
+  final int start;
+  final int end;
+
+  Token(this.kind, this.start, this.end);
 }
 
 List<Token> tokenize(String input) => _Lexer(input).tokenize();
 
+Span codePointSpan(String input, int start, int end) {
+  final before = input.substring(0, start).runes.length;
+  return Span(before, before + input.substring(start, end).runes.length);
+}
+
+/// Folds only `A`-`Z`: [String.toLowerCase] would also fold non-ASCII
+/// letters, such as the Kelvin sign to `k`.
+String asciiLower(String text) => String.fromCharCodes(
+  text.codeUnits.map((c) => c >= 0x41 && c <= 0x5A ? c + 0x20 : c),
+);
+
+const _maxNumber = 2147483647;
+
 class _Lexer {
   final String input;
   int pos = 0;
-  bool afterIn = false;
 
   _Lexer(this.input);
 
   List<Token> tokenize() {
     final tokens = <Token>[];
     while (true) {
-      _skipWhitespace();
+      _advanceWhile(_isWhitespace);
       if (pos >= input.length) break;
-
-      if (afterIn) {
-        afterIn = false;
-        tokens.add(_lexTimezone());
-        continue;
-      }
-
       final start = pos;
-      final ch = input[pos];
-
-      if (ch == ',') {
+      final c = input.codeUnitAt(pos);
+      final TokenKind kind;
+      if (tokens.isNotEmpty && tokens.last.kind is InToken) {
+        _advanceWhile((c) => !_isWhitespace(c));
+        kind = TimezoneToken(input.substring(start, pos));
+      } else if (c == 0x2C) {
         pos++;
-        tokens.add(Token(CommaToken(), Span(start, pos)));
-        continue;
+        kind = CommaToken();
+      } else if (_isAlpha(c)) {
+        kind = _word(start);
+      } else if (_isDigit(c)) {
+        kind = _digits(start);
+      } else {
+        throw _unexpectedCharacter(start);
       }
-
-      if (_isDigit(ch)) {
-        tokens.add(_lexNumberOrTimeOrDate());
-        continue;
-      }
-
-      if (_isAlpha(ch)) {
-        tokens.add(_lexWord());
-        continue;
-      }
-
-      throw HronError.lex(
-        "unexpected character '$ch'",
-        Span(start, start + 1),
-        input,
-      );
+      tokens.add(Token(kind, start, pos));
     }
     return tokens;
   }
 
-  void _skipWhitespace() {
-    while (pos < input.length && _isWhitespace(input[pos])) {
+  void _advanceWhile(bool Function(int) matches) {
+    while (pos < input.length && matches(input.codeUnitAt(pos))) {
       pos++;
     }
   }
 
-  Token _lexTimezone() {
-    _skipWhitespace();
-    final start = pos;
-    while (pos < input.length && !_isWhitespace(input[pos])) {
-      pos++;
-    }
-    final tz = input.substring(start, pos);
-    if (tz.isEmpty) {
-      throw HronError.lex(
-        "expected timezone after 'in'",
-        Span(start, start + 1),
-        input,
-      );
-    }
-    return Token(TimezoneToken(tz), Span(start, pos));
+  bool _isAt(int offset, bool Function(int) matches) =>
+      pos + offset < input.length && matches(input.codeUnitAt(pos + offset));
+
+  HronError _error(String message, int start) =>
+      HronError.lex(message, codePointSpan(input, start, pos), input);
+
+  TokenKind _word(int start) {
+    _advanceWhile((c) => _isAlpha(c) || _isDigit(c) || c == 0x5F);
+    final text = input.substring(start, pos);
+    return _keywordMap[asciiLower(text)] ??
+        (throw _error("unknown keyword '$text'", start));
   }
 
-  Token _lexNumberOrTimeOrDate() {
-    final start = pos;
-    final numStart = pos;
-    while (pos < input.length && _isDigit(input[pos])) {
-      pos++;
+  TokenKind _digits(int start) {
+    _advanceWhile(_isDigit);
+    final digits = input.substring(start, pos);
+    if (digits.length == 4 && _isIsoDateTail()) {
+      pos += '-MM-DD'.length;
+      return IsoDateToken(input.substring(start, pos));
     }
-    final digits = input.substring(numStart, pos);
-
-    if (digits.length == 4 && pos < input.length && input[pos] == '-') {
-      final remaining = input.substring(start);
-      if (remaining.length >= 10 &&
-          remaining[4] == '-' &&
-          _isDigit(remaining[5]) &&
-          _isDigit(remaining[6]) &&
-          remaining[7] == '-' &&
-          _isDigit(remaining[8]) &&
-          _isDigit(remaining[9])) {
-        pos = start + 10;
-        return Token(
-          IsoDateToken(input.substring(start, pos)),
-          Span(start, pos),
-        );
-      }
+    if (_isAt(0, (c) => c == 0x3A)) return _time(start);
+    final value = _numberValue(digits);
+    if (value == null) {
+      throw _error('number must be at most 2147483647', start);
     }
-
-    if ((digits.length == 1 || digits.length == 2) &&
-        pos < input.length &&
-        input[pos] == ':') {
-      pos++;
-      final minStart = pos;
-      while (pos < input.length && _isDigit(input[pos])) {
-        pos++;
-      }
-      final minDigits = input.substring(minStart, pos);
-      if (minDigits.length == 2) {
-        final hour = int.parse(digits);
-        final minute = int.parse(minDigits);
-        if (hour > 23 || minute > 59) {
-          throw HronError.lex('invalid time', Span(start, pos), input);
-        }
-        return Token(TimeToken(hour, minute), Span(start, pos));
-      }
+    if (pos + 2 <= input.length &&
+        const {
+          'st',
+          'nd',
+          'rd',
+          'th',
+        }.contains(asciiLower(input.substring(pos, pos + 2)))) {
+      pos += 2;
+      return OrdinalNumberToken(value);
     }
-
-    final num = int.tryParse(digits);
-    if (num == null) {
-      throw HronError.lex('number too large', Span(start, pos), input);
-    }
-
-    if (pos + 1 < input.length) {
-      final suffix = input.substring(pos, pos + 2).toLowerCase();
-      if (suffix == 'st' ||
-          suffix == 'nd' ||
-          suffix == 'rd' ||
-          suffix == 'th') {
-        pos += 2;
-        return Token(OrdinalNumberToken(num), Span(start, pos));
-      }
-    }
-
-    return Token(NumberToken(num), Span(start, pos));
+    return NumberToken(value);
   }
 
-  Token _lexWord() {
-    final start = pos;
-    while (pos < input.length &&
-        (_isAlphanumeric(input[pos]) || input[pos] == '_')) {
-      pos++;
-    }
-    final word = input.substring(start, pos).toLowerCase();
-    final span = Span(start, pos);
+  bool _isIsoDateTail() {
+    bool isDash(int c) => c == 0x2D;
+    return _isAt(0, isDash) &&
+        _isAt(1, _isDigit) &&
+        _isAt(2, _isDigit) &&
+        _isAt(3, isDash) &&
+        _isAt(4, _isDigit) &&
+        _isAt(5, _isDigit);
+  }
 
-    final kind = _keywordMap[word];
-    if (kind == null) {
-      throw HronError.lex("unknown keyword '$word'", span, input);
+  TokenKind _time(int start) {
+    final colon = pos;
+    pos++;
+    _advanceWhile(_isDigit);
+    final text = input.substring(start, pos);
+    final hourDigits = colon - start;
+    final minuteDigits = pos - colon - 1;
+    if (hourDigits > 2 || minuteDigits != 2) {
+      throw _error('time must be H:MM or HH:MM, got $text', start);
     }
-
-    if (kind is InToken) {
-      afterIn = true;
+    final hour = int.parse(input.substring(start, colon));
+    final minute = int.parse(input.substring(colon + 1, pos));
+    if (hour > 23 || minute > 59) {
+      throw _error('time must be 00:00-23:59, got $text', start);
     }
+    return TimeToken(hour, minute);
+  }
 
-    return Token(kind, span);
+  HronError _unexpectedCharacter(int start) {
+    final rune = RuneIterator.at(input, start)..moveNext();
+    final c = rune.current;
+    // `'` is excluded because `'''` would not read as a quoted character.
+    final shown = c >= 0x21 && c <= 0x7E && c != 0x27
+        ? "'${String.fromCharCode(c)}'"
+        : 'U+${c.toRadixString(16).toUpperCase().padLeft(4, '0')}';
+    pos = start + rune.currentSize;
+    return _error('unexpected character $shown', start);
   }
 }
 
-String tokenKindType(TokenKind kind) => switch (kind) {
-  EveryToken() => 'every',
-  OnToken() => 'on',
-  AtToken() => 'at',
-  FromToken() => 'from',
-  ToToken() => 'to',
-  InToken() => 'in',
-  OfToken() => 'of',
-  TheToken() => 'the',
-  LastToken() => 'last',
-  ExceptToken() => 'except',
-  UntilToken() => 'until',
-  StartingToken() => 'starting',
-  DuringToken() => 'during',
-  NearestToken() => 'nearest',
-  NextToken() => 'next',
-  PreviousToken() => 'previous',
-  YearToken() => 'year',
-  DayToken() => 'day',
-  WeekdayKeyToken() => 'weekday',
-  WeekendKeyToken() => 'weekend',
-  WeeksToken() => 'weeks',
-  MonthToken() => 'month',
-  CommaToken() => 'comma',
-  DayNameToken() => 'dayName',
-  MonthNameToken() => 'monthName',
-  OrdinalToken() => 'ordinal',
-  IntervalUnitToken() => 'intervalUnit',
-  NumberToken() => 'number',
-  OrdinalNumberToken() => 'ordinalNumber',
-  TimeToken() => 'time',
-  IsoDateToken() => 'isoDate',
-  TimezoneToken() => 'timezone',
-};
+/// Stops past [_maxNumber], so a run of any length neither overflows on the
+/// VM nor loses precision on the web.
+int? _numberValue(String digits) {
+  var n = 0;
+  for (final c in digits.codeUnits) {
+    n = n * 10 + (c - 0x30);
+    if (n > _maxNumber) return null;
+  }
+  return n;
+}
 
 final _keywordMap = <String, TokenKind>{
   'every': EveryToken(),
@@ -374,14 +328,10 @@ final _keywordMap = <String, TokenKind>{
   'hrs': IntervalUnitToken(IntervalUnit.hours),
 };
 
-bool _isDigit(String ch) => ch.codeUnitAt(0) >= 48 && ch.codeUnitAt(0) <= 57;
+bool _isDigit(int c) => c >= 0x30 && c <= 0x39;
 
-bool _isAlpha(String ch) {
-  final c = ch.codeUnitAt(0);
-  return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-}
+bool _isAlpha(int c) => (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
 
-bool _isAlphanumeric(String ch) => _isDigit(ch) || _isAlpha(ch);
-
-bool _isWhitespace(String ch) =>
-    ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+/// Only these four separate tokens; any other whitespace is an unexpected
+/// character.
+bool _isWhitespace(int c) => c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;

@@ -33,3 +33,7 @@ jobs:
         run: just build-go
       - name: Test
         run: just test-go
+      - name: Test (32-bit)
+        run: just test-go
+        env:
+          GOARCH: "386"

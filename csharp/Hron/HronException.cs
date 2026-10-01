@@ -29,7 +29,8 @@ public sealed class HronException : Exception
     public ErrorKind Kind { get; }
 
     /// <summary>
-    /// Null unless this is a lex or parse error.
+    /// The part of <see cref="Input"/> the error points at, in code points. Null unless this is a
+    /// lex or parse error.
     /// </summary>
     public Span? Span { get; }
 
@@ -39,33 +40,24 @@ public sealed class HronException : Exception
     public string? Input { get; }
 
     /// <summary>
-    /// Null unless the parser has a fix to suggest.
+    /// Text to put in place of the span. Null unless the parser has a fix to suggest.
     /// </summary>
     public string? Suggestion { get; }
 
     /// <summary>
-    /// Formats a rich error message with underline and optional suggestion.
+    /// The message, then for a lex or parse error the input and a line of carets under the span,
+    /// with any suggestion as <c> try: "..."</c>. Lines are joined by <c>\n</c>, with no trailing newline.
     /// </summary>
     public string DisplayRich()
     {
-        if ((Kind == ErrorKind.Lex || Kind == ErrorKind.Parse) && Span.HasValue && Input is not null)
+        if (Span is not { } span || Input is null)
         {
-            var span = Span.Value;
-            var sb = new System.Text.StringBuilder();
-            sb.Append("error: ").AppendLine(Message);
-            sb.Append("  ").AppendLine(Input);
-
-            sb.Append(new string(' ', span.Start + 2));
-            sb.Append(new string('^', span.Length));
-
-            if (!string.IsNullOrEmpty(Suggestion))
-            {
-                sb.Append(" try: \"").Append(Suggestion).Append('"');
-            }
-
-            return sb.ToString();
+            return $"error: {Message}";
         }
 
-        return $"error: {Message}";
+        // A tab, CR or LF would move the input off the line the carets are aligned to.
+        var shown = Input.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');
+        var rich = $"error: {Message}\n  {shown}\n  {new string(' ', span.Start)}{new string('^', span.Length)}";
+        return Suggestion is null ? rich : $"{rich} try: \"{Suggestion}\"";
     }
 }

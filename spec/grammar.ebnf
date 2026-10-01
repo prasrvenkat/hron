@@ -2,6 +2,8 @@
 (* Human-readable schedule expressions. *)
 (* This grammar is documentation only; the parser is hand-written. *)
 (* Where this grammar and spec/tests.json differ, tests.json is authoritative. *)
+(* Keywords match in any ASCII case, with the spellings listed under "Words" in spec/README.md *)
+(* ("days" for "day", "weekdays" for "weekday", "hrs" for "hours", ...). *)
 
 schedule       = expression , [ except_clause ] , [ until_clause ]
                , [ starting_clause ] , [ during_clause ] , [ timezone_clause ] ;
@@ -26,7 +28,7 @@ repeater       = interval_repeat
                | year_repeat ;
 
 (* "every 30 min from 09:00 to 17:00" *)
-interval_repeat = [ number ] , interval_unit , time_range_clause ;
+interval_repeat = number , interval_unit , time_range_clause ;
 
 (* "every day at 09:00", "every weekday at 09:00, 17:00", "every 3 days at 09:00" *)
 day_repeat     = ( day_target | number , ( "day" | "days" ) ) , "at" , time_list ;
@@ -44,7 +46,7 @@ month_repeat   = [ number ] , ( "month" | "months" ) , "on" , "the" , month_targ
 year_repeat    = [ number ] , ( "year" | "years" ) , "on" , year_target , "at" , time_list ;
 
 year_target    = year_date_target | "the" , year_ordinal_target ;
-year_date_target = month_name , number ;
+year_date_target = month_name , ( number | ordinal_day ) ;
 year_ordinal_target = ordinal , day_name , "of" , month_name
                     | ordinal_day , "of" , month_name
                     | "last" , "weekday" , "of" , month_name ;
@@ -80,7 +82,7 @@ ordinal_weekday_target = ordinal , day_name ;  (* ordinal includes "last", so "l
 (* --- Date targets (for "on" expressions) --- *)
 
 date_target    = named_date | iso_date ;
-named_date     = month_name , number ;
+named_date     = month_name , ( number | ordinal_day ) ;
 iso_date       = YYYY , "-" , MM , "-" , DD ;
 
 month_name     = "january" | "february" | "march" | "april" | "may" | "june"
@@ -117,7 +119,7 @@ timezone_clause = "in" , iana_timezone ;
 (* An interval number is 1..2147483647; every number must fit its field, else a lex or parse error. *)
 number         = digit , { digit } ;
 digit          = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
-HH             = digit , digit ;
+HH             = digit , [ digit ] ;
 MM             = digit , digit ;
 DD             = digit , digit ;
 YYYY           = digit , digit , digit , digit ;  (* 0001..9999 *)

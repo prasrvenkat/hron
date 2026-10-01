@@ -4,10 +4,48 @@ import 'ast.dart';
 import 'error.dart';
 import 'lexer.dart';
 
+/// The `{what}` of each `expected {what}, got ...` error, one per phrase in
+/// the position table of spec/README.md, "Parse errors".
+abstract final class _Expected {
+  static const everyOrOn = "'every' or 'on'";
+  static const repeater =
+      "'day', 'weekday', 'weekend', a day name, 'week', 'month', 'year' or a number";
+  static const unit =
+      "a unit ('min', 'hours', 'days', 'weeks', 'months' or 'years')";
+  static const at = "'at'";
+  static const time = 'a time (HH:MM)';
+  static const from = "'from'";
+  static const to = "'to'";
+  static const dayTarget = "'day', 'weekday', 'weekend' or a day name";
+  static const on = "'on'";
+  static const dayName = 'a day name';
+  static const the = "'the'";
+  static const monthTarget =
+      "a day such as 15th, 'last', an ordinal such as 'first', 'next', 'previous' or 'nearest'";
+  static const monthLast = "'day', 'weekday' or a day name";
+  static const nearest = "'nearest'";
+  static const weekday = "'weekday'";
+  static const dayOfMonth = 'a day such as 15th';
+  static const yearTarget = "a month name or 'the'";
+  static const yearThe =
+      "a day such as 15th, 'last' or an ordinal such as 'first'";
+  static const yearLast = "'weekday' or a day name";
+  static const of = "'of'";
+  static const monthName = 'a month name';
+  static const dayNumber = 'a day number';
+  static const date = 'a date (YYYY-MM-DD, or a month and day)';
+  static const isoDate = 'a date (YYYY-MM-DD)';
+  static const timezone = 'a timezone';
+}
+
+const _clauseOrder = ['except', 'until', 'starting', 'during', 'in'];
+
 class _Parser {
   final List<Token> tokens;
   final String input;
   int pos = 0;
+  int? untilStart;
+  int? untilEnd;
 
   _Parser(this.tokens, this.input);
 
@@ -15,749 +53,550 @@ class _Parser {
 
   TokenKind? peekKind() => peek()?.kind;
 
-  Token? advance() {
-    if (pos < tokens.length) {
-      return tokens[pos++];
-    }
-    return null;
+  Token advance() => tokens[pos++];
+
+  Token previous() => tokens[pos - 1];
+
+  bool eat<T extends TokenKind>() {
+    final found = peekKind() is T;
+    if (found) pos++;
+    return found;
   }
 
-  Span currentSpan() {
-    final tok = peek();
-    if (tok != null) return tok.span;
-    if (tokens.isNotEmpty) {
-      final last = tokens.last;
-      return Span(last.span.end, last.span.end);
-    }
-    return const Span(0, 0);
+  void expect<T extends TokenKind>(String what) {
+    if (!eat<T>()) throw expected(what);
   }
 
-  HronError error(String message, Span span) =>
-      HronError.parse(message, span, input);
+  String text(Token token) => input.substring(token.start, token.end);
 
-  HronError errorAtEnd(String message) {
-    final span = tokens.isNotEmpty
-        ? Span(tokens.last.span.end, tokens.last.span.end)
-        : const Span(0, 0);
-    return HronError.parse(message, span, input);
+  HronError error(String message, int start, int end) =>
+      HronError.parse(message, codePointSpan(input, start, end), input);
+
+  HronError expected(String what) {
+    final token = peek();
+    if (token != null) {
+      return error(
+        "expected $what, got '${text(token)}'",
+        token.start,
+        token.end,
+      );
+    }
+    final end = tokens.last.end;
+    return error('expected $what, got end of input', end, end);
   }
 
-  Token consumeKind(String expected, bool Function(TokenKind) check) {
-    final span = currentSpan();
-    final tok = peek();
-    if (tok != null && check(tok.kind)) {
-      pos++;
-      return tok;
-    }
-    if (tok != null) {
-      throw error('expected $expected, got ${tokenKindType(tok.kind)}', span);
-    }
-    throw errorAtEnd('expected $expected');
+  ScheduleExpr parseExpression() {
+    if (eat<EveryToken>()) return _parseEvery();
+    if (eat<OnToken>()) return _parseOn();
+    throw expected(_Expected.everyOrOn);
   }
 
-  ScheduleData parseExpression() {
-    final span = currentSpan();
-    final kind = peekKind();
-
-    ScheduleExpr expr;
-    if (kind is EveryToken) {
-      advance();
-      expr = _parseEvery();
-    } else if (kind is OnToken) {
-      advance();
-      expr = _parseOn();
-    } else {
-      throw error("expected 'every' or 'on'", span);
-    }
-
-    return _parseTrailingClauses(expr);
-  }
-
-  ScheduleData _parseTrailingClauses(ScheduleExpr expr) {
+  ScheduleData parseClauses(ScheduleExpr expr) {
     final schedule = ScheduleData(expr);
 
-    // Checked in grammar order, so a clause out of order makes parse() fail with
-    // "unexpected tokens after expression".
-    if (peekKind() is ExceptToken) {
-      advance();
+    if (eat<ExceptToken>()) {
       schedule.except = _parseExceptionList();
     }
 
-    Span? untilSpan;
     if (peekKind() is UntilToken) {
-      final start = currentSpan().start;
-      advance();
-      schedule.until = _parseUntilSpec();
-      untilSpan = Span(start, tokens[pos - 1].span.end);
+      final until = advance();
+      schedule.until = switch (_parseDate()) {
+        IsoDate(:final date) => IsoUntil(date),
+        NamedDate(:final month, :final day) => NamedUntil(month, day),
+      };
+      untilStart = until.start;
+      untilEnd = previous().end;
     }
 
-    if (peekKind() is StartingToken) {
-      advance();
-      final k = peekKind();
-      if (k is IsoDateToken) {
-        _validateIsoDate(k.date);
-        schedule.anchor = k.date;
-        advance();
-      } else {
-        throw error(
-          "expected ISO date (YYYY-MM-DD) after 'starting'",
-          currentSpan(),
-        );
-      }
+    if (eat<StartingToken>()) {
+      final kind = peekKind();
+      if (kind is! IsoDateToken) throw expected(_Expected.isoDate);
+      _checkIsoDate(advance());
+      schedule.anchor = kind.date;
     }
 
-    if (peekKind() is DuringToken) {
-      advance();
+    if (eat<DuringToken>()) {
       schedule.during = _parseMonthList();
     }
 
-    if (peekKind() is InToken) {
-      advance();
-      final k = peekKind();
-      if (k is TimezoneToken) {
-        schedule.timezone = _canonicalTimezone(k.tz, currentSpan());
-        advance();
-      } else {
-        throw error("expected timezone after 'in'", currentSpan());
-      }
-    }
-
-    if (schedule.until case NamedUntil(
-      :final month,
-      :final day,
-    ) when schedule.anchor == null) {
-      throw HronError.parse(
-        'a named until date has no year, so it needs a starting date',
-        untilSpan!,
-        input,
-        suggestion: 'until ${month.name} $day starting YYYY-MM-DD',
-      );
+    if (eat<InToken>()) {
+      if (peekKind() is! TimezoneToken) throw expected(_Expected.timezone);
+      schedule.timezone = _canonicalTimezone(advance());
     }
 
     return schedule;
   }
 
-  /// The IANA capitalization of [name] from the loaded timezone database
-  /// (spec/README.md "Parse-time validation"). Links keep their own name.
-  String _canonicalTimezone(String name, Span span) {
-    final lower = name.toLowerCase();
-    if (lower == 'utc') return 'UTC';
-    if (!timeZoneDatabase.isInitialized && name.contains('/')) {
-      throw error(
-        "timezone '$name' needs timezone data: call initializeTimeZones() "
-        'from package:timezone/data/latest_all.dart before parsing',
-        span,
+  HronError leftover(ScheduleData schedule) {
+    final token = tokens[pos];
+    // Every clause holds at least one item, so a clause was read exactly when its field is set.
+    final read = [
+      schedule.except.isNotEmpty,
+      schedule.until != null,
+      schedule.anchor != null,
+      schedule.during.isNotEmpty,
+      schedule.timezone != null,
+    ];
+    final clause = switch (token.kind) {
+      ExceptToken() => 0,
+      UntilToken() => 1,
+      StartingToken() => 2,
+      DuringToken() => 3,
+      InToken() => 4,
+      _ => null,
+    };
+    final lastRead = read.lastIndexOf(true);
+    final String message;
+    if (clause != null && read[clause]) {
+      message = "duplicate '${_clauseOrder[clause]}' clause";
+    } else if (clause != null && lastRead >= 0) {
+      message =
+          "'${_clauseOrder[clause]}' must come before '${_clauseOrder[lastRead]}'";
+    } else {
+      message = "unexpected '${text(token)}' after the schedule";
+    }
+    return error(message, token.start, token.end);
+  }
+
+  void checkNamedUntil(ScheduleData schedule) {
+    if (schedule.until case NamedUntil(
+      :final month,
+      :final day,
+    ) when schedule.anchor == null) {
+      throw HronError.parse(
+        'until ${month.name} $day has no year: add a starting date, or use an ISO date',
+        codePointSpan(input, untilStart!, untilEnd!),
+        input,
+        suggestion: 'until ${month.name} $day starting YYYY-MM-DD',
       );
     }
-    // Compared in ASCII only: toLowerCase maps the Kelvin sign to 'k'.
-    final isAscii = name.codeUnits.every((c) => c < 128);
-    final legacy = ['systemv/', 'posix/', 'right/'].any(lower.startsWith);
-    final match = isAscii && !legacy && name.contains('/')
-        ? timeZoneDatabase.locations.keys
-              .where((n) => n.toLowerCase() == lower)
-              .firstOrNull
-        : null;
-    if (match == null) {
-      throw error(
-        "unknown timezone '$name': use UTC or an IANA Area/Location name "
-        "such as 'America/New_York'",
-        span,
-      );
-    }
-    return match;
   }
 
   List<ExceptionSpec> _parseExceptionList() {
-    final exceptions = <ExceptionSpec>[_parseException()];
-    while (peekKind() is CommaToken) {
-      advance();
+    final exceptions = [_parseException()];
+    while (eat<CommaToken>()) {
       exceptions.add(_parseException());
     }
     return exceptions;
   }
 
-  ExceptionSpec _parseException() {
-    final k = peekKind();
-    if (k is IsoDateToken) {
-      _validateIsoDate(k.date);
-      advance();
-      return IsoException(k.date);
+  ExceptionSpec _parseException() => switch (_parseDate()) {
+    IsoDate(:final date) => IsoException(date),
+    NamedDate(:final month, :final day) => NamedException(month, day),
+  };
+
+  DateSpec _parseDate() {
+    switch (peekKind()) {
+      case IsoDateToken(:final date):
+        _checkIsoDate(advance());
+        return IsoDate(date);
+      case MonthNameToken(:final name):
+        advance();
+        return NamedDate(name, _parseDayOf(name));
+      default:
+        throw expected(_Expected.date);
     }
-    if (k is MonthNameToken) {
-      advance();
-      final day = _parseDayNumber(
-        'expected day number after month name in exception',
-      );
-      _validateNamedDate(k.name, day, currentSpan());
-      return NamedException(k.name, day);
-    }
-    throw error('expected ISO date or month-day in exception', currentSpan());
   }
 
-  UntilSpec _parseUntilSpec() {
-    final k = peekKind();
-    if (k is IsoDateToken) {
-      _validateIsoDate(k.date);
-      advance();
-      return IsoUntil(k.date);
-    }
-    if (k is MonthNameToken) {
-      advance();
-      final day = _parseDayNumber(
-        'expected day number after month name in until',
+  void _checkIsoDate(Token token) {
+    final date = text(token);
+    final year = int.parse(date.substring(0, 4));
+    final month = int.parse(date.substring(5, 7));
+    final day = int.parse(date.substring(8, 10));
+    final calendar =
+        year >= 1 &&
+        month >= 1 &&
+        month <= 12 &&
+        day >= 1 &&
+        day <= _daysInMonth(year, month);
+    if (!calendar) {
+      throw error(
+        'date must be a calendar date from 0001-01-01 to 9999-12-31, got $date',
+        token.start,
+        token.end,
       );
-      _validateNamedDate(k.name, day, currentSpan());
-      return NamedUntil(k.name, day);
     }
-    throw error("expected ISO date or month-day after 'until'", currentSpan());
   }
 
-  int _parseDayNumber(String errorMsg) {
-    final k = peekKind();
-    if (k is NumberToken) {
-      final val = k.value;
-      if (val < 1 || val > 31) {
-        throw error('invalid day number $val (must be 1-31)', currentSpan());
-      }
-      advance();
-      return val;
+  /// The IANA capitalization of the name, from the loaded timezone database
+  /// (spec/README.md, "Parse-time validation"). Links keep their own name.
+  String _canonicalTimezone(Token token) {
+    final name = text(token);
+    final lower = asciiLower(name);
+    if (lower == 'utc') return 'UTC';
+    if (!timeZoneDatabase.isInitialized && name.contains('/')) {
+      throw error(
+        "timezone '$name' needs timezone data: call initializeTimeZones() "
+        'from package:timezone/data/latest_all.dart before parsing',
+        token.start,
+        token.end,
+      );
     }
-    if (k is OrdinalNumberToken) {
-      final val = k.value;
-      if (val < 1 || val > 31) {
-        throw error('invalid day number $val (must be 1-31)', currentSpan());
-      }
-      advance();
-      return val;
+    final isAscii = name.codeUnits.every((c) => c < 128);
+    final legacy = ['systemv/', 'posix/', 'right/'].any(lower.startsWith);
+    final match = isAscii && !legacy && name.contains('/')
+        ? timeZoneDatabase.locations.keys
+              .where((n) => asciiLower(n) == lower)
+              .firstOrNull
+        : null;
+    if (match == null) {
+      throw error(
+        'timezone must be UTC or an Area/Location name such as America/New_York, got $name',
+        token.start,
+        token.end,
+      );
     }
-    throw error(errorMsg, currentSpan());
+    return match;
   }
 
   ScheduleExpr _parseEvery() {
-    if (peek() == null) throw errorAtEnd('expected repeater');
-
-    final k = peekKind()!;
-
-    if (k is YearToken) {
-      advance();
-      return _parseYearRepeat(1);
+    switch (peekKind()) {
+      case DayToken():
+        advance();
+        return _parseDayRepeat(1, EveryDay());
+      case WeekdayKeyToken():
+        advance();
+        return _parseDayRepeat(1, WeekdayFilter());
+      case WeekendKeyToken():
+        advance();
+        return _parseDayRepeat(1, WeekendFilter());
+      case DayNameToken():
+        return _parseDayRepeat(1, SpecificDays(_parseDayList()));
+      case WeeksToken():
+        advance();
+        return _parseWeekRepeat(1);
+      case MonthToken():
+        advance();
+        return _parseMonthRepeat(1);
+      case YearToken():
+        advance();
+        return _parseYearRepeat(1);
+      case NumberToken(:final value):
+        return _parseNumberRepeat(value);
+      default:
+        throw expected(_Expected.repeater);
     }
-    if (k is DayToken) {
-      return _parseDayRepeat(1, EveryDay());
-    }
-    if (k is WeekdayKeyToken) {
-      advance();
-      return _parseDayRepeat(1, WeekdayFilter());
-    }
-    if (k is WeekendKeyToken) {
-      advance();
-      return _parseDayRepeat(1, WeekendFilter());
-    }
-    if (k is DayNameToken) {
-      final days = _parseDayList();
-      return _parseDayRepeat(1, SpecificDays(days));
-    }
-    if (k is WeeksToken) {
-      advance();
-      return _parseWeekRepeat(1);
-    }
-    if (k is MonthToken) {
-      advance();
-      return _parseMonthRepeat(1);
-    }
-    if (k is NumberToken) {
-      return _parseNumberRepeat();
-    }
-
-    throw error(
-      "expected day, weekday, weekend, week, year, day name, month, or number after 'every'",
-      currentSpan(),
-    );
   }
 
   ScheduleExpr _parseDayRepeat(int interval, DayFilter days) {
-    if (days is EveryDay) {
-      consumeKind("'day'", (k) => k is DayToken);
-    }
-    consumeKind("'at'", (k) => k is AtToken);
-    final times = _parseTimeList();
-    return DayRepeat(interval, days, times);
+    expect<AtToken>(_Expected.at);
+    return DayRepeat(interval, days, _parseTimeList());
   }
 
-  ScheduleExpr _parseNumberRepeat() {
-    final k = peekKind()! as NumberToken;
-    final num = k.value;
-    final numSpan = currentSpan();
-    advance();
-
-    if (num < 1) {
-      throw error('interval must be at least 1', numSpan);
-    }
-    if (num > 2147483647) {
+  ScheduleExpr _parseNumberRepeat(int interval) {
+    final number = advance();
+    if (interval == 0) {
       throw error(
-        'number too large: an interval is at most 2147483647',
-        numSpan,
+        'interval must be 1-2147483647, got ${text(number)}',
+        number.start,
+        number.end,
       );
     }
 
-    final next = peekKind();
-    if (next is WeeksToken) {
-      advance();
-      return _parseWeekRepeat(num);
+    switch (peekKind()) {
+      case WeeksToken():
+        advance();
+        return _parseWeekRepeat(interval);
+      case IntervalUnitToken(:final unit):
+        advance();
+        return _parseIntervalRepeat(interval, unit);
+      case DayToken():
+        advance();
+        return _parseDayRepeat(interval, EveryDay());
+      case MonthToken():
+        advance();
+        return _parseMonthRepeat(interval);
+      case YearToken():
+        advance();
+        return _parseYearRepeat(interval);
+      default:
+        throw expected(_Expected.unit);
     }
-    if (next is IntervalUnitToken) {
-      return _parseIntervalRepeat(num);
-    }
-    if (next is DayToken) {
-      return _parseDayRepeat(num, EveryDay());
-    }
-    if (next is MonthToken) {
-      advance();
-      return _parseMonthRepeat(num);
-    }
-    if (next is YearToken) {
-      advance();
-      return _parseYearRepeat(num);
-    }
-
-    throw error(
-      "expected 'weeks', 'days', 'months', 'years', 'min', 'minutes', 'hour', or 'hours' after number",
-      currentSpan(),
-    );
   }
 
-  ScheduleExpr _parseIntervalRepeat(int interval) {
-    final k = peekKind()! as IntervalUnitToken;
-    advance();
-
-    final unit = k.unit;
-
-    consumeKind("'from'", (k) => k is FromToken);
+  ScheduleExpr _parseIntervalRepeat(int interval, IntervalUnit unit) {
+    expect<FromToken>(_Expected.from);
     final from = _parseTime();
-    consumeKind("'to'", (k) => k is ToToken);
-    final toSpan = currentSpan();
+    final fromToken = previous();
+    expect<ToToken>(_Expected.to);
     final to = _parseTime();
-    if (to.hour * 60 + to.minute < from.hour * 60 + from.minute) {
+    final toToken = previous();
+    if (from.hour * 60 + from.minute > to.hour * 60 + to.minute) {
       throw error(
-        "'to' time $to is earlier than 'from' time $from; a window cannot "
-        'cross midnight',
-        toSpan,
+        'time window must not run backwards: ${text(fromToken)} to '
+        '${text(toToken)} (a window cannot cross midnight)',
+        fromToken.start,
+        toToken.end,
       );
     }
 
-    DayFilter? dayFilter;
-    if (peekKind() is OnToken) {
-      advance();
-      dayFilter = _parseDayTarget();
-    }
-
+    final dayFilter = eat<OnToken>() ? _parseDayTarget() : null;
     return IntervalRepeat(interval, unit, from, to, dayFilter);
   }
 
   ScheduleExpr _parseWeekRepeat(int interval) {
-    consumeKind("'on'", (k) => k is OnToken);
+    expect<OnToken>(_Expected.on);
     final days = _parseDayList();
-    consumeKind("'at'", (k) => k is AtToken);
-    final times = _parseTimeList();
-    return WeekRepeat(interval, days, times);
+    expect<AtToken>(_Expected.at);
+    return WeekRepeat(interval, days, _parseTimeList());
   }
 
   ScheduleExpr _parseMonthRepeat(int interval) {
-    consumeKind("'on'", (k) => k is OnToken);
-    consumeKind("'the'", (k) => k is TheToken);
+    expect<OnToken>(_Expected.on);
+    expect<TheToken>(_Expected.the);
 
-    MonthTarget target;
-    final k = peekKind();
-
-    if (k is LastToken) {
-      advance();
-      final next = peekKind();
-      if (next is DayToken) {
+    final MonthTarget target;
+    switch (peekKind()) {
+      case LastToken():
         advance();
-        target = LastDayTarget();
-      } else if (next is WeekdayKeyToken) {
+        target = switch (peekKind()) {
+          DayToken() => LastDayTarget(),
+          WeekdayKeyToken() => LastWeekdayTarget(),
+          DayNameToken(:final name) => OrdinalWeekdayMonthTarget(
+            OrdinalPosition.last,
+            name,
+          ),
+          _ => throw expected(_Expected.monthLast),
+        };
         advance();
-        target = LastWeekdayTarget();
-      } else if (next is DayNameToken) {
-        final weekday = next.name;
+      case OrdinalToken(:final name):
         advance();
-        target = OrdinalWeekdayMonthTarget(OrdinalPosition.last, weekday);
-      } else {
-        throw error(
-          "expected 'day', 'weekday', or day name after 'last'",
-          currentSpan(),
-        );
-      }
-    } else if (k is OrdinalToken) {
-      final ordinal = _parseOrdinalPosition();
-      final next = peekKind();
-      if (next is DayNameToken) {
-        final weekday = next.name;
-        advance();
-        target = OrdinalWeekdayMonthTarget(ordinal, weekday);
-      } else {
-        throw error(
-          'expected day name after ordinal in monthly expression',
-          currentSpan(),
-        );
-      }
-    } else if (k is OrdinalNumberToken) {
-      final specs = _parseOrdinalDayList();
-      target = DaysTarget(specs);
-    } else if (k is NextToken || k is PreviousToken || k is NearestToken) {
-      target = _parseNearestWeekdayTarget();
-    } else {
-      throw error(
-        "expected ordinal day (1st, 15th), 'last', ordinal, or '[next|previous] nearest' after 'the'",
-        currentSpan(),
-      );
+        target = OrdinalWeekdayMonthTarget(name, _parseDayName());
+      case OrdinalNumberToken():
+        target = DaysTarget(_parseOrdinalDayList());
+      case NextToken() || PreviousToken() || NearestToken():
+        target = _parseNearestWeekdayTarget();
+      default:
+        throw expected(_Expected.monthTarget);
     }
 
-    consumeKind("'at'", (k) => k is AtToken);
-    final times = _parseTimeList();
-    return MonthRepeat(interval, target, times);
+    expect<AtToken>(_Expected.at);
+    return MonthRepeat(interval, target, _parseTimeList());
   }
 
   MonthTarget _parseNearestWeekdayTarget() {
-    NearestDirection? direction;
-    final k = peekKind();
-    if (k is NextToken) {
-      advance();
-      direction = NearestDirection.next;
-    } else if (k is PreviousToken) {
-      advance();
-      direction = NearestDirection.previous;
-    }
-
-    consumeKind("'nearest'", (k) => k is NearestToken);
-    consumeKind("'weekday'", (k) => k is WeekdayKeyToken);
-    consumeKind("'to'", (k) => k is ToToken);
-
-    final day = _parseOrdinalDayNumber();
+    final direction = eat<NextToken>()
+        ? NearestDirection.next
+        : eat<PreviousToken>()
+        ? NearestDirection.previous
+        : null;
+    expect<NearestToken>(_Expected.nearest);
+    expect<WeekdayKeyToken>(_Expected.weekday);
+    expect<ToToken>(_Expected.to);
+    final (day, _) = _parseOrdinalDay();
     return NearestWeekdayTarget(day, direction);
   }
 
-  int _parseOrdinalDayNumber() {
-    final k = peekKind();
-    if (k is OrdinalNumberToken) {
-      final val = k.value;
-      if (val < 1 || val > 31) {
-        throw error('invalid day number $val (must be 1-31)', currentSpan());
-      }
-      advance();
-      return val;
-    }
-    throw error('expected ordinal day number', currentSpan());
-  }
-
-  ScheduleExpr _parseYearRepeat(int interval) {
-    consumeKind("'on'", (k) => k is OnToken);
-
-    YearTarget target;
-    final k = peekKind();
-
-    if (k is TheToken) {
-      advance();
-      target = _parseYearTargetAfterThe();
-    } else if (k is MonthNameToken) {
-      final month = k.name;
-      advance();
-      final day = _parseDayNumber('expected day number after month name');
-      _validateNamedDate(month, day, currentSpan());
-      target = DateTarget(month, day);
-    } else {
-      throw error(
-        "expected month name or 'the' after 'every year on'",
-        currentSpan(),
-      );
-    }
-
-    consumeKind("'at'", (k) => k is AtToken);
-    final times = _parseTimeList();
-    return YearRepeat(interval, target, times);
-  }
-
-  YearTarget _parseYearTargetAfterThe() {
-    final k = peekKind();
-
-    if (k is LastToken) {
-      advance();
-      final next = peekKind();
-      if (next is WeekdayKeyToken) {
-        advance();
-        consumeKind("'of'", (k) => k is OfToken);
-        final month = _parseMonthNameToken();
-        return LastWeekdayYearTarget(month);
-      }
-      if (next is DayNameToken) {
-        final weekday = next.name;
-        advance();
-        consumeKind("'of'", (k) => k is OfToken);
-        final month = _parseMonthNameToken();
-        return OrdinalWeekdayTarget(OrdinalPosition.last, weekday, month);
-      }
-      throw error(
-        "expected 'weekday' or day name after 'last' in yearly expression",
-        currentSpan(),
-      );
-    }
-
-    if (k is OrdinalToken) {
-      final ordinal = _parseOrdinalPosition();
-      final next = peekKind();
-      if (next is DayNameToken) {
-        final weekday = next.name;
-        advance();
-        consumeKind("'of'", (k) => k is OfToken);
-        final month = _parseMonthNameToken();
-        return OrdinalWeekdayTarget(ordinal, weekday, month);
-      }
-      throw error(
-        'expected day name after ordinal in yearly expression',
-        currentSpan(),
-      );
-    }
-
-    if (k is OrdinalNumberToken) {
-      final day = k.value;
-      final daySpan = currentSpan();
-      advance();
-      consumeKind("'of'", (k) => k is OfToken);
-      final month = _parseMonthNameToken();
-      _validateNamedDate(month, day, daySpan);
-      return DayOfMonthTarget(day, month);
-    }
-
-    throw error(
-      "expected ordinal, day number, or 'last' after 'the' in yearly expression",
-      currentSpan(),
-    );
-  }
-
-  MonthName _parseMonthNameToken() {
-    final k = peekKind();
-    if (k is MonthNameToken) {
-      advance();
-      return k.name;
-    }
-    throw error('expected month name', currentSpan());
-  }
-
-  OrdinalPosition _parseOrdinalPosition() {
-    final span = currentSpan();
-    final k = peekKind();
-
-    if (k is OrdinalToken) {
-      advance();
-      return k.name;
-    }
-    if (k is LastToken) {
-      advance();
-      return OrdinalPosition.last;
-    }
-    throw error(
-      'expected ordinal (first, second, third, fourth, fifth, last)',
-      span,
-    );
-  }
-
-  ScheduleExpr _parseOn() {
-    final date = _parseDateTarget();
-    consumeKind("'at'", (k) => k is AtToken);
-    final times = _parseTimeList();
-    return SingleDate(date, times);
-  }
-
-  void _validateNamedDate(MonthName month, int day, Span span) {
-    final maxDays = {
-      MonthName.jan: 31,
-      MonthName.feb: 29,
-      MonthName.mar: 31,
-      MonthName.apr: 30,
-      MonthName.may: 31,
-      MonthName.jun: 30,
-      MonthName.jul: 31,
-      MonthName.aug: 31,
-      MonthName.sep: 30,
-      MonthName.oct: 31,
-      MonthName.nov: 30,
-      MonthName.dec: 31,
-    };
-    final max = maxDays[month]!;
-    if (day < 1 || day > max) {
-      throw error('invalid day $day for ${month.name} (max $max)', span);
-    }
-  }
-
-  void _validateIsoDate(String dateStr) {
-    final parsed = DateTime.tryParse(dateStr);
-    if (parsed == null) {
-      throw error('invalid date: $dateStr', currentSpan());
-    }
-    // DateTime.tryParse silently rolls invalid dates (e.g. Feb 30 -> Mar 2)
-    final parts = dateStr.split('-');
-    final inputDay = int.parse(parts[2]);
-    final inputMonth = int.parse(parts[1]);
-    if (parsed.year < 1 ||
-        parsed.day != inputDay ||
-        parsed.month != inputMonth) {
-      throw error('invalid date: $dateStr', currentSpan());
-    }
-  }
-
-  DateSpec _parseDateTarget() {
-    final k = peekKind();
-
-    if (k is IsoDateToken) {
-      _validateIsoDate(k.date);
-      advance();
-      return IsoDate(k.date);
-    }
-    if (k is MonthNameToken) {
-      final month = k.name;
-      advance();
-      final day = _parseDayNumber('expected day number after month name');
-      _validateNamedDate(month, day, currentSpan());
-      return NamedDate(month, day);
-    }
-    throw error('expected date (ISO date or month name)', currentSpan());
-  }
-
-  DayFilter _parseDayTarget() {
-    final k = peekKind();
-    if (k is DayToken) {
-      advance();
-      return EveryDay();
-    }
-    if (k is WeekdayKeyToken) {
-      advance();
-      return WeekdayFilter();
-    }
-    if (k is WeekendKeyToken) {
-      advance();
-      return WeekendFilter();
-    }
-    if (k is DayNameToken) {
-      final days = _parseDayList();
-      return SpecificDays(days);
-    }
-    throw error(
-      "expected 'day', 'weekday', 'weekend', or day name",
-      currentSpan(),
-    );
-  }
-
-  List<Weekday> _parseDayList() {
-    final k = peekKind();
-    if (k is! DayNameToken) {
-      throw error('expected day name', currentSpan());
-    }
-    final days = <Weekday>[k.name];
-    advance();
-
-    while (peekKind() is CommaToken) {
-      advance();
-      final next = peekKind();
-      if (next is! DayNameToken) {
-        throw error("expected day name after ','", currentSpan());
-      }
-      days.add(next.name);
-      advance();
-    }
-    return days;
-  }
-
   List<DayOfMonthSpec> _parseOrdinalDayList() {
-    final specs = <DayOfMonthSpec>[_parseOrdinalDaySpec()];
-    while (peekKind() is CommaToken) {
-      advance();
+    final specs = [_parseOrdinalDaySpec()];
+    while (eat<CommaToken>()) {
       specs.add(_parseOrdinalDaySpec());
     }
     return specs;
   }
 
   DayOfMonthSpec _parseOrdinalDaySpec() {
-    final k = peekKind();
-    if (k is! OrdinalNumberToken) {
-      throw error('expected ordinal day number', currentSpan());
+    final (start, startToken) = _parseOrdinalDay();
+    if (!eat<ToToken>()) return SingleDay(start);
+    final (end, endToken) = _parseOrdinalDay();
+    if (start > end) {
+      throw error(
+        'day range must not run backwards: ${text(startToken)} to ${text(endToken)}',
+        startToken.start,
+        endToken.end,
+      );
     }
-    final start = k.value;
-    final startSpan = currentSpan();
-    if (start < 1 || start > 31) {
-      throw error('invalid day number $start (must be 1-31)', startSpan);
+    return DayRange(start, end);
+  }
+
+  (int, Token) _parseOrdinalDay() {
+    final kind = peekKind();
+    if (kind is! OrdinalNumberToken) throw expected(_Expected.dayOfMonth);
+    final token = advance();
+    return (_dayOfMonth(kind.value, token), token);
+  }
+
+  int _parseDayOf(MonthName month) {
+    final n = switch (peekKind()) {
+      NumberToken(:final value) || OrdinalNumberToken(:final value) => value,
+      _ => throw expected(_Expected.dayNumber),
+    };
+    final token = advance();
+    final day = _dayOfMonth(n, token);
+    _checkDayInMonth(day, token, month);
+    return day;
+  }
+
+  int _dayOfMonth(int n, Token token) {
+    if (n < 1 || n > 31) {
+      throw error(
+        'day must be 1-31, got ${text(token)}',
+        token.start,
+        token.end,
+      );
     }
+    return n;
+  }
+
+  void _checkDayInMonth(int day, Token token, MonthName month) {
+    final max = switch (month) {
+      MonthName.feb => 29,
+      MonthName.apr || MonthName.jun || MonthName.sep || MonthName.nov => 30,
+      _ => 31,
+    };
+    if (day > max) {
+      throw error(
+        'day must be 1-$max for ${month.name}, got ${text(token)}',
+        token.start,
+        token.end,
+      );
+    }
+  }
+
+  ScheduleExpr _parseYearRepeat(int interval) {
+    expect<OnToken>(_Expected.on);
+
+    final YearTarget target;
+    switch (peekKind()) {
+      case TheToken():
+        advance();
+        target = _parseYearTargetAfterThe();
+      case MonthNameToken(:final name):
+        advance();
+        target = DateTarget(name, _parseDayOf(name));
+      default:
+        throw expected(_Expected.yearTarget);
+    }
+
+    expect<AtToken>(_Expected.at);
+    return YearRepeat(interval, target, _parseTimeList());
+  }
+
+  YearTarget _parseYearTargetAfterThe() {
+    switch (peekKind()) {
+      case LastToken():
+        advance();
+        switch (peekKind()) {
+          case WeekdayKeyToken():
+            advance();
+            expect<OfToken>(_Expected.of);
+            return LastWeekdayYearTarget(_parseMonthName());
+          case DayNameToken(:final name):
+            advance();
+            expect<OfToken>(_Expected.of);
+            return OrdinalWeekdayTarget(
+              OrdinalPosition.last,
+              name,
+              _parseMonthName(),
+            );
+          default:
+            throw expected(_Expected.yearLast);
+        }
+      case OrdinalToken(:final name):
+        advance();
+        final weekday = _parseDayName();
+        expect<OfToken>(_Expected.of);
+        return OrdinalWeekdayTarget(name, weekday, _parseMonthName());
+      case OrdinalNumberToken():
+        final (day, dayToken) = _parseOrdinalDay();
+        expect<OfToken>(_Expected.of);
+        final month = _parseMonthName();
+        _checkDayInMonth(day, dayToken, month);
+        return DayOfMonthTarget(day, month);
+      default:
+        throw expected(_Expected.yearThe);
+    }
+  }
+
+  MonthName _parseMonthName() {
+    final kind = peekKind();
+    if (kind is! MonthNameToken) throw expected(_Expected.monthName);
     advance();
-
-    if (peekKind() is ToToken) {
-      advance();
-      final next = peekKind();
-      if (next is! OrdinalNumberToken) {
-        throw error("expected ordinal day number after 'to'", currentSpan());
-      }
-      final end = next.value;
-      final endSpan = currentSpan();
-      if (end < 1 || end > 31) {
-        throw error('invalid day number $end (must be 1-31)', endSpan);
-      }
-      advance();
-      if (start > end) {
-        throw error(
-          'invalid day range: $start to $end (start must be <= end)',
-          currentSpan(),
-        );
-      }
-      return DayRange(start, end);
-    }
-
-    return SingleDay(start);
+    return kind.name;
   }
 
   List<MonthName> _parseMonthList() {
-    final months = <MonthName>[_parseMonthNameToken()];
-    while (peekKind() is CommaToken) {
-      advance();
-      months.add(_parseMonthNameToken());
+    final months = [_parseMonthName()];
+    while (eat<CommaToken>()) {
+      months.add(_parseMonthName());
     }
     return months;
   }
 
+  ScheduleExpr _parseOn() {
+    final date = _parseDate();
+    expect<AtToken>(_Expected.at);
+    return SingleDate(date, _parseTimeList());
+  }
+
+  DayFilter _parseDayTarget() {
+    switch (peekKind()) {
+      case DayToken():
+        advance();
+        return EveryDay();
+      case WeekdayKeyToken():
+        advance();
+        return WeekdayFilter();
+      case WeekendKeyToken():
+        advance();
+        return WeekendFilter();
+      case DayNameToken():
+        return SpecificDays(_parseDayList());
+      default:
+        throw expected(_Expected.dayTarget);
+    }
+  }
+
+  Weekday _parseDayName() {
+    final kind = peekKind();
+    if (kind is! DayNameToken) throw expected(_Expected.dayName);
+    advance();
+    return kind.name;
+  }
+
+  List<Weekday> _parseDayList() {
+    final days = [_parseDayName()];
+    while (eat<CommaToken>()) {
+      days.add(_parseDayName());
+    }
+    return days;
+  }
+
   List<TimeOfDay> _parseTimeList() {
-    final times = <TimeOfDay>[_parseTime()];
-    while (peekKind() is CommaToken) {
-      advance();
+    final times = [_parseTime()];
+    while (eat<CommaToken>()) {
       times.add(_parseTime());
     }
     return times;
   }
 
   TimeOfDay _parseTime() {
-    final span = currentSpan();
-    final k = peekKind();
-    if (k is TimeToken) {
-      advance();
-      return TimeOfDay(k.hour, k.minute);
-    }
-    throw error('expected time (HH:MM)', span);
+    final kind = peekKind();
+    if (kind is! TimeToken) throw expected(_Expected.time);
+    advance();
+    return TimeOfDay(kind.hour, kind.minute);
   }
+}
+
+int _daysInMonth(int year, int month) {
+  if (month == 2) {
+    final leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    return leap ? 29 : 28;
+  }
+  return const {4, 6, 9, 11}.contains(month) ? 30 : 31;
 }
 
 ScheduleData parse(String input) {
   final tokens = tokenize(input);
-
   if (tokens.isEmpty) {
     throw HronError.parse('empty expression', const Span(0, 0), input);
   }
 
   final parser = _Parser(tokens, input);
-  final schedule = parser.parseExpression();
-
-  if (parser.peek() != null) {
-    throw HronError.parse(
-      'unexpected tokens after expression',
-      parser.currentSpan(),
-      input,
-    );
-  }
-
+  final expr = parser.parseExpression();
+  final schedule = parser.parseClauses(expr);
+  if (parser.peek() != null) throw parser.leftover(schedule);
+  // spec/README.md, "Parse errors": every other error wins over a named until without starting.
+  parser.checkNamedUntil(schedule);
   return schedule;
 }
