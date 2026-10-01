@@ -403,7 +403,7 @@ jobs:
           if gem info hron --remote --exact | grep -q "hron ($VERSION)"; then
             echo "hron $VERSION already on RubyGems, skipping"
           else
-            gem push hron-$VERSION.gem
+            gem push "hron-$VERSION.gem"
           fi
         working-directory: ruby
 
