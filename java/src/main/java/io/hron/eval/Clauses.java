@@ -10,6 +10,7 @@ import java.time.MonthDay;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.NavigableSet;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -92,7 +93,7 @@ record Clauses(
     return switch (until.kind()) {
       case ISO -> LocalDate.parse(until.date());
       case NAMED -> {
-        LocalDate from = starting != null ? starting : Cadence.EPOCH_DATE;
+        LocalDate from = Objects.requireNonNullElse(starting, Cadence.EPOCH_DATE);
         for (int k = 0; k <= NAMED_UNTIL_MAX_YEARS; k++) {
           Optional<LocalDate> date =
               CalendarDates.dateOf(from.getYear() + k, until.month().number(), until.day());
@@ -100,6 +101,8 @@ record Clauses(
             yield date.get();
           }
         }
+        // Unreached: parse rejects a day its month never has, and any other recurs within
+        // NAMED_UNTIL_MAX_YEARS. A null until leaves the schedule unbounded.
         yield null;
       }
     };

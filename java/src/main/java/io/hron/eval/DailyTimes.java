@@ -17,7 +17,10 @@ sealed interface DailyTimes {
   /** Fixed times, each shifted out of a gap. */
   record Fixed(List<LocalTime> times) implements DailyTimes {}
 
-  /** Interval slots in minutes after midnight, earliest first, each skipped in a gap. */
+  /**
+   * Interval slots in minutes after midnight, earliest first, each skipped in a gap. An int array
+   * keeps the binary search over them free of boxing.
+   */
   record Slots(int[] minutes) implements DailyTimes {}
 
   static DailyTimes of(ScheduleExpr expr) {
@@ -37,10 +40,8 @@ sealed interface DailyTimes {
 
   /** Wall-clock minutes of the slots {@code from + k × interval} up to and including {@code to}. */
   private static int[] intervalSlots(IntervalRepeat ir) {
-    long step =
-        ir.unit() == IntervalUnit.HOURS
-            ? (long) ir.interval() * WallClock.MINUTES_PER_HOUR
-            : ir.interval();
+    long minutesPerUnit = ir.unit() == IntervalUnit.HOURS ? WallClock.MINUTES_PER_HOUR : 1;
+    long step = Math.max(ir.interval(), 1) * minutesPerUnit;
     int from = ir.fromTime().totalMinutes();
     int to = ir.toTime().totalMinutes();
     if (to < from) {

@@ -9,10 +9,13 @@ import io.hron.ast.SingleDate;
 import io.hron.ast.WeekRepeat;
 import io.hron.ast.YearRepeat;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.Iterator;
 import java.util.List;
-import java.util.stream.LongStream;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.function.LongPredicate;
 
 /**
  * The periods (days, weeks, months or years) an expression fires in, numbered from {@code origin}:
@@ -35,8 +38,9 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
   /**
    * Every period holding an occurrence in the supported range, in any zone, holds a date from
    * FIRST_DATE to LAST_DATE, allowing for a DST shift past midnight and a nearest weekday two days
-   * outside its period. LocalDate reaches far beyond them, so they are the edges of the calendar a
-   * search walks.
+   * outside its period. So they are the edges of the calendar a search walks, which also keeps it
+   * inside LocalDate's own range: past year 999,999,999, which a huge interval reaches, {@link
+   * LocalDate#plusYears} throws.
    */
   private static final LocalDate FIRST_DATE = LocalDate.of(0, 12, 29);
 
@@ -70,7 +74,8 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
   }
 
   private static Cadence repeating(Unit unit, int interval, LocalDate starting) {
-    LocalDate anchor = starting != null ? starting : unit == Unit.WEEK ? EPOCH_MONDAY : EPOCH_DATE;
+    LocalDate anchor =
+        Objects.requireNonNullElse(starting, unit == Unit.WEEK ? EPOCH_MONDAY : EPOCH_DATE);
     LocalDate origin =
         switch (unit) {
           case DAY -> anchor;
@@ -78,14 +83,14 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
           case MONTH -> anchor.withDayOfMonth(1);
           case YEAR -> anchor.withDayOfYear(1);
         };
-    return new Cadence(unit, origin, interval, false);
+    return new Cadence(unit, origin, Math.max(interval, 1), false);
   }
 
   long periodOf(LocalDate date) {
     return switch (unit) {
       case DAY -> ChronoUnit.DAYS.between(origin, date);
       case WEEK -> Math.floorDiv(ChronoUnit.DAYS.between(origin, date), 7);
-      case MONTH -> monthIndex(date) - monthIndex(origin);
+      case MONTH -> ChronoUnit.MONTHS.between(YearMonth.from(origin), YearMonth.from(date));
       case YEAR -> date.getYear() - origin.getYear();
     };
   }
@@ -106,20 +111,47 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
    * it (spec/README.md, "Search horizon"), leaving out those holding no date from FIRST_DATE to
    * LAST_DATE.
    */
-  Iterator<LocalDate> periodStarts(long firstPeriod, long reach, Direction direction) {
+  Iterable<LocalDate> periodStarts(long firstPeriod, long reach, Direction direction) {
     if (single) {
-      return List.of(origin).iterator();
+      return List.of(origin);
     }
     long first = align(firstPeriod, direction);
     long beyond = direction.sign() * (align(reach, direction) - first);
     long count = horizonPeriods() + HORIZON_MARGIN_PERIODS + Math.max(beyond, 0) / interval;
-    boolean forward = direction == Direction.FORWARD;
-    long toNearEdge = direction.sign() * (periodOf(forward ? FIRST_DATE : LAST_DATE) - first);
-    long toFarEdge = direction.sign() * (periodOf(forward ? LAST_DATE : FIRST_DATE) - first);
-    long skip = Math.max(0, Math.ceilDiv(toNearEdge, interval));
-    long end = Math.min(count, Math.floorDiv(toFarEdge, interval) + 1);
     long step = direction.sign() * interval;
-    return LongStream.range(skip, end).mapToObj(i -> startOf(first + i * step)).iterator();
+    long firstInCalendar = periodOf(FIRST_DATE);
+    long lastInCalendar = periodOf(LAST_DATE);
+    LongPredicate inCalendar = k -> firstInCalendar <= k && k <= lastInCalendar;
+    // The periods' dropWhile(not inCalendar), then takeWhile(inCalendar), without the cost a
+    // stream pipeline adds to every search.
+    return () ->
+        new Iterator<>() {
+          private long k = first;
+          private long left = count;
+
+          {
+            while (left > 0 && !inCalendar.test(k)) {
+              k += step;
+              left--;
+            }
+          }
+
+          @Override
+          public boolean hasNext() {
+            return left > 0 && inCalendar.test(k);
+          }
+
+          @Override
+          public LocalDate next() {
+            if (!hasNext()) {
+              throw new NoSuchElementException();
+            }
+            LocalDate start = startOf(k);
+            k += step;
+            left--;
+            return start;
+          }
+        };
   }
 
   /** The first aligned period at or beyond period {@code k} in {@code direction}. */
@@ -136,11 +168,6 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
    */
   long horizonPeriods() {
     return unit.per400Years / gcd(unit.per400Years, interval);
-  }
-
-  /** Months since January of year 0. */
-  private static long monthIndex(LocalDate date) {
-    return date.getYear() * 12L + date.getMonthValue() - 1;
   }
 
   private static long gcd(long a, long b) {

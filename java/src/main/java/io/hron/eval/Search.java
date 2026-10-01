@@ -7,7 +7,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,10 +31,9 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
     long firstPeriod = cadence.periodOf(firstDate) - direction.sign();
     long reach = clauses.farthestExceptDate(direction).map(cadence::periodOf).orElse(firstPeriod);
     Occurrence best = null;
-    Iterator<LocalDate> starts = cadence.periodStarts(firstPeriod, reach, direction);
     search:
-    while (starts.hasNext()) {
-      List<Candidate> candidates = Candidate.candidatesInPeriod(expr, starts.next());
+    for (LocalDate start : cadence.periodStarts(firstPeriod, reach, direction)) {
+      List<Candidate> candidates = Candidate.candidatesInPeriod(expr, start);
       for (Candidate candidate : direction.inOrder(candidates)) {
         boolean beaten =
             best != null && !Occurrence.couldBeat(candidate.date(), best.date(), direction);
@@ -86,15 +84,16 @@ record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times,
   private Optional<ZonedDateTime> nearestSlot(
       int[] slots, LocalDate date, ZonedDateTime now, Direction direction) {
     Instant target = now.toInstant();
-    // low becomes the first slot after now or, going backward, the first not before it.
+    // low becomes the first slot of the upper part: forward, the slots after now; backward, the
+    // slots at or after it.
     int low = 0;
     int high = slots.length;
     while (low < high) {
       int mid = (low + high) >>> 1;
       Instant slot = WallClock.slotOrGapEnd(date, slots[mid], zone);
-      boolean atOrBeyondLow =
+      boolean inUpperPart =
           direction == Direction.FORWARD ? slot.isAfter(target) : !slot.isBefore(target);
-      if (atOrBeyondLow) {
+      if (inUpperPart) {
         high = mid;
       } else {
         low = mid + 1;
