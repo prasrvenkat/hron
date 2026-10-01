@@ -12,21 +12,24 @@ pub struct Schedule {
     pub(crate) during: Vec<MonthName>,
 }
 
-impl Schedule {
-    pub fn new(expr: ScheduleExpr) -> Self {
-        Self {
-            expr,
-            timezone: None,
-            except: Vec::new(),
-            until: None,
-            anchor: None,
-            during: Vec::new(),
-        }
-    }
+/// The parts of a schedule, for [`Schedule::from_parts`] to check and build.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleParts {
+    pub expression: ScheduleExpr,
+    /// `UTC` or an IANA `Area/Location` name in any case.
+    pub timezone: Option<String>,
+    /// An empty list is no `except` clause.
+    pub except: Vec<Exception>,
+    pub until: Option<UntilSpec>,
+    pub starting: Option<jiff::civil::Date>,
+    /// An empty list is no `during` clause.
+    pub during: Vec<MonthName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum ScheduleExpr {
     IntervalRepeat {
         interval: u32,
@@ -135,12 +138,6 @@ impl<'de> Deserialize<'de> for TimeOfDay {
         let minute: u8 = parts[1]
             .parse()
             .map_err(|_| serde::de::Error::custom("invalid minute"))?;
-        if hour > 23 {
-            return Err(serde::de::Error::custom("hour must be 0-23"));
-        }
-        if minute > 59 {
-            return Err(serde::de::Error::custom("minute must be 0-59"));
-        }
         Ok(TimeOfDay { hour, minute })
     }
 }
@@ -413,6 +410,14 @@ impl MonthName {
             Self::October => "oct",
             Self::November => "nov",
             Self::December => "dec",
+        }
+    }
+
+    pub(crate) fn max_day(self) -> u8 {
+        match self {
+            Self::February => 29,
+            Self::April | Self::June | Self::September | Self::November => 30,
+            _ => 31,
         }
     }
 

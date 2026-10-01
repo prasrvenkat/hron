@@ -21,6 +21,34 @@ The conformance test suite covering four categories:
 
 All language implementations must pass all conformance tests. Test cases are loaded dynamically at runtime/compile-time.
 
+### `build.json`
+
+Cases for building a schedule from its parts (see [Schedules built in code](#schedules-built-in-code)), which Rust, Go, Python and Ruby run. Its groups are `rules` (each row of the table in each place it applies, and values at each limit that build), `order` (parts that break more than one rule) and `canonical` (each kind of expression, and every clause). Each case has a `name`, `parts`, and either `error` (`kind`, always `eval`, and `message`) or `canonical`, the schedule's `toString`. `parts` is an object with these fields:
+
+- `expression`: an object with one key, the expression's kind, whose value holds its fields:
+  - `interval_repeat`: `interval`, `unit` (`minutes` or `hours`), `from`, `to`, and `day_filter` when it has one;
+  - `day_repeat`: `interval`, `days` (a day filter) and `times`;
+  - `week_repeat`: `interval`, `days` (a list of day names) and `times`;
+  - `month_repeat`: `interval`, `target` (a month target) and `times`;
+  - `single_date`: `date` and `times`;
+  - `year_repeat`: `interval`, `target` (a year target) and `times`.
+- `except`: a list of dates; absent means `[]`.
+- `until`: a date; absent means none.
+- `starting`: a `YYYY-MM-DD` string; absent means none.
+- `during`: a list of month names; absent means `[]`.
+- `timezone`: a string; absent means none.
+
+The values in them:
+
+- A time is `"{hour}:{minute}"` in decimal, in range or not (`"24:00"`, `"7:60"`), and `times` is a list of them.
+- Day names are `monday` to `sunday`, month names `january` to `december`, and ordinals `first` to `fifth` and `last`.
+- A day filter is `"every"`, `"weekday"`, `"weekend"` or `{"days": [day names]}`.
+- A date is `{"named": {"month": ..., "day": d}}` or `{"iso": "..."}`, whose text is passed as given, valid or not.
+- A month target is `{"days": [...]}`, each day `{"single": d}` or `{"range": [a, b]}`; `"last_day"`; `"last_weekday"`; `{"nearest_weekday": {"day": d, "direction": null}}`, with `"next"` or `"previous"` in place of `null` for a directional one; or `{"ordinal_weekday": {"ordinal": ..., "weekday": ...}}`.
+- A year target is `{"date": {"month": ..., "day": d}}`, `{"ordinal_weekday": {"ordinal": ..., "weekday": ..., "month": ...}}`, `{"day_of_month": {"day": d, "month": ...}}` or `{"last_weekday": {"month": ...}}`.
+
+These are the serde shapes of Rust's types. Every value fits them: intervals are 0 to 4294967295, days and the hour and minute of a time 0 to 255, and `starting` is written `YYYY-MM-DD` with a year from 0000, so that Rust holds it as a `jiff::civil::Date`. A value outside those types, an unknown name (`unknown {kind}`) and a value of the wrong type stay in each implementation's own tests.
+
 ### `api.json`
 
 The API contract specification defining:
@@ -60,6 +88,7 @@ The other sections:
 - **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`, `error`; asserts `fromCron(cron)` fails with a `cron` error whose message equals `error`.
 - **`cron.roundtrip`** - `hron`; with `c = toCron(parse(hron))`, asserts `toCron(fromCron(c))` equals `c`.
 - **`invariants`** - entries carry `name`, `expression` and `now`; every rule in `invariants.rules` applies to every entry.
+- **`build.json`**, every group - `parts`; builds a schedule from `parts`, then asserts that it fails with an `eval` error whose message equals `error.message`, with no span, input or suggestion, or that its `toString` equals `canonical` and that parsing `canonical` gives an equal schedule. Go, where the empty timezone means none, expects `"timezone": ""` to build the same schedule as the parts without a timezone.
 
 `name` and `description` are labels, not assertions.
 
@@ -73,7 +102,7 @@ All hron implementations should produce error messages with consistent structure
 |------|------|
 | `lex` | Invalid characters, malformed tokens |
 | `parse` | Syntax errors, invalid grammar |
-| `eval` | Runtime evaluation errors |
+| `eval` | A schedule built in code from parts that break a rule |
 | `cron` | Cron conversion errors |
 
 ### Error Structure
@@ -236,7 +265,7 @@ A fixed time (`at HH:MM`, including single dates) that does not exist because cl
 
 ### Interval slots in a spring-forward gap
 
-Interval slots are `from + k × interval` in wall-clock time, from the `from` time up to and including the `to` time. An interval below 1, which only a schedule built in code can hold, counts as 1 of its unit: `0 hours` steps by an hour. A slot whose wall time does not exist is skipped, not shifted: on 2026-03-08 in `America/New_York`, `every 45 min from 00:00 to 04:00` fires at 01:30 EST and then 03:00 EDT (02:15 does not exist). Fixed times shift so a daily event is not lost; interval slots skip because the cadence continues.
+Interval slots are `from + k × interval` in wall-clock time, from the `from` time up to and including the `to` time. A slot whose wall time does not exist is skipped, not shifted: on 2026-03-08 in `America/New_York`, `every 45 min from 00:00 to 04:00` fires at 01:30 EST and then 03:00 EDT (02:15 does not exist). Fixed times shift so a daily event is not lost; interval slots skip because the cadence continues.
 
 ### DST fall-back (ambiguous times)
 
@@ -293,6 +322,35 @@ Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:
 - A usage error is the platform's own error for a bad argument, never a hron error: in JavaScript a `TypeError` for a value of the wrong type (null and `undefined` included) and a `RangeError` for a bad value; in Python and Ruby a `TypeError`; in Java a `NullPointerException` for null. The CLI prints it and exits with status 2. The static types in Rust, Go, C# and Dart rule the others out.
 - WebAssembly and the CLI take a timestamp as an RFC 9557 or RFC 3339 string with an offset or `Z`, in either case (`2026-02-06T12:00:00+09:00[Asia/Tokyo]`, `2026-02-06T03:00:00Z`, `2026-02-06t03:00:00.000z`). The offset decides the instant: a zone in brackets that disagrees with it is ignored, unless it is marked critical (`[!Asia/Tokyo]`), which is a usage error. `Z` names the instant without claiming a local offset, so it never disagrees with a zone. Other bracketed tags such as `[u-ca=hebrew]` are ignored unless critical. A string without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`) names no instant, or two at a DST change, so it is a usage error, as is an unknown zone. Six-digit years (`+010000-01-01T00:00:00Z`, as `Date.prototype.toISOString` writes them) are read and lie outside the supported range.
 - WebAssembly and the CLI write every timestamp as `2026-02-06T09:00:00-05:00[America/New_York]`: seconds always, the offset as `±HH:MM` (`+00:00`, never `Z`), and the schedule's zone or `UTC` in brackets.
+
+### Schedules built in code
+
+Rust (`Schedule::from_parts`), Go (`NewSchedule`), Python (`Schedule(ScheduleData(...))`) and Ruby (`Schedule.new`) also build a schedule from its parts. Building checks the parts with the rules `parse` applies, so a built schedule keeps every promise a parsed one makes: evaluating it never fails, `toString` gives text that parses back to the same schedule, and `toCron` converts it exactly or fails with a `cron` error.
+
+A part that breaks a rule fails the build with an `eval` error, with no span, input or suggestion. The parts are checked in this order: the expression's kind, its interval, then its other parts in the order `toString` writes them; then `except`, `until`, `starting`, `during` and the timezone, each list from first to last; and last, a named `until` without `starting`. A day repeat's every-day rule is checked right after its interval. A window, a day range, a date and a month or year target are each one part: a window checks `from`, then `to`, then its direction; a day range checks its start, then its end, then its direction. The first part that breaks a rule fails, with the first row below that applies to it:
+
+| Part | Message |
+|---|---|
+| A value that is not one of its kind | `unknown {kind} {value}` |
+| An interval outside 1-2147483647 | `interval must be 1-2147483647, got {n}` |
+| A day repeat with an interval above 1 whose days are not every day | `days must be every day when the interval is above 1` |
+| A time outside 00:00-23:59 | `time must be 00:00-23:59, got {hh}:{mm}` |
+| An interval window whose `from` is after its `to` | `time window must not run backwards: {from} to {to} (a window cannot cross midnight)` |
+| No times, or a list of days with no day | `times must not be empty`, `days must not be empty` |
+| A day of the month outside 1-31 | `day must be 1-31, got {d}` |
+| A day beyond its month's last (February has 29) | `day must be 1-{max} for {mon}, got {d}` |
+| A day range whose start is after its end | `day range must not run backwards: {a} to {b}` |
+| A date not written `YYYY-MM-DD`, or not a calendar date from 0001-01-01 to 9999-12-31, whether a string or the language's date type (Rust's `starting`) | `date must be a calendar date from 0001-01-01 to 9999-12-31, got {date}` |
+| A timezone other than `UTC` or an `Area/Location` IANA name, the empty string included | `timezone must be UTC or an Area/Location name such as America/New_York, got {name}` |
+| A named `until` without `starting` | `until {mon} {day} has no year: add a starting date, or use an ISO date` |
+
+Each value is written as `toString` writes it: a day with its suffix where `toString` writes one (`32nd`, but `feb 30`), `{hh}` and `{mm}` with at least two digits, `{date}` as given or, for a date type, as `toString` writes it, and `{name}` as given. `{mon}` is the month's three-letter name in lowercase. `{kind}` is `expression`, `interval unit`, `weekday`, `month`, `ordinal`, `direction`, `day filter`, `day spec`, `month target`, `year target`, `date`, `exception` or `until`, and `{value}` is the value as the language writes a literal of it (the integer in Go, `repr` in Python, `inspect` in Ruby); the row arises only where the language's types let a value fall outside its kind. A value of a type its part cannot hold (a string or a float where an integer goes, `None` or `nil` for a list) is a usage error, as in "Timestamps and counts", not a hron error. In Go the empty timezone means none.
+
+Building copies the parts, so changing them afterwards does not change the schedule. A timezone that passes is kept in the IANA capitalization, as `parse` keeps it; an empty `except` or `during` list is no clause; a field the expression's kind does not use is not kept. The same schedule means equal parts. `spec/build.json` holds the shared cases for building, which only these four implementations run.
+
+Java, C#, TypeScript and Dart build a schedule only through `parse` and `fromCron`. In every implementation a schedule cannot change after it is built, what its getters return cannot change it, and no public function other than the builders above takes a schedule's parts to build, evaluate, display or convert one.
+
+Where an implementation exposes `OrdinalPosition` with a numeric form, `first` to `fifth` are 1 to 5 and `last` is -1.
 
 ### Timezone data
 
@@ -369,7 +427,6 @@ A month set of fewer than 12 months adds `during`, with the months in ascending 
 - a repeat every `n` days, weeks, months or years with `n > 1`, which cron cannot count;
 - a directional nearest weekday (`next nearest`, `previous nearest`);
 - a `during` that excludes a yearly or named date's month;
-- a schedule built in code with no days or no times, which no cron field can write;
 - times that are not every combination of their minutes and hours (`at 09:00, 17:30`, `every 45 min from 09:00 to 17:00`).
 
 In every field, all of the field's values (60, 24, 31, 12 or 7) are written `*`. The minute and the hour are each written from their set of values, by the first rule that applies: every value is `*`; one value is that value; `0, n, 2n, …` up to the field's maximum, where `n >= 2` divides 60 (minute) or 24 (hour), is `*/n`; consecutive values `a` to `b` are `a-b`; three or more values `a, a+n, …, b` with `n >= 2` are `a-b/n`; otherwise an ascending list, each run of two or more consecutive values written `a-b`. The day of month, the month and the day of week use only `*`, single values, runs and lists, Sunday as 0: `1-5` for weekdays, `0,6` for the weekend, `L`, `LW`, `nW`, `d#n` and `dL` as above. A yearly or named date writes its own month, and `during` only decides whether it fails; other schedules write the `during` months. Schedules that fire identically can map to different crons. A schedule's timezone is not part of the cron: cron fires on its scheduler's clock, so run it in the schedule's timezone. Computing an interval's times must not overflow, however large its interval.
@@ -392,7 +449,7 @@ Each failure is a `cron` error with exactly one of these messages, checked in th
 | More than 24 times without equal gaps | `not expressible in hron: {count} times a day are too many to list` |
 | `toCron` on a schedule cron cannot express | `not expressible as cron: {reason}` |
 
-`{field}` is `minute`, `hour`, `day of month`, `month` or `day of week`; `{text}` is the field as written, or the trimmed input for a shortcut; `{value}`, `{a}`, `{b}` and `{n}` echo the input as written; `{count}` is a count. `toCron` reports the first of these reasons that applies, in this order: `except clauses not supported`, `until clauses not supported`, `starting clauses not supported`, `ISO dates do not repeat`, `multi-day repeats not supported`, `multi-week repeats not supported`, `multi-month repeats not supported`, `multi-year repeats not supported`, `directional nearest weekday not supported`, `schedule has no days`, `during excludes the schedule's month`, `schedule has no times`, `times are not every combination of their minutes and hours`.
+`{field}` is `minute`, `hour`, `day of month`, `month` or `day of week`; `{text}` is the field as written, or the trimmed input for a shortcut; `{value}`, `{a}`, `{b}` and `{n}` echo the input as written; `{count}` is a count. `toCron` reports the first of these reasons that applies, in this order: `except clauses not supported`, `until clauses not supported`, `starting clauses not supported`, `ISO dates do not repeat`, `multi-day repeats not supported`, `multi-week repeats not supported`, `multi-month repeats not supported`, `multi-year repeats not supported`, `directional nearest weekday not supported`, `during excludes the schedule's month`, `times are not every combination of their minutes and hours`.
 
 ## Invariants
 

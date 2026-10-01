@@ -35,34 +35,34 @@ fn bench_eval(c: &mut Criterion) {
 
     let day_repeat = Schedule::parse("every weekday at 09:00 in UTC").unwrap();
     group.bench_function("day_repeat", |b| {
-        b.iter(|| day_repeat.next_from(black_box(&now)).unwrap());
+        b.iter(|| day_repeat.next_from(black_box(&now)));
     });
 
     let week_repeat =
         Schedule::parse("every 2 weeks on monday at 09:00 starting 2026-01-05 in UTC").unwrap();
     group.bench_function("week_repeat", |b| {
-        b.iter(|| week_repeat.next_from(black_box(&now)).unwrap());
+        b.iter(|| week_repeat.next_from(black_box(&now)));
     });
 
     let month_repeat = Schedule::parse("every month on the 1st at 09:00 in UTC").unwrap();
     group.bench_function("month_repeat", |b| {
-        b.iter(|| month_repeat.next_from(black_box(&now)).unwrap());
+        b.iter(|| month_repeat.next_from(black_box(&now)));
     });
 
     let ordinal_weekday =
         Schedule::parse("every month on the first monday at 10:00 in UTC").unwrap();
     group.bench_function("ordinal_weekday", |b| {
-        b.iter(|| ordinal_weekday.next_from(black_box(&now)).unwrap());
+        b.iter(|| ordinal_weekday.next_from(black_box(&now)));
     });
 
     let year_repeat = Schedule::parse("every year on dec 25 at 00:00 in UTC").unwrap();
     group.bench_function("year_repeat", |b| {
-        b.iter(|| year_repeat.next_from(black_box(&now)).unwrap());
+        b.iter(|| year_repeat.next_from(black_box(&now)));
     });
 
     let interval_repeat = Schedule::parse("every 30 min from 09:00 to 17:00 in UTC").unwrap();
     group.bench_function("interval_repeat", |b| {
-        b.iter(|| interval_repeat.next_from(black_box(&now)).unwrap());
+        b.iter(|| interval_repeat.next_from(black_box(&now)));
     });
 
     group.finish();

@@ -1,10 +1,15 @@
-use hron::{Schedule, ScheduleError};
+use hron::{Schedule, ScheduleError, ScheduleParts};
 use serde_json::Value;
 use std::sync::LazyLock;
 
 static SPEC: LazyLock<Value> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../../spec/tests.json"))
         .expect("spec/tests.json is invalid JSON")
+});
+
+static BUILD: LazyLock<Value> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../spec/build.json"))
+        .expect("spec/build.json is invalid JSON")
 });
 
 fn default_now() -> jiff::Zoned {
@@ -57,6 +62,85 @@ fn run_parse_roundtrip(section: &str, index: usize) {
         canonical,
         "canonical not idempotent for '{canonical}'"
     );
+    assert_rebuilds(&schedule);
+}
+
+fn assert_rebuilds(schedule: &Schedule) {
+    let rebuilt = Schedule::from_parts(schedule.to_parts())
+        .unwrap_or_else(|e| panic!("from_parts of '{schedule}' failed: {e}"));
+    assert_eq!(&rebuilt, schedule, "from_parts of '{schedule}'");
+    assert_eq!(rebuilt.to_string(), schedule.to_string());
+}
+
+fn run_build(group: &str, index: usize) {
+    let case = &BUILD[group]["tests"][index];
+    check_fields(case, &["parts"], &["error", "canonical"]);
+    let name = case["name"].as_str().unwrap();
+    let result = Schedule::from_parts(build_parts(&case["parts"]));
+    if let Some(expected) = case.get("error") {
+        let fields = expected.as_object().expect("'error' should be an object");
+        for key in fields.keys() {
+            assert!(
+                ["kind", "message"].contains(&key.as_str()),
+                "error field '{key}' is not known to this runner"
+            );
+        }
+        assert_eq!(
+            expected["kind"], "eval",
+            "case '{name}' expects another kind"
+        );
+        let message = expected["message"].as_str().unwrap();
+        match result {
+            Err(error @ ScheduleError::Eval { .. }) => {
+                assert_eq!(error.to_string(), message, "message for '{name}'");
+                assert_eq!(error.display_rich(), format!("error: {message}"));
+            }
+            other => panic!("case '{name}': expected an eval error, got {other:?}"),
+        }
+    } else {
+        let canonical = case["canonical"].as_str().unwrap();
+        let schedule = result.unwrap_or_else(|e| panic!("case '{name}' failed to build: {e}"));
+        assert_eq!(schedule.to_string(), canonical, "toString for '{name}'");
+        let parsed = Schedule::parse(canonical)
+            .unwrap_or_else(|e| panic!("case '{name}': '{canonical}' does not parse: {e}"));
+        assert_eq!(parsed, schedule, "case '{name}': parse(toString) differs");
+    }
+}
+
+fn build_parts(parts: &Value) -> ScheduleParts {
+    let fields = parts.as_object().expect("'parts' should be an object");
+    for key in fields.keys() {
+        assert!(
+            [
+                "expression",
+                "timezone",
+                "except",
+                "until",
+                "starting",
+                "during"
+            ]
+            .contains(&key.as_str()),
+            "parts field '{key}' is not known to this runner"
+        );
+    }
+    let starting: Option<String> = read_field(fields, "starting", Value::Null);
+    ScheduleParts {
+        expression: read_field(fields, "expression", Value::Null),
+        timezone: read_field(fields, "timezone", Value::Null),
+        except: read_field(fields, "except", Value::Array(vec![])),
+        until: read_field(fields, "until", Value::Null),
+        starting: starting.map(|date| date.parse().expect("starting should be a date jiff reads")),
+        during: read_field(fields, "during", Value::Array(vec![])),
+    }
+}
+
+fn read_field<T: serde::de::DeserializeOwned>(
+    fields: &serde_json::Map<String, Value>,
+    key: &str,
+    absent: Value,
+) -> T {
+    serde_json::from_value(fields.get(key).cloned().unwrap_or(absent))
+        .unwrap_or_else(|e| panic!("parts field '{key}' cannot be read: {e}"))
 }
 
 fn run_parse_error(index: usize) {
@@ -131,9 +215,7 @@ fn run_eval(section: &str, index: usize) {
         .unwrap_or_else(default_now);
 
     if let Some(expected_val) = case.get("next") {
-        let result = schedule
-            .next_from(&now)
-            .unwrap_or_else(|e| panic!("next_from error for '{expr_str}': {e}"));
+        let result = schedule.next_from(&now);
         if expected_val.is_null() {
             assert!(
                 result.is_none(),
@@ -151,7 +233,6 @@ fn run_eval(section: &str, index: usize) {
         let expected = expected_date.as_str().unwrap();
         let got = schedule
             .next_from(&now)
-            .unwrap_or_else(|e| panic!("next_from error for '{expr_str}': {e}"))
             .unwrap_or_else(|| panic!("next_date: got None, expected '{expected}'"));
         assert_eq!(
             got.date().to_string(),
@@ -174,9 +255,7 @@ fn run_eval(section: &str, index: usize) {
 
         let n_count = next_n_count(case).unwrap_or(expected.len());
 
-        let results = schedule
-            .next_n_from(&now, n_count)
-            .unwrap_or_else(|e| panic!("next_n_from error for '{expr_str}': {e}"));
+        let results = schedule.next_n_from(&now, n_count);
         let got: Vec<String> = results.iter().map(|z| z.to_string()).collect();
 
         assert_eq!(
@@ -193,9 +272,7 @@ fn run_eval(section: &str, index: usize) {
         let expected = expected_len.as_u64().unwrap() as usize;
         let n_count = next_n_count(case)
             .unwrap_or_else(|| panic!("next_n_length needs next_n_count for '{expr_str}'"));
-        let results = schedule
-            .next_n_from(&now, n_count)
-            .unwrap_or_else(|e| panic!("next_n_from error for '{expr_str}': {e}"));
+        let results = schedule.next_n_from(&now, n_count);
         assert_eq!(
             results.len(),
             expected,
@@ -229,9 +306,7 @@ fn run_eval_matches(section: &str, index: usize) {
     let schedule =
         Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
     let dt = parse_zoned(dt_str);
-    let got = schedule
-        .matches(&dt)
-        .unwrap_or_else(|e| panic!("matches error for '{expr_str}': {e}"));
+    let got = schedule.matches(&dt);
 
     assert_eq!(
         got, expected,
@@ -256,11 +331,7 @@ fn run_eval_occurrences(section: &str, index: usize) {
         Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
     let from = parse_zoned(from_str);
 
-    let results: Vec<jiff::Zoned> = schedule
-        .occurrences(&from)
-        .take(take)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap_or_else(|e| panic!("occurrences error for '{expr_str}': {e}"));
+    let results: Vec<jiff::Zoned> = schedule.occurrences(&from).take(take).collect();
 
     let got: Vec<String> = results.iter().map(|z| z.to_string()).collect();
 
@@ -290,10 +361,7 @@ fn run_eval_between(section: &str, index: usize) {
     let from = parse_zoned(from_str);
     let to = parse_zoned(to_str);
 
-    let results: Vec<jiff::Zoned> = schedule
-        .between(&from, &to)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap_or_else(|e| panic!("between error for '{expr_str}': {e}"));
+    let results: Vec<jiff::Zoned> = schedule.between(&from, &to).collect();
 
     if let Some(expected_arr) = case.get("expected") {
         let expected: Vec<&str> = expected_arr
@@ -333,9 +401,7 @@ fn run_eval_previous_from(section: &str, index: usize) {
         Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
     let now = parse_zoned(now_str);
 
-    let result = schedule
-        .previous_from(&now)
-        .unwrap_or_else(|e| panic!("previous_from error for '{expr_str}': {e}"));
+    let result = schedule.previous_from(&now);
 
     if case["expected"].is_null() {
         assert!(
@@ -402,6 +468,7 @@ fn run_cron_from_cron(section: &str, index: usize) {
         .unwrap_or_else(|e| panic!("from_cron failed for '{cron_expr}': {e}"));
     let got = schedule.to_string();
     assert_eq!(got, expected_hron, "from_cron mismatch for '{cron_expr}'");
+    assert_rebuilds(&schedule);
 }
 
 fn run_cron_from_cron_error(section: &str, index: usize) {
@@ -448,9 +515,7 @@ fn run_invariants(index: usize) {
     let schedule =
         Schedule::parse(expr_str).unwrap_or_else(|e| panic!("parse failed for '{expr_str}': {e}"));
     let now = parse_zoned(case["now"].as_str().unwrap());
-    let next_n = schedule
-        .next_n_from(&now, count)
-        .unwrap_or_else(|e| panic!("next_n_from error for '{expr_str}': {e}"));
+    let next_n = schedule.next_n_from(&now, count);
 
     let failures: Vec<String> = rules
         .keys()
@@ -478,18 +543,6 @@ fn run_invariants(index: usize) {
 
 type InvariantResult = Result<(), String>;
 
-fn next(schedule: &Schedule, now: &jiff::Zoned) -> Option<jiff::Zoned> {
-    schedule.next_from(now).expect("next_from error")
-}
-
-fn previous(schedule: &Schedule, now: &jiff::Zoned) -> Option<jiff::Zoned> {
-    schedule.previous_from(now).expect("previous_from error")
-}
-
-fn matches(schedule: &Schedule, t: &jiff::Zoned) -> bool {
-    schedule.matches(t).expect("matches error")
-}
-
 fn same_instants(a: &[jiff::Zoned], b: &[jiff::Zoned]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.timestamp() == y.timestamp())
 }
@@ -499,14 +552,14 @@ fn show(list: &[jiff::Zoned]) -> Vec<String> {
 }
 
 fn next_matches(schedule: &Schedule, now: &jiff::Zoned) -> InvariantResult {
-    match next(schedule, now) {
-        Some(t) if !matches(schedule, &t) => Err(format!("matches({t}) is false")),
+    match schedule.next_from(now) {
+        Some(t) if !schedule.matches(&t) => Err(format!("matches({t}) is false")),
         _ => Ok(()),
     }
 }
 
 fn next_after_now(schedule: &Schedule, now: &jiff::Zoned) -> InvariantResult {
-    match next(schedule, now) {
+    match schedule.next_from(now) {
         Some(t) if t.timestamp() <= now.timestamp() => {
             Err(format!("nextFrom(now) is {t}, not after now"))
         }
@@ -521,12 +574,12 @@ fn next_n_chain(schedule: &Schedule, now: &jiff::Zoned, next_n: &[jiff::Zoned]) 
     {
         return Err(format!("not strictly increasing: {:?}", show(next_n)));
     }
-    if next_n.is_empty() && next(schedule, now).is_some() {
+    if next_n.is_empty() && schedule.next_from(now).is_some() {
         return Err("next_n is empty but nextFrom(now) is not null".into());
     }
     let mut cursor = now;
     for (i, got) in next_n.iter().enumerate() {
-        let expected = next(schedule, cursor);
+        let expected = schedule.next_from(cursor);
         if expected.as_ref().map(|t| t.timestamp()) != Some(got.timestamp()) {
             return Err(format!(
                 "next_n[{i}] is {got}, but nextFrom({cursor}) is {expected:?}"
@@ -543,11 +596,7 @@ fn occurrences_prefix(
     count: usize,
     next_n: &[jiff::Zoned],
 ) -> InvariantResult {
-    let taken: Vec<jiff::Zoned> = schedule
-        .occurrences(now)
-        .take(count)
-        .collect::<Result<_, _>>()
-        .expect("occurrences error");
+    let taken: Vec<jiff::Zoned> = schedule.occurrences(now).take(count).collect();
     if same_instants(&taken, next_n) {
         Ok(())
     } else {
@@ -567,10 +616,7 @@ fn between_window(
     let Some(last) = next_n.last() else {
         return Ok(());
     };
-    let got: Vec<jiff::Zoned> = schedule
-        .between(now, last)
-        .collect::<Result<_, _>>()
-        .expect("between error");
+    let got: Vec<jiff::Zoned> = schedule.between(now, last).collect();
     if same_instants(&got, next_n) {
         Ok(())
     } else {
@@ -584,7 +630,7 @@ fn between_window(
 
 fn prev_inverse(schedule: &Schedule, next_n: &[jiff::Zoned]) -> InvariantResult {
     for w in next_n.windows(2) {
-        let got = previous(schedule, &w[1]);
+        let got = schedule.previous_from(&w[1]);
         if got.as_ref().map(|p| p.timestamp()) != Some(w[0].timestamp()) {
             return Err(format!(
                 "previousFrom({}) is {got:?}, expected {}",
@@ -596,16 +642,16 @@ fn prev_inverse(schedule: &Schedule, next_n: &[jiff::Zoned]) -> InvariantResult 
 }
 
 fn prev_before_now(schedule: &Schedule, now: &jiff::Zoned) -> InvariantResult {
-    let Some(p) = previous(schedule, now) else {
+    let Some(p) = schedule.previous_from(now) else {
         return Ok(());
     };
     if p.timestamp() >= now.timestamp() {
         return Err(format!("previousFrom(now) is {p}, not before now"));
     }
-    if !matches(schedule, &p) {
+    if !schedule.matches(&p) {
         return Err(format!("matches({p}) is false"));
     }
-    match next(schedule, &p) {
+    match schedule.next_from(&p) {
         Some(n) if n.timestamp() < now.timestamp() => Err(format!(
             "nextFrom({p}) is {n}, an occurrence between previousFrom(now) and now"
         )),

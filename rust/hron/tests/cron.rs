@@ -1,7 +1,3 @@
-use hron::ast::{
-    DayFilter, DayOfMonthSpec, IntervalUnit, MonthName, MonthTarget, NearestDirection,
-    ScheduleExpr, TimeOfDay, YearTarget,
-};
 use hron::{Schedule, ScheduleError};
 use jiff::civil::{date, Date, Weekday};
 use jiff::tz::TimeZone;
@@ -228,13 +224,10 @@ fn assert_fires_as(schedule: &Schedule, cron: &NaiveCron, label: &str) {
     // the day before, show that it fires that day and on no day between.
     let mut cursor = utc(WINDOW_START, 0, 0) - jiff::Span::new().seconds(1);
     for &d in &days {
-        let next = schedule.next_from(&cursor).unwrap().map(|z| wall(&z));
+        let next = schedule.next_from(&cursor).map(|z| wall(&z));
         assert_eq!(next, Some((d, times[0])), "{label}: first time on {d}");
         let end_of_day = utc(d.tomorrow().unwrap(), 0, 0);
-        let previous = schedule
-            .previous_from(&end_of_day)
-            .unwrap()
-            .map(|z| wall(&z));
+        let previous = schedule.previous_from(&end_of_day).map(|z| wall(&z));
         assert_eq!(
             previous,
             Some((d, times[times.len() - 1])),
@@ -242,7 +235,7 @@ fn assert_fires_as(schedule: &Schedule, cron: &NaiveCron, label: &str) {
         );
         cursor = end_of_day - jiff::Span::new().seconds(1);
     }
-    let after = schedule.next_from(&cursor).unwrap().map(|z| z.date());
+    let after = schedule.next_from(&cursor).map(|z| z.date());
     assert!(
         after.is_none_or(|d| d >= WINDOW_END),
         "{label}: fires on {after:?}, after the last day the cron fires"
@@ -261,7 +254,7 @@ fn assert_each_occurrence(
     let mut expected = days
         .iter()
         .flat_map(|&d| times.iter().map(move |&t| (d, t)));
-    let mut actual = schedule.between(&from, &to).map(|z| wall(&z.unwrap()));
+    let mut actual = schedule.between(&from, &to).map(|z| wall(&z));
     loop {
         match (expected.next(), actual.next()) {
             (None, None) => return,
@@ -766,171 +759,4 @@ fn naive_matcher_agrees_with_known_dates() {
     assert!(fires("0 9 LW * *", date(2044, 4, 29)));
     assert!(fires("0 9 * * 5L", date(2044, 4, 29)));
     assert!(!fires("0 9 * * 5L", date(2044, 4, 22)));
-}
-
-#[test]
-fn to_cron_of_a_built_schedule_with_interval_0_steps_by_1_of_its_unit_as_evaluation_does() {
-    let minutes = Schedule::new(ScheduleExpr::IntervalRepeat {
-        interval: 0,
-        unit: IntervalUnit::Minutes,
-        from: TimeOfDay { hour: 9, minute: 0 },
-        to: TimeOfDay { hour: 9, minute: 2 },
-        day_filter: None,
-    });
-    assert_eq!(minutes.to_cron().unwrap(), "0-2 9 * * *");
-    let from = utc(WINDOW_START, 9, 0);
-    let fires: Vec<_> = minutes
-        .next_n_from(&from, 2)
-        .unwrap()
-        .iter()
-        .map(wall)
-        .collect();
-    assert_eq!(fires, [(WINDOW_START, (9, 1)), (WINDOW_START, (9, 2))]);
-
-    let hours = Schedule::new(ScheduleExpr::IntervalRepeat {
-        interval: 0,
-        unit: IntervalUnit::Hours,
-        from: TimeOfDay { hour: 9, minute: 0 },
-        to: TimeOfDay {
-            hour: 10,
-            minute: 0,
-        },
-        day_filter: None,
-    });
-    assert_eq!(hours.to_cron().unwrap(), "0 9-10 * * *");
-    let from = utc(WINDOW_START, 8, 0);
-    let fires: Vec<_> = hours
-        .next_n_from(&from, 3)
-        .unwrap()
-        .iter()
-        .map(wall)
-        .collect();
-    let next_day = WINDOW_START.tomorrow().unwrap();
-    assert_eq!(
-        fires,
-        [
-            (WINDOW_START, (9, 0)),
-            (WINDOW_START, (10, 0)),
-            (next_day, (9, 0))
-        ]
-    );
-}
-
-#[test]
-fn to_cron_of_a_built_schedule_without_times_fails() {
-    let schedule = Schedule::new(ScheduleExpr::DayRepeat {
-        interval: 1,
-        days: DayFilter::Every,
-        times: vec![],
-    });
-    assert_eq!(
-        cron_message(schedule.to_cron()),
-        "not expressible as cron: schedule has no times"
-    );
-    let reversed = Schedule::new(ScheduleExpr::IntervalRepeat {
-        interval: 1,
-        unit: IntervalUnit::Hours,
-        from: TimeOfDay { hour: 9, minute: 0 },
-        to: TimeOfDay { hour: 8, minute: 0 },
-        day_filter: None,
-    });
-    assert_eq!(
-        cron_message(reversed.to_cron()),
-        "not expressible as cron: schedule has no times"
-    );
-}
-
-#[test]
-fn to_cron_of_a_built_schedule_without_days_fails() {
-    let nine = vec![TimeOfDay { hour: 9, minute: 0 }];
-    let no_days = [
-        ScheduleExpr::DayRepeat {
-            interval: 1,
-            days: DayFilter::Days(vec![]),
-            times: nine.clone(),
-        },
-        ScheduleExpr::WeekRepeat {
-            interval: 1,
-            days: vec![],
-            times: nine.clone(),
-        },
-        ScheduleExpr::MonthRepeat {
-            interval: 1,
-            target: MonthTarget::Days(vec![]),
-            times: nine.clone(),
-        },
-        ScheduleExpr::MonthRepeat {
-            interval: 1,
-            target: MonthTarget::Days(vec![DayOfMonthSpec::Range(9, 5)]),
-            times: nine.clone(),
-        },
-        ScheduleExpr::IntervalRepeat {
-            interval: 1,
-            unit: IntervalUnit::Hours,
-            from: TimeOfDay { hour: 9, minute: 0 },
-            to: TimeOfDay {
-                hour: 17,
-                minute: 0,
-            },
-            day_filter: Some(DayFilter::Days(vec![])),
-        },
-    ];
-    for expr in no_days {
-        let label = format!("{expr:?}");
-        assert_eq!(
-            cron_message(Schedule::new(expr).to_cron()),
-            "not expressible as cron: schedule has no days",
-            "{label}"
-        );
-    }
-}
-
-#[test]
-fn to_cron_reasons_around_no_days_and_no_times_follow_the_order() {
-    let schedule = |expr| Schedule::new(expr);
-    let empty_week = |interval| ScheduleExpr::WeekRepeat {
-        interval,
-        days: vec![],
-        times: vec![],
-    };
-    assert_eq!(
-        cron_message(schedule(empty_week(2)).to_cron()),
-        "not expressible as cron: multi-week repeats not supported"
-    );
-    let directional = ScheduleExpr::MonthRepeat {
-        interval: 1,
-        target: MonthTarget::NearestWeekday {
-            day: 1,
-            direction: Some(NearestDirection::Next),
-        },
-        times: vec![],
-    };
-    assert_eq!(
-        cron_message(schedule(directional).to_cron()),
-        "not expressible as cron: directional nearest weekday not supported"
-    );
-    let no_days_excluded_month = Schedule::new(empty_week(1)).with_during(vec![MonthName::March]);
-    assert_eq!(
-        cron_message(no_days_excluded_month.to_cron()),
-        "not expressible as cron: schedule has no days"
-    );
-    let yearly_without_times = |during| {
-        Schedule::new(ScheduleExpr::YearRepeat {
-            interval: 1,
-            target: YearTarget::Date {
-                month: MonthName::December,
-                day: 25,
-            },
-            times: vec![],
-        })
-        .with_during(during)
-    };
-    assert_eq!(
-        cron_message(yearly_without_times(vec![MonthName::January]).to_cron()),
-        "not expressible as cron: during excludes the schedule's month"
-    );
-    assert_eq!(
-        cron_message(yearly_without_times(vec![]).to_cron()),
-        "not expressible as cron: schedule has no times"
-    );
 }

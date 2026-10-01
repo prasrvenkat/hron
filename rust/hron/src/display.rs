@@ -241,7 +241,7 @@ fn write_ordinal_day_specs(f: &mut fmt::Formatter<'_>, specs: &[DayOfMonthSpec])
     Ok(())
 }
 
-fn ordinal_suffix(n: u8) -> &'static str {
+pub(crate) fn ordinal_suffix(n: u8) -> &'static str {
     match n % 100 {
         11..=13 => "th",
         _ => match n % 10 {

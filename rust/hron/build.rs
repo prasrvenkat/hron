@@ -1,5 +1,5 @@
-//! Generates one `#[test]` per case in spec/tests.json, so each conformance case
-//! appears separately in `cargo test` output.
+//! Generates one `#[test]` per case in spec/tests.json and spec/build.json, so
+//! each conformance case appears separately in `cargo test` output.
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -101,6 +101,24 @@ fn main() {
     for (i, case) in iter_tests(&spec["invariants"]).enumerate() {
         let name = test_name(case, i);
         emit_flat(&mut f, &format!("invariant_{name}"), "run_invariants", i);
+    }
+
+    let build_path = Path::new("../../spec/build.json");
+    println!("cargo:rerun-if-changed={}", build_path.display());
+    let build_str = fs::read_to_string(build_path).expect("failed to read spec/build.json");
+    let build: serde_json::Value =
+        serde_json::from_str(&build_str).expect("invalid JSON in spec/build.json");
+    for (group, data) in sections(&build) {
+        for (i, case) in iter_tests(data).enumerate() {
+            let name = test_name(case, i);
+            emit(
+                &mut f,
+                &format!("build_{group}_{name}"),
+                "run_build",
+                group,
+                i,
+            );
+        }
     }
 }
 
