@@ -60,7 +60,9 @@ final class CalendarDates {
   private static List<LocalDate> daysOfMonth(YearMonth month, List<Integer> days) {
     long named = 0;
     for (int day : days) {
-      named |= 1L << day;
+      if (month.isValidDay(day)) {
+        named |= 1L << day;
+      }
     }
     List<LocalDate> dates = new ArrayList<>(days.size());
     for (int day = 1; day <= month.lengthOfMonth(); day++) {
