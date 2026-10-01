@@ -16,6 +16,13 @@ export const DAY_MS = 86_400_000;
  */
 const ZONE_CACHE_LIMIT = 64;
 
+/**
+ * Days from UTC midnight of the date before a date that hold every wall time
+ * on it, and a time shifted from it onto the next date. Resolution assumes at
+ * most one offset change in them.
+ */
+const TRANSITION_WINDOW_DAYS = 3;
+
 export function minuteOfDay(time: TimeOfDay): number {
   return time.hour * MINUTES_PER_HOUR + time.minute;
 }
@@ -67,12 +74,9 @@ export class Zone {
    */
   slotOn(date: number, minute: number): number | null {
     const local = date * DAY_MS + minute * MINUTE_MS;
-    // Every wall time on `date`, and a time shifted from it onto the next
-    // date, lies between UTC midnight of the date before and of the date after
-    // next. This assumes at most one offset change in those three days, so
-    // equal offsets at both ends mean no change.
+    // Equal offsets at both ends of the window mean no change in it.
     const before = this.offsetAtMidnight(date - 1);
-    const after = this.offsetAtMidnight(date + 2);
+    const after = this.offsetAtMidnight(date - 1 + TRANSITION_WINDOW_DAYS);
     if (before === after) return local - before;
     const transition = this.transitionAfter(date - 1, before);
     if (local - before < transition) return local - before;
@@ -87,7 +91,7 @@ export class Zone {
   private offsetAtMidnight(date: number): number {
     let offset = this.midnightOffsets.get(date);
     if (offset === undefined) {
-      if (this.midnightOffsets.size > ZONE_CACHE_LIMIT) {
+      if (this.midnightOffsets.size >= ZONE_CACHE_LIMIT) {
         this.midnightOffsets.clear();
       }
       offset = this.offsetAt(date * DAY_MS);
@@ -96,15 +100,18 @@ export class Zone {
     return offset;
   }
 
-  /** The first instant of the three days from UTC midnight of `date` whose offset is not `before`. */
+  /**
+   * The first instant of the window from UTC midnight of `date` whose offset
+   * is not `before`.
+   */
   private transitionAfter(date: number, before: number): number {
     let at = this.transitions.get(date);
     if (at === undefined) {
-      if (this.transitions.size > ZONE_CACHE_LIMIT) this.transitions.clear();
+      if (this.transitions.size >= ZONE_CACHE_LIMIT) this.transitions.clear();
       // Bisect rather than use getTimeZoneTransition, which in the polyfill
       // never returns when three offsets fall inside one of its search steps.
       let lo = date * DAY_MS;
-      let hi = lo + 3 * DAY_MS;
+      let hi = lo + TRANSITION_WINDOW_DAYS * DAY_MS;
       while (hi - lo > 1) {
         const mid = Math.floor((lo + hi) / 2);
         if (this.offsetAt(mid) === before) lo = mid;

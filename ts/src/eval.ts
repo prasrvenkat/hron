@@ -33,15 +33,15 @@ const EPOCH_DATE = epochDay(1970, 1, 1);
 const RANGE_START = epochDay(1, 1, 2) * DAY_MS;
 const RANGE_END = epochDay(9999, 12, 30) * DAY_MS;
 
-/**
- * The dates a search walks: no date outside years 1 to 9999 holds an
- * occurrence in the supported range.
- */
+/** The calendar a search walks: no date outside it holds an occurrence in the supported range. */
 const FIRST_DATE = epochDay(1, 1, 1);
 const LAST_DATE = epochDay(9999, 12, 31);
 
-/** Slack beyond the horizon for the period one behind the first date's, where a search starts. */
-const HORIZON_MARGIN_PERIODS = 1;
+/**
+ * Slack beyond the horizon for the period one behind the first date's, where a
+ * search starts, and for a horizon that starts mid-period.
+ */
+const HORIZON_MARGIN_PERIODS = 2;
 
 /**
  * How many dates past its scheduled date an occurrence can land: a fixed time
@@ -63,7 +63,6 @@ export function nextFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   return searchFrom(schedule, floorMs(now), Direction.Forward);
 }
 
-/** The most recent occurrence strictly before `now`, or null if there is none. */
 export function previousFrom(schedule: ScheduleData, now: ZDT): ZDT | null {
   if (!inSupportedRange(floorMs(now))) return null;
   return searchFrom(schedule, ceilMs(now), Direction.Backward);
@@ -182,15 +181,14 @@ class Search {
     direction: Direction,
     nowDate = this.zone.localDate(now),
   ): Occurrence | null {
-    // Cron's hour range `17-9` under a minute step converts to slots that
-    // end before they start: no times, so nothing ever fires.
-    if (this.times.minutes.length === 0) return null;
     // One date behind now's: a time shifted out of a gap lands on the date
     // after its own, and after a fall-back across midnight, now's date can be
     // the one before a date that has already begun.
     const behind = this.clauses.clamp(nowDate - direction.sign, direction);
     const first = Math.min(Math.max(behind, FIRST_DATE), LAST_DATE);
-    const firstPeriod = this.cadence.periodOf(first);
+    // A directional nearest weekday can land in the period before or after
+    // its own, so the search starts one period back.
+    const firstPeriod = this.cadence.periodOf(first) - direction.sign;
     const farthest = this.clauses.farthestExceptDate(direction);
     const reach =
       farthest === null ? firstPeriod : this.cadence.periodOf(farthest);
@@ -205,11 +203,9 @@ class Search {
         direction,
       )) {
         const { date } = candidate;
-        // Dates behind the first hold nothing beyond now. Skipping them first
-        // keeps the period one back, which can lie past the calendar's edge,
-        // from ending the search.
+        // Dates behind the first hold nothing beyond now, and skipping them
+        // spares resolving their times.
         if (direction.precedes(date, first)) continue;
-        if (date < FIRST_DATE || date > LAST_DATE) break search;
         const beaten = best !== null && !couldBeat(date, best.date, direction);
         if (beaten || this.clauses.endsSearch(date, direction)) break search;
         if (!this.clauses.allows(candidate)) continue;
@@ -232,18 +228,19 @@ class Search {
     direction: Direction,
   ): number | null {
     const instants = this.instantsOn(date);
-    const index =
-      direction === Direction.Forward
-        ? countLeading(instants, (t) => t <= now)
-        : countLeading(instants, (t) => t < now) - 1;
-    return instants[index] ?? null;
+    if (direction === Direction.Forward) {
+      const after = countLeading(instants, (t) => t <= now);
+      return after < instants.length ? instants[after] : null;
+    }
+    const before = countLeading(instants, (t) => t < now);
+    return before > 0 ? instants[before - 1] : null;
   }
 
   /** The instants of `date`'s times, ascending. */
   private instantsOn(date: number): number[] {
     let instants = this.resolved.get(date);
     if (instants === undefined) {
-      if (this.resolved.size > RESOLVED_DATES_KEPT) this.resolved.clear();
+      if (this.resolved.size >= RESOLVED_DATES_KEPT) this.resolved.clear();
       instants = this.resolve(date);
       this.resolved.set(date, instants);
     }
@@ -269,8 +266,8 @@ class Search {
   }
 }
 
-function inOrder<T>(items: T[], direction: Direction): T[] {
-  return direction === Direction.Forward ? items : items.reverse();
+function inOrder<T>(items: readonly T[], direction: Direction): readonly T[] {
+  return direction === Direction.Forward ? items : items.slice().reverse();
 }
 
 /**
@@ -352,6 +349,8 @@ class Clauses {
   private readonly during: number[];
   private readonly exceptMonthDays: { month: number; day: number }[] = [];
   private readonly exceptDates: number[] = [];
+  private readonly earliestExceptDate: number | null;
+  private readonly latestExceptDate: number | null;
   private readonly until: number | null;
   private readonly starting: number | null;
 
@@ -365,6 +364,9 @@ class Clauses {
         this.exceptDates.push(parseIsoDate(exception.date));
       }
     }
+    const any = this.exceptDates.length > 0;
+    this.earliestExceptDate = any ? Math.min(...this.exceptDates) : null;
+    this.latestExceptDate = any ? Math.max(...this.exceptDates) : null;
     this.starting =
       schedule.anchor === null ? null : parseIsoDate(schedule.anchor);
     this.until =
@@ -392,10 +394,9 @@ class Clauses {
    * only beyond it (spec/README.md, "Search horizon").
    */
   farthestExceptDate(direction: Direction): number | null {
-    if (this.exceptDates.length === 0) return null;
     return direction === Direction.Forward
-      ? Math.max(...this.exceptDates)
-      : Math.min(...this.exceptDates);
+      ? this.latestExceptDate
+      : this.earliestExceptDate;
   }
 
   /** The date a search starts from: nothing fires before `starting` or after `until`. */
@@ -426,8 +427,10 @@ class Clauses {
 
 /**
  * The last date `until` allows. A named date is the first such date on or
- * after `starting`, which the parser requires for it (spec/README.md, "Named
- * `until`"). Null when there is none, so nothing bounds the schedule.
+ * after `starting` (spec/README.md, "Named `until`"). The parser requires
+ * `starting` for it; schedule data built otherwise counts from the epoch, as
+ * the reference evaluator does. Null when there is none, so nothing bounds
+ * the schedule.
  */
 function resolveUntil(until: UntilSpec, starting: number): number | null {
   if (until.type === "iso") return parseIsoDate(until.date);
@@ -454,13 +457,22 @@ const PER_400_YEARS: Record<Unit, number> = {
  * `n - origin` is a multiple of `interval`.
  */
 class Cadence {
+  /** The first and last periods a search walks. */
+  private readonly earliest: number;
+  private readonly latest: number;
+
   private constructor(
     private readonly unit: Unit,
     private readonly origin: number,
     private readonly interval: number,
     /** A single ISO date has one period, the one holding that date. */
     private readonly single = false,
-  ) {}
+  ) {
+    // A nearest weekday can move a candidate into the calendar from the
+    // period on either side of it.
+    this.earliest = unitIndex(unit, FIRST_DATE) - 1;
+    this.latest = unitIndex(unit, LAST_DATE) + 1;
+  }
 
   static of({ expr, anchor }: ScheduleData): Cadence {
     if (expr.type === "singleDate" && expr.date.type === "iso") {
@@ -477,30 +489,37 @@ class Cadence {
   }
 
   /**
-   * The aligned periods a search walks from period `first` in `direction`,
-   * through one search horizon beyond whichever of `first` and `reach` is
-   * farther along it (spec/README.md, "Search horizon").
+   * The aligned periods from `first` in `direction`, through one search
+   * horizon beyond whichever of `first` and `reach` is farther along it
+   * (spec/README.md, "Search horizon"), within the periods a search walks.
    */
   *periods(
     first: number,
     reach: number,
     direction: Direction,
   ): Generator<number> {
-    if (this.single) {
-      yield this.origin;
-      return;
+    let from = this.origin;
+    let count = 1;
+    if (!this.single) {
+      from = this.align(first, direction);
+      const beyond = direction.sign * (this.align(reach, direction) - from);
+      count =
+        this.horizonPeriods() +
+        HORIZON_MARGIN_PERIODS +
+        Math.max(0, beyond) / this.interval;
     }
-    const { sign } = direction;
-    // A nearest weekday or a DST shift can move an occurrence out of the
-    // period it is scheduled in, so the walk starts one period back.
-    const from = this.align(first - sign, direction);
-    const beyond = Math.max(0, sign * (reach - first));
-    const count =
-      this.horizonPeriods() +
-      HORIZON_MARGIN_PERIODS +
-      Math.ceil(beyond / this.interval);
+    const step = direction.sign * this.interval;
+    const [start, end] =
+      direction === Direction.Forward
+        ? [this.earliest, this.latest]
+        : [this.latest, this.earliest];
     for (let i = 0; i < count; i++) {
-      yield from + sign * i * this.interval;
+      const period = from + i * step;
+      // The period a search starts from, behind the first date's, can lie
+      // before the calendar's start in `direction`.
+      if (direction.precedes(period, start)) continue;
+      if (direction.precedes(end, period)) return;
+      yield period;
     }
   }
 

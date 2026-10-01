@@ -73,9 +73,12 @@ export function parseIsoDate(iso: string): number {
   return epochDay(year, month, day);
 }
 
+/** ISO day of week of epoch day 0: 1970-01-01 was a Thursday. */
+const EPOCH_WEEKDAY = 4;
+
 /** ISO day of week: Monday=1, Sunday=7. */
 function weekdayOf(date: number): number {
-  return mod(date + 3, 7) + 1;
+  return mod(date + EPOCH_WEEKDAY - 1, 7) + 1;
 }
 
 /** The year and month of a month index, the months since January of year 0. */
@@ -83,7 +86,10 @@ export function yearAndMonth(index: number): { year: number; month: number } {
   return { year: Math.floor(index / 12), month: mod(index, 12) + 1 };
 }
 
-/** The Monday that starts week 0. */
+/**
+ * The Monday that starts week 0. Any Monday would do, since a cadence aligns
+ * weeks to its own anchor; this is the first after the epoch.
+ */
 const WEEK_ZERO = epochDay(1970, 1, 5);
 
 /** A unit of the calendar that periods count in. */
