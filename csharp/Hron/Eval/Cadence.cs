@@ -42,10 +42,11 @@ internal sealed class Cadence
     private readonly bool _single;
 
     /// <summary>
-    /// The periods from _firstInCalendar to _lastInCalendar hold the dates DateOnly can represent,
-    /// with one more on each side, from which a nearest weekday can move a date into that range.
+    /// The first period that can hold a date DateOnly represents: the one before the period of
+    /// 0001-01-01, since the nearest weekday of December of year 0 can land on 0001-01-01.
     /// </summary>
     private readonly long _firstInCalendar;
+
     private readonly long _lastInCalendar;
 
     private Cadence(Unit unit, DateOnly origin, long interval, bool single)
@@ -55,7 +56,7 @@ internal sealed class Cadence
         _interval = interval;
         _single = single;
         _firstInCalendar = PeriodOf(DateOnly.MinValue) - 1;
-        _lastInCalendar = PeriodOf(DateOnly.MaxValue) + 1;
+        _lastInCalendar = PeriodOf(DateOnly.MaxValue);
     }
 
     public static Cadence Of(IScheduleExpr expr, DateOnly? starting)
@@ -71,7 +72,8 @@ internal sealed class Cadence
             MonthRepeat mr => (Unit.Month, mr.Interval, EpochDate),
             YearRepeat yr => (Unit.Year, yr.Interval, EpochDate),
             SingleDate => (Unit.Year, 1, EpochDate),
-            IntervalRepeat or _ => (Unit.Day, 1, EpochDate)
+            IntervalRepeat => (Unit.Day, 1, EpochDate),
+            _ => (Unit.Day, 1, EpochDate)
         };
         var anchor = starting ?? defaultOrigin;
         var origin = unit switch
@@ -95,20 +97,13 @@ internal sealed class Cadence
     /// <summary>
     /// First day of period <paramref name="k"/>, or null when DateOnly cannot represent it.
     /// </summary>
-    public DateOnly? StartOf(long k)
+    public DateOnly? StartOf(long k) => _unit switch
     {
-        switch (_unit)
-        {
-            case Unit.Month:
-                return Calendar.FirstOfMonth(MonthIndexOf(k));
-            case Unit.Year:
-                var year = _origin.Year + k;
-                return year >= DateOnly.MinValue.Year && year <= DateOnly.MaxValue.Year ? new DateOnly((int)year, 1, 1) : null;
-            default:
-                var day = _origin.DayNumber + (_unit == Unit.Week ? 7 * k : k);
-                return day >= DateOnly.MinValue.DayNumber && day <= DateOnly.MaxValue.DayNumber ? DateOnly.FromDayNumber((int)day) : null;
-        }
-    }
+        Unit.Week => Calendar.AddDays(_origin, 7 * k),
+        Unit.Month => Calendar.FirstOfMonth(MonthIndexOf(k)),
+        Unit.Year => Calendar.FirstOfYear(_origin.Year + k),
+        _ => Calendar.AddDays(_origin, k)
+    };
 
     /// <summary>
     /// The month of period <paramref name="k"/> of a monthly cadence, in months since January of
@@ -119,9 +114,8 @@ internal sealed class Cadence
     /// <summary>
     /// The aligned periods from <paramref name="firstPeriod"/> in <paramref name="direction"/>,
     /// through one search horizon beyond whichever of <paramref name="firstPeriod"/> and
-    /// <paramref name="reach"/> is farther along it (spec/README.md, "Search horizon"). Periods
-    /// behind the calendar are skipped, as when the one a search starts from, behind the first
-    /// date's, lies past its start; the first period beyond the calendar ends the walk.
+    /// <paramref name="reach"/> is farther along it (spec/README.md, "Search horizon"). The first
+    /// period beyond the calendar ends the walk.
     /// </summary>
     public IEnumerable<long> Periods(long firstPeriod, long reach, Direction direction)
     {
@@ -136,16 +130,11 @@ internal sealed class Cadence
             var beyond = direction.Sign() * (Align(reach, direction) - first);
             count = HorizonPeriods() + HorizonMarginPeriods + Math.Max(beyond, 0) / _interval;
         }
-        var (behind, ahead) = direction == Direction.Forward
-            ? (_firstInCalendar, _lastInCalendar)
-            : (_lastInCalendar, _firstInCalendar);
+        var edge = direction == Direction.Forward ? _lastInCalendar : _firstInCalendar;
         var (k, step) = (first, direction.Sign() * _interval);
-        for (long i = 0; i < count && !direction.Precedes(ahead, k); i++, k += step)
+        for (long i = 0; i < count && !direction.Precedes(edge, k); i++, k += step)
         {
-            if (!direction.Precedes(k, behind))
-            {
-                yield return k;
-            }
+            yield return k;
         }
     }
 
@@ -165,15 +154,20 @@ internal sealed class Cadence
     /// </summary>
     private long HorizonPeriods()
     {
-        long cycle = _unit switch
-        {
-            Unit.Week => Calendar.DaysPer400Years / 7,
-            Unit.Month => 400 * 12,
-            Unit.Year => 400,
-            _ => Calendar.DaysPer400Years
-        };
+        var cycle = Per400Years(_unit);
         return cycle / Gcd(cycle, _interval);
     }
+
+    /// <summary>
+    /// Units in 400 years, after which the proleptic Gregorian calendar repeats.
+    /// </summary>
+    private static long Per400Years(Unit unit) => unit switch
+    {
+        Unit.Week => Calendar.DaysPer400Years / 7,
+        Unit.Month => Calendar.MonthsPer400Years,
+        Unit.Year => 400,
+        _ => Calendar.DaysPer400Years
+    };
 
     private static long Gcd(long a, long b) => b == 0 ? a : Gcd(b, a % b);
 }

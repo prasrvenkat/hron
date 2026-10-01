@@ -9,17 +9,35 @@ internal static class Calendar
 {
     public const int DaysPer400Years = 146097;
 
+    public const int MonthsPer400Years = 400 * 12;
+
+    public static DateOnly? FromDayNumber(long dayNumber)
+    {
+        return dayNumber >= DateOnly.MinValue.DayNumber && dayNumber <= DateOnly.MaxValue.DayNumber
+            ? DateOnly.FromDayNumber((int)dayNumber)
+            : null;
+    }
+
+    public static DateOnly? AddDays(DateOnly date, long days) => FromDayNumber(date.DayNumber + days);
+
+    public static DateOnly? FirstOfYear(long year)
+    {
+        return year >= DateOnly.MinValue.Year && year <= DateOnly.MaxValue.Year ? new DateOnly((int)year, 1, 1) : null;
+    }
+
     /// <summary>
     /// Months since January of year 0.
     /// </summary>
     public static int MonthIndex(DateOnly date) => date.Year * 12 + date.Month - 1;
 
+    /// <summary>
+    /// The month, 1 to 12, of the month <paramref name="monthIndex"/> months after January of year 0.
+    /// </summary>
+    public static int MonthOf(long monthIndex) => (int)FloorMod(monthIndex, 12) + 1;
+
     public static DateOnly? FirstOfMonth(long monthIndex)
     {
-        var year = FloorDiv(monthIndex, 12);
-        return year >= DateOnly.MinValue.Year && year <= DateOnly.MaxValue.Year
-            ? new DateOnly((int)year, (int)FloorMod(monthIndex, 12) + 1, 1)
-            : null;
+        return FirstOfYear(FloorDiv(monthIndex, 12))?.AddMonths(MonthOf(monthIndex) - 1);
     }
 
     public static DateOnly MondayOf(DateOnly date)
@@ -44,15 +62,13 @@ internal static class Calendar
     /// <summary>
     /// The dates a monthly target names in the month <paramref name="monthIndex"/>, earliest first.
     /// DateOnly cannot hold year 0, yet a nearest weekday in its December can land on 0001-01-01;
-    /// the calendar repeats every 400 years, so a month just outside DateOnly's range is taken 400
-    /// years inside and its dates moved back.
+    /// the calendar repeats every 400 years, so a month of year 0 is taken 400 years later and its
+    /// dates moved back.
     /// </summary>
     public static IReadOnlyList<DateOnly> MonthTargetDates(long monthIndex, MonthTarget target)
     {
-        var cycles = monthIndex < MonthIndex(DateOnly.MinValue) ? 1
-            : monthIndex > MonthIndex(DateOnly.MaxValue) ? -1
-            : 0;
-        if (FirstOfMonth(monthIndex + cycles * 400 * 12) is not { } first)
+        var shifted = monthIndex < MonthIndex(DateOnly.MinValue);
+        if (FirstOfMonth(shifted ? monthIndex + MonthsPer400Years : monthIndex) is not { } first)
         {
             return [];
         }
@@ -66,15 +82,11 @@ internal static class Calendar
             MonthTargetKind.OrdinalWeekday => OrdinalWeekday(year, month, target.OrdinalValue!.Value, target.WeekdayValue!.Value) is { } date ? [date] : [],
             _ => []
         };
-        if (cycles == 0)
+        if (!shifted)
         {
             return dates;
         }
-        return dates
-            .Select(date => date.DayNumber - (long)cycles * DaysPer400Years)
-            .Where(day => day >= DateOnly.MinValue.DayNumber && day <= DateOnly.MaxValue.DayNumber)
-            .Select(day => DateOnly.FromDayNumber((int)day))
-            .ToList();
+        return dates.Select(date => AddDays(date, -DaysPer400Years)).OfType<DateOnly>().ToList();
     }
 
     public static DateOnly? YearTargetDate(int year, YearTarget target) => target.Kind switch

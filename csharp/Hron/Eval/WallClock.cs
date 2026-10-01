@@ -6,6 +6,11 @@ namespace Hron.Eval;
 /// Wall-clock times on dates in a time zone. A wall time a fall-back repeats takes its first pass
 /// (spec/README.md, "DST fall-back (ambiguous times)").
 /// </summary>
+/// <remarks>
+/// Assumes at most one offset change within a day of a wall time, and gaps and overlaps of at most
+/// a day (tzdata 2026c has no transitions closer than about 95 hours), so the offsets a day before
+/// and a day after it are the only ones it can have.
+/// </remarks>
 internal static class WallClock
 {
     public const int MinutesPerHour = 60;
@@ -32,12 +37,29 @@ internal static class WallClock
         return inGap ? null : InstantInRange(utcTicks, zone);
     }
 
+    /// <summary>
+    /// The wall-clock minutes of <paramref name="date"/> that can hold an instant beyond
+    /// <paramref name="now"/> in <paramref name="direction"/>. A wall time w fires at w − o for one
+    /// of the date's offsets o, so it is after now only if w &gt; now + min(o) and before now only
+    /// if w &lt; now + max(o); resolving the other minutes, the costly part, can be skipped.
+    /// </summary>
+    public static (long Earliest, long Latest) MinutesWorthResolving(DateOnly date, DateTimeOffset now, TimeZoneInfo zone, Direction direction)
+    {
+        var midnight = WallTicks(date, 0);
+        var before = OffsetAt(midnight - TimeSpan.TicksPerDay, zone).Ticks;
+        var after = OffsetAt(midnight + 2 * TimeSpan.TicksPerDay, zone).Ticks;
+        var sinceMidnight = now.UtcTicks - midnight;
+        return direction == Direction.Forward
+            ? (Calendar.FloorDiv(sinceMidnight + Math.Min(before, after), TimeSpan.TicksPerMinute), long.MaxValue)
+            : (long.MinValue, -Calendar.FloorDiv(-(sinceMidnight + Math.Max(before, after)), TimeSpan.TicksPerMinute));
+    }
+
     public static DateOnly LocalDate(DateTimeOffset t, TimeZoneInfo zone)
     {
         return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(t, zone).DateTime);
     }
 
-    public static TimeSpan OffsetAt(long utcTicks, TimeZoneInfo zone)
+    private static TimeSpan OffsetAt(long utcTicks, TimeZoneInfo zone)
     {
         var clamped = Math.Clamp(utcTicks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
         return zone.GetUtcOffset(new DateTime(clamped, DateTimeKind.Utc));
@@ -53,8 +75,6 @@ internal static class WallClock
     /// IsInvalidTime and its adjustment rules do not (base-offset changes such as Pyongyang 2018
     /// and Caracas 2016). The wall time exists at wall − o for each offset o around it that is in
     /// force at that instant; with none it is in a gap, shifted by the offset from before it.
-    /// Assumes at most one offset change within a day of the wall time, and gaps and overlaps of
-    /// at most a day (tzdata 2026c has no transitions closer than about 95 hours).
     /// </summary>
     private static (long UtcTicks, bool InGap) Resolve(long wallTicks, TimeZoneInfo zone)
     {
@@ -74,7 +94,7 @@ internal static class WallClock
 
     private static DateTimeOffset? InstantInRange(long utcTicks, TimeZoneInfo zone)
     {
-        if (!Evaluator.InSupportedRange(utcTicks))
+        if (!SupportedRange.InSupportedRange(utcTicks))
         {
             return null;
         }

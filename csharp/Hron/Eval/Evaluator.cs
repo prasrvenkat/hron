@@ -1,4 +1,5 @@
 using Hron.Ast;
+using static Hron.Eval.SupportedRange;
 
 namespace Hron.Eval;
 
@@ -10,12 +11,6 @@ namespace Hron.Eval;
 /// </remarks>
 public static class Evaluator
 {
-    /// <summary>
-    /// spec/README.md, "Supported range": from RangeStart inclusive to RangeEnd exclusive.
-    /// </summary>
-    private static readonly DateTimeOffset RangeStart = new(1, 1, 2, 0, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset RangeEnd = new(9999, 12, 30, 0, 0, 0, TimeSpan.Zero);
-
     /// <summary>
     /// Computes the next occurrence strictly after the given time, or null if there is none or
     /// the time is outside the supported range.
@@ -85,15 +80,11 @@ public static class Evaluator
         var wall = TimeZoneInfo.ConvertTime(dt, location).DateTime;
         var minute = dt.AddTicks(-(wall.Ticks % TimeSpan.TicksPerMinute));
         var justBefore = minute.AddTicks(-1);
-        // An occurrence is scheduled on its wall date or, shifted out of a gap, the one before, so
-        // the search for one at this minute can end on its date.
+        // An occurrence never lands before the date it is scheduled on, so one at this minute is
+        // scheduled on or before its wall date.
         var search = Search.Of(data, location).EndingOn(DateOnly.FromDateTime(wall));
         return search.Nearest(justBefore, Direction.Forward) == minute;
     }
-
-    internal static bool InSupportedRange(DateTimeOffset t) => InSupportedRange(t.UtcTicks);
-
-    internal static bool InSupportedRange(long utcTicks) => utcTicks >= RangeStart.UtcTicks && utcTicks < RangeEnd.UtcTicks;
 
     private static DateTimeOffset? Nearest(ScheduleData data, DateTimeOffset now, TimeZoneInfo location, Direction direction)
     {

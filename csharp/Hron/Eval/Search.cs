@@ -110,7 +110,7 @@ internal sealed class Search
     /// </summary>
     private DateTimeOffset? NearestSlot(DailyTimes.Slots slots, DateOnly date, DateTimeOffset now, Direction direction)
     {
-        var (earliest, latest) = WallMinutesWorthResolving(date, now, direction);
+        var (earliest, latest) = WallClock.MinutesWorthResolving(date, now, _zone, direction);
         foreach (var minute in slots.Within(earliest, latest, direction))
         {
             if (WallClock.SlotOn(date, minute, _zone) is { } instant && direction.Precedes(now, instant))
@@ -122,23 +122,6 @@ internal sealed class Search
     }
 
     /// <summary>
-    /// The wall-clock minutes of <paramref name="date"/> that can hold an occurrence beyond
-    /// <paramref name="now"/>. A wall time w fires at w − o for one of the date's offsets o, so it
-    /// is after now only if w &gt; now + min(o) and before now only if w &lt; now + max(o);
-    /// resolving the other slots, the costly part, is skipped.
-    /// </summary>
-    private (long Earliest, long Latest) WallMinutesWorthResolving(DateOnly date, DateTimeOffset now, Direction direction)
-    {
-        var midnight = date.ToDateTime(TimeOnly.MinValue).Ticks;
-        var before = WallClock.OffsetAt(midnight - TimeSpan.TicksPerDay, _zone).Ticks;
-        var after = WallClock.OffsetAt(midnight + 2 * TimeSpan.TicksPerDay, _zone).Ticks;
-        var sinceMidnight = now.UtcTicks - midnight;
-        return direction == Direction.Forward
-            ? (Calendar.FloorDiv(sinceMidnight + Math.Min(before, after), TimeSpan.TicksPerMinute), long.MaxValue)
-            : (long.MinValue, -Calendar.FloorDiv(-(sinceMidnight + Math.Max(before, after)), TimeSpan.TicksPerMinute));
-    }
-
-    /// <summary>
     /// The candidates in <paramref name="period"/>, earliest first.
     /// </summary>
     private IReadOnlyList<Candidate> CandidatesInPeriod(long period)
@@ -146,8 +129,8 @@ internal sealed class Search
         if (_expr is MonthRepeat mr)
         {
             var month = _cadence.MonthIndexOf(period);
-            var targetMonth = (int)Calendar.FloorMod(month, 12) + 1;
-            // Every date in the period has this target month, so a month `during` rejects need
+            var targetMonth = Calendar.MonthOf(month);
+            // Every date in the period has this target month, so a month the clauses reject need
             // not be resolved.
             if (!_clauses.AllowsTargetMonth(targetMonth))
             {
@@ -167,10 +150,9 @@ internal sealed class Search
         IntervalRepeat ir => ir.DayFilter is null || Calendar.MatchesDayFilter(start, ir.DayFilter) ? [start] : [],
         DayRepeat dr => Calendar.MatchesDayFilter(start, dr.Days) ? [start] : [],
         WeekRepeat wr => wr.WeekDays
-            .Select(day => (long)start.DayNumber + day.Number() - 1)
-            .Where(day => day <= DateOnly.MaxValue.DayNumber)
+            .Select(day => Calendar.AddDays(start, day.Number() - 1))
+            .OfType<DateOnly>()
             .Order()
-            .Select(day => DateOnly.FromDayNumber((int)day))
             .ToList(),
         YearRepeat yr => Calendar.YearTargetDate(start.Year, yr.Target) is { } date ? [date] : [],
         SingleDate { DateSpec.Kind: DateSpecKind.Named } sd =>
