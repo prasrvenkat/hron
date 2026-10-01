@@ -29,9 +29,13 @@ final _calendarEnd = DateTime.utc(9999, 12, 31);
 /// a search starts, and for a horizon that starts mid-period.
 const _horizonMarginPeriods = 2;
 
-/// How many dates past its scheduled date an occurrence can land: a fixed time
-/// shifted out of a gap before midnight lands on the next date.
+/// How many dates past its scheduled date a fixed time can land: one shifted
+/// out of a gap before midnight lands on the next date.
 const _maxShiftDays = 1;
+
+/// How many dates behind a date that has begun now's wall date can read: from
+/// the second pass of a fall-back overlap that crosses midnight, one.
+const _maxOverlapDays = 1;
 
 /// Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 const _namedUntilMaxYears = 8;
@@ -55,10 +59,14 @@ bool matches(ScheduleData schedule, TZDateTime datetime) {
   if (!_inSupportedRange(datetime)) return false;
   final search = _Search(schedule);
   final minute = startOfMinute(TZDateTime.from(datetime, search.zone));
-  final next = search.nearest(
-    minute.subtract(const Duration(milliseconds: 1)),
-    _Direction.forward,
-  );
+  // An occurrence never lands before the date it is scheduled on, so one at
+  // this minute is scheduled on or before the minute's wall date.
+  final next = search
+      .endingOn(dateOf(minute))
+      .nearest(
+        minute.subtract(const Duration(milliseconds: 1)),
+        _Direction.forward,
+      );
   return next != null && next.isAtSameMomentAs(minute);
 }
 
@@ -107,8 +115,8 @@ enum _Direction {
   };
 }
 
-/// An occurrence a search found, with the date it is scheduled on.
-typedef _Occurrence = ({TZDateTime instant, DateTime date});
+/// An occurrence a search found, with the local date it lands on.
+typedef _Occurrence = ({TZDateTime instant, DateTime landing});
 
 /// A schedule prepared for searching: its zone, cadence, times and clauses
 /// resolved once.
@@ -133,11 +141,17 @@ final class _Search {
   final _DailyTimes _times;
   final _Clauses _clauses;
 
+  /// This search, finding nothing after [date].
+  _Search endingOn(DateTime date) =>
+      _Search._(_expr, zone, _cadence, _times, _clauses.endOn(date));
+
   /// The occurrence nearest [now] strictly beyond it in [direction].
   TZDateTime? nearest(TZDateTime now, _Direction direction) {
     final local = TZDateTime.from(now, zone);
     final nearestOnDate = _times.nearestOnDate(local, direction);
-    final firstDate = _clauses.clamp(dateOf(local), direction);
+    final nowDate = dateOf(local);
+    final shift = _times.maxShiftDays;
+    final firstDate = _clauses.clamp(nowDate, direction);
     // A nearest weekday or a DST shift can move an occurrence out of the
     // period it is scheduled in, so the search starts one period back.
     final firstPeriod = _cadence.periodOf(firstDate) - direction.sign;
@@ -148,31 +162,62 @@ final class _Search {
     _Occurrence? best;
     search:
     for (final start in _cadence.periodStarts(firstPeriod, reach, direction)) {
+      if (_rejectsPeriod(start)) continue;
       final candidates = _candidatesInPeriod(_expr, start);
       for (final candidate in direction.inOrder(candidates)) {
         final beaten =
-            best != null && !_couldBeat(candidate.date, best.date, direction);
+            best != null &&
+            !_couldBeat(candidate.date, best.landing, direction, shift);
         if (beaten || _clauses.endsSearch(candidate.date, direction)) {
           break search;
         }
-        if (!_clauses.allows(candidate)) continue;
+        if (_isBehind(candidate.date, nowDate, direction, shift) ||
+            !_clauses.allows(candidate)) {
+          continue;
+        }
         final instant = nearestOnDate(candidate.date);
         if (instant == null) continue;
         if (best == null || direction.precedes(instant, best.instant)) {
-          best = (instant: instant, date: candidate.date);
+          best = (instant: instant, landing: dateOf(instant));
         }
       }
     }
     final nearest = best?.instant;
     return nearest != null && _inSupportedRange(nearest) ? nearest : null;
   }
+
+  /// A day or month period's candidates all target its own month, so one
+  /// whose month `during` rejects holds nothing.
+  bool _rejectsPeriod(DateTime start) =>
+      (_cadence._unit == _Unit.day || _cadence._unit == _Unit.month) &&
+      !_clauses.allowsMonth(start.month);
 }
 
 /// Whether an occurrence scheduled on [date] can precede, in [direction], the
-/// best one, scheduled on [best], given that each lands at most
-/// [_maxShiftDays] after its date.
-bool _couldBeat(DateTime date, DateTime best, _Direction direction) =>
-    direction.sign * daysBetween(best, date) <= _maxShiftDays;
+/// best one, which landed on [landing]. An occurrence lands from its scheduled
+/// date to [shift] dates after it, on a first pass, and first passes keep
+/// wall-clock order.
+bool _couldBeat(
+  DateTime date,
+  DateTime landing,
+  _Direction direction,
+  int shift,
+) => switch (direction) {
+  _Direction.forward => !date.isAfter(landing),
+  _Direction.backward => daysBetween(date, landing) <= shift,
+};
+
+/// Whether every occurrence scheduled on [date] lies behind `now`, whose wall
+/// date is [nowDate], in [direction].
+bool _isBehind(
+  DateTime date,
+  DateTime nowDate,
+  _Direction direction,
+  int shift,
+) => switch (direction) {
+  _Direction.forward => daysBetween(date, nowDate) > shift,
+  _Direction.backward => daysBetween(nowDate, date) > _maxOverlapDays,
+};
 
 // The timezone package names its UTC location 'Etc/UTC' since 0.11.1, and
 // 'UTC' is not in its database; spec/tests.json expects results in '[UTC]'.
@@ -195,6 +240,10 @@ sealed class _DailyTimes {
     YearRepeat(:final times) => _FixedTimes.of(times),
   };
 
+  /// How many dates past its scheduled date an occurrence can land: a gap
+  /// pushes a fixed time forward, and skips a slot.
+  int get maxShiftDays;
+
   /// The search from [now], given in the schedule's zone, in [direction].
   _NearestOnDate nearestOnDate(TZDateTime now, _Direction direction);
 }
@@ -205,6 +254,9 @@ final class _FixedTimes implements _DailyTimes {
     : _minutes = [for (final time in times) minuteOfDay(time)];
 
   final List<int> _minutes;
+
+  @override
+  int get maxShiftDays => _maxShiftDays;
 
   @override
   _NearestOnDate nearestOnDate(TZDateTime now, _Direction direction) =>
@@ -227,6 +279,10 @@ final class _FixedTimes implements _DailyTimes {
 
 /// Interval slots `from + k × step` in minutes after midnight, up to and
 /// including the window's end, each skipped in a gap.
+///
+/// Unlike the reference's binary search on slot keys, index arithmetic finds
+/// the slot at now's wall time directly: each wall time resolved here costs
+/// three zone lookups, and the binary search measured slower.
 final class _Slots implements _DailyTimes {
   factory _Slots.of(IntervalRepeat expr) {
     final from = minuteOfDay(expr.from);
@@ -246,6 +302,9 @@ final class _Slots implements _DailyTimes {
 
   /// The index of the last slot.
   final int _last;
+
+  @override
+  int get maxShiftDays => 0;
 
   @override
   _NearestOnDate nearestOnDate(TZDateTime now, _Direction direction) {
@@ -332,12 +391,24 @@ final class _Clauses {
 
   bool allows(_Candidate candidate) {
     final date = candidate.date;
-    return (_during.isEmpty || _during.contains(candidate.targetMonth)) &&
+    return allowsMonth(candidate.targetMonth) &&
         !_exceptMonthDays.contains((date.month, date.day)) &&
         !_exceptDates.contains(date) &&
         (_until == null || !date.isAfter(_until)) &&
         (_starting == null || !date.isBefore(_starting));
   }
+
+  bool allowsMonth(int month) => _during.isEmpty || _during.contains(month);
+
+  /// These clauses, ending the search on [date]: nothing after it is an
+  /// occurrence.
+  _Clauses endOn(DateTime date) => _Clauses._(
+    _during,
+    _exceptMonthDays,
+    _exceptDates,
+    _until == null || date.isBefore(_until) ? date : _until,
+    _starting,
+  );
 
   /// The one-off except date farthest along [direction]: the calendar repeats
   /// only beyond it (spec/README.md, "Search horizon").
