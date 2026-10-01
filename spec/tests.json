@@ -7641,6 +7641,13 @@
           "description": "the week's saturday is 10000-01-01, past the calendar's end",
           "now": "9999-12-29T12:00:00+00:00[UTC]",
           "next": null
+        },
+        {
+          "name": "horizon_past_calendar_end",
+          "expression": "every 999999 years on jan 1 at 09:00 in UTC",
+          "description": "the next aligned year, 1001969, is far past the calendar any platform represents: the search ends there instead of failing",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": null
         }
       ]
     }
