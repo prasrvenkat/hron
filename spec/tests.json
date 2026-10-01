@@ -7313,6 +7313,13 @@
           "expected": "2104-02-29T09:00:00+00:00[UTC]"
         },
         {
+          "name": "named_until_feb_29_eight_years_away",
+          "expression": "every day at 09:00 until feb 29 starting 2096-03-01 in UTC",
+          "description": "the first Feb 29 on or after 2096-03-01 is 2104-02-29, eight years later (2100 is not a leap year)",
+          "now": "2110-01-01T00:00:00+00:00[UTC]",
+          "expected": "2104-02-29T09:00:00+00:00[UTC]"
+        },
+        {
           "name": "named_until_dst_shifted_keeps_scheduled_date",
           "expression": "every day at 23:30 until mar 28 starting 2026-03-01 in America/Nuuk",
           "description": "until mar 28 (2026-03-28): Mar 28 23:30 is shifted to Mar 29 00:30 but scheduled on Mar 28, so it is the last occurrence",

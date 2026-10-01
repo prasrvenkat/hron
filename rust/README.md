@@ -12,14 +12,14 @@ Rust reference implementation — library, CLI, and WASM bindings.
 
 ## Library Architecture
 
-Pipeline: `lexer.rs` → `parser.rs` → `eval.rs`
+Pipeline: `lexer.rs` → `parser.rs` → `eval/`
 
 | Module | Purpose |
 |--------|---------|
 | `ast.rs` | `Schedule` wrapping `ScheduleExpr` (6 variants) + shared modifiers |
 | `lexer.rs` | Tokenizer |
 | `parser.rs` | Hand-rolled recursive descent, follows `spec/grammar.ebnf` |
-| `eval.rs` | `next_from`, `next_n_from`, `matches` via jiff |
+| `eval/` | Search for the nearest occurrence, with `calendar.rs` (date arithmetic) and `wall_clock.rs` (time zones); the reference for every implementation's evaluator |
 | `cron.rs` | Bidirectional cron conversion (expressible subset only) |
 | `display.rs` | Canonical `Display` impl that roundtrips with parse |
 | `error.rs` | Error types with source spans |
