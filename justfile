@@ -13,7 +13,7 @@ test-ts:
 
 # Dart tests
 test-dart:
-    cd dart && dart pub get && dart test
+    cd dart && dart pub get && dart test -p vm,node
 
 # Python tests
 test-python:
