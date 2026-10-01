@@ -59,7 +59,8 @@ func nextOccurrence(schedule *ScheduleData, loc *time.Location, now, startDate t
 	if appliesDuringToTarget(schedule.Expr) {
 		targetDuring = schedule.During
 	}
-	searchEnd := startDate.AddDate(horizonYears(schedule.Expr), 0, 0)
+	_, lastExcept := isoExceptBounds(schedule.Except, startDate)
+	searchEnd := lastExcept.AddDate(horizonYears(schedule.Expr), 0, 0)
 
 	for !startDate.After(searchEnd) && startDate.Before(rangeEnd) {
 		occ := nextExpr(schedule.Expr, loc, schedule.Anchor, now, startDate, targetDuring)
@@ -435,7 +436,8 @@ func previousOccurrence(schedule *ScheduleData, loc *time.Location, now, startDa
 	if appliesDuringToTarget(schedule.Expr) {
 		targetDuring = schedule.During
 	}
-	searchEnd := startDate.AddDate(-horizonYears(schedule.Expr), 0, 0)
+	firstExcept, _ := isoExceptBounds(schedule.Except, startDate)
+	searchEnd := firstExcept.AddDate(-horizonYears(schedule.Expr), 0, 0)
 
 	for !startDate.Before(searchEnd) && !startDate.Before(rangeStart.AddDate(0, 0, -1)) {
 		occ := prevExpr(schedule.Expr, loc, schedule.Anchor, now, startDate, targetDuring)

@@ -421,7 +421,8 @@ TZDateTime? previousFrom(ScheduleData schedule, TZDateTime now) =>
 
 /// The first occurrence after [now] when [dir] is 1, or the last before it
 /// when [dir] is -1, walking the aligned units of the schedule for one full
-/// cycle of the calendar (spec/README.md "Search horizon").
+/// cycle of the calendar beyond the start and every ISO except date
+/// (spec/README.md "Search horizon").
 TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
   final loc = _getLocation(_resolveTz(schedule.timezone));
   final expr = schedule.expr;
@@ -456,7 +457,14 @@ TZDateTime? _search(ScheduleData schedule, TZDateTime now, int dir) {
     if ((year - n) * dir > 0) n = year;
   }
 
-  final count = unit.per400Years ~/ unit.per400Years.gcd(interval) + 2;
+  var beyond = 0;
+  for (final date in exceptions.isoDates) {
+    beyond = max(beyond, (unit.of(date) - n) * dir);
+  }
+  final count =
+      unit.per400Years ~/ unit.per400Years.gcd(interval) +
+      2 +
+      (beyond + interval - 1) ~/ interval;
   // One unit of slack past the range: a nearest weekday can land back inside.
   final lastUnit = unit.of(
     dir > 0 ? DateTime.utc(9999, 12, 31) : DateTime.utc(1),

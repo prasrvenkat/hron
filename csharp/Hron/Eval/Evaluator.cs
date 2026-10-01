@@ -77,7 +77,8 @@ public static class Evaluator
 
         var today = LocalDate(now, location);
         var last = data.Until is not null ? ResolveUntil(data.Until, data.Anchor, today) : DateOnly.MaxValue;
-        var limit = SearchLimit(data.Expr, Min(today, last), -1);
+        var isoExcepts = IsoExceptDates(data.Except);
+        var limit = SearchLimit(data.Expr, Min(today, last), isoExcepts, -1);
         if (data.Anchor is not null)
         {
             limit = Max(limit, IsoDate.Parse(data.Anchor));
@@ -85,7 +86,7 @@ public static class Evaluator
 
         // A fall-back overlap that crosses midnight repeats times of the next date before now.
         var from = Min(AddDaysWithin(today, 1), last);
-        return Search(data, now, location, from, limit, -1);
+        return Search(data, isoExcepts, now, location, from, limit, -1);
     }
 
     /// <summary>
@@ -111,7 +112,8 @@ public static class Evaluator
     {
         var today = LocalDate(now, location);
         var first = data.Anchor is not null ? IsoDate.Parse(data.Anchor) : DateOnly.MinValue;
-        var limit = Min(SearchLimit(data.Expr, Max(today, first), 1), lastDate);
+        var isoExcepts = IsoExceptDates(data.Except);
+        var limit = Min(SearchLimit(data.Expr, Max(today, first), isoExcepts, 1), lastDate);
         if (data.Until is not null)
         {
             limit = Min(limit, ResolveUntil(data.Until, data.Anchor, today));
@@ -119,17 +121,17 @@ public static class Evaluator
 
         // A fixed time shifted out of a gap at midnight fires on the day after its scheduled date.
         var from = Max(AddDaysWithin(today, -1), first);
-        return Search(data, now, location, from, limit, 1);
+        return Search(data, isoExcepts, now, location, from, limit, 1);
     }
 
     /// <summary>
     /// The occurrence nearest to <paramref name="now"/> in the given direction, 1 forward or -1
     /// back, scheduled between <paramref name="from"/> and <paramref name="limit"/>.
     /// </summary>
-    private static DateTimeOffset? Search(ScheduleData data, DateTimeOffset now, TimeZoneInfo location, DateOnly from, DateOnly limit, int direction)
+    private static DateTimeOffset? Search(ScheduleData data, DateOnly[] isoExcepts, DateTimeOffset now, TimeZoneInfo location, DateOnly from, DateOnly limit, int direction)
     {
         Occurrence? best = null;
-        foreach (var date in ScheduledDates(data, from, limit, direction))
+        foreach (var date in ScheduledDates(data, isoExcepts, from, limit, direction))
         {
             // A time shifted out of a gap lands on the next date, so the date after the nearest
             // hit (before it, searching back) can still hold a nearer occurrence.
@@ -149,13 +151,18 @@ public static class Evaluator
     private static bool IsSupported(DateTimeOffset t) => t >= EarliestSupported && t < EndOfSupported;
 
     /// <summary>
-    /// The last date to search, <paramref name="direction"/> 1 forward or -1 back. The Gregorian
-    /// calendar repeats every 400 years, so a schedule with an interval of n days, weeks, months
-    /// or years repeats after lcm(400 years, n of those units), always a whole number of years.
-    /// An ISO date is searched for wherever it is.
+    /// The last date to search, <paramref name="direction"/> 1 forward or -1 back: one span past
+    /// <paramref name="from"/> and every ISO except date, per "Search horizon" in spec/README.md.
+    /// The Gregorian calendar repeats every 400 years, so a schedule with an interval of n days,
+    /// weeks, months or years repeats after lcm(400 years, n of those units), always a whole
+    /// number of years. An ISO date is searched for wherever it is.
     /// </summary>
-    private static DateOnly SearchLimit(IScheduleExpr expr, DateOnly from, int direction)
+    private static DateOnly SearchLimit(IScheduleExpr expr, DateOnly from, DateOnly[] isoExcepts, int direction)
     {
+        if (isoExcepts.Length > 0)
+        {
+            from = direction > 0 ? Max(from, isoExcepts[^1]) : Min(from, isoExcepts[0]);
+        }
         var years = expr switch
         {
             DayRepeat dr => Lcm(GregorianCycleDays, dr.Interval) / GregorianCycleDays * GregorianCycleYears,
@@ -181,7 +188,7 @@ public static class Evaluator
     /// The dates the schedule fires on, from <paramref name="from"/> to <paramref name="limit"/>
     /// inclusive in the given direction, with during and except applied.
     /// </summary>
-    private static IEnumerable<DateOnly> ScheduledDates(ScheduleData data, DateOnly from, DateOnly limit, int direction)
+    private static IEnumerable<DateOnly> ScheduledDates(ScheduleData data, DateOnly[] isoExcepts, DateOnly from, DateOnly limit, int direction)
     {
         var candidates = data.Expr switch
         {
@@ -196,7 +203,7 @@ public static class Evaluator
         return candidates
             .SkipWhile(d => direction * d.CompareTo(from) < 0)
             .TakeWhile(d => direction * d.CompareTo(limit) <= 0)
-            .Where(d => (data.Expr is MonthRepeat || MatchesDuring(d, data.During)) && !IsExcepted(d, data.Except));
+            .Where(d => (data.Expr is MonthRepeat || MatchesDuring(d, data.During)) && !IsExcepted(d, data.Except, isoExcepts));
     }
 
     /// <summary>
@@ -624,28 +631,24 @@ public static class Evaluator
         return day <= DateTime.DaysInMonth(year, month) ? new DateOnly(year, month, day) : null;
     }
 
-    private static bool IsExcepted(DateOnly d, IReadOnlyList<ExceptionSpec> exceptions)
+    /// <summary>
+    /// The ISO except dates, earliest first.
+    /// </summary>
+    private static DateOnly[] IsoExceptDates(IReadOnlyList<ExceptionSpec> exceptions)
+    {
+        return exceptions.Where(e => e.Kind == ExceptionSpecKind.Iso).Select(e => IsoDate.Parse(e.Date!)).Order().ToArray();
+    }
+
+    private static bool IsExcepted(DateOnly d, IReadOnlyList<ExceptionSpec> exceptions, DateOnly[] isoExcepts)
     {
         foreach (var exc in exceptions)
         {
-            switch (exc.Kind)
+            if (exc.Kind == ExceptionSpecKind.Named && d.Month == exc.Month!.Value.Number() && d.Day == exc.Day)
             {
-                case ExceptionSpecKind.Named:
-                    if (d.Month == exc.Month!.Value.Number() && d.Day == exc.Day)
-                    {
-                        return true;
-                    }
-                    break;
-                case ExceptionSpecKind.Iso:
-                    var excDate = IsoDate.Parse(exc.Date!);
-                    if (d == excDate)
-                    {
-                        return true;
-                    }
-                    break;
+                return true;
             }
         }
-        return false;
+        return isoExcepts.Contains(d);
     }
 
     private static bool MatchesDuring(DateOnly d, IReadOnlyList<MonthName> during)

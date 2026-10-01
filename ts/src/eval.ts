@@ -321,13 +321,16 @@ const FIRST_DAY = epochDay(1, 1, 1);
 const LAST_DAY = epochDay(9999, 12, 31);
 
 /**
- * Candidate days from `start` (inclusive) in `direction`, over one full
- * calendar cycle of aligned periods, and never outside years 1-9999.
+ * Candidate days from `from` (inclusive) in `direction`, over one full
+ * calendar cycle of aligned periods past `from`, or past `horizon` when that
+ * lies further in `direction` (spec/README.md, "Search horizon"), and never
+ * outside years 1-9999.
  */
 function* candidateDays(
   plan: Plan,
   from: number,
   direction: Direction,
+  horizon: number | null,
 ): Generator<number> {
   const { unit, interval } = plan;
   const start = Math.min(Math.max(from, FIRST_DAY), LAST_DAY);
@@ -335,7 +338,11 @@ function* candidateDays(
   // period before or after the one it belongs to.
   let period = unit.periodOf(start) - direction;
   period += direction * mod(direction * (plan.anchor - period), interval);
-  const periods = unit.cycle / gcd(unit.cycle, interval);
+  let periods = unit.cycle / gcd(unit.cycle, interval);
+  if (horizon !== null && direction * (horizon - start) > 0) {
+    const beyond = direction * (unit.periodOf(horizon) - unit.periodOf(start));
+    periods += Math.ceil(beyond / interval);
+  }
   for (let i = 0; i <= periods; i++, period += direction * interval) {
     const days = plan.daysIn(period);
     if (direction < 0) days.reverse();
@@ -493,6 +500,8 @@ class Evaluation {
   private readonly starting: number | null;
   private readonly named: { month: number; day: number }[];
   private readonly isoExceptions: number[];
+  private readonly firstIsoException: number | null;
+  private readonly lastIsoException: number | null;
   private readonly days = new Map<number, number[]>();
 
   constructor(private readonly schedule: ScheduleData) {
@@ -512,6 +521,9 @@ class Evaluation {
         this.isoExceptions.push(isoDay(exc.date));
       }
     }
+    const hasIso = this.isoExceptions.length > 0;
+    this.firstIsoException = hasIso ? Math.min(...this.isoExceptions) : null;
+    this.lastIsoException = hasIso ? Math.max(...this.isoExceptions) : null;
   }
 
   // A time shifted by a spring-forward gap keeps its scheduled day for every
@@ -526,7 +538,12 @@ class Evaluation {
   ): Occurrence | null {
     let best: Occurrence | null = null;
     const start = Math.max(fromDay, this.starting ?? fromDay);
-    for (const day of candidateDays(this.plan, start, 1)) {
+    for (const day of candidateDays(
+      this.plan,
+      start,
+      1,
+      this.lastIsoException,
+    )) {
       if (best !== null && day > best.day + 1) break;
       if (this.until !== null && day > this.until) break;
       if (this.isExcepted(day)) continue;
@@ -546,7 +563,12 @@ class Evaluation {
     let start = this.zone.localDay(beforeMs) + 1;
     if (this.until !== null) start = Math.min(start, this.until);
     let best: Occurrence | null = null;
-    for (const day of candidateDays(this.plan, start, -1)) {
+    for (const day of candidateDays(
+      this.plan,
+      start,
+      -1,
+      this.firstIsoException,
+    )) {
       if (best !== null && day < best.day - 1) break;
       if (this.starting !== null && day < this.starting) break;
       if (this.isExcepted(day)) continue;

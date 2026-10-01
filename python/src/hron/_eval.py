@@ -404,7 +404,9 @@ def _next(schedule: ScheduleData, now: datetime) -> datetime | None:
     start = _add_days_clamped(now_in_tz.date(), -1)
     if clauses.starting is not None and clauses.starting > start:
         start = clauses.starting
-    limit = _add_days_clamped(max(start, now_in_tz.date()), _search_span_days(schedule.expr))
+    # A one-off except date pushes the horizon out (spec/README.md, "Search horizon").
+    span_start = max(start, now_in_tz.date(), *clauses.iso_exceptions)
+    limit = _add_days_clamped(span_start, _search_span_days(schedule.expr))
     shifted: datetime | None = None
 
     try:
@@ -690,7 +692,8 @@ def _previous(schedule: ScheduleData, now: datetime) -> datetime | None:
     start = _add_days_clamped(now_in_tz.date(), 1)
     if clauses.until is not None and clauses.until < start:
         start = clauses.until
-    limit = _add_days_clamped(min(start, now_in_tz.date()), -_search_span_days(schedule.expr))
+    span_start = min(start, now_in_tz.date(), *clauses.iso_exceptions)
+    limit = _add_days_clamped(span_start, -_search_span_days(schedule.expr))
     shifted_over: datetime | None = None
 
     try:

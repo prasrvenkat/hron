@@ -145,17 +145,8 @@ module Hron
       d
     end
 
-    def self.is_excepted(d, exceptions)
-      exceptions.any? do |exc|
-        case exc
-        when NamedException
-          d.month == MonthName.number(exc.month) && d.day == exc.day
-        when IsoException
-          d == parse_date(exc.date)
-        else
-          false
-        end
-      end
+    def self.is_excepted(d, named, iso_dates)
+      iso_dates.include?(d) || named.any? { |exc| d.month == MonthName.number(exc.month) && d.day == exc.day }
     end
 
     def self.matches_during(d, during)
@@ -277,9 +268,13 @@ module Hron
         from += 1
         from = [from, until_date].min if until_date
       end
+      named_excepts, iso_excepts = schedule.except.partition { |exc| exc.is_a?(NamedException) }
+      iso_excepts = iso_excepts.map { |exc| EvalHelpers.parse_date(exc.date) }
+      reach = dir.positive? ? iso_excepts.max : iso_excepts.min
+      reach = nil unless reach && dir * (reach - from) > 0
       best = nil
 
-      each_candidate_day(expr, starting, from, dir) do |target, day|
+      each_candidate_day(expr, starting, from, reach, dir) do |target, day|
         break if best && !could_beat?(best, day, tz, dir)
         if dir.positive?
           break if day.year > 9999 || (until_date && day > until_date)
@@ -289,7 +284,7 @@ module Hron
           next if until_date && day > until_date
         end
         next unless EvalHelpers.matches_during(target, schedule.during)
-        next if EvalHelpers.is_excepted(day, schedule.except)
+        next if EvalHelpers.is_excepted(day, named_excepts, iso_excepts)
 
         found = occurrence_on(expr, day, tz, now, dir)
         best = found if found && (best.nil? || (dir.positive? ? found < best : found > best))
@@ -308,11 +303,11 @@ module Hron
     # scheduled on, which the day filter, except, until and starting see even when a spring-forward
     # shift carries it onto the next date; target is the date whose month `during` checks, which
     # differs from day only for a nearest weekday (spec/README.md "Nearest weekday and during").
-    def self.each_candidate_day(expr, starting, from, dir)
+    def self.each_candidate_day(expr, starting, from, reach, dir)
       case expr
       when DayRepeat, IntervalRepeat
         interval, filter = expr.is_a?(DayRepeat) ? [expr.interval, expr.days] : [1, expr.day_filter]
-        each_period(from.jd, (starting || EPOCH_DATE).jd, interval, CYCLE_DAYS, dir) do |jd|
+        each_period(from.jd, reach&.jd, (starting || EPOCH_DATE).jd, interval, CYCLE_DAYS, dir) do |jd|
           day = Date.jd(jd, Date::GREGORIAN)
           yield day, day if filter.nil? || EvalHelpers.matches_day_filter(day, filter)
         end
@@ -320,7 +315,7 @@ module Hron
         offsets = expr.days.map { |wd| Weekday.number(wd) - 1 }.uniq.sort
         offsets.reverse! if dir.negative?
         # Julian day numbers that are multiples of 7 are Mondays, so jd.div(7) numbers ISO weeks.
-        each_period(from.jd.div(7), (starting || EPOCH_MONDAY).jd.div(7), expr.interval, CYCLE_WEEKS, dir) do |week|
+        each_period(from.jd.div(7), reach&.jd&.div(7), (starting || EPOCH_MONDAY).jd.div(7), expr.interval, CYCLE_WEEKS, dir) do |week|
           offsets.each do |offset|
             day = Date.jd((week * 7) + offset, Date::GREGORIAN)
             yield day, day
@@ -329,7 +324,7 @@ module Hron
       when MonthRepeat
         # One extra month on the side the search comes from catches a nearest weekday that
         # crosses into from's month.
-        each_period(month_number(from) - dir, month_number(starting || EPOCH_DATE), expr.interval, CYCLE_MONTHS, dir) do |number|
+        each_period(month_number(from) - dir, reach && month_number(reach), month_number(starting || EPOCH_DATE), expr.interval, CYCLE_MONTHS, dir) do |number|
           year, month = number.divmod(12)
           target = EvalHelpers.date(year, month + 1, 1)
           days = month_target_days(expr.target, year, month + 1)
@@ -337,7 +332,7 @@ module Hron
           days.each { |day| yield target, day }
         end
       when YearRepeat
-        each_period(from.year, (starting || EPOCH_DATE).year, expr.interval, CYCLE_YEARS, dir) do |year|
+        each_period(from.year, reach&.year, (starting || EPOCH_DATE).year, expr.interval, CYCLE_YEARS, dir) do |year|
           day = year_target_day(expr.target, year)
           yield day, day if day
         end
@@ -347,7 +342,7 @@ module Hron
           day = EvalHelpers.parse_date(expr.date.date)
           yield day, day
         when NamedDate
-          each_period(from.year, from.year, 1, CYCLE_YEARS, dir) do |year|
+          each_period(from.year, reach&.year, from.year, 1, CYCLE_YEARS, dir) do |year|
             day = valid_date(year, MonthName.number(expr.date.month), expr.date.day)
             yield day, day if day
           end
@@ -356,10 +351,13 @@ module Hron
     end
 
     # Yields period numbers (days, weeks, months or years) from `from` in direction dir that are a
-    # whole number of intervals from anchor, covering lcm(400 years, interval): the search horizon.
-    def self.each_period(from, anchor, interval, cycle, dir)
+    # whole number of intervals from anchor, covering lcm(400 years, interval) beyond reach, or
+    # beyond from when reach is nil: the search horizon (spec/README.md "Search horizon").
+    def self.each_period(from, reach, anchor, interval, cycle, dir)
       first = from + (dir * ((dir * (anchor - from)) % interval))
-      ((cycle.lcm(interval) / interval) + 1).times { |k| yield first + (dir * interval * k) }
+      span = cycle.lcm(interval)
+      span += dir * (reach - from) if reach
+      ((span / interval) + 1).times { |k| yield first + (dir * interval * k) }
     end
 
     def self.month_number(date)

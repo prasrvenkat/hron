@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -134,7 +136,11 @@ public final class Evaluator {
     if (clauses.until() != null) {
       searchFrom = min(searchFrom, clauses.until());
     }
-    LocalDate limit = searchLimit(data.expr(), searchFrom, false);
+    LocalDate horizonFrom =
+        clauses.exceptDates().isEmpty()
+            ? searchFrom
+            : min(searchFrom, clauses.exceptDates().first());
+    LocalDate limit = searchLimit(data.expr(), horizonFrom, false);
     if (clauses.starting() != null) {
       limit = max(limit, clauses.starting());
     }
@@ -169,7 +175,11 @@ public final class Evaluator {
     if (clauses.starting() != null) {
       searchFrom = max(searchFrom, clauses.starting());
     }
-    LocalDate limit = searchLimit(data.expr(), searchFrom, true);
+    LocalDate horizonFrom =
+        clauses.exceptDates().isEmpty()
+            ? searchFrom
+            : max(searchFrom, clauses.exceptDates().last());
+    LocalDate limit = searchLimit(data.expr(), horizonFrom, true);
     if (clauses.until() != null) {
       limit = min(limit, clauses.until());
     }
@@ -210,10 +220,10 @@ public final class Evaluator {
       LocalDate starting,
       LocalDate until,
       Set<Integer> duringMonths,
-      Set<LocalDate> exceptDates,
+      SortedSet<LocalDate> exceptDates,
       Set<MonthDay> exceptDays) {
     static Clauses of(ScheduleData data) {
-      Set<LocalDate> exceptDates = new HashSet<>();
+      SortedSet<LocalDate> exceptDates = new TreeSet<>();
       Set<MonthDay> exceptDays = new HashSet<>();
       for (ExceptionSpec exc : data.except()) {
         switch (exc.kind()) {
@@ -242,9 +252,9 @@ public final class Evaluator {
   }
 
   /**
-   * Returns the last date a search from {@code from} needs to reach. The Gregorian calendar repeats
-   * every 400 years, so a schedule repeats after lcm(400 years, its interval), and a search that
-   * covers that span finds an occurrence if one exists.
+   * Returns the date one repeat span past {@code from} in search order. The Gregorian calendar
+   * repeats every 400 years, so a schedule repeats after lcm(400 years, its interval); "Search
+   * horizon" in spec/README.md says which date the span is measured from.
    */
   private static LocalDate searchLimit(ScheduleExpr expr, LocalDate from, boolean forward) {
     long years =

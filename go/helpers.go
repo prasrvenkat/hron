@@ -279,6 +279,25 @@ func isExcepted(d time.Time, exceptions []ExceptionSpec) bool {
 	return false
 }
 
+// isoExceptBounds returns the earliest and latest of d and the ISO except
+// dates, which a search runs one horizon beyond (spec/README.md, "Search horizon").
+func isoExceptBounds(exceptions []ExceptionSpec, d time.Time) (first, last time.Time) {
+	first, last = d, d
+	for _, exc := range exceptions {
+		if exc.Kind != ExceptionSpecKindISO {
+			continue
+		}
+		excDate, _ := parseISODate(exc.Date)
+		if excDate.Before(first) {
+			first = excDate
+		}
+		if excDate.After(last) {
+			last = excDate
+		}
+	}
+	return first, last
+}
+
 func matchesDuring(d time.Time, during []MonthName) bool {
 	if len(during) == 0 {
 		return true
