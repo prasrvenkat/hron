@@ -137,6 +137,7 @@ Implementations may also take these shortcuts, each proven not to change a resul
 - Number periods by their calendar index instead of their first date, where a date type cannot hold December of year 0 or building dates is costly.
 - Skip a candidate more than `MAX_SHIFT_DAYS` behind the instant's local date, and a month `during` rejects before computing its dates.
 - Bound `could_beat` by the times' own shift: `MAX_SHIFT_DAYS` for fixed times, which a gap pushes forward, and 0 for interval slots, which a gap skips.
+- Bound `could_beat` by the best occurrence's landing date instead of its scheduled date: stop forward once a candidate's date is past it, and backward once the candidate's date plus the times' shift is before it. An occurrence lands on or after its scheduled date, on a first pass, and first passes keep wall-clock order. The `Occurrence` then keeps that landing date.
 - End `matches`' forward search on the minute's wall date: an occurrence never lands before the date it is scheduled on.
 - Drop an instant outside the supported range where it is resolved instead of filtering the result: the nearest instant is out of range only when every farther one is.
 
