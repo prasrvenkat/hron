@@ -8,6 +8,11 @@ module Hron
     # Date arithmetic on the proleptic Gregorian calendar, so a search that reaches back
     # before 1582 stays on the same calendar: no time zones, no schedules.
     module Calendar
+      # The calendar a search walks: no date outside it holds an occurrence in the
+      # supported range (spec/README.md, "Supported range").
+      FIRST_DATE = Date.new(1, 1, 1, Date::GREGORIAN)
+      LAST_DATE = Date.new(9999, 12, 31, Date::GREGORIAN)
+
       FRIDAY = 5
       SATURDAY = 6
       SUNDAY = 7
@@ -45,9 +50,10 @@ module Hron
         date - (date.cwday - 1)
       end
 
+      # Whether date passes filter; no filter passes every date.
       def matches_day_filter?(date, filter)
         case filter
-        when DayFilterEvery then true
+        when nil, DayFilterEvery then true
         when DayFilterWeekday then date.cwday <= FRIDAY
         when DayFilterWeekend then date.cwday > FRIDAY
         when DayFilterDays then filter.days.any? { |day| Weekday.number(day) == date.cwday }

@@ -9,13 +9,13 @@ require_relative "eval/calendar"
 require_relative "eval/wall_clock"
 
 module Hron
-  # Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment").
-  EPOCH_MONDAY = Date.new(1970, 1, 5)
-
-  # Default anchor for day, month and year intervals.
-  EPOCH_DATE = Date.new(1970, 1, 1)
-
   class Evaluator
+    # Default anchor for week intervals (spec/README.md, "WeekRepeat epoch alignment").
+    EPOCH_MONDAY = Date.new(1970, 1, 5, Date::GREGORIAN)
+
+    # Default anchor for day, month and year intervals.
+    EPOCH_DATE = Date.new(1970, 1, 1, Date::GREGORIAN)
+
     # spec/README.md, "Supported range".
     SUPPORTED_RANGE = Time.utc(1, 1, 2)...Time.utc(9999, 12, 30)
 
@@ -81,7 +81,9 @@ module Hron
       search = Search.new(schedule)
       local = search.zone.to_local(dt)
       minute = dt - local.sec - local.subsec
-      search.nearest(minute - 1, Direction::FORWARD) == minute
+      # Occurrences fall on whole seconds, so none lies between this and the minute.
+      just_before = minute - 1
+      search.nearest(just_before, Direction::FORWARD) == minute
     end
 
     class Direction
@@ -92,6 +94,10 @@ module Hron
         @forward = sign.positive?
       end
 
+      def forward?
+        @forward
+      end
+
       # Whether a comes before b in this direction.
       def precedes?(a, b)
         @forward ? a < b : a > b
@@ -99,7 +105,7 @@ module Hron
 
       # Items given earliest first, in the order this direction visits them.
       def in_order(items)
-        @forward ? items : items.reverse
+        (@forward || items.size < 2) ? items : items.reverse
       end
 
       FORWARD = new(1)
@@ -117,7 +123,7 @@ module Hron
         @clauses = Clauses.new(schedule)
         @cadence = Cadence.of(schedule.expr, @clauses.starting)
         @times = DailyTimes.of(schedule.expr)
-        @candidates_in_period = candidates_in_period(schedule.expr)
+        @expr = schedule.expr
       end
 
       # The occurrence nearest now strictly beyond it in direction, or nil.
@@ -145,41 +151,29 @@ module Hron
       private
 
       # Yields each period's candidates, in direction order.
-      def each_candidate(first_period, reach, direction)
+      def each_candidate(first_period, reach, direction, &)
         @cadence.period_starts(first_period, reach, direction) do |start|
-          direction.in_order(@candidates_in_period.call(start)).each { |candidate| yield candidate }
+          direction.in_order(candidates_in_period(start)).each(&)
         end
       end
 
-      # The candidates in the period starting at a date, earliest first, as a function of
-      # that date prepared once for expr.
-      def candidates_in_period(expr)
-        case expr
-        when IntervalRepeat, DayRepeat
-          filter = expr.is_a?(DayRepeat) ? expr.days : expr.day_filter
-          ->(start) { (filter.nil? || Calendar.matches_day_filter?(start, filter)) ? [Candidate.on(start)] : [] }
+      # The candidates in the period starting at start, earliest first.
+      def candidates_in_period(start)
+        case @expr
+        when DayRepeat
+          Calendar.matches_day_filter?(start, @expr.days) ? [Candidate.on(start)] : []
+        when IntervalRepeat
+          Calendar.matches_day_filter?(start, @expr.day_filter) ? [Candidate.on(start)] : []
         when WeekRepeat
-          offsets = expr.days.map { |day| Weekday.number(day) - 1 }.uniq.sort
-          ->(start) { offsets.map { |offset| Candidate.on(start + offset) } }
+          @expr.days.map { |day| start + (Weekday.number(day) - 1) }.uniq.sort.map { |date| Candidate.on(date) }
         when MonthRepeat
-          lambda do |start|
-            Calendar.month_target_dates(start.year, start.month, expr.target).map { |date| Candidate.new(date, start.month) }
-          end
+          Calendar.month_target_dates(start.year, start.month, @expr.target).map { |date| Candidate.new(date, start.month) }
         when YearRepeat
-          lambda do |start|
-            date = Calendar.year_target_date(start.year, expr.target)
-            date ? [Candidate.on(date)] : []
-          end
+          date = Calendar.year_target_date(start.year, @expr.target)
+          date ? [Candidate.on(date)] : []
         when SingleDateExpr
-          case expr.date
-          in IsoDate then ->(start) { [Candidate.on(start)] }
-          in NamedDate[month:, day:]
-            month = MonthName.number(month)
-            lambda do |start|
-              date = Calendar.date(start.year, month, day)
-              date ? [Candidate.on(date)] : []
-            end
-          end
+          date = @expr.date.is_a?(IsoDate) ? start : Calendar.date(start.year, MonthName.number(@expr.date.month), @expr.date.day)
+          date ? [Candidate.on(date)] : []
         end
       end
 
@@ -197,7 +191,7 @@ module Hron
           instants = @times.times.map { |time| WallClock.fixed_time_on(date, time, @zone) }.sort!
           direction.in_order(instants).find { |instant| direction.precedes?(now, instant) }
         when DailyTimes::Slots
-          if direction == Direction::FORWARD
+          if direction.forward?
             first_slot_after(@times.minutes, date, now)
           else
             last_slot_before(@times.minutes, date, now)
@@ -205,7 +199,7 @@ module Hron
         end
       end
 
-      # Slots take a wall time's first pass, so those on a date before now's have passed.
+      # Each slot on a date before now's had its first pass before now's date began.
       def first_slot_after(minutes, date, now)
         return if date < now.to_date
 
@@ -229,10 +223,11 @@ module Hron
     end
 
     # An occurrence a search found, with the date it is scheduled on.
-    Occurrence = Struct.new(:instant, :date)
+    Occurrence = Data.define(:instant, :date)
 
     # A date the expression fires on, with the month whose day it names. They differ only
-    # when a directional nearest weekday crosses into the adjacent month.
+    # when a directional nearest weekday crosses into the adjacent month. A Struct, as one is
+    # made for every date a search walks and a Data costs twice as much to make.
     Candidate = Struct.new(:date, :target_month) do
       def self.on(date)
         new(date, date.month)
@@ -242,7 +237,7 @@ module Hron
     # The times of day an expression fires at.
     module DailyTimes
       # Fixed times, each shifted out of a gap.
-      Fixed = Struct.new(:times) do
+      Fixed = Data.define(:times) do
         def max_shift_days
           MAX_SHIFT_DAYS
         end
@@ -250,7 +245,7 @@ module Hron
 
       # Interval slots in minutes after midnight, each skipped in a gap, so a slot lands on
       # its own date.
-      Slots = Struct.new(:minutes) do
+      Slots = Data.define(:minutes) do
         def max_shift_days
           0
         end
@@ -259,9 +254,9 @@ module Hron
       def self.of(expr)
         return Fixed.new(expr.times) unless expr.is_a?(IntervalRepeat)
 
-        step = (expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * 60
-        first = (expr.from_time.hour * 60) + expr.from_time.minute
-        last = (expr.to_time.hour * 60) + expr.to_time.minute
+        step = (expr.unit == IntervalUnit::MIN) ? expr.interval : expr.interval * WallClock::MINUTES_PER_HOUR
+        first = WallClock.minute_of_day(expr.from_time)
+        last = WallClock.minute_of_day(expr.to_time)
         Slots.new((first..last).step(step).to_a)
       end
     end
@@ -274,7 +269,7 @@ module Hron
 
       def initialize(schedule)
         @starting = schedule.anchor && Calendar.parse_date(schedule.anchor)
-        @until = schedule.until && resolve_until(schedule.until)
+        @until = schedule.until && resolve_until(schedule.until, @starting)
         named, iso = schedule.except.partition { |exception| exception.is_a?(NamedException) }
         @except_month_days = named.map { |exception| [MonthName.number(exception.month), exception.day] }
         @except_dates = iso.map { |exception| Calendar.parse_date(exception.date) }
@@ -293,12 +288,12 @@ module Hron
       # The one-off except date farthest along direction: the calendar repeats only beyond
       # it (spec/README.md, "Search horizon").
       def farthest_except_date(direction)
-        (direction == Direction::FORWARD) ? @except_dates.max : @except_dates.min
+        direction.forward? ? @except_dates.max : @except_dates.min
       end
 
       # The date a search starts from: nothing fires before starting or after until.
       def clamp(date, direction)
-        if direction == Direction::FORWARD
+        if direction.forward?
           @starting ? [date, @starting].max : date
         else
           @until ? [date, @until].min : date
@@ -308,7 +303,7 @@ module Hron
       # Whether date, and every date beyond it in direction, is past the bound the search
       # moves toward.
       def ends_search?(date, direction)
-        if direction == Direction::FORWARD
+        if direction.forward?
           !@until.nil? && date > @until
         else
           !@starting.nil? && date < @starting
@@ -321,11 +316,11 @@ module Hron
       # (spec/README.md, "Named `until`"). Parse requires starting; a schedule built without
       # one resolves from the default anchor, the epoch. nil when the date never occurs, so
       # nothing bounds the schedule.
-      def resolve_until(until_spec)
+      def resolve_until(until_spec, starting)
         case until_spec
         when IsoUntil then Calendar.parse_date(until_spec.date)
         when NamedUntil
-          from = @starting || EPOCH_DATE
+          from = starting || EPOCH_DATE
           month = MonthName.number(until_spec.month)
           (0..NAMED_UNTIL_MAX_YEARS)
             .filter_map { |k| Calendar.date(from.year + k, month, until_spec.day) }
@@ -350,7 +345,7 @@ module Hron
         in MonthRepeat then [:month, expr.interval, EPOCH_DATE]
         in YearRepeat then [:year, expr.interval, EPOCH_DATE]
         end
-        anchor = (starting || default_anchor).gregorian
+        anchor = starting || default_anchor
         origin = case unit
         when :day then anchor
         when :week then Calendar.monday_of_week(anchor)
@@ -367,6 +362,10 @@ module Hron
         @interval = interval
         @single = single
         @origin_month = Calendar.month_index(origin)
+        # A nearest weekday can move a candidate into the calendar from the period on
+        # either side of it.
+        @earliest = period_of(Calendar::FIRST_DATE) - 1
+        @latest = period_of(Calendar::LAST_DATE) + 1
       end
 
       def period_of(date)
@@ -389,22 +388,30 @@ module Hron
 
       # Yields the first days of the aligned periods from first_period in direction, through
       # one search horizon beyond whichever of first_period and reach is farther along it
-      # (spec/README.md, "Search horizon"). Ruby's calendar has no edge to end at sooner.
+      # (spec/README.md, "Search horizon"), within the periods a search walks.
       def period_starts(first_period, reach, direction)
         return yield @origin if @single
 
         first = align(first_period, direction)
         beyond = direction.sign * (align(reach, direction) - first)
         count = horizon_periods + HORIZON_MARGIN_PERIODS + ([beyond, 0].max / @interval)
+        # Steps outside the calendar are skipped: those leading up to it, as from a hand-built
+        # starting date before it, and all past it.
+        near, far = direction.in_order([@earliest, @latest]).map { |edge| direction.sign * (edge - first) }
+        inside = [ceil_div(near, @interval), 0].max...[(far / @interval) + 1, count].min
         step = direction.sign * @interval
-        count.times { |i| yield start_of(first + (i * step)) }
+        inside.each { |i| yield start_of(first + (i * step)) }
       end
 
       private
 
       # The first aligned period at or beyond period k in direction.
       def align(k, direction)
-        (direction == Direction::FORWARD) ? k + (-k % @interval) : k - (k % @interval)
+        direction.forward? ? k + (-k % @interval) : k - (k % @interval)
+      end
+
+      def ceil_div(a, b)
+        -(-a / b)
       end
 
       # Aligned periods in lcm(400 years, interval units), after which both the calendar and
@@ -415,7 +422,7 @@ module Hron
       end
     end
 
-    private_constant :SUPPORTED_RANGE, :HORIZON_MARGIN_PERIODS, :MAX_SHIFT_DAYS, :NAMED_UNTIL_MAX_YEARS,
+    private_constant :EPOCH_MONDAY, :EPOCH_DATE, :SUPPORTED_RANGE, :HORIZON_MARGIN_PERIODS, :MAX_SHIFT_DAYS, :NAMED_UNTIL_MAX_YEARS,
       :Direction, :Search, :Occurrence, :Candidate, :DailyTimes, :Clauses, :Cadence,
       :Calendar, :WallClock
   end
