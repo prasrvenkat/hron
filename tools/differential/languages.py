@@ -71,8 +71,8 @@ class RunnerError(Exception):
 
 
 @dataclass
-class Run:
-    """Each case's outcome by id, and how long the runner took to evaluate it."""
+class Answers:
+    """A runner's outcome for each case by id, and how long it took to evaluate it."""
 
     outcomes: dict[str, dict] = field(default_factory=dict)
     micros: dict[str, int] = field(default_factory=dict)
@@ -96,25 +96,25 @@ def build(name: str) -> None:
             raise RunnerError(f"{name}: `{' '.join(command)}` failed\n{done.stdout}{done.stderr}")
 
 
-def run(name: str, cases: list[dict], timeout: float) -> Run:
-    """Runs every case and returns each case's outcome by id. A case that hangs
+def run(name: str, cases: list[dict], timeout: float) -> Answers:
+    """Runs every case and returns the runner's answers. A case that hangs
     or kills the runner gets a timeout or crash outcome, and the runner restarts
     with the case after it. A runner that fails its first two cases that way is
     broken, not buggy, so the run stops."""
-    result = Run()
+    answers = Answers()
     with open(BUILD / f"{name}.log", "w") as log:
         pending = cases
         while pending:
-            pending = run_until_stuck(name, pending, timeout, result, log)
+            pending = run_until_stuck(name, pending, timeout, answers, log)
             if len(cases) > 1 and all(
-                result.outcomes.get(case["id"]) in (TIMEOUT, EXITED) for case in cases[:2]
+                answers.outcomes.get(case["id"]) in (TIMEOUT, EXITED) for case in cases[:2]
             ):
                 raise RunnerError(f"{name}: no answer to the first two cases; see {log.name}")
-    return result
+    return answers
 
 
 def run_until_stuck(
-    name: str, cases: list[dict], timeout: float, result: Run, log: TextIO
+    name: str, cases: list[dict], timeout: float, answers: Answers, log: TextIO
 ) -> list[dict]:
     language = LANGUAGES[name]
     try:
@@ -138,12 +138,12 @@ def run_until_stuck(
             try:
                 line = lines.get(timeout=timeout)
             except queue.Empty:
-                result.outcomes[case["id"]] = TIMEOUT
+                answers.outcomes[case["id"]] = TIMEOUT
                 return cases[i + 1 :]
             if line is None:
-                result.outcomes[case["id"]] = EXITED
+                answers.outcomes[case["id"]] = EXITED
                 return cases[i + 1 :]
-            result.outcomes[case["id"]], result.micros[case["id"]] = answer(name, case, line)
+            answers.outcomes[case["id"]], answers.micros[case["id"]] = answer(name, case, line)
         return []
     finally:
         process.kill()

@@ -122,8 +122,8 @@ EDGE_EXPRS = [
 # Schedules that fire rarely, never, or only near the search horizon or the
 # range's ends, where each language's horizon and stop rule are tested.
 SPARSE_EXPRS = [
-    "every 400 years on jan 1 at 00:00 starting 2000-01-01 except 2400-01-01",
-    "every 400 years on jan 1 at 00:00 starting 2000-01-01 except 2400-01-01, 2800-01-01",
+    "every 400 years on jan 1 at 00:00 except 2400-01-01 starting 2000-01-01",
+    "every 400 years on jan 1 at 00:00 except 2400-01-01, 2800-01-01 starting 2000-01-01",
     "every 100 years on feb 29 at 09:00 starting 2000-01-01",
     "every 2 years on feb 29 at 09:00 starting 2025-01-01",
     "every 2 years on feb 29 at 09:00 starting 2024-01-01",
@@ -282,6 +282,11 @@ class Cases(list):
         self.counts[family] += 1
         case_id = f"{family}-{self.counts[family]}"
         self.append({"id": case_id, "op": op, "expr": expr, **(args or {})})
+
+
+def meant_to_parse(case: dict) -> bool:
+    """Whether the generator meant the case's expression to parse."""
+    return case["op"] != "fromCron" and not case["id"].startswith(("invalid-", "mutant-"))
 
 
 def generate() -> list[dict]:

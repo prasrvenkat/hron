@@ -8,11 +8,12 @@ import sys
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 
 from cases import generate
-from languages import LANGUAGES, Run, RunnerError, build, run
-from report import compare, compare_times, report
+from languages import LANGUAGES, Answers, RunnerError, build, run
+from report import comparable_cases, compare, compare_times, report, warn_unparsed
 
 
 def json_file(path: str) -> object:
@@ -39,7 +40,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--only names a language twice")
     if args.compare and args.no_build:
         parser.error("--compare needs fresh builds, so it cannot be used with --no-build")
-    if args.cases is None:
+    args.generated = args.cases is None
+    if args.generated:
         args.cases = generate()
     ids = Counter(case["id"] for case in args.cases)
     if duplicates := [case_id for case_id, count in ids.items() if count > 1]:
@@ -47,11 +49,11 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def timed_run(name: str, cases: list[dict], timeout: float) -> Run:
+def timed_run(name: str, cases: list[dict], timeout: float) -> Answers:
     start = time.monotonic()
-    result = run(name, cases, timeout)
+    answers = run(name, cases, timeout)
     print(f"{name}: {len(cases)} cases in {time.monotonic() - start:.1f}s", file=sys.stderr)
-    return result
+    return answers
 
 
 def main() -> int:
@@ -64,25 +66,23 @@ def main() -> int:
             if not args.no_build:
                 print(f"building {', '.join(names)}", file=sys.stderr)
                 list(pool.map(build, names))
-            runs = dict(
-                zip(
-                    names,
-                    pool.map(lambda name: timed_run(name, cases, args.timeout), names),
-                    strict=True,
-                )
-            )
+            answered = pool.map(partial(timed_run, cases=cases, timeout=args.timeout), names)
+            answers = dict(zip(names, answered, strict=True))
     except RunnerError as error:
         print(error, file=sys.stderr)
         return 2
     print(f"{len(cases)} cases, {len(names)} languages, {time.monotonic() - start:.0f}s")
 
-    outcomes = {name: result.outcomes for name, result in runs.items()}
-    micros = {name: result.micros for name, result in runs.items()}
+    outcomes = {name: answers[name].outcomes for name in names}
+    micros = {name: answers[name].micros for name in names}
+    if args.generated:
+        warn_unparsed(cases, outcomes)
     if args.save:
         args.save.write_text(json.dumps({"cases": cases, "outcomes": outcomes, "micros": micros}))
     if args.compare:
-        changes = compare(args.compare, cases, outcomes, args.examples)
-        compare_times(args.compare, cases, micros, args.examples)
+        comparable = comparable_cases(args.compare, cases)
+        changes = compare(args.compare, cases, comparable, outcomes, args.examples)
+        compare_times(args.compare, comparable, micros, args.examples)
         return 1 if changes else 0
     return 1 if report(cases, outcomes, args.examples) else 0
 

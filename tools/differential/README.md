@@ -18,13 +18,15 @@ just diff --cases mine.json                                 # run hand-written c
 |---|---|
 | `--only LANGS` | Comma-separated languages: `rust`, `ts`, `python`, `go`, `java`, `csharp`, `ruby`, `dart`. |
 | `--cases FILE` | A JSON array of cases to run in place of the generated ones. |
-| `--save FILE` | Write the cases and every language's answers. |
-| `--compare FILE` | Compare each language's answers with a `--save` file instead of with each other, including error messages, then each language's total evaluation time and the cases that became at least 3x and 20 ms slower. A refactor should show zero changes and no slowdown. |
+| `--save FILE` | Write the cases, every language's answers and how long each took. |
+| `--compare FILE` | Compare each language's answers with a `--save` file instead of with each other, including error messages, then each language's total evaluation time and the cases that became at least 3x and 20 ms slower. A refactor should show zero changes and no slowdown. Runners run in parallel, so compare timings only between runs of the same languages on an otherwise idle machine. |
 | `--no-build` | Skip building the runners. Not allowed with `--compare`, which would then test stale builds. |
 | `--timeout SECONDS` | How long one case may take before it is reported as a timeout (default 10). |
 | `--examples N` | Examples printed per group of divergences (default 3). |
 
 The exit status is 0 when every language agrees (with `--compare`, when every outcome was compared and none changed), 1 when they do not, and 2 for bad arguments or input files, or when a runner cannot be built, started or answer at all.
+
+Generated cases whose expression is meant to parse but fails to in every language are reported as a warning, since they would otherwise pass as agreement.
 
 Divergences are grouped by operation and by how the languages split, largest group first, so a bug shows up as one group for each operation it affects, however many cases hit it. Languages agree on an error when its kind, span and suggestion match; the spec leaves the message's wording to each language.
 

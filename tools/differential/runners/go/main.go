@@ -27,12 +27,23 @@ type testCase struct {
 
 var zoned = regexp.MustCompile(`^(.+)\[(.+)\]$`)
 
-func parseZoned(s string) time.Time {
-	parts := zoned.FindStringSubmatch(s)
-	loc, err := time.LoadLocation(parts[2])
+var locations = map[string]*time.Location{}
+
+func location(name string) *time.Location {
+	if loc, ok := locations[name]; ok {
+		return loc
+	}
+	loc, err := time.LoadLocation(name)
 	if err != nil {
 		panic(err)
 	}
+	locations[name] = loc
+	return loc
+}
+
+func parseZoned(s string) time.Time {
+	parts := zoned.FindStringSubmatch(s)
+	loc := location(parts[2])
 	t, err := time.Parse(time.RFC3339, parts[1])
 	if err != nil {
 		panic(err)
