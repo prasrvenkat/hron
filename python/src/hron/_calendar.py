@@ -31,6 +31,8 @@ from ._ast import (
 
 DAYS_PER_400_YEARS = 146_097
 
+_DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
 
 @dataclass(frozen=True, slots=True)
 class YearMonth:
@@ -65,7 +67,7 @@ def days_between(a: date, b: date) -> int:
 
 
 def days_in_month(year: int, month: int) -> int:
-    return calendar.monthrange(year, month)[1]
+    return 29 if month == 2 and calendar.isleap(year) else _DAYS_IN_MONTH[month - 1]
 
 
 def monday_of_week(d: date) -> date:

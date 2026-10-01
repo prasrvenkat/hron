@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import MAXYEAR, MINYEAR, UTC, date, datetime, time, timedelta
 from enum import Enum
 from itertools import islice, takewhile
 from math import gcd
-from typing import ClassVar, TypeVar
+from typing import Any, ClassVar, NamedTuple, TypeVar
 from zoneinfo import ZoneInfo
 
 from ._ast import (
+    DayFilter,
+    DayFilterEvery,
     DayRepeat,
     IntervalRepeat,
     IntervalUnit,
@@ -77,45 +79,64 @@ _NAMED_UNTIL_MAX_YEARS = 8
 _T = TypeVar("_T")
 
 
-def next_from(schedule: ScheduleData, now: datetime) -> datetime | None:
+class PreparedSchedule:
+    """A schedule's data with its search prepared once. ScheduleData is mutable, so the
+    search is prepared again whenever the data's fields change."""
+
+    __slots__ = ("data", "_key", "_search")
+
+    def __init__(self, data: ScheduleData) -> None:
+        self.data = data
+        self._key: tuple[object, ...] | None = None
+        self._search: Search | None = None
+
+    def search(self) -> Search:
+        data = self.data
+        key = (data.expr, data.timezone, data.except_, data.until, data.anchor, data.during)
+        if self._search is None or key != self._key:
+            self._search, self._key = Search.of(data), key
+        return self._search
+
+
+def next_from(schedule: PreparedSchedule, now: datetime) -> datetime | None:
     if not _in_supported_range(now):
         return None
-    return _Search.of(schedule).nearest(now, _Direction.FORWARD)
+    return schedule.search().nearest(now, _Direction.FORWARD)
 
 
-def previous_from(schedule: ScheduleData, now: datetime) -> datetime | None:
+def previous_from(schedule: PreparedSchedule, now: datetime) -> datetime | None:
     if not _in_supported_range(now):
         return None
-    return _Search.of(schedule).nearest(now, _Direction.BACKWARD)
+    return schedule.search().nearest(now, _Direction.BACKWARD)
 
 
-def matches(schedule: ScheduleData, dt: datetime) -> bool:
+def matches(schedule: PreparedSchedule, dt: datetime) -> bool:
     """True when the minute containing `dt`, on the schedule's wall clock, is an occurrence
     (spec/README.md, "matches is true exactly when the minute containing t is an
     occurrence"). Defined through the forward search, so the two can never disagree."""
     if not _in_supported_range(dt):
         return False
-    search = _Search.of(schedule)
+    search = schedule.search()
     minute = dt.astimezone(search.zone).replace(second=0, microsecond=0).astimezone(UTC)
     found = search.nearest(minute - timedelta(microseconds=1), _Direction.FORWARD)
     return found is not None and found.astimezone(UTC) == minute
 
 
-def next_n_from(schedule: ScheduleData, now: datetime, n: int) -> list[datetime]:
+def next_n_from(schedule: PreparedSchedule, now: datetime, n: int) -> list[datetime]:
     return list(islice(occurrences(schedule, now), max(n, 0)))
 
 
-def occurrences(schedule: ScheduleData, from_: datetime) -> Iterator[datetime]:
+def occurrences(schedule: PreparedSchedule, from_: datetime) -> Iterator[datetime]:
     if not _in_supported_range(from_):
         return
-    search = _Search.of(schedule)
+    search = schedule.search()
     current = search.nearest(from_, _Direction.FORWARD)
     while current is not None:
         yield current
         current = search.nearest(current, _Direction.FORWARD)
 
 
-def between(schedule: ScheduleData, from_: datetime, to: datetime) -> Iterator[datetime]:
+def between(schedule: PreparedSchedule, from_: datetime, to: datetime) -> Iterator[datetime]:
     if not _in_supported_range(to):
         return iter(())
     end = to.astimezone(UTC)
@@ -146,26 +167,28 @@ def _in_order(items: list[_T], direction: _Direction) -> Iterable[_T]:
 
 
 @dataclass(frozen=True, slots=True)
-class _Search:
+class Search:
     """A schedule prepared for searching: its zone, cadence, times and clauses resolved
     once. Instants, `now` among them, are UTC datetimes until one is returned (see
     _wall_clock); comparing one with a zoned datetime would also cost a zone lookup."""
 
-    expr: ScheduleExpr
     zone: ZoneInfo
     cadence: _Cadence
+    candidates_in_period: _CandidatesInPeriod
     times: _DailyTimes
     clauses: _Clauses
 
     @classmethod
-    def of(cls, schedule: ScheduleData) -> _Search:
+    def of(cls, schedule: ScheduleData) -> Search:
+        expr = schedule.expr
         starting = date.fromisoformat(schedule.anchor) if schedule.anchor else None
+        during = frozenset(month.number for month in schedule.during)
         return cls(
-            expr=schedule.expr,
             zone=resolve_zone(schedule.timezone),
-            cadence=_Cadence.of(schedule, starting),
-            times=_daily_times(schedule.expr),
-            clauses=_Clauses.of(schedule, starting),
+            cadence=_Cadence.of(expr, starting, during),
+            candidates_in_period=_candidates_in_period_of(expr),
+            times=_daily_times(expr),
+            clauses=_Clauses.of(schedule, starting, during),
         )
 
     def nearest(self, now: datetime, direction: _Direction) -> datetime | None:
@@ -186,7 +209,7 @@ class _Search:
         max_shift_days = self.times.max_shift_days
         best: _Occurrence | None = None
         for start in self.cadence.period_starts(first_period, reach, direction):
-            for candidate in _in_order(_candidates_in_period(self.expr, start), direction):
+            for candidate in _in_order(self.candidates_in_period(start), direction):
                 d = candidate.date
                 if best is not None and not _could_beat(d, best.landing, direction, max_shift_days):
                     return best
@@ -208,10 +231,9 @@ class _Search:
                 resolved = [fixed_time_on(d, t, self.zone) for t in times]
                 # A time shifted out of a gap can land after a later wall time.
                 instants = sorted([t for t in resolved if t is not None])
-                for instant in _in_order(instants, direction):
-                    if direction.precedes(now, instant):
-                        return instant
-                return None
+                if direction is _Direction.FORWARD:
+                    return next((t for t in instants if t > now), None)
+                return next((t for t in reversed(instants) if t < now), None)
             case _Slots(minutes=minutes) if direction is _Direction.FORWARD:
                 return self._first_slot_after(minutes, d, now)
             case _Slots(minutes=minutes):
@@ -326,10 +348,10 @@ class _Clauses:
     starting: date | None
 
     @classmethod
-    def of(cls, schedule: ScheduleData, starting: date | None) -> _Clauses:
+    def of(cls, schedule: ScheduleData, starting: date | None, during: frozenset[int]) -> _Clauses:
         exceptions = schedule.except_
         return cls(
-            during=frozenset(month.number for month in schedule.during),
+            during=during,
             except_month_days=frozenset(
                 (e.month.number, e.day) for e in exceptions if isinstance(e, NamedException)
             ),
@@ -413,15 +435,19 @@ class _Cadence:
     # clauses would reject every candidate there, and the search's stop checks only become
     # true further along, so the result is the same and a schedule that never fires does
     # not walk every day of its horizon.
-    months: frozenset[int] = frozenset()
+    months: frozenset[int]
     # A single ISO date has one period, the one holding that date.
-    single: bool = False
+    single: bool
+    # Aligned periods in lcm(400 years, interval units), after which both the calendar and
+    # the alignment repeat, plus _HORIZON_MARGIN_PERIODS.
+    horizon: int
 
     @classmethod
-    def of(cls, schedule: ScheduleData, starting: date | None) -> _Cadence:
-        match schedule.expr:
+    def of(cls, expr: ScheduleExpr, starting: date | None, during: frozenset[int]) -> _Cadence:
+        anchor = starting
+        match expr:
             case SingleDateExpr(date=IsoDate(date=iso)):
-                return cls(_Unit.DAY, date.fromisoformat(iso), 1, single=True)
+                unit, interval, anchor = _Unit.DAY, 1, date.fromisoformat(iso)
             case SingleDateExpr():
                 unit, interval = _Unit.YEAR, 1
             case IntervalRepeat():
@@ -434,7 +460,7 @@ class _Cadence:
                 unit = _Unit.MONTH
             case YearRepeat(interval=interval):
                 unit = _Unit.YEAR
-        anchor = starting or (_EPOCH_MONDAY if unit is _Unit.WEEK else _EPOCH_DATE)
+        anchor = anchor or (_EPOCH_MONDAY if unit is _Unit.WEEK else _EPOCH_DATE)
         match unit:
             case _Unit.DAY:
                 origin = anchor
@@ -445,9 +471,15 @@ class _Cadence:
             case _Unit.YEAR:
                 origin = anchor.replace(month=1, day=1)
         interval = max(interval, 1)
-        if unit not in (_Unit.DAY, _Unit.MONTH):
-            return cls(unit, origin, interval)
-        return cls(unit, origin, interval, frozenset(month.number for month in schedule.during))
+        return cls(
+            unit=unit,
+            origin=origin,
+            interval=interval,
+            months=during if unit in (_Unit.DAY, _Unit.MONTH) else frozenset(),
+            single=isinstance(expr, SingleDateExpr) and isinstance(expr.date, IsoDate),
+            horizon=unit.per_400_years // gcd(unit.per_400_years, interval)
+            + _HORIZON_MARGIN_PERIODS,
+        )
 
     def period_of(self, d: date) -> int:
         match self.unit:
@@ -485,24 +517,22 @@ class _Cadence:
         else:
             first = self.align(first_period, direction)
             beyond = direction.sign * (self.align(reach, direction) - first)
-            count = (
-                self.horizon_periods() + _HORIZON_MARGIN_PERIODS + max(beyond, 0) // self.interval
-            )
+            count = self.horizon + max(beyond, 0) // self.interval
         step = direction.sign * self.interval
         k, end = first, first + count * step
-        while direction.sign * (end - k) > 0:
+        start = self.start_of(k)
+        if start is None:
+            # Only the period a search starts from, behind the first date's, can lie past
+            # the calendar's edge with the calendar still ahead.
+            k += step
             start = self.start_of(k)
-            if start is None:
-                # Only the period a search starts from, behind the first date's, can lie
-                # past the calendar's edge with the calendar still ahead.
-                if k != first:
-                    return
-                k += step
-            elif self.months and start.month not in self.months:
+        while start is not None and direction.sign * (end - k) > 0:
+            if self.months and start.month not in self.months:
                 k = self.align(k + self._to_next_month(start, direction), direction)
             else:
                 yield start
                 k += step
+            start = self.start_of(k)
 
     def _to_next_month(self, start: date | YearMonth, direction: _Direction) -> int:
         """The periods to step along `direction` from `start`, in a month the walk passes
@@ -522,15 +552,8 @@ class _Cadence:
             return k + -k % self.interval
         return k - k % self.interval
 
-    def horizon_periods(self) -> int:
-        """Aligned periods in lcm(400 years, interval units), after which both the calendar
-        and the alignment repeat."""
-        cycle = self.unit.per_400_years
-        return cycle // gcd(cycle, self.interval)
 
-
-@dataclass(frozen=True, slots=True)
-class _Candidate:
+class _Candidate(NamedTuple):
     """A date the expression fires on, with the month whose day it names. They differ only
     when a directional nearest weekday crosses into the adjacent month."""
 
@@ -538,33 +561,38 @@ class _Candidate:
     target_month: int
 
 
-def _candidates_in_period(expr: ScheduleExpr, start: date | YearMonth) -> list[_Candidate]:
-    """The candidates in the period starting at `start`, earliest first."""
-    if isinstance(start, YearMonth):
-        assert isinstance(expr, MonthRepeat)
-        return [_Candidate(d, start.month) for d in month_target_dates(start, expr.target)]
-    return [_Candidate(d, d.month) for d in _dates_in_period(expr, start)]
+# Takes the cadence's period start: a YearMonth for a monthly expression, a date otherwise.
+_CandidatesInPeriod = Callable[[Any], list[_Candidate]]
 
 
-def _dates_in_period(expr: ScheduleExpr, start: date) -> list[date]:
+def _candidates_in_period_of(expr: ScheduleExpr) -> _CandidatesInPeriod:
+    """`expr`'s candidates in the period starting at a given start, earliest first."""
     match expr:
-        case IntervalRepeat(day_filter=day_filter):
-            fires = day_filter is None or matches_day_filter(start, day_filter)
-            return [start] if fires else []
-        case DayRepeat(days=days):
-            return [start] if matches_day_filter(start, days) else []
-        case WeekRepeat(days=days):
-            dates = (add_days(start, day.number - 1) for day in days)
-            return sorted(d for d in dates if d is not None)
-        case YearRepeat(target=target):
-            return _listed(year_target_date(start.year, target))
+        case IntervalRepeat(day_filter=day_filter) | DayRepeat(days=day_filter):
+            if day_filter is None or isinstance(day_filter, DayFilterEvery):
+                return _the_day
+            days: DayFilter = day_filter
+            return lambda day: _the_day(day) if matches_day_filter(day, days) else []
+        case WeekRepeat(days=weekdays):
+            offsets = sorted({weekday.number - 1 for weekday in weekdays})
+            return lambda monday: _candidates_on(add_days(monday, n) for n in offsets)
+        case MonthRepeat(target=month_target):
+            return lambda month: [
+                _Candidate(d, month.month) for d in month_target_dates(month, month_target)
+            ]
+        case YearRepeat(target=year_target):
+            return lambda first_day: _candidates_on([year_target_date(first_day.year, year_target)])
         case SingleDateExpr(date=NamedDate(month=month, day=day)):
-            return _listed(date_if_valid(start.year, month.number, day))
+            return lambda first_day: _candidates_on(
+                [date_if_valid(first_day.year, month.number, day)]
+            )
         case SingleDateExpr():
-            return [start]
-        case MonthRepeat():
-            raise AssertionError("a monthly expression's periods are months")
+            return _the_day
 
 
-def _listed(d: date | None) -> list[date]:
-    return [] if d is None else [d]
+def _the_day(day: date) -> list[_Candidate]:
+    return [_Candidate(day, day.month)]
+
+
+def _candidates_on(dates: Iterable[date | None]) -> list[_Candidate]:
+    return [_Candidate(d, d.month) for d in dates if d is not None]

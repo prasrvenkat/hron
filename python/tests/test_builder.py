@@ -69,3 +69,11 @@ def test_named_until_without_starting_resolves_from_the_epoch() -> None:
     schedule = Schedule(data)
     assert schedule.previous_from(NOW) == datetime(1970, 1, 15, 9, tzinfo=UTC)
     assert schedule.next_from(datetime(1970, 1, 15, 9, tzinfo=UTC)) is None
+
+
+def test_changed_data_is_seen() -> None:
+    data = ScheduleData(expr=DayRepeat(1, DayFilterEvery(), NINE))
+    schedule = Schedule(data)
+    assert schedule.next_from(NOW) == datetime(2026, 2, 7, 9, tzinfo=UTC)
+    data.timezone = "Asia/Tokyo"
+    assert schedule.next_from(NOW) == datetime(2026, 2, 7, 0, tzinfo=UTC)

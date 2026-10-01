@@ -48,6 +48,7 @@ from ._ast import (
 from ._cron import from_cron, to_cron
 from ._display import display
 from ._error import HronError, HronErrorKind, Span
+from ._eval import PreparedSchedule
 from ._eval import between as _between
 from ._eval import matches as _matches
 from ._eval import next_from as _next_from
@@ -59,9 +60,11 @@ from ._parser import parse
 
 class Schedule:
     _data: ScheduleData
+    _prepared: PreparedSchedule
 
     def __init__(self, data: ScheduleData) -> None:
         self._data = data
+        self._prepared = PreparedSchedule(data)
 
     @classmethod
     def parse(cls, input_text: str) -> Schedule:
@@ -80,28 +83,28 @@ class Schedule:
             return False
 
     def next_from(self, now: datetime) -> datetime | None:
-        return _next_from(self._data, now)
+        return _next_from(self._prepared, now)
 
     def next_n_from(self, now: datetime, n: int) -> list[datetime]:
-        return _next_n_from(self._data, now, n)
+        return _next_n_from(self._prepared, now, n)
 
     def previous_from(self, now: datetime) -> datetime | None:
         """Return the most recent occurrence strictly before `now`, or None if there is none."""
-        return _previous_from(self._data, now)
+        return _previous_from(self._prepared, now)
 
     def matches(self, dt: datetime) -> bool:
-        return _matches(self._data, dt)
+        return _matches(self._prepared, dt)
 
     def occurrences(self, from_: datetime) -> Iterator[datetime]:
         """Return a lazy iterator of occurrences strictly after `from_`.
 
         Unbounded for repeating schedules unless an `until` clause ends them.
         """
-        return _occurrences(self._data, from_)
+        return _occurrences(self._prepared, from_)
 
     def between(self, from_: datetime, to: datetime) -> Iterator[datetime]:
         """Return a lazy iterator of occurrences where `from_ < occurrence <= to`."""
-        return _between(self._data, from_, to)
+        return _between(self._prepared, from_, to)
 
     def to_cron(self) -> str:
         return to_cron(self._data)
