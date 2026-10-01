@@ -2,6 +2,7 @@ package hron
 
 import (
 	"iter"
+	"math"
 	"slices"
 	"time"
 )
@@ -23,6 +24,11 @@ const maxShiftDays = 1
 
 // Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 const namedUntilMaxYears = 8
+
+// The parser's limit on an interval. A schedule built by hand can exceed it;
+// any larger interval fires as this one does in the supported range, and
+// period arithmetic on it cannot overflow.
+const maxInterval = math.MaxInt32
 
 // Default anchors for day, month and year intervals, and for week intervals
 // (spec/README.md, "WeekRepeat epoch alignment").
@@ -281,11 +287,10 @@ type slots struct {
 
 // intervalSlots returns the slots from + k × interval up to and including to.
 func intervalSlots(expr *ScheduleExpr) slots {
-	step := expr.Interval
+	step := min(max(expr.Interval, 1), maxInterval)
 	if expr.Unit == IntervalHours {
 		step *= minutesPerHour
 	}
-	step = max(step, 1)
 	from, to := expr.FromTime.TotalMinutes(), expr.ToTime.TotalMinutes()
 	return slots{from: from, step: step, count: max(floorDiv(to-from, step)+1, 0)}
 }
@@ -471,7 +476,7 @@ func cadenceOf(data *ScheduleData) cadence {
 	case unitYear:
 		origin = newDate(anchor.Year(), time.January, 1)
 	}
-	return cadence{unit: u, origin: origin, interval: max(interval, 1)}
+	return cadence{unit: u, origin: origin, interval: min(max(interval, 1), maxInterval)}
 }
 
 func (c *cadence) periodOf(date time.Time) int {
