@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from itertools import islice
 from typing import Any
@@ -71,4 +72,7 @@ def run(case: dict[str, Any]) -> dict[str, Any]:
 
 for line in sys.stdin:
     case = json.loads(line)
-    print(json.dumps({"id": case["id"], **run(case)}), flush=True)
+    start = time.perf_counter_ns()
+    outcome = run(case)
+    micros = (time.perf_counter_ns() - start) // 1000
+    print(json.dumps({"id": case["id"], **outcome, "micros": micros}), flush=True)

@@ -70,6 +70,14 @@ class RunnerError(Exception):
     pass
 
 
+@dataclass
+class Answers:
+    """A runner's outcome for each case by id, and how long it took to evaluate it."""
+
+    outcomes: dict[str, dict] = field(default_factory=dict)
+    micros: dict[str, int] = field(default_factory=dict)
+
+
 TIMEOUT = {"ok": False, "error": {"kind": "timeout"}}
 EXITED = {"ok": False, "error": {"kind": "crash", "message": "the runner exited"}}
 
@@ -88,25 +96,25 @@ def build(name: str) -> None:
             raise RunnerError(f"{name}: `{' '.join(command)}` failed\n{done.stdout}{done.stderr}")
 
 
-def run(name: str, cases: list[dict], timeout: float) -> dict[str, dict]:
-    """Runs every case and returns each case's outcome by id. A case that hangs
+def run(name: str, cases: list[dict], timeout: float) -> Answers:
+    """Runs every case and returns the runner's answers. A case that hangs
     or kills the runner gets a timeout or crash outcome, and the runner restarts
     with the case after it. A runner that fails its first two cases that way is
     broken, not buggy, so the run stops."""
-    outcomes = {}
+    answers = Answers()
     with open(BUILD / f"{name}.log", "w") as log:
         pending = cases
         while pending:
-            pending = run_until_stuck(name, pending, timeout, outcomes, log)
+            pending = run_until_stuck(name, pending, timeout, answers, log)
             if len(cases) > 1 and all(
-                outcomes.get(case["id"]) in (TIMEOUT, EXITED) for case in cases[:2]
+                answers.outcomes.get(case["id"]) in (TIMEOUT, EXITED) for case in cases[:2]
             ):
                 raise RunnerError(f"{name}: no answer to the first two cases; see {log.name}")
-    return outcomes
+    return answers
 
 
 def run_until_stuck(
-    name: str, cases: list[dict], timeout: float, outcomes: dict, log: TextIO
+    name: str, cases: list[dict], timeout: float, answers: Answers, log: TextIO
 ) -> list[dict]:
     language = LANGUAGES[name]
     try:
@@ -130,27 +138,28 @@ def run_until_stuck(
             try:
                 line = lines.get(timeout=timeout)
             except queue.Empty:
-                outcomes[case["id"]] = TIMEOUT
+                answers.outcomes[case["id"]] = TIMEOUT
                 return cases[i + 1 :]
             if line is None:
-                outcomes[case["id"]] = EXITED
+                answers.outcomes[case["id"]] = EXITED
                 return cases[i + 1 :]
-            outcomes[case["id"]] = answer(name, case, line)
+            answers.outcomes[case["id"]], answers.micros[case["id"]] = answer(name, case, line)
         return []
     finally:
         process.kill()
         process.wait()
 
 
-def answer(name: str, case: dict, line: str) -> dict:
+def answer(name: str, case: dict, line: str) -> tuple[dict, int]:
     try:
         outcome = json.loads(line)
         answered = outcome.pop("id")
+        micros = outcome.pop("micros")
     except (ValueError, KeyError):
         raise RunnerError(f"{name}: not an answer to {case['id']}: {line!r}") from None
     if answered != case["id"]:
         raise RunnerError(f"{name}: answered {answered} instead of {case['id']}")
-    return outcome
+    return outcome, micros
 
 
 def feed(stdin: TextIO, cases: list[dict]) -> None:

@@ -32,18 +32,31 @@ public class Runner {
         new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8);
     for (String line; (line = in.readLine()) != null; ) {
       Map<String, String> c = parseCase(line);
-      out.println("{\"id\":" + json(c.get("id")) + "," + run(c) + "}");
+      long start = System.nanoTime();
+      Evaluated evaluated = run(c);
+      long micros = (System.nanoTime() - start) / 1000;
+      String id = json(c.get("id"));
+      out.println("{\"id\":" + id + "," + outcome(evaluated) + ",\"micros\":" + micros + "}");
     }
   }
 
-  private static String run(Map<String, String> c) {
+  private record Evaluated(Object result, Throwable error) {}
+
+  private static Evaluated run(Map<String, String> c) {
     try {
-      return "\"ok\":true,\"result\":" + json(evaluate(c));
-    } catch (HronException e) {
-      return "\"ok\":false,\"error\":" + details(e);
+      return new Evaluated(evaluate(c), null);
     } catch (Exception | StackOverflowError e) {
-      return "\"ok\":false,\"error\":{\"kind\":\"crash\",\"message\":" + json(e.toString()) + "}";
+      return new Evaluated(null, e);
     }
+  }
+
+  private static String outcome(Evaluated evaluated) {
+    return switch (evaluated.error()) {
+      case null -> "\"ok\":true,\"result\":" + json(evaluated.result());
+      case HronException e -> "\"ok\":false,\"error\":" + details(e);
+      case Throwable e ->
+          "\"ok\":false,\"error\":{\"kind\":\"crash\",\"message\":" + json(e.toString()) + "}";
+    };
   }
 
   private static String details(HronException e) {

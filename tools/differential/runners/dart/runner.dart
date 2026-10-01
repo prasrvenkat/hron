@@ -77,7 +77,10 @@ Future<void> main() async {
   final lines = stdin.transform(utf8.decoder).transform(const LineSplitter());
   await for (final line in lines) {
     final Map<String, dynamic> c = jsonDecode(line);
-    stdout.writeln(jsonEncode({'id': c['id'], ...run(c)}));
+    final watch = Stopwatch()..start();
+    final outcome = run(c);
+    final micros = watch.elapsedMicroseconds;
+    stdout.writeln(jsonEncode({'id': c['id'], ...outcome, 'micros': micros}));
     await stdout.flush();
   }
 }

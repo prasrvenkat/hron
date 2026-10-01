@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -7,7 +8,9 @@ using Hron;
 for (string? line; (line = Console.ReadLine()) != null;)
 {
     var c = JsonNode.Parse(line)!.AsObject();
+    var start = Stopwatch.GetTimestamp();
     var outcome = Run(c);
+    outcome["micros"] = (long)Stopwatch.GetElapsedTime(start).TotalMicroseconds;
     outcome["id"] = c["id"]!.GetValue<string>();
     Console.WriteLine(JsonSerializer.Serialize(outcome));
 }

@@ -119,6 +119,40 @@ EDGE_EXPRS = [
     "every day at 12:00 until 9999-12-31",
     "every week on sunday at 12:00 starting 9999-12-25",
 ]
+# Schedules that fire rarely, never, or only near the search horizon or the
+# range's ends, where each language's horizon and stop rule are tested.
+SPARSE_EXPRS = [
+    "every 400 years on jan 1 at 00:00 except 2400-01-01 starting 2000-01-01",
+    "every 400 years on jan 1 at 00:00 except 2400-01-01, 2800-01-01 starting 2000-01-01",
+    "every 100 years on feb 29 at 09:00 starting 2000-01-01",
+    "every 2 years on feb 29 at 09:00 starting 2025-01-01",
+    "every 2 years on feb 29 at 09:00 starting 2024-01-01",
+    "every year on feb 29 at 09:00 except feb 29",
+    "every month on the 31st at 09:00 during feb",
+    "every month on the 30th at 09:00 during feb, apr",
+    "every 7 years on the fifth sunday of february at 09:00",
+    "every 11 years on the fifth sunday of february at 09:00 starting 1900-01-01",
+    "every 146097 days at 09:00",
+    "every 146096 days at 09:00 starting 2000-01-01",
+    "every 2147483647 days at 09:00 starting 2026-01-01",
+    "every 4800 months on the 1st at 09:00",
+    "every 20871 weeks on monday at 09:00",
+    "every day at 09:00 until feb 29 starting 2097-03-01",
+    "every day at 09:00 until feb 29 starting 9997-03-01",
+    "every day at 09:00 until mar 1 starting 9999-03-02",
+]
+SPARSE_NOWS = [
+    datetime(1, 1, 2, tzinfo=UTC),
+    datetime(1999, 12, 31, tzinfo=UTC),
+    datetime(2026, 2, 6, 12, tzinfo=UTC),
+    datetime(2399, 6, 1, tzinfo=UTC),
+    datetime(9990, 1, 1, tzinfo=UTC),
+]
+SPARSE_MATCHES = [
+    datetime(2000, 1, 1, tzinfo=UTC),
+    datetime(2096, 2, 29, 9, tzinfo=UTC),
+    datetime(2400, 1, 1, tzinfo=UTC),
+]
 EDGE_ZONES = ["", " in Etc/GMT-14", " in Etc/GMT+12"]
 EARLIEST = datetime(1, 1, 1, tzinfo=UTC)
 # The latest instant that jiff, and so the Rust runner, can represent.
@@ -250,6 +284,11 @@ class Cases(list):
         self.append({"id": case_id, "op": op, "expr": expr, **(args or {})})
 
 
+def meant_to_parse(case: dict) -> bool:
+    """Whether the generator meant the case's expression to parse."""
+    return case["op"] != "fromCron" and not case["id"].startswith(("invalid-", "mutant-"))
+
+
 def generate() -> list[dict]:
     rng = random.Random(SEED)
     cases = Cases()
@@ -257,6 +296,7 @@ def generate() -> list[dict]:
     add_eval(cases, rng)
     add_dst(cases)
     add_range(cases)
+    add_sparse(cases)
     add_cron(cases, rng)
     return cases
 
@@ -456,6 +496,16 @@ def add_range(cases: Cases) -> None:
             cases.add("range", "occurrences", expr, {"from": stamp(RANGE_LAST - DAY), "n": 3})
             cases.add("range", "between", expr, early)
             cases.add("range", "between", expr, late)
+
+
+def add_sparse(cases: Cases) -> None:
+    for expr in SPARSE_EXPRS:
+        for now in SPARSE_NOWS:
+            cases.add("sparse", "next", expr, {"now": stamp(now)})
+            cases.add("sparse", "prev", expr, {"now": stamp(now)})
+            cases.add("sparse", "nextN", expr, {"now": stamp(now), "n": 3})
+        for instant in SPARSE_MATCHES:
+            cases.add("sparse", "matches", expr, {"datetime": stamp(instant)})
 
 
 def add_cron(cases: Cases, rng: random.Random) -> None:

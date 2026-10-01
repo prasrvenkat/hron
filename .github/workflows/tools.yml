@@ -1,0 +1,49 @@
+name: Tools
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/**"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/tools.yml"
+  pull_request:
+    paths:
+      - "tools/**"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/tools.yml"
+
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: just
+
+      - name: Install dependencies
+        run: cd python && uv sync --locked
+
+      - name: Format & Lint
+        run: just lint-tools
+
+      - name: Cases are deterministic
+        run: |
+          for seed in 1 2; do
+            PYTHONHASHSEED=$seed python/.venv/bin/python -c "import hashlib, json, sys; sys.path.insert(0, 'tools/differential'); from cases import generate; print(hashlib.sha256(json.dumps(generate()).encode()).hexdigest())"
+          done | uniq | wc -l | grep -qx 1

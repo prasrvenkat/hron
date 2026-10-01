@@ -3,8 +3,15 @@
 import json
 from collections import Counter, defaultdict
 
+from cases import meant_to_parse
+
 ARGUMENTS = ["now", "datetime", "from", "to", "n"]
 ERROR_FIELDS = ["kind", "span", "suggestion"]
+PARSE_KINDS = ["lex", "parse"]
+# A case counts as slower only past both, as garbage collection pauses and JIT
+# warm-up can add tens of milliseconds to any one case.
+SLOWER_RATIO = 3
+SLOWER_FLOOR_MICROS = 20_000
 
 
 def describe(case: dict) -> str:
@@ -76,12 +83,40 @@ def print_table(cases: list[dict], outcomes: dict[str, dict], divergent: list) -
         print(f"{name:8}{kinds['ok']:>7}{error:>7}{crash:>7}{timeout:>9}{outvoted:>10}")
 
 
-def compare(saved: dict, cases: list[dict], outcomes: dict[str, dict], examples: int) -> int:
+def warn_unparsed(cases: list[dict], outcomes: dict[str, dict]) -> None:
+    """Warns about generated expressions meant to parse that every language
+    rejects, which would otherwise pass as agreement."""
+    unparsed = [
+        case
+        for case in cases
+        if meant_to_parse(case)
+        and all(
+            by_id[case["id"]].get("error", {}).get("kind") in PARSE_KINDS
+            for by_id in outcomes.values()
+        )
+    ]
+    if unparsed:
+        print(f"warning: {len(unparsed)} generated cases meant to parse fail to parse, e.g.")
+        for case in unparsed[:3]:
+            print(f"  {describe(case)}")
+
+
+def comparable_cases(saved: dict, cases: list[dict]) -> list[dict]:
+    """The cases also in the saved run, unchanged."""
+    saved_cases = {case["id"]: case for case in saved["cases"]}
+    return [case for case in cases if saved_cases.get(case["id"]) == case]
+
+
+def compare(
+    saved: dict,
+    cases: list[dict],
+    comparable: list[dict],
+    outcomes: dict[str, dict],
+    examples: int,
+) -> int:
     """Prints each language's outcomes that differ from the saved run. Returns
     the number of outcomes, one per case and language, that changed or could
     not be compared."""
-    saved_cases = {case["id"]: case for case in saved["cases"]}
-    comparable = [case for case in cases if saved_cases.get(case["id"]) == case]
     uncompared = len(cases) - len(comparable)
     if uncompared:
         print(f"{uncompared} cases are new or changed since the saved run, so were not compared")
@@ -100,3 +135,32 @@ def compare(saved: dict, cases: list[dict], outcomes: dict[str, dict], examples:
             print(f"    before: {show(before[case['id']])}")
             print(f"    after:  {show(after[case['id']])}")
     return changes
+
+
+def compare_times(
+    saved: dict, comparable: list[dict], micros: dict[str, dict[str, int]], examples: int
+) -> None:
+    """Prints each language's evaluation time against the saved run's, and the
+    cases that became much slower. Timings are noisy, so this only informs."""
+    if "micros" not in saved:
+        print("\nthe saved run has no timings")
+        return
+    print("\nevaluation time, before -> after")
+    for name, after in micros.items():
+        before = saved["micros"].get(name)
+        if before is None:
+            print(f"{name}: not in the saved run")
+            continue
+        timed = [case for case in comparable if case["id"] in before and case["id"] in after]
+        total_before = sum(before[case["id"]] for case in timed) / 1e6
+        total_after = sum(after[case["id"]] for case in timed) / 1e6
+        slower = [case for case in timed if is_slower(before[case["id"]], after[case["id"]])]
+        slower.sort(key=lambda case: after[case["id"]] - before[case["id"]], reverse=True)
+        print(f"{name}: {total_before:.2f}s -> {total_after:.2f}s, {len(slower)} cases slower")
+        for case in slower[:examples]:
+            print(f"  {describe(case)}")
+            print(f"    {before[case['id']]}us -> {after[case['id']]}us")
+
+
+def is_slower(before: int, after: int) -> bool:
+    return after >= SLOWER_RATIO * before and after - before >= SLOWER_FLOOR_MICROS
