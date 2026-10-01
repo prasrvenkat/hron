@@ -33,6 +33,8 @@ A comment is a claim about the code that nothing checks, so every comment must e
 - **Why**, when the code cannot show it: a spec rule, a platform or library quirk, a workaround and what it works around.
 - **Public API contract**, in a line or two: what it returns, when it returns nothing, what it throws. IDEs and package registries show these.
 
+Non-public functions, types, constants and fields get no doc comment unless it states a why: their names and code say what they do, and a second description of the same thing is the first to go stale.
+
 Everything else goes:
 
 - Restating what the code does, or labelling the next line.
@@ -43,6 +45,8 @@ Everything else goes:
 - Copies of the spec. Name the rule in `spec/README.md`, or the `spec/tests.json` case, instead of re-explaining it.
 
 When you change code, fix or delete every comment it makes untrue.
+
+Before committing, run `just comments` and give every line it lists one of the two reasons above, or delete it. A reviewer does the same, line by line, and reports any comment without a reason.
 
 ## Git Workflow
 
