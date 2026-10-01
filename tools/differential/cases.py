@@ -3,9 +3,9 @@ system timezone database, never on the wall clock."""
 
 import random
 import re
-from collections import Counter
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from collections import Counter, defaultdict
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo, available_timezones
 
 SEED = 20260930
 
@@ -269,10 +269,37 @@ CRON_FIELDS = [
     ["*", "1-5", "MON", "0", "7", "5L", "1#2", "SUN#1", "?", "1-5/2", "sat,sun"],
 ]
 
+# From 1971, when every zone had left local mean time, through 2035, so that no
+# search reaches past 2037, where DST rules depend on each platform's tz data.
+STRESS_START = datetime(1971, 1, 1, tzinfo=UTC)
+STRESS_END = datetime(2036, 1, 1, tzinfo=UTC)
+AREAS = (
+    "Africa/", "America/", "Antarctica/", "Asia/", "Atlantic/", "Australia/", "Europe/",
+    "Indian/", "Pacific/",
+)  # fmt: skip
+STRESS_PER_SHAPE = 1
+STRESS_OTHER_ZONES = 10
+STRESS_TIMES = ["23:59, 00:00", "23:30, 00:15", "23:30, 00:30", "00:30, 01:30, 23:30"]
+STRESS_INTERVALS = [
+    "30 min from 00:00 to 23:59",
+    "1 hour from 00:00 to 23:59",
+    "1 min from 23:58 to 23:59",
+    "7 min from 22:30 to 23:59",
+    "20 min from 00:00 to 02:00",
+    "45 min from 00:00 to 23:59",
+]
+STRESS_NOWS = [timedelta(0)] + [
+    sign * timedelta(minutes=minutes)
+    for minutes in [1, 30, 59, 61, 90, 120, 180, 240, 1380, 1440, 1560, 2880]
+    for sign in (1, -1)
+]
+
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 MINUTE = timedelta(minutes=1)
+HOUR = timedelta(hours=1)
 DAY = timedelta(days=1)
+WEEK = timedelta(weeks=1)
 
 
 class Cases(list):
@@ -303,6 +330,16 @@ def generate() -> list[dict]:
     add_range(cases)
     add_sparse(cases)
     add_cron(cases, rng)
+    return cases
+
+
+def generate_stress() -> list[dict]:
+    """Cases around the DST transitions from 1971 to 2035 that stress_transitions picks:
+    schedules firing in, beside and across the wall-clock range each one skips or
+    repeats, evaluated from instants on both sides of it."""
+    cases = Cases()
+    for zone, change in stress_transitions(random.Random(SEED)):
+        add_stress(cases, zone, change)
     return cases
 
 
@@ -410,29 +447,41 @@ def offset(instant: datetime, tz: ZoneInfo) -> timedelta:
     return utcoffset
 
 
-def transitions(zone: str, year: int) -> list[datetime]:
-    """The instants in `year` at which the zone's UTC offset changes."""
+def transitions(zone: str, start: datetime, end: datetime) -> list[datetime]:
+    """The instants in (start, end] at which the zone's UTC offset changes,
+    assuming no two changes in a week undo each other."""
     tz = ZoneInfo(zone)
     found = []
-    hour = datetime(year, 1, 1, tzinfo=UTC)
-    while hour.year == year:
-        later = hour + timedelta(hours=1)
-        if offset(hour, tz) != offset(later, tz):
-            minute = hour
-            while offset(minute, tz) == offset(hour, tz):
-                minute += MINUTE
-            found.append(minute)
-        hour = later
+    while start < end:
+        later = min(start + WEEK, end)
+        if offset(start, tz) != offset(later, tz):
+            low, high = start, later
+            while high - low > MINUTE:
+                middle = low + (high - low) // MINUTE // 2 * MINUTE
+                if offset(middle, tz) == offset(low, tz):
+                    low = middle
+                else:
+                    high = middle
+            found.append(high)
+        start = later
     return found
+
+
+def wall_range(change: datetime, tz: ZoneInfo) -> tuple[timedelta, timedelta, datetime, datetime]:
+    """The offsets before and after a change, and the wall-clock range [start, end)
+    that it skips or repeats."""
+    before, after = offset(change - MINUTE, tz), offset(change, tz)
+    naive = change.replace(tzinfo=None)
+    start, end = sorted([naive + before, naive + after])
+    return before, after, start, end
 
 
 def add_dst(cases: Cases) -> None:
     for zone, year in [(zone, 2026) for zone in DST_ZONES] + [("Pacific/Apia", 2011)]:
         tz = ZoneInfo(zone)
-        for change in transitions(zone, year):
-            before, after = offset(change - MINUTE, tz), offset(change, tz)
-            naive = change.replace(tzinfo=None)
-            start, end = sorted([naive + before, naive + after])
+        year_start = datetime(year, 1, 1, tzinfo=UTC)
+        for change in transitions(zone, year_start, year_start.replace(year=year + 1)):
+            before, after, start, end = wall_range(change, tz)
             for expr, wall in dst_schedules(start, end):
                 # The wall time read with each offset: in a gap the shifted
                 # occurrence, in an overlap the first and the second pass.
@@ -517,3 +566,128 @@ def add_cron(cases: Cases, rng: random.Random) -> None:
     generated = {" ".join(rng.choice(field) for field in CRON_FIELDS) for _ in range(300)}
     for cron in CRONS + sorted(generated - set(CRONS)):
         cases.add("cron", "fromCron", cron)
+
+
+def stress_transitions(rng: random.Random) -> list[tuple[str, datetime]]:
+    """Every transition whose skipped or repeated range crosses midnight or lasts a
+    day or more, STRESS_PER_SHAPE of those that start or end at midnight for each
+    direction, start time and length, and one other transition in each of
+    STRESS_OTHER_ZONES zones. Zones with the same transitions count once."""
+    zones = {}
+    for zone in sorted(available_timezones()):
+        if zone.startswith(AREAS) and (changes := transitions(zone, STRESS_START, STRESS_END)):
+            tz = ZoneInfo(zone)
+            zones.setdefault(tuple((change, offset(change, tz)) for change in changes), zone)
+    chosen, at_midnight, others = [], defaultdict(list), defaultdict(list)
+    for data, zone in zones.items():
+        tz = ZoneInfo(zone)
+        for change, _ in data:
+            before, after, start, end = wall_range(change, tz)
+            if before % MINUTE or after % MINUTE:
+                continue  # Offsets that are not whole minutes are outside the spec.
+            if before == offset(datetime(1800, 1, 1, tzinfo=UTC), tz):
+                # Before a zone's first transition, such as Rothera's opening in 1976,
+                # package:timezone gives the offset after it.
+                continue
+            if start.date() != (end - MINUTE).date() or end - start >= DAY:
+                chosen.append((zone, change))
+            elif start.time() == time() or end.time() == time():
+                at_midnight[after > before, start.time(), end - start].append((zone, change))
+            else:
+                others[zone].append(change)
+    for shape in sorted(at_midnight):
+        group = at_midnight[shape]
+        chosen += rng.sample(group, min(STRESS_PER_SHAPE, len(group)))
+    taken = {zone for zone, _ in chosen}
+    for zone in rng.sample(sorted(others.keys() - taken), STRESS_OTHER_ZONES):
+        chosen.append((zone, rng.choice(others[zone])))
+    return sorted(chosen)
+
+
+def times(*walls: datetime) -> str:
+    return ", ".join(dict.fromkeys(hhmm(wall) for wall in walls))
+
+
+def weekdays(*days: date) -> str:
+    return ", ".join(dict.fromkeys(WEEKDAYS[day.weekday()] for day in days))
+
+
+def stress_schedules(start: datetime, end: datetime) -> list[str]:
+    middle = start + (end - start) // 2
+    first, last = start.date(), (end - MINUTE).date()
+    t, t2 = times(middle), times(middle, end)
+    walls = [start - MINUTE, start, middle, end - MINUTE, end]
+    schedules = [f"every day at {hhmm(wall)}" for wall in walls]
+    for pair in [(start - MINUTE, end - MINUTE), (end - MINUTE, start), (middle, start - MINUTE)]:
+        schedules.append(f"every day at {times(*pair)}")
+    schedules.append(f"every day at {times(end, middle)}")
+    schedules += [f"every day at {pair}" for pair in STRESS_TIMES]
+    for day in {first, last, first - DAY, last + DAY}:
+        month, nth = MONTHS[day.month - 1], ordinal(day.day)
+        schedules += [
+            f"every {weekdays(day)} at {t}",
+            f"every {weekdays(day)} at {t2}",
+            f"every month on the {nth} at {t}",
+            f"every year on {month} {day.day} at {t}",
+            f"every day at {t} except {month} {day.day}",
+            f"every day at {t} except {day}",
+            f"every day at {t} until {day}",
+            f"every day at {t} starting {day}",
+        ]
+        for direction in ["", "next ", "previous "]:
+            schedules.append(f"every month on the {direction}nearest weekday to {nth} at {t}")
+            schedules.append(f"every month on the {direction}nearest weekday to {nth} at {t2}")
+    schedules += [
+        f"every {weekdays(first, first + DAY)} at {times(start - MINUTE, middle)}",
+        f"every 2 days at {t}",
+        f"every 3 days at {times(middle, end)}",
+        f"every weekday at {t}",
+        f"every weekend at {t}",
+        f"every 2 weeks on {weekdays(first, last)} at {t}",
+        f"every month on the last day at {t}",
+        f"every month on the 1st at {t}",
+        f"every month on the 1st, 31st at {t}",
+        f"every month on the next nearest weekday to 31st at {t}",
+        f"every month on the previous nearest weekday to 1st at {t}",
+        f"every month on the nearest weekday to 1st at {t}",
+        f"every month on the next nearest weekday to 30th at {t2}",
+        f"every month on the last weekday at {t}",
+        f"every month on the last {weekdays(first)} at {t}",
+        f"on {first} at {t}",
+        f"on {last} at {t}",
+        f"on {MONTHS[first.month - 1]} {first.day} at {t}",
+    ]
+    window_start = max(start - HOUR, start.replace(hour=0, minute=0))
+    window_end = min(end + HOUR, start.replace(hour=23, minute=59))
+    for interval in [f"15 min from {hhmm(window_start)} to {hhmm(window_end)}", *STRESS_INTERVALS]:
+        schedules.append(f"every {interval}")
+        schedules.append(f"every {interval} on {weekdays(first)}")
+        schedules.append(f"every {interval} on {weekdays(last)}")
+    return sorted(set(schedules))
+
+
+def add_stress(cases: Cases, zone: str, change: datetime) -> None:
+    tz = ZoneInfo(zone)
+    before, after, start, end = wall_range(change, tz)
+    middle = start + (end - start) // 2
+    walls = [start - MINUTE, start, middle, end - MINUTE, end]
+    walls += [start.replace(hour=23, minute=30), end.replace(hour=0, minute=15)]
+    # Each wall time read with each offset: in a gap the shifted occurrence, in an
+    # overlap the first and the second pass.
+    readings = [
+        stamp((wall - utc_offset).replace(tzinfo=UTC), zone)
+        for wall in walls
+        for utc_offset in (before, after)
+    ]
+    nows = [stamp(change + delta, zone) for delta in STRESS_NOWS]
+    window = {"from": stamp(change - 3 * DAY, zone), "to": stamp(change + 3 * DAY, zone)}
+    for schedule in stress_schedules(start, end):
+        expr = f"{schedule} in {zone}"
+        for now in nows:
+            cases.add("stress", "next", expr, {"now": now})
+            cases.add("stress", "prev", expr, {"now": now})
+        for reading in readings:
+            cases.add("stress", "next", expr, {"now": reading})
+            cases.add("stress", "prev", expr, {"now": reading})
+            cases.add("stress", "matches", expr, {"datetime": reading})
+        cases.add("stress", "between", expr, window)

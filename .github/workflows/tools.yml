@@ -45,5 +45,5 @@ jobs:
       - name: Cases are deterministic
         run: |
           for seed in 1 2; do
-            PYTHONHASHSEED=$seed python/.venv/bin/python -c "import hashlib, json, sys; sys.path.insert(0, 'tools/differential'); from cases import generate; print(hashlib.sha256(json.dumps(generate()).encode()).hexdigest())"
+            PYTHONHASHSEED=$seed python/.venv/bin/python -c "import hashlib, json, sys; sys.path.insert(0, 'tools/differential'); from cases import generate, generate_stress; print(hashlib.sha256(json.dumps([generate(), generate_stress()]).encode()).hexdigest())"
           done | uniq | wc -l | grep -qx 1
