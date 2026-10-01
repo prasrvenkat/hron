@@ -54,6 +54,14 @@ class TestIntervalBelowOneIsOne:
         expr = YearRepeat(interval, target, NINE)
         assert _next_three(expr) == _next_three(YearRepeat(1, target, NINE))
 
+    def test_interval_repeat_hours(self, interval: int) -> None:
+        expr = IntervalRepeat(
+            interval, IntervalUnit.HOURS, TimeOfDay(13, 0), TimeOfDay(15, 0), None
+        )
+        assert _next_three(expr) == [
+            datetime(2026, 2, 6, hour, tzinfo=UTC) for hour in (13, 14, 15)
+        ]
+
     def test_interval_repeat(self, interval: int) -> None:
         expr = IntervalRepeat(interval, IntervalUnit.MIN, TimeOfDay(13, 0), TimeOfDay(13, 2), None)
         assert _next_three(expr) == [

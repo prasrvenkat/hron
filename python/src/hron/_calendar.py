@@ -96,12 +96,12 @@ def matches_day_filter(d: date, day_filter: DayFilter) -> bool:
 def month_target_dates(month: YearMonth, target: MonthTarget) -> list[date]:
     """The dates a monthly target names in a month, earliest first."""
     year, number = month.year, month.month
-    if isinstance(target, NearestWeekdayTarget):
-        nearest = nearest_weekday(month, target.day, target.direction)
-        return [] if nearest is None else [nearest]
-    if not MINYEAR <= year <= MAXYEAR:
-        return []
     match target:
+        case NearestWeekdayTarget(day=day, direction=toward):
+            nearest = nearest_weekday(month, day, toward)
+            return [] if nearest is None else [nearest]
+        case _ if not MINYEAR <= year <= MAXYEAR:
+            return []
         case DaysTarget():
             last = days_in_month(year, number)
             days = sorted(expand_month_target(target))
@@ -168,5 +168,5 @@ def nearest_weekday(month: YearMonth, day: int, toward: NearestDirection | None)
 
 def _proleptic_ordinal(year: int, month: int, day: int) -> int:
     """`date.toordinal()`, extended to years outside `date`'s through the 400-year cycle."""
-    cycles = 0 if MINYEAR <= year <= MAXYEAR else (year - 2000) // 400
+    cycles = (year - MINYEAR) // 400
     return date(year - 400 * cycles, month, day).toordinal() + cycles * DAYS_PER_400_YEARS

@@ -69,8 +69,10 @@ _RANGE_END = datetime(9999, 12, 30, tzinfo=UTC)
 # starts, and for a horizon that starts mid-period.
 _HORIZON_MARGIN_PERIODS = 2
 
-# How many dates past its scheduled date an occurrence can land: a fixed time shifted out
-# of a gap before midnight lands on the next date.
+# How many dates apart the two sides of a date bound can be, for two reasons: a fixed time
+# shifted out of a gap before midnight lands on the date after its scheduled date, and from
+# the second pass of a fall-back across midnight, now's date is one behind a date that has
+# begun (_behind).
 _MAX_SHIFT_DAYS = 1
 
 # Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
