@@ -27,6 +27,8 @@ type testCase struct {
 
 var zoned = regexp.MustCompile(`^(.+)\[(.+)\]$`)
 
+var offsetWithSeconds = regexp.MustCompile(`[+-]\d\d:\d\d:\d\d$`)
+
 var locations = map[string]*time.Location{}
 
 func location(name string) *time.Location {
@@ -44,15 +46,30 @@ func location(name string) *time.Location {
 func parseZoned(s string) time.Time {
 	parts := zoned.FindStringSubmatch(s)
 	loc := location(parts[2])
-	t, err := time.Parse(time.RFC3339, parts[1])
+	layout := time.RFC3339
+	if offsetWithSeconds.MatchString(parts[1]) {
+		layout = "2006-01-02T15:04:05-07:00:00"
+	}
+	t, err := time.Parse(layout, parts[1])
 	if err != nil {
 		panic(err)
 	}
 	return t.In(loc)
 }
 
+// Go's -07:00 layout drops an offset's seconds, and -07:00:00 writes Africa/Accra's -00:00:52 as
+// +00:00:-52.
 func formatZoned(t time.Time) string {
-	return t.Format("2006-01-02T15:04:05-07:00") + "[" + t.Location().String() + "]"
+	_, offset := t.Zone()
+	sign := '+'
+	if offset < 0 {
+		sign, offset = '-', -offset
+	}
+	zone := fmt.Sprintf("%c%02d:%02d", sign, offset/3600, offset/60%60)
+	if offset%60 != 0 {
+		zone += fmt.Sprintf(":%02d", offset%60)
+	}
+	return t.Format("2006-01-02T15:04:05") + zone + "[" + t.Location().String() + "]"
 }
 
 func formatOrNil(t *time.Time) any {

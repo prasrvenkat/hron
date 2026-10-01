@@ -21,7 +21,7 @@ import java.util.stream.Stream;
 public class Runner {
   private static final Pattern ZONED = Pattern.compile("(.+)\\[(.+)]");
   private static final DateTimeFormatter ISO =
-      DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssxxx");
+      DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssxxxxx");
 
   public static void main(String[] args) throws Exception {
     var in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));

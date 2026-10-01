@@ -5,14 +5,20 @@ import 'package:hron/hron.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart';
 
+final zoned = RegExp(r'^(.+?)(?:Z|([+-])(\d\d):(\d\d)(?::(\d\d))?)\[(.+)\]$');
+
+// DateTime.parse rejects an offset with seconds, so the offset is applied here.
 TZDateTime parseZoned(String s) {
-  final bracket = s.indexOf('[');
-  final zone = s.substring(bracket + 1, s.length - 1);
-  final instant = DateTime.parse(s.substring(0, bracket));
-  return TZDateTime.fromMillisecondsSinceEpoch(
-    zone == 'UTC' ? UTC : getLocation(zone),
-    instant.millisecondsSinceEpoch,
+  final match = zoned.firstMatch(s)!;
+  final wall = DateTime.parse('${match[1]}Z');
+  final offset = Duration(
+    hours: int.parse(match[3] ?? '0'),
+    minutes: int.parse(match[4] ?? '0'),
+    seconds: int.parse(match[5] ?? '0'),
   );
+  final instant = match[2] == '-' ? wall.add(offset) : wall.subtract(offset);
+  final zone = match[6]!;
+  return TZDateTime.from(instant, zone == 'UTC' ? UTC : getLocation(zone));
 }
 
 String two(int n) => n.toString().padLeft(2, '0');
@@ -23,8 +29,9 @@ String formatZoned(TZDateTime t) {
   final date =
       '${t.year.toString().padLeft(4, '0')}-${two(t.month)}-${two(t.day)}';
   final time = '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
-  final zone =
-      '$sign${two(offset.inHours.abs())}:${two(offset.inMinutes.abs() % 60)}';
+  final seconds = offset.inSeconds.abs();
+  var zone = '$sign${two(seconds ~/ 3600)}:${two(seconds ~/ 60 % 60)}';
+  if (seconds % 60 != 0) zone += ':${two(seconds % 60)}';
   return '${date}T$time$zone[${t.location.name}]';
 }
 
