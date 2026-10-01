@@ -2842,6 +2842,13 @@
           "description": "the excepted occurrence for March 2426 lands on Friday Feb 27; the span runs past its target month, finding 2826-02-27",
           "now": "2026-04-15T12:00:00+00:00[UTC]",
           "next": "2826-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "unsorted_iso_exceptions_beyond_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 2800-01-01, 3200-01-01, 2400-01-01 starting 2000-01-01 in UTC",
+          "description": "the span runs past the last ISO exception by date, 3200-01-01, not the last one written",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "3600-01-01T00:00:00+00:00[UTC]"
         }
       ]
     },
@@ -5583,6 +5590,14 @@
           "from": "9999-12-30T12:00:00+00:00[UTC]",
           "take": 3,
           "expected": []
+        },
+        {
+          "name": "range_from_before_start",
+          "expression": "every day at 09:00 in UTC",
+          "description": "an iterator from just before the supported range is empty, though the next day's occurrence is in range",
+          "from": "0001-01-01T23:59:59+00:00[UTC]",
+          "take": 3,
+          "expected": []
         }
       ]
     },
@@ -7423,6 +7438,13 @@
           "now": "2026-11-01T01:05:00-05:00[America/New_York]",
           "expected": "2026-11-01T01:45:00-04:00[America/New_York]",
           "description": "now 01:05 EST (second pass): the latest slot before it is 01:45 EDT; 01:00 EST repeats the 01:00 slot, so it is not one"
+        },
+        {
+          "name": "unsorted_iso_exceptions_before_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 9600-01-01, 8800-01-01, 9200-01-01 starting 2000-01-01 in UTC",
+          "now": "9990-01-01T00:00:00+00:00[UTC]",
+          "expected": "8400-01-01T00:00:00+00:00[UTC]",
+          "description": "backward, the span runs past the first ISO exception by date, 8800-01-01, not the first one written"
         }
       ]
     },
