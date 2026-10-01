@@ -143,6 +143,8 @@ Where a platform needs it, an implementation may also:
 - Resolve a date's slots once into an ascending list of instants, gap slots dropped, and binary-search that list: it needs no gap keys.
 - Find a gap's end without a transition API by binary-searching whole seconds between the wall time read with the offsets after and before the gap: every slot instant is a whole second, so the first second at or after the transition is as good a key.
 - Narrow a date's binary search with the UTC offsets a day either side of it, where offset changes are days apart: on a date without a change, the keys follow from the wall minutes.
+- Start the slot search at the slot holding the instant's wall minute and search outward, where each key is costly to resolve: it finds the boundary in one or two probes when the wall minute is right.
+- Skip the months `during` rejects inside the cadence, jumping to the next month it allows, instead of testing each period.
 
 ## Pull Requests
 
