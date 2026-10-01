@@ -2765,6 +2765,41 @@
           "expression": "on feb 14 at 9:00 except 2026-02-14 in UTC",
           "description": "this year excepted, next = 2027",
           "next_date": "2027-02-14"
+        },
+        {
+          "name": "iso_exception_beyond_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 2400-01-01 starting 2000-01-01 in UTC",
+          "description": "the search runs one 400-year span past the last ISO exception, so 2400 being excepted still finds 2800",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2800-01-01T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exceptions_beyond_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 2400-01-01, 2800-01-01 starting 2000-01-01 in UTC",
+          "description": "two excepted occurrences in a row: next is 3200",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "3200-01-01T00:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exception_beyond_the_horizon_months",
+          "expression": "every 4800 months on the 1st at 09:00 except 2370-01-01 in UTC",
+          "description": "4800 months from the 1970 epoch is 2370-01-01, excepted: next is 2770-01-01",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2770-01-01T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exception_beyond_the_horizon_weeks",
+          "expression": "every 20871 weeks on thursday at 09:00 except 2370-01-08 in UTC",
+          "description": "20871 weeks from the epoch Monday is the week of 2370-01-05; its Thursday is excepted: next is 2770-01-08",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2770-01-08T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exception_beyond_the_horizon_days",
+          "expression": "every 146097 days at 09:00 except 2370-01-01 in UTC",
+          "description": "146097 days from the epoch is 2370-01-01, excepted: next is 2770-01-01",
+          "now": "2026-02-06T12:00:00+00:00[UTC]",
+          "next": "2770-01-01T09:00:00+00:00[UTC]"
         }
       ]
     },
@@ -7262,6 +7297,20 @@
           "description": "until feb 27 (2026-02-27): Feb 27 is the landing date for target Mar 1 and is on the until date",
           "now": "2026-12-01T00:00:00+00:00[UTC]",
           "expected": "2026-02-27T09:00:00+00:00[UTC]"
+        },
+        {
+          "name": "iso_exception_before_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 9600-01-01 starting 2000-01-01 in UTC",
+          "now": "9990-01-01T00:00:00+00:00[UTC]",
+          "expected": "9200-01-01T00:00:00+00:00[UTC]",
+          "description": "backward, the search runs one 400-year span before the first ISO exception, so 9600 being excepted still finds 9200"
+        },
+        {
+          "name": "iso_exceptions_before_the_horizon",
+          "expression": "every 400 years on jan 1 at 00:00 except 9200-01-01, 9600-01-01 starting 2000-01-01 in UTC",
+          "now": "9990-01-01T00:00:00+00:00[UTC]",
+          "expected": "8800-01-01T00:00:00+00:00[UTC]",
+          "description": "two excepted occurrences in a row: previous is 8800"
         }
       ]
     },
