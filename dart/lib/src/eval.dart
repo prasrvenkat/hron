@@ -232,7 +232,9 @@ final class _Slots implements _DailyTimes {
     final from = minuteOfDay(expr.from);
     final step = switch (expr.unit) {
       IntervalUnit.min => expr.interval,
-      IntervalUnit.hours => expr.interval * minutesPerHour,
+      // fromCron takes any hour step; one of a day or more leaves only the
+      // from slot.
+      IntervalUnit.hours => min(expr.interval, hoursPerDay) * minutesPerHour,
     };
     return _Slots._(from, step, floorDiv(minuteOfDay(expr.to) - from, step));
   }

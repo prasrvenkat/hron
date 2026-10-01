@@ -9,7 +9,9 @@ import 'calendar.dart';
 
 const minutesPerHour = 60;
 
-const minutesPerDay = 24 * minutesPerHour;
+const hoursPerDay = 24;
+
+const minutesPerDay = hoursPerDay * minutesPerHour;
 
 int minuteOfDay(TimeOfDay time) => time.hour * minutesPerHour + time.minute;
 
