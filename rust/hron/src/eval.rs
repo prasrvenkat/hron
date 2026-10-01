@@ -383,20 +383,25 @@ impl Cadence {
         }
     }
 
-    /// Aligned periods from period `from` in search order, covering the whole
-    /// search horizon (spec/README.md, "Search horizon").
-    fn aligned_periods(&self, from: i64, forward: bool) -> impl Iterator<Item = i64> {
+    /// Aligned periods from period `from` in search order, through one span past
+    /// `from` or period `reach`, whichever is further (spec/README.md, "Search
+    /// horizon").
+    fn aligned_periods(&self, from: i64, reach: i64, forward: bool) -> impl Iterator<Item = i64> {
         let n = self.interval;
         let cycle = self.unit.per_400_years();
-        // lcm(cycle, n) / n aligned periods span the horizon from now's period; two
-        // more cover the extra period searches start from and the span's far end.
-        let horizon = cycle / gcd(cycle, n) + 2;
+        // lcm(cycle, n) / n aligned periods make one span; two more cover the extra
+        // period searches start from and the span's far end.
+        let span = cycle / gcd(cycle, n) + 2;
         let (first, step, count) = if self.single {
             (0, 1, 1)
         } else if forward {
-            (from + (-from).rem_euclid(n), n, horizon)
+            let align = |k: i64| k + (-k).rem_euclid(n);
+            let first = align(from);
+            (first, n, span + (align(reach.max(from)) - first) / n)
         } else {
-            (from - from.rem_euclid(n), -n, horizon)
+            let align = |k: i64| k - k.rem_euclid(n);
+            let first = align(from);
+            (first, -n, span + (first - align(reach.min(from))) / n)
         };
         (0..count).map(move |i| first + i * step)
     }
@@ -697,11 +702,17 @@ fn search_next(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, Schedu
         .max(search.starting.unwrap_or(Date::MIN));
     // One period back: a directional nearest weekday can land in the next month.
     let from = cadence.period_of(earliest_date) - 1;
+    let reach = search
+        .exceptions
+        .iso_dates
+        .iter()
+        .max()
+        .map_or(from, |&last| cadence.period_of(last));
     // A fixed time shifted out of a gap before midnight lands on the next date,
     // so a later candidate can still hold an earlier instant: keep the best
     // until candidates pass the date it lands on.
     let mut best: Option<Zoned> = None;
-    for k in cadence.aligned_periods(from, true) {
+    for k in cadence.aligned_periods(from, reach, true) {
         let Some(start) = cadence.start_of(k) else {
             continue;
         };
@@ -737,10 +748,16 @@ pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, 
     let latest_date = search.until.map_or(now_date, |until| until.min(now_date));
     // One period ahead: a directional nearest weekday can land in the previous month.
     let from = cadence.period_of(latest_date) + 1;
+    let reach = search
+        .exceptions
+        .iso_dates
+        .iter()
+        .min()
+        .map_or(from, |&first| cadence.period_of(first));
     // As in search_next, a time shifted onto the next date can be later than
     // that date's own times.
     let mut best: Option<Zoned> = None;
-    for k in cadence.aligned_periods(from, false) {
+    for k in cadence.aligned_periods(from, reach, false) {
         let Some(start) = cadence.start_of(k) else {
             continue;
         };
