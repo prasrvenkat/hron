@@ -71,7 +71,7 @@ setup-java:
 fmt: fmt-rust fmt-ts fmt-python fmt-go fmt-ruby fmt-dart fmt-csharp fmt-java
 
 # Lint/check all (CI-safe, no auto-fix)
-lint: lint-rust lint-ts lint-python lint-go lint-ruby lint-dart lint-csharp lint-java
+lint: lint-rust lint-ts lint-python lint-go lint-ruby lint-dart lint-csharp lint-java lint-tools
 
 fmt-rust:
     cd rust && cargo fmt --all
@@ -133,6 +133,11 @@ lint-csharp:
 lint-java:
     cd java && mvn fmt:check
     cd java && mvn javadoc:jar -q
+
+# Lint the differential tool's Python
+lint-tools:
+    cd python && uv run ruff check ../tools && uv run ruff format --check ../tools
+    cd python && uv run ty check --error-on-warning --extra-search-path ../tools/differential ../tools
 
 # Rust build
 build-rust:
