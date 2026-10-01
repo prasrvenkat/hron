@@ -35,6 +35,11 @@ test-csharp:
 test-ruby:
     cd ruby && bundle install && bundle exec rake test
 
+# Run every implementation on the same generated cases and report where they disagree
+[positional-arguments]
+diff *args:
+    python3 tools/differential/diff.py "$@"
+
 # Install dependencies for all languages
 setup: setup-rust setup-ts setup-python setup-go setup-ruby setup-dart setup-csharp setup-java
 

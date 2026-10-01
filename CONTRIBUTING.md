@@ -76,6 +76,7 @@ If you're fixing a bug or optimizing a single implementation:
 1. Make the change
 2. Ensure conformance tests still pass: `just test-all`
 3. If the fix is relevant to other implementations, apply it there too
+4. To show a refactor changed no behaviour, run `just diff --save tools/differential/.build/before.json` before it and `just diff --compare tools/differential/.build/before.json` after it (see [tools/differential](tools/differential/README.md))
 
 ### Adding Conformance Tests
 
