@@ -69,6 +69,7 @@ func matches(data *ScheduleData, zone *time.Location, t time.Time) bool {
 	}
 	s := newSearch(data, zone)
 	local := t.In(zone)
+	// Not Truncate: it rounds the absolute instant, and LMT offsets carry seconds.
 	minute := local.Add(-time.Duration(local.Second())*time.Second - time.Duration(local.Nanosecond()))
 	next, ok := s.nearest(minute.Add(-time.Nanosecond), forward)
 	return ok && next.Equal(minute)
@@ -134,12 +135,13 @@ type search struct {
 }
 
 func newSearch(data *ScheduleData, zone *time.Location) search {
+	clauses := clausesOf(data)
 	return search{
 		expr:    &data.Expr,
 		zone:    zone,
-		cadence: cadenceOf(data),
+		cadence: cadenceOf(&data.Expr, clauses.starting),
 		times:   dailyTimesOf(&data.Expr),
-		clauses: clausesOf(data),
+		clauses: clauses,
 	}
 }
 
@@ -461,8 +463,7 @@ type cadence struct {
 	single bool
 }
 
-func cadenceOf(data *ScheduleData) cadence {
-	expr := &data.Expr
+func cadenceOf(expr *ScheduleExpr, starting *time.Time) cadence {
 	u, interval, defaultOrigin := unitDay, expr.Interval, epochDate
 	switch expr.Kind {
 	case ScheduleExprKindSingleDate:
@@ -481,8 +482,8 @@ func cadenceOf(data *ScheduleData) cadence {
 		u = unitYear
 	}
 	anchor := defaultOrigin
-	if data.Anchor != "" {
-		anchor, _ = parseISODate(data.Anchor)
+	if starting != nil {
+		anchor = *starting
 	}
 	origin := anchor
 	switch u {
@@ -588,10 +589,8 @@ func (w *periodWalk) next() (time.Time, bool) {
 }
 
 // The calendar a search walks: the years an ISO date can name, and one more at
-// each end for a period that holds dates in them, as a December whose next
-// nearest weekday is in January does. A period starting outside it holds no
-// occurrence in the supported range, and date arithmetic far outside it can
-// overflow.
+// each end. Year 0 holds a December whose next nearest weekday lands on
+// 0001-01-01; a period starting after 10000 holds no supported instant.
 var (
 	calendarStart = newDate(0, time.January, 1)
 	calendarEnd   = newDate(10000, time.December, 31)

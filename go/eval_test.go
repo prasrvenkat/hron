@@ -67,3 +67,40 @@ func minutesFromNine(interval int) ScheduleExpr {
 func hoursFromNine(interval int) ScheduleExpr {
 	return NewIntervalRepeat(interval, IntervalHours, TimeOfDay{9, 0}, TimeOfDay{10, 0}, nil)
 }
+
+// Parse requires starting with a named until; a schedule built without one
+// resolves it from the epoch.
+func TestHandBuiltNamedUntilWithoutStarting(t *testing.T) {
+	data := NewScheduleData(NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{9, 0}}))
+	until := NewNamedUntil(Mar, 1)
+	data.Until = &until
+	s := mustSchedule(t, data)
+	if got := formatOrNil(s.PreviousFrom(friday)); got != "1970-03-01T09:00:00Z" {
+		t.Errorf("PreviousFrom = %s, want 1970-03-01T09:00:00Z", got)
+	}
+}
+
+// A named until that names no real date bounds nothing.
+func TestHandBuiltNamedUntilWithNoSuchDate(t *testing.T) {
+	data := NewScheduleData(NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{9, 0}}))
+	until := NewNamedUntil(Feb, 30)
+	data.Until = &until
+	s := mustSchedule(t, data)
+	if got := formatOrNil(s.NextFrom(friday)); got != "2026-02-07T09:00:00Z" {
+		t.Errorf("NextFrom = %s, want 2026-02-07T09:00:00Z", got)
+	}
+}
+
+// Amsterdam's local mean time, +00:19:32, carries seconds, so the minute is
+// cut on the wall clock, not on the instant. The spec leaves sub-minute
+// offsets out (spec/README.md, "Timezone data"), so this is a Go test.
+func TestMatchesDropsSecondsOnTheWallClock(t *testing.T) {
+	s := MustParse("every day at 09:00 in Europe/Amsterdam")
+	amsterdam, err := time.LoadLocation("Europe/Amsterdam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Matches(time.Date(1900, 6, 1, 9, 0, 10, 0, amsterdam)) {
+		t.Error("Matches(1900-06-01 09:00:10 local) = false, want true")
+	}
+}
