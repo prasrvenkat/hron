@@ -16,6 +16,14 @@ Thanks for your interest in contributing to hron! This document covers everythin
   - Python 3.11+ with [uv](https://docs.astral.sh/uv/)
   - Ruby 4.0+
   - .NET 10.0+
+  - Swift 6.4+
+
+On a Debian-family distro other than Ubuntu, such as Pop!_OS, mise needs to be told which Swift build to install. Set it in your own mise config (`~/.config/mise/config.toml`), not the repo's:
+
+```toml
+[settings.swift]
+platform = "ubuntu24.04"
+```
 
 ### Running Tests
 
@@ -34,6 +42,9 @@ mise exec -- just test-go
 mise exec -- just test-java
 mise exec -- just test-csharp
 mise exec -- just test-ruby
+mise exec -- just test-swift
+mise exec -- just test-swift-32   # after `just setup-swift-32`: Swift with a 32-bit Int, as on older Apple Watches
+mise exec -- just check-swift-client
 ```
 
 If you have mise activated in your shell (via `mise activate bash/zsh`), you can omit the `mise exec --` prefix.
@@ -54,6 +65,8 @@ hron/
 ├── java/           # Java: native implementation
 ├── csharp/         # C#: native implementation
 ├── ruby/           # Ruby: native implementation
+├── swift/          # Swift: native implementation
+├── Package.swift   # Swift package manifest (SwiftPM needs it at the root)
 ├── justfile        # Build/test commands
 └── VERSION         # Single source of truth for version
 ```
@@ -97,6 +110,7 @@ Test cases in `spec/tests.json` are the source of truth. When adding tests:
 - **Java**: Google Java Format
 - **C#**: `dotnet format`
 - **Ruby**: `standard`
+- **Swift**: `swift format lint --strict`
 
 CI enforces all of these. Run them locally before pushing.
 
