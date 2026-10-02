@@ -197,7 +197,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: cargo install wasm-pack --locked
 
       - name: Build WASM package
         run: wasm-pack build --release
