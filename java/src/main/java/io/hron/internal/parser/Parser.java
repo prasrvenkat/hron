@@ -3,6 +3,7 @@ package io.hron.internal.parser;
 import io.hron.HronException;
 import io.hron.Span;
 import io.hron.ast.*;
+import io.hron.internal.ScheduleData;
 import io.hron.internal.lexer.Lexer;
 import io.hron.internal.lexer.Token;
 import io.hron.internal.lexer.TokenKind;
@@ -82,12 +83,11 @@ public final class Parser {
   }
 
   public static ScheduleData parse(String input) throws HronException {
-    String text = input == null ? "" : input;
-    List<Token> tokens = Lexer.tokenize(text);
+    List<Token> tokens = Lexer.tokenize(input);
     if (tokens.isEmpty()) {
-      throw HronException.parse("empty expression", new Span(0, 0), text, null);
+      throw HronException.parse("empty expression", new Span(0, 0), input, null);
     }
-    Parser parser = new Parser(text, tokens);
+    Parser parser = new Parser(input, tokens);
     ScheduleExpr expr = parser.parseExpression();
     ScheduleData schedule = parser.parseClauses(expr);
     if (parser.peek() != null) {
@@ -167,7 +167,7 @@ public final class Parser {
   private ScheduleData parseClauses(ScheduleExpr expr) throws HronException {
     List<ExceptionSpec> except = List.of();
     UntilSpec until = null;
-    String anchor = null;
+    String starting = null;
     List<MonthName> during = List.of();
     String timezone = null;
 
@@ -189,7 +189,7 @@ public final class Parser {
       if (!at(TokenKind.ISO_DATE)) {
         throw expected(Expected.ISO_DATE);
       }
-      anchor = isoDate(advance());
+      starting = isoDate(advance());
     }
 
     if (eat(TokenKind.DURING)) {
@@ -203,7 +203,7 @@ public final class Parser {
       timezone = timezone(advance());
     }
 
-    return new ScheduleData(expr, timezone, except, until, anchor, during);
+    return new ScheduleData(expr, timezone, except, until, starting, during);
   }
 
   private HronException leftover(ScheduleData schedule) {
@@ -212,7 +212,7 @@ public final class Parser {
     boolean[] read = {
       !schedule.except().isEmpty(),
       schedule.until() != null,
-      schedule.anchor() != null,
+      schedule.starting() != null,
       !schedule.during().isEmpty(),
       schedule.timezone() != null
     };
@@ -240,7 +240,7 @@ public final class Parser {
 
   private void checkNamedUntil(ScheduleData schedule) throws HronException {
     UntilSpec until = schedule.until();
-    if (until == null || until.kind() != UntilSpec.Kind.NAMED || schedule.anchor() != null) {
+    if (until == null || until.kind() != UntilSpec.Kind.NAMED || schedule.starting() != null) {
       return;
     }
     String date = until.month() + " " + until.day();

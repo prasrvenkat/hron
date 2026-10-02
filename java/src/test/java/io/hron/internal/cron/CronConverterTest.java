@@ -493,7 +493,7 @@ class CronConverterTest {
       String back = schedule.toCron();
       Schedule again = Schedule.fromCron(back);
       String label = cron + " -> " + schedule + " -> " + back;
-      if (!again.data().equals(schedule.data())) {
+      if (!again.equals(schedule)) {
         assertFiresAs(again, naive, label);
       }
       NaiveCron naiveBack = NaiveCron.of(back);

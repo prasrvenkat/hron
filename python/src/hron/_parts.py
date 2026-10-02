@@ -69,17 +69,17 @@ _Member = TypeVar("_Member", bound=Enum)
 def checked(data: ScheduleData) -> ScheduleData:
     if not isinstance(data, ScheduleData):
         raise TypeError(f"a schedule is built from ScheduleData, got {type(data).__name__}")
-    expr = _expression(data.expr)
+    expression = _expression(data.expression)
     except_ = tuple(_exception(e) for e in _sequence("except_", data.except_))
     until = None if data.until is None else _until(data.until)
-    anchor = None if data.anchor is None else _iso_date(data.anchor)
+    starting = None if data.starting is None else _iso_date(data.starting)
     during = tuple(_member(MonthName, "month", m) for m in _sequence("during", data.during))
     timezone = None if data.timezone is None else _timezone(data.timezone)
-    if isinstance(until, NamedUntil) and anchor is None:
+    if isinstance(until, NamedUntil) and starting is None:
         raise _error(
             f"until {until.month} {until.day} has no year: add a starting date, or use an ISO date"
         )
-    return ScheduleData(expr, timezone, except_, until, anchor, during)
+    return ScheduleData(expression, timezone, except_, until, starting, during)
 
 
 def _expression(expr: object) -> ScheduleExpr:

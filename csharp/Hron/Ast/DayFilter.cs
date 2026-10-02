@@ -1,17 +1,24 @@
 namespace Hron.Ast;
 
-internal sealed record DayFilter(DayFilterKind Kind, IReadOnlyList<Weekday> Days)
+/// <summary>
+/// <c>Days</c> lists the days when <c>Kind</c> is <see cref="DayFilterKind.Days"/>, and is empty otherwise.
+/// </summary>
+public sealed record DayFilter(DayFilterKind Kind, IReadOnlyList<Weekday> Days)
 {
-    public static DayFilter Every() => new(DayFilterKind.Every, []);
+    public DayFilterKind Kind { get; } = Kind;
 
-    public static DayFilter Weekday() => new(DayFilterKind.Weekday, []);
+    public IReadOnlyList<Weekday> Days { get; } = PartList<Weekday>.Of(Days);
 
-    public static DayFilter Weekend() => new(DayFilterKind.Weekend, []);
+    internal static DayFilter Every() => new(DayFilterKind.Every, []);
 
-    public static DayFilter SpecificDays(IReadOnlyList<Weekday> days) => new(DayFilterKind.Days, days);
+    internal static DayFilter Weekday() => new(DayFilterKind.Weekday, []);
+
+    internal static DayFilter Weekend() => new(DayFilterKind.Weekend, []);
+
+    internal static DayFilter SpecificDays(IReadOnlyList<Weekday> days) => new(DayFilterKind.Days, days);
 }
 
-internal enum DayFilterKind
+public enum DayFilterKind
 {
     Every,
     Weekday,

@@ -5,7 +5,7 @@ require_relative "ast"
 module Hron
   module Display
     def self.display(schedule)
-      out = display_expr(schedule.expr)
+      out = display_expr(schedule.expression)
 
       unless schedule.except.empty?
         parts = schedule.except.map do |exc|
@@ -32,7 +32,7 @@ module Hron
         end
       end
 
-      out += " starting #{schedule.anchor}" if schedule.anchor
+      out += " starting #{schedule.starting}" if schedule.starting
 
       out += " during #{schedule.during.join(", ")}" unless schedule.during.empty?
 

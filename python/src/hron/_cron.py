@@ -361,11 +361,11 @@ def to_cron(schedule: ScheduleData) -> str:
         raise _not_expressible("except clauses not supported")
     if schedule.until is not None:
         raise _not_expressible("until clauses not supported")
-    if schedule.anchor is not None:
+    if schedule.starting is not None:
         raise _not_expressible("starting clauses not supported")
-    day_of_month, day_of_week = _day_fields(schedule.expr)
+    day_of_month, day_of_week = _day_fields(schedule.expression)
     month = _month_field(schedule)
-    minute, hour = _time_fields(schedule.expr)
+    minute, hour = _time_fields(schedule.expression)
     return f"{minute} {hour} {day_of_month} {month} {day_of_week}"
 
 
@@ -423,7 +423,7 @@ def _day_fields(expr: ScheduleExpr) -> tuple[str, str]:
 
 def _month_field(schedule: ScheduleData) -> str:
     during = schedule.during
-    month = _own_month(schedule.expr)
+    month = _own_month(schedule.expression)
     if month is not None:
         if during and month not in during:
             raise _not_expressible("during excludes the schedule's month")

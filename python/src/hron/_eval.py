@@ -204,8 +204,8 @@ class Search:
 
     @classmethod
     def of(cls, schedule: ScheduleData) -> Search:
-        expr = schedule.expr
-        starting = date.fromisoformat(schedule.anchor) if schedule.anchor else None
+        expr = schedule.expression
+        starting = date.fromisoformat(schedule.starting) if schedule.starting else None
         during = frozenset(month.number for month in schedule.during)
         return cls(
             zone=resolve_zone(schedule.timezone),

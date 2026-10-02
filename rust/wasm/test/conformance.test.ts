@@ -123,20 +123,19 @@ describe("eval", () => {
           const schedule = Schedule.parse(tc.expression);
           const now = tc.now ?? defaultNow;
 
-          // Note: WASM returns undefined (not null) for Rust Option::None
           if ("next" in tc) {
             const result = schedule.nextFrom(now);
             if (tc.next === null) {
-              expect(result).toBeUndefined();
+              expect(result).toBeNull();
             } else {
-              expect(result).toBeDefined();
+              expect(result).not.toBeNull();
               expect(result).toBe(tc.next);
             }
           }
 
           if ("next_date" in tc) {
             const result = schedule.nextFrom(now);
-            expect(result).toBeDefined();
+            expect(result).not.toBeNull();
             const datePart = result!.slice(0, 10);
             expect(datePart).toBe(tc.next_date);
           }
@@ -187,9 +186,8 @@ describe("eval previous_from", () => {
       const schedule = Schedule.parse(tc.expression);
       const result = schedule.previousFrom(tc.now);
       if (tc.expected === null) {
-        expect(result).toBeUndefined();
+        expect(result).toBeNull();
       } else {
-        expect(result).toBeDefined();
         expect(result).toBe(tc.expected);
       }
     });
@@ -316,22 +314,22 @@ describe("invariants", () => {
   const rules: Record<string, Rule> = {
     next_matches(schedule, now) {
       const t = schedule.nextFrom(now);
-      if (t !== undefined) expect(schedule.matches(t), `matches(${t})`).toBe(true);
+      if (t !== null) expect(schedule.matches(t), `matches(${t})`).toBe(true);
     },
     next_after_now(schedule, now) {
       const t = schedule.nextFrom(now);
-      if (t !== undefined) expect(instant(t), `nextFrom(now) is ${t}`).toBeGreaterThan(instant(now));
+      if (t !== null) expect(instant(t), `nextFrom(now) is ${t}`).toBeGreaterThan(instant(now));
     },
     next_n_chain(schedule, now, nextN) {
       const ts = instants(nextN);
       for (let i = 1; i < ts.length; i++) {
         expect(ts[i], `nextN[${i}] after nextN[${i - 1}]`).toBeGreaterThan(ts[i - 1]);
       }
-      if (nextN.length === 0) expect(schedule.nextFrom(now)).toBeUndefined();
+      if (nextN.length === 0) expect(schedule.nextFrom(now)).toBeNull();
       let cursor = now;
       for (const t of nextN) {
         const next = schedule.nextFrom(cursor);
-        expect(next, `nextFrom(${cursor})`).toBeDefined();
+        expect(next, `nextFrom(${cursor})`).not.toBeNull();
         expect(instant(next!), `nextFrom(${cursor})`).toBe(instant(t));
         cursor = t;
       }
@@ -347,17 +345,17 @@ describe("invariants", () => {
     prev_inverse(schedule, _now, nextN) {
       for (let i = 1; i < nextN.length; i++) {
         const prev = schedule.previousFrom(nextN[i]);
-        expect(prev, `previousFrom(${nextN[i]})`).toBeDefined();
+        expect(prev, `previousFrom(${nextN[i]})`).not.toBeNull();
         expect(instant(prev!), `previousFrom(${nextN[i]})`).toBe(instant(nextN[i - 1]));
       }
     },
     prev_before_now(schedule, now) {
       const prev = schedule.previousFrom(now);
-      if (prev === undefined) return;
+      if (prev === null) return;
       expect(instant(prev), `previousFrom(now) is ${prev}`).toBeLessThan(instant(now));
       expect(schedule.matches(prev), `matches(${prev})`).toBe(true);
       const next = schedule.nextFrom(prev);
-      if (next !== undefined) {
+      if (next !== null) {
         expect(instant(next), `nextFrom(${prev})`).toBeGreaterThanOrEqual(instant(now));
       }
     },

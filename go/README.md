@@ -40,7 +40,8 @@ func main() {
     }
 
     // Check if a time matches the schedule
-    testTime := time.Date(2026, 2, 10, 9, 0, 0, 0, time.UTC)
+    newYork, _ := time.LoadLocation("America/New_York")
+    testTime := time.Date(2026, 2, 10, 9, 0, 0, 0, newYork)
     if schedule.Matches(testTime) {
         fmt.Println("Time matches the schedule")
     }
@@ -71,28 +72,75 @@ func main() {
 
 ### Schedule Methods
 
-- `NextFrom(now time.Time) *time.Time` - Compute the next occurrence after now
+- `NextFrom(now time.Time) *time.Time` - Compute the next occurrence after now, or nil if there is none
 - `NextNFrom(now time.Time, n int) []time.Time` - Compute up to n occurrences after now, none when `n <= 0`
+- `PreviousFrom(now time.Time) *time.Time` - Compute the most recent occurrence before now, or nil if there is none
 - `Matches(dt time.Time) bool` - Report whether the minute containing `dt` (seconds dropped, on the schedule's wall clock) is an occurrence
+- `Occurrences(from time.Time) iter.Seq[time.Time]` - Iterate lazily over the occurrences after `from`, without end unless an `until` clause ends them
+- `Between(from, to time.Time) iter.Seq[time.Time]` - Iterate lazily over the occurrences where `from < occurrence <= to`
 - `ToCron() (string, error)` - Convert this schedule to the 5-field cron expression that fires at the same times on the same dates; run it in the schedule's timezone
 - `String() string` - Render as canonical string (roundtrip-safe)
-- `Timezone() string` - Get the IANA timezone name with its canonical capitalization, or empty string if not specified
-- `Data() *ScheduleData` - Get a copy of the schedule's parts, to change and pass to `NewSchedule`
+- `Equal(other *Schedule) bool` - Report whether `other` has the same parts (see [Equality](#equality)); false when `other` is nil
+
+```go
+s := hron.MustParse("every day at 09:00")
+from := time.Date(2026, 2, 6, 12, 0, 0, 0, time.UTC)
+fmt.Println(s.PreviousFrom(from)) // 2026-02-06 09:00:00 +0000 UTC
+for t := range s.Occurrences(from) {
+    fmt.Println(t) // 2026-02-07 09:00:00 +0000 UTC
+    break
+}
+for t := range s.Between(from, from.AddDate(0, 0, 2)) {
+    fmt.Println(t) // 2026-02-07 09:00:00 +0000 UTC, then 2026-02-08 09:00:00 +0000 UTC
+}
+```
+
+### Getters
+
+Each getter returns a copy, so changing what it returns does not change the schedule. An absent clause is the zero value, `""` or nil.
+
+- `Timezone() string` - The IANA timezone name with its canonical capitalization, or `""`
+- `Expression() ScheduleExpr` - The repeat: its kind, interval, days or target, and its times or window
+- `Except() []ExceptionSpec` - The except dates, or nil
+- `Until() *UntilSpec` - The until date, or nil
+- `Starting() string` - The starting date as `YYYY-MM-DD`, or `""`
+- `During() []MonthName` - The during months, or nil
+- `Data() *ScheduleData` - All of the parts above, to change and pass to `NewSchedule`
+
+```go
+s := hron.MustParse("every weekday at 09:00 except dec 25 starting 2026-01-05 during jan, feb in america/new_york")
+fmt.Println(s.Expression().Times, s.Starting(), s.During(), s.Timezone()) // [09:00] 2026-01-05 [jan feb] America/New_York
+fmt.Println(s.Except()[0].Month, s.Except()[0].Day, s.Until() == nil)    // dec 25 true
+```
+
+### Equality
+
+`Equal` compares the parts, lists in order with duplicates included, so `every day at 9:00` equals `every day at 09:00`, and a schedule equals the one `ParseSchedule` reads from its `String()` ([spec](../spec/README.md#equality)). `==` compares pointers, and there is no hash: equal schedules have the same `String()`, which can serve as a map key.
+
+```go
+a := hron.MustParse("every day at 9:00")
+b := hron.MustParse("every day at 09:00")
+fmt.Println(a.Equal(b), a == b, a.Equal(nil)) // true false false
+```
+
+### Usage errors
+
+A nil `*Schedule` or `*ScheduleData` panics, as any nil pointer does. The static types rule out every other bad argument.
 
 ### Building in code
 
-`NewSchedule` builds a schedule from its parts and checks them by the rules `ParseSchedule` applies ([spec](../spec/README.md#schedules-built-in-code)), so a built schedule evaluates, displays and converts to cron like a parsed one. It copies the parts, so changing them afterwards does not change the schedule, and `Data()` returns a copy too. The empty `Timezone` and `Anchor` mean none, and an empty `Except` or `During` is no clause:
+`NewSchedule` builds a schedule from its parts and checks them by the rules `ParseSchedule` applies ([spec](../spec/README.md#schedules-built-in-code)), so a built schedule evaluates, displays and converts to cron like a parsed one. It copies the parts, so changing them afterwards does not change the schedule, and `Data()` returns a copy too. The empty `Timezone` and `Starting` mean none, and an empty `Except` or `During` is no clause:
 
 ```go
 schedule, err := hron.NewSchedule(&hron.ScheduleData{
-    Expr:     hron.NewDayRepeat(1, hron.NewDayFilterWeekday(), []hron.TimeOfDay{{Hour: 9, Minute: 0}}),
-    Timezone: "america/new_york",
-    Anchor:   "2026-01-05",
+    Expression: hron.NewDayRepeat(1, hron.NewDayFilterWeekday(), []hron.TimeOfDay{{Hour: 9, Minute: 0}}),
+    Timezone:   "america/new_york",
+    Starting:   "2026-01-05",
 })
 fmt.Println(schedule) // every weekday at 09:00 starting 2026-01-05 in America/New_York
 
 data := schedule.Data()
-data.Expr.Interval = 2
+data.Expression.Interval = 2
 _, err = hron.NewSchedule(data)
 fmt.Println(err) // days must be every day when the interval is above 1
 ```
@@ -114,6 +162,18 @@ fmt.Println(next.Location(), next) // America/New_York 2026-02-06 09:00:00 -0500
 
 ### Error Handling
 
+Every error ParseSchedule, FromCronExpr, NewSchedule and ToCron return is a `*HronError`, with these fields and methods:
+
+- `Kind ErrorKind` - `ErrorKindLex`, `ErrorKindParse`, `ErrorKindEval` or `ErrorKindCron`
+- `Message string` - The message the [spec](../spec/README.md#error-message-format) gives
+- `Span *Span` - The part of the input the error points at, for a lex or parse error; nil otherwise
+- `Input string` - The input, for a lex or parse error; `""` otherwise
+- `Suggestion string` - A corrected input, for some parse errors; `""` otherwise
+- `Error() string` - The message
+- `DisplayRich() string` - The message, then for a lex or parse error the input with carets under the span, and any suggestion
+
+`LexError`, `ParseError`, `EvalError` and `CronError` build one of each kind.
+
 ```go
 _, err := hron.ParseSchedule("every weekday at 09:00 until dec 31")
 var hronErr *hron.HronError
@@ -124,6 +184,7 @@ if errors.As(err, &hronErr) {
 ```
 
 ```text
+parse until dec 31 has no year: add a starting date, or use an ISO date {23 35} until dec 31 starting YYYY-MM-DD
 error: until dec 31 has no year: add a starting date, or use an ISO date
   every weekday at 09:00 until dec 31
                          ^^^^^^^^^^^^ try: "until dec 31 starting YYYY-MM-DD"

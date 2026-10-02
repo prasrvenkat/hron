@@ -81,8 +81,9 @@ public class ConformanceTest {
                       (tc, label) -> {
                         String input = text(tc, "input", label);
                         String canonical = text(tc, "canonical", label);
-                        assertEquals(
-                            canonical, Schedule.parse(input).toString(), label + ": " + input);
+                        Schedule schedule = Schedule.parse(input);
+                        assertEquals(canonical, schedule.toString(), label + ": " + input);
+                        assertEqualSchedules(schedule, Schedule.parse(canonical), label);
                         assertEquals(
                             canonical,
                             Schedule.parse(canonical).toString(),
@@ -355,11 +356,11 @@ public class ConformanceTest {
                 cron.get("from_cron"),
                 "cron/from_cron",
                 Set.of("cron", "hron"),
-                (tc, label) ->
-                    assertEquals(
-                        text(tc, "hron", label),
-                        Schedule.fromCron(text(tc, "cron", label)).toString(),
-                        label)),
+                (tc, label) -> {
+                  Schedule schedule = Schedule.fromCron(text(tc, "cron", label));
+                  assertEquals(text(tc, "hron", label), schedule.toString(), label);
+                  assertEqualSchedules(schedule, Schedule.parse(schedule.toString()), label);
+                }),
             cases(
                 cron.get("from_cron_errors"),
                 "cron/from_cron_errors",
@@ -378,6 +379,12 @@ public class ConformanceTest {
                   assertEquals(c, Schedule.fromCron(c).toCron(), label);
                 }))
         .flatMap(tests -> tests);
+  }
+
+  private static void assertEqualSchedules(Schedule expected, Schedule actual, String label) {
+    assertNotSame(expected, actual, label);
+    assertEquals(expected, actual, label + ": equals");
+    assertEquals(expected.hashCode(), actual.hashCode(), label + ": hashCode");
   }
 
   private static void assertCronError(String expected, Executable conversion, String label) {

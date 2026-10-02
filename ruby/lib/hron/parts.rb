@@ -21,16 +21,16 @@ module Hron
     def checked(data)
       raise TypeError, "data must be a Hron::ScheduleData, not #{data.class}" unless data.is_a?(ScheduleData)
 
-      expr = check_expression(data.expr)
+      expr = check_expression(data.expression)
       except = list(data.except, "except").map { |exception| check_exception(exception) }
       until_spec = data.until.nil? ? nil : check_until(data.until)
-      anchor = data.anchor.nil? ? nil : check_iso_date(string(data.anchor, "starting"))
+      starting = data.starting.nil? ? nil : check_iso_date(string(data.starting, "starting"))
       during = list(data.during, "during").map { |month| check_name(month, MonthName::ALL, "month") }
       timezone = data.timezone.nil? ? nil : check_timezone(string(data.timezone, "timezone"))
-      if until_spec.is_a?(NamedUntil) && anchor.nil?
+      if until_spec.is_a?(NamedUntil) && starting.nil?
         raise error("until #{until_spec.month} #{until_spec.day} has no year: add a starting date, or use an ISO date")
       end
-      ScheduleData.new(expr:, timezone:, except:, until: until_spec, anchor:, during:)
+      ScheduleData.new(expression: expr, timezone:, except:, until: until_spec, starting:, during:)
     end
 
     def check_expression(expr)

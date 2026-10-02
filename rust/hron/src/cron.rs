@@ -491,12 +491,12 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
     if schedule.until.is_some() {
         return Err(not_expressible("until clauses not supported"));
     }
-    if schedule.anchor.is_some() {
+    if schedule.starting.is_some() {
         return Err(not_expressible("starting clauses not supported"));
     }
-    let (day_of_month, day_of_week) = day_fields(&schedule.expr)?;
+    let (day_of_month, day_of_week) = day_fields(&schedule.expression)?;
     let month = month_field(schedule)?;
-    let (minute, hour) = time_fields(&schedule.expr)?;
+    let (minute, hour) = time_fields(&schedule.expression)?;
     Ok(format!(
         "{minute} {hour} {day_of_month} {month} {day_of_week}"
     ))
@@ -579,7 +579,7 @@ fn day_fields(expr: &ScheduleExpr) -> Result<(String, String), ScheduleError> {
 
 fn month_field(schedule: &Schedule) -> Result<String, ScheduleError> {
     let during = &schedule.during;
-    match own_month(&schedule.expr) {
+    match own_month(&schedule.expression) {
         Some(month) if !during.is_empty() && !during.contains(&month) => {
             Err(not_expressible("during excludes the schedule's month"))
         }

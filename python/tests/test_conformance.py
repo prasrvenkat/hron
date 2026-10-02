@@ -172,6 +172,8 @@ def test_parse_roundtrip(name: str, input_text: str, canonical: str) -> None:
 
     s2 = Schedule.parse(canonical)
     assert str(s2) == canonical
+    assert s2 == schedule
+    assert hash(s2) == hash(schedule)
     _assert_rebuilds(schedule)
 
 
@@ -196,7 +198,8 @@ def test_parse_errors(name: str, tc: dict[str, Any]) -> None:
         Schedule.parse(tc["input"])
     error = raised.value
     assert error.kind == expected["kind"]
-    assert str(error) == expected["message"]
+    assert str(error) == error.message == expected["message"]
+    assert error.input == tc["input"]
     assert error.span is not None
     assert [error.span.start, error.span.end] == expected["span"]
     assert error.suggestion == expected.get("suggestion")
@@ -364,7 +367,7 @@ def test_to_cron_errors(name: str, hron: str, error: str) -> None:
     with pytest.raises(HronError) as raised:
         schedule.to_cron()
     assert raised.value.kind == "cron"
-    assert str(raised.value) == error
+    assert str(raised.value) == raised.value.message == error
 
 
 _FROM_CRON_TESTS = [
@@ -378,6 +381,9 @@ _FROM_CRON_IDS = [t[0] for t in _FROM_CRON_TESTS]
 def test_from_cron(name: str, cron: str, hron: str) -> None:
     schedule = Schedule.from_cron(cron)
     assert str(schedule) == hron
+    parsed = Schedule.parse(hron)
+    assert parsed == schedule
+    assert hash(parsed) == hash(schedule)
     _assert_rebuilds(schedule)
 
 
@@ -393,7 +399,7 @@ def test_from_cron_errors(name: str, cron: str, error: str) -> None:
     with pytest.raises(HronError) as raised:
         Schedule.from_cron(cron)
     assert raised.value.kind == "cron"
-    assert str(raised.value) == error
+    assert str(raised.value) == raised.value.message == error
 
 
 _ROUNDTRIP_TESTS = [
@@ -545,8 +551,8 @@ def test_build(name: str, tc: dict[str, Any]) -> None:
             Schedule(data)
         error = raised.value
         assert error.kind == "eval"
-        assert str(error) == expected["message"]
-        assert (error.span, error.input_text, error.suggestion) == (None, None, None)
+        assert str(error) == error.message == expected["message"]
+        assert (error.span, error.input, error.suggestion) == (None, None, None)
         assert error.display_rich() == f"error: {expected['message']}"
     else:
         schedule = Schedule(data)
@@ -567,11 +573,11 @@ def _parts(value: object) -> ScheduleData:
     parts = _fields(value, {"expression"}, clauses)
     until = parts.get("until")
     return ScheduleData(
-        expr=_expression(parts["expression"]),
+        expression=_expression(parts["expression"]),
         timezone=parts.get("timezone"),
         except_=tuple(_exception(d) for d in parts.get("except", [])),
         until=None if until is None else _until(until),
-        anchor=parts.get("starting"),
+        starting=parts.get("starting"),
         during=tuple(_month(m) for m in parts.get("during", [])),
     )
 

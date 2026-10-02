@@ -24,7 +24,7 @@ pub(crate) mod parser;
 pub(crate) mod parts;
 
 pub use ast::{Schedule, ScheduleExpr, ScheduleParts};
-pub use error::ScheduleError;
+pub use error::{ErrorKind, ScheduleError, Span};
 pub use eval::{BoundedOccurrences, Occurrences};
 
 use jiff::Zoned;
@@ -91,11 +91,11 @@ impl Schedule {
     /// For `parse` and `from_cron`, whose parts already keep every rule.
     pub(crate) fn from_valid_parts(parts: ScheduleParts) -> Self {
         Self {
-            expr: parts.expression,
+            expression: parts.expression,
             timezone: parts.timezone,
             except: parts.except,
             until: parts.until,
-            anchor: parts.starting,
+            starting: parts.starting,
             during: parts.during,
         }
     }
@@ -103,11 +103,11 @@ impl Schedule {
     /// The parts this schedule was built from, to change and build again.
     pub fn to_parts(&self) -> ScheduleParts {
         ScheduleParts {
-            expression: self.expr.clone(),
+            expression: self.expression.clone(),
             timezone: self.timezone.clone(),
             except: self.except.clone(),
             until: self.until.clone(),
-            starting: self.anchor,
+            starting: self.starting,
             during: self.during.clone(),
         }
     }
@@ -281,10 +281,11 @@ impl Schedule {
         self.timezone.as_deref()
     }
 
-    pub fn expr(&self) -> &ScheduleExpr {
-        &self.expr
+    pub fn expression(&self) -> &ScheduleExpr {
+        &self.expression
     }
 
+    /// Empty without an `except` clause.
     pub fn except(&self) -> &[ast::Exception] {
         &self.except
     }
@@ -293,17 +294,19 @@ impl Schedule {
         self.until.as_ref()
     }
 
-    pub fn anchor(&self) -> Option<jiff::civil::Date> {
-        self.anchor
+    pub fn starting(&self) -> Option<jiff::civil::Date> {
+        self.starting
     }
 
+    /// Empty without a `during` clause.
     pub fn during(&self) -> &[ast::MonthName] {
         &self.during
     }
 
     /// Returns a lazy iterator of occurrences strictly after `from`.
     ///
-    /// Unbounded for repeating schedules unless an `until` clause ends them.
+    /// For a repeating schedule it ends only at an `until` clause or the end of
+    /// the supported range, 9999-12-30T00:00Z.
     ///
     /// # Examples
     ///
@@ -359,7 +362,7 @@ impl Serialize for Schedule {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(None)?;
 
-        match &self.expr {
+        match &self.expression {
             ScheduleExpr::IntervalRepeat {
                 interval,
                 unit,
@@ -471,7 +474,7 @@ impl Serialize for Schedule {
         // Always present, for a consistent JSON shape.
         map.serialize_entry("except", &self.except)?;
         map.serialize_entry("until", &self.until)?;
-        map.serialize_entry("starting", &self.anchor.as_ref().map(|a| a.to_string()))?;
+        map.serialize_entry("starting", &self.starting.as_ref().map(|a| a.to_string()))?;
         map.serialize_entry("during", &self.during)?;
         map.serialize_entry("timezone", &self.timezone)?;
 

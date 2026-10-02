@@ -533,12 +533,12 @@ export function toCron(schedule: ScheduleData): string {
   if (schedule.until) {
     throw notExpressible("until clauses not supported");
   }
-  if (schedule.anchor) {
+  if (schedule.starting) {
     throw notExpressible("starting clauses not supported");
   }
-  const [dayOfMonth, dayOfWeek] = dayFields(schedule.expr);
+  const [dayOfMonth, dayOfWeek] = dayFields(schedule.expression);
   const month = monthField(schedule);
-  const [minute, hour] = timeFields(schedule.expr);
+  const [minute, hour] = timeFields(schedule.expression);
   return `${minute} ${hour} ${dayOfMonth} ${month} ${dayOfWeek}`;
 }
 
@@ -606,7 +606,7 @@ function dayFields(expr: ScheduleExpr): [string, string] {
 
 function monthField(schedule: ScheduleData): string {
   const { during } = schedule;
-  const month = ownMonth(schedule.expr);
+  const month = ownMonth(schedule.expression);
   if (month !== null) {
     if (during.length > 0 && !during.includes(month)) {
       throw notExpressible("during excludes the schedule's month");

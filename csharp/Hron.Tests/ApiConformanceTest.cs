@@ -1,18 +1,71 @@
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Hron.Ast;
 using Xunit;
 
 namespace Hron.Tests;
 
 public class ApiConformanceTest
 {
-    private static readonly JsonDocument Spec;
+    private static readonly string SpecJson = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "api.json"));
+    private static readonly JsonDocument Spec = JsonDocument.Parse(SpecJson);
 
-    static ApiConformanceTest()
+    private static readonly Dictionary<string, string> ScheduleNames = new()
     {
-        var specPath = Path.Combine(AppContext.BaseDirectory, "api.json");
-        var json = File.ReadAllText(specPath);
-        Spec = JsonDocument.Parse(json);
-    }
+        ["parse"] = "Parse",
+        ["fromCron"] = "FromCron",
+        ["validate"] = "Validate",
+        ["nextFrom"] = "NextFrom",
+        ["nextNFrom"] = "NextNFrom",
+        ["previousFrom"] = "PreviousFrom",
+        ["matches"] = "Matches",
+        ["occurrences"] = "Occurrences",
+        ["between"] = "Between",
+        ["toCron"] = "ToCron",
+        ["toString"] = "ToString",
+        ["equals"] = "Equals",
+        ["timezone"] = "Timezone",
+        ["expression"] = "Expression",
+        ["except"] = "Except",
+        ["until"] = "Until",
+        ["starting"] = "Starting",
+        ["during"] = "During",
+    };
+
+    private static readonly Dictionary<string, string> ErrorNames = new()
+    {
+        ["kind"] = "Kind",
+        ["message"] = "Message",
+        ["span"] = "Span",
+        ["input"] = "Input",
+        ["suggestion"] = "Suggestion",
+        ["displayRich"] = "DisplayRich",
+        ["lex"] = "Lex",
+        ["parse"] = "Parse",
+        ["eval"] = "Eval",
+        ["cron"] = "Cron",
+    };
+
+    private static readonly Dictionary<string, Type> Types = new()
+    {
+        ["string"] = typeof(string),
+        ["string?"] = typeof(string),
+        ["bool"] = typeof(bool),
+        ["int"] = typeof(int),
+        ["Schedule"] = typeof(Schedule),
+        ["ZonedDateTime"] = typeof(DateTimeOffset),
+        ["ZonedDateTime?"] = typeof(DateTimeOffset?),
+        ["ZonedDateTime[]"] = typeof(IReadOnlyList<DateTimeOffset>),
+        ["Iterator<ZonedDateTime>"] = typeof(IEnumerable<DateTimeOffset>),
+        ["ScheduleExpr"] = typeof(IScheduleExpr),
+        ["Exception[]"] = typeof(IReadOnlyList<ExceptionSpec>),
+        ["UntilSpec?"] = typeof(UntilSpec),
+        ["Date?"] = typeof(string),
+        ["MonthName[]"] = typeof(IReadOnlyList<MonthName>),
+        ["ErrorKind"] = typeof(ErrorKind),
+        ["Span?"] = typeof(Span?),
+    };
 
     [Fact]
     public void SpecVersionIsPresent()
@@ -189,119 +242,230 @@ public class ApiConformanceTest
     }
 
     [Fact]
-    public void SpecStaticMethodsExist()
+    public void EveryApiMemberExistsUnderItsCSharpName()
     {
-        var schedule = Spec.RootElement.GetProperty("schedule");
-        var staticMethods = schedule.GetProperty("staticMethods");
-
-        var expectedMethods = new Dictionary<string, string>
-        {
-            ["parse"] = nameof(Schedule.Parse),
-            ["fromCron"] = nameof(Schedule.FromCron),
-            ["validate"] = nameof(Schedule.Validate)
-        };
-
-        foreach (var method in staticMethods.EnumerateArray())
-        {
-            var name = method.GetProperty("name").GetString()!;
-            Assert.True(expectedMethods.ContainsKey(name), $"Unmapped spec static method: {name}");
-        }
+        Assert.Empty(Problems(Spec.RootElement));
     }
 
     [Fact]
-    public void SpecInstanceMethodsExist()
+    public void AnApiMemberCSharpLacksIsAProblem()
     {
-        var schedule = Spec.RootElement.GetProperty("schedule");
-        var instanceMethods = schedule.GetProperty("instanceMethods");
+        var api = JsonNode.Parse(SpecJson)!;
+        var schedule = api["schedule"]!;
+        var error = api["error"]!;
+        schedule["staticMethods"]!.AsArray().Add(new JsonObject { ["name"] = "fakeStatic", ["params"] = new JsonArray(), ["returns"] = "bool" });
+        schedule["instanceMethods"]!.AsArray().Add(new JsonObject { ["name"] = "fakeMethod", ["params"] = new JsonArray(), ["returns"] = "bool" });
+        schedule["getters"]!.AsArray().Add(new JsonObject { ["name"] = "fakeGetter", ["type"] = "string?" });
+        error["properties"]!.AsArray().Add(new JsonObject { ["name"] = "fakeProperty", ["type"] = "string?" });
+        error["methods"]!.AsArray().Add(new JsonObject { ["name"] = "fakeErrorMethod", ["params"] = new JsonArray(), ["returns"] = "string" });
+        error["constructors"]!.AsArray().Add("fakeConstructor");
+        error["kinds"]!.AsArray().Add("fakeKind");
 
-        var expectedMethods = new Dictionary<string, string>
-        {
-            ["nextFrom"] = nameof(Schedule.NextFrom),
-            ["nextNFrom"] = nameof(Schedule.NextNFrom),
-            ["previousFrom"] = nameof(Schedule.PreviousFrom),
-            ["matches"] = nameof(Schedule.Matches),
-            ["occurrences"] = nameof(Schedule.Occurrences),
-            ["between"] = nameof(Schedule.Between),
-            ["toCron"] = nameof(Schedule.ToCron),
-            ["toString"] = "ToString"
-        };
-
-        foreach (var method in instanceMethods.EnumerateArray())
-        {
-            var name = method.GetProperty("name").GetString()!;
-            Assert.True(expectedMethods.ContainsKey(name), $"Unmapped spec instance method: {name}");
-        }
+        Assert.Equal(
+            [
+                "fakeStatic: no C# name",
+                "fakeMethod: no C# name",
+                "fakeGetter: no C# name",
+                "fakeProperty: no C# name",
+                "fakeErrorMethod: no C# name",
+                "fakeConstructor: no C# name",
+                "fakeKind: no C# name",
+            ],
+            Problems(JsonDocument.Parse(api.ToJsonString()).RootElement));
     }
 
     [Fact]
-    public void SpecGettersExist()
+    public void AnApiSignatureCSharpDoesNotMatchIsAProblem()
     {
-        var schedule = Spec.RootElement.GetProperty("schedule");
-        var getters = schedule.GetProperty("getters");
+        var api = JsonNode.Parse(SpecJson)!;
+        var methods = api["schedule"]!["instanceMethods"]!.AsArray();
+        var nextNFrom = methods.Single(m => (string?)m!["name"] == "nextNFrom")!;
+        nextNFrom["params"]![1]!["name"] = "count";
+        var between = methods.Single(m => (string?)m!["name"] == "between")!;
+        between["params"]!.AsArray().RemoveAt(1);
+        var toCron = methods.Single(m => (string?)m!["name"] == "toCron")!;
+        toCron["returns"] = "string?";
+        var timezone = api["schedule"]!["getters"]!.AsArray().Single(g => (string?)g!["name"] == "timezone")!;
+        timezone["type"] = "string";
+        var kind = api["error"]!["properties"]!.AsArray().Single(p => (string?)p!["name"] == "kind")!;
+        kind["type"] = "string";
+        var matches = methods.Single(m => (string?)m!["name"] == "matches")!;
+        matches["returns"] = "Boolean";
+        api["error"]!["kinds"]!.AsArray().RemoveAt(3);
 
-        var expectedGetters = new Dictionary<string, string>
-        {
-            ["timezone"] = nameof(Schedule.Timezone)
-        };
+        Assert.Equal(
+            [
+                "nextNFrom: Schedule.NextNFrom takes (now, n), not (now, count)",
+                "matches: no C# type for Boolean",
+                "between: no Schedule.Between(DateTimeOffset)",
+                "toCron: Schedule.ToCron returns String, nullable False, not string?",
+                "timezone: Schedule.Timezone is String, nullable True, not string",
+                "kind: HronException.Kind is ErrorKind, nullable False, not string",
+                "ErrorKind.Cron is not in api.json",
+            ],
+            Problems(JsonDocument.Parse(api.ToJsonString()).RootElement));
+    }
 
-        foreach (var getter in getters.EnumerateArray())
+    private static List<string> Problems(JsonElement api)
+    {
+        var problems = new List<string>();
+        var schedule = api.GetProperty("schedule");
+        var error = api.GetProperty("error");
+
+        foreach (var method in schedule.GetProperty("staticMethods").EnumerateArray())
         {
-            var name = getter.GetProperty("name").GetString()!;
-            Assert.True(expectedGetters.ContainsKey(name), $"Unmapped spec getter: {name}");
+            CheckMethod(typeof(Schedule), BindingFlags.Static, method, ScheduleNames, problems);
+        }
+        foreach (var method in schedule.GetProperty("instanceMethods").EnumerateArray())
+        {
+            CheckMethod(typeof(Schedule), BindingFlags.Instance, method, ScheduleNames, problems);
+            if (method.GetProperty("name").GetString() == "equals")
+            {
+                CheckEquality(problems);
+            }
+        }
+        foreach (var getter in schedule.GetProperty("getters").EnumerateArray())
+        {
+            CheckProperty(typeof(Schedule), getter, ScheduleNames, problems);
+        }
+        foreach (var property in error.GetProperty("properties").EnumerateArray())
+        {
+            CheckProperty(typeof(HronException), property, ErrorNames, problems);
+        }
+        foreach (var method in error.GetProperty("methods").EnumerateArray())
+        {
+            CheckMethod(typeof(HronException), BindingFlags.Instance, method, ErrorNames, problems);
+        }
+        foreach (var constructor in error.GetProperty("constructors").EnumerateArray())
+        {
+            CheckConstructor(constructor.GetString()!, problems);
+        }
+        var kinds = error.GetProperty("kinds").EnumerateArray().Select(k => k.GetString()!).ToList();
+        foreach (var kind in kinds)
+        {
+            CheckKind(kind, problems);
+        }
+        foreach (var kind in Enum.GetValues<ErrorKind>().Where(k => !kinds.Contains(k.ToValue())))
+        {
+            problems.Add($"ErrorKind.{kind} is not in api.json");
+        }
+        return problems;
+    }
+
+    private static void CheckMethod(Type type, BindingFlags binding, JsonElement spec, Dictionary<string, string> names, List<string> problems)
+    {
+        var name = spec.GetProperty("name").GetString()!;
+        if (!names.TryGetValue(name, out var csName))
+        {
+            problems.Add($"{name}: no C# name");
+            return;
+        }
+        var parameters = spec.GetProperty("params").EnumerateArray().ToList();
+        var returns = spec.GetProperty("returns").GetString()!;
+        var unknown = parameters.Select(p => p.GetProperty("type").GetString()!).Append(returns).Where(t => !Types.ContainsKey(t));
+        if (unknown.Any())
+        {
+            problems.Add($"{name}: no C# type for {string.Join(", ", unknown)}");
+            return;
+        }
+        var types = parameters.Select(p => Types[p.GetProperty("type").GetString()!]).ToArray();
+        var method = type.GetMethod(csName, BindingFlags.Public | binding, types);
+        if (method is null || method.DeclaringType != type)
+        {
+            problems.Add($"{name}: no {type.Name}.{csName}({string.Join(", ", types.Select(t => t.Name))})");
+            return;
+        }
+        var specNames = parameters.Select(p => p.GetProperty("name").GetString()!).ToList();
+        var csNames = method.GetParameters().Select(p => p.Name!).ToList();
+        // C# writes the spec's "datetime" as dateTime.
+        if (!csNames.SequenceEqual(specNames, StringComparer.OrdinalIgnoreCase))
+        {
+            problems.Add($"{name}: {type.Name}.{csName} takes ({string.Join(", ", csNames)}), not ({string.Join(", ", specNames)})");
+        }
+        var nullable = new NullabilityInfoContext().Create(method.ReturnParameter).ReadState == NullabilityState.Nullable;
+        if (method.ReturnType != Types[returns] || nullable != returns.EndsWith('?'))
+        {
+            problems.Add($"{name}: {type.Name}.{csName} returns {method.ReturnType.Name}, nullable {nullable}, not {returns}");
         }
     }
 
-    [Fact]
-    public void SpecErrorKindsMatch()
+    private static void CheckProperty(Type type, JsonElement spec, Dictionary<string, string> names, List<string> problems)
     {
-        var error = Spec.RootElement.GetProperty("error");
-        var kinds = error.GetProperty("kinds");
-
-        var expectedKinds = new HashSet<string> { "lex", "parse", "eval", "cron" };
-
-        foreach (var kind in kinds.EnumerateArray())
+        var name = spec.GetProperty("name").GetString()!;
+        if (!names.TryGetValue(name, out var csName))
         {
-            var name = kind.GetString()!;
-            Assert.True(expectedKinds.Contains(name), $"Unexpected error kind in spec: {name}");
+            problems.Add($"{name}: no C# name");
+            return;
+        }
+        var property = type.GetProperty(csName, BindingFlags.Public | BindingFlags.Instance);
+        if (property is null)
+        {
+            problems.Add($"{name}: no {type.Name}.{csName}");
+            return;
+        }
+        var specType = spec.GetProperty("type").GetString()!;
+        if (!Types.ContainsKey(specType))
+        {
+            problems.Add($"{name}: no C# type for {specType}");
+            return;
+        }
+        var nullable = new NullabilityInfoContext().Create(property).ReadState == NullabilityState.Nullable;
+        if (property.PropertyType != Types[specType] || nullable != specType.EndsWith('?'))
+        {
+            problems.Add($"{name}: {type.Name}.{csName} is {property.PropertyType.Name}, nullable {nullable}, not {specType}");
+        }
+        if (property.SetMethod is not null)
+        {
+            problems.Add($"{name}: {type.Name}.{csName} has a setter");
         }
     }
 
-    [Fact]
-    public void SpecErrorConstructorsExist()
+    private static void CheckConstructor(string name, List<string> problems)
     {
-        var error = Spec.RootElement.GetProperty("error");
-        var constructors = error.GetProperty("constructors");
-
-        var expectedConstructors = new Dictionary<string, string>
+        if (!ErrorNames.TryGetValue(name, out var csName))
         {
-            ["lex"] = nameof(HronException.Lex),
-            ["parse"] = nameof(HronException.Parse),
-            ["eval"] = nameof(HronException.Eval),
-            ["cron"] = nameof(HronException.Cron)
-        };
-
-        foreach (var constructor in constructors.EnumerateArray())
+            problems.Add($"{name}: no C# name");
+            return;
+        }
+        var factory = typeof(HronException).GetMethod(csName, BindingFlags.Public | BindingFlags.Static);
+        if (factory is null || factory.ReturnType != typeof(HronException))
         {
-            var name = constructor.GetString()!;
-            Assert.True(expectedConstructors.ContainsKey(name), $"Unmapped spec error constructor: {name}");
+            problems.Add($"{name}: no static HronException.{csName} returning HronException");
         }
     }
 
-    [Fact]
-    public void SpecErrorMethodsExist()
+    private static void CheckKind(string name, List<string> problems)
     {
-        var error = Spec.RootElement.GetProperty("error");
-        var methods = error.GetProperty("methods");
-
-        var expectedMethods = new Dictionary<string, string>
+        if (!ErrorNames.TryGetValue(name, out var csName))
         {
-            ["displayRich"] = nameof(HronException.DisplayRich)
+            problems.Add($"{name}: no C# name");
+            return;
+        }
+        if (!Enum.TryParse<ErrorKind>(csName, out var kind) || kind.ToValue() != name)
+        {
+            problems.Add($"{name}: no ErrorKind.{csName} whose ToValue() is {name}");
+        }
+    }
+
+    /// <summary>
+    /// The equality sentence of the csharp note in api.json.
+    /// </summary>
+    private static void CheckEquality(List<string> problems)
+    {
+        var schedule = typeof(Schedule);
+        var members = new (string Name, MethodInfo? Method)[]
+        {
+            ("IEquatable<Schedule>.Equals", typeof(IEquatable<Schedule>).IsAssignableFrom(schedule)
+                ? schedule.GetInterfaceMap(typeof(IEquatable<Schedule>)).TargetMethods.Single()
+                : null),
+            ("Equals(object)", schedule.GetMethod(nameof(Equals), [typeof(object)])),
+            ("GetHashCode()", schedule.GetMethod(nameof(GetHashCode), Type.EmptyTypes)),
+            ("operator ==", schedule.GetMethod("op_Equality", [schedule, schedule])),
+            ("operator !=", schedule.GetMethod("op_Inequality", [schedule, schedule])),
         };
-
-        foreach (var method in methods.EnumerateArray())
+        foreach (var (name, method) in members.Where(m => m.Method?.DeclaringType != schedule))
         {
-            var name = method.GetProperty("name").GetString()!;
-            Assert.True(expectedMethods.ContainsKey(name), $"Unmapped spec error method: {name}");
+            problems.Add($"equals: Schedule does not declare {name}");
         }
     }
 }

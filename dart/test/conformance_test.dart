@@ -324,6 +324,10 @@ void main() {
 
             final s2 = Schedule.parse(tc['canonical'] as String);
             expect(s2.toString(), equals(tc['canonical']));
+
+            final reparsed = Schedule.parse(display);
+            expect(schedule == reparsed, isTrue, reason: 'equality');
+            expect(schedule.hashCode, reparsed.hashCode, reason: 'hashCode');
           });
         }
       });
@@ -424,6 +428,10 @@ void main() {
           checkFields(tc as Map<String, dynamic>, {'cron', 'hron'});
           final schedule = Schedule.fromCron(tc['cron'] as String);
           expect(schedule.toString(), equals(tc['hron']));
+
+          final reparsed = Schedule.parse(schedule.toString());
+          expect(schedule == reparsed, isTrue, reason: 'equality');
+          expect(schedule.hashCode, reparsed.hashCode, reason: 'hashCode');
         });
       }
     });

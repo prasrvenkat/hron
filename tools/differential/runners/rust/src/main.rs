@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::time::Instant;
 
-use hron::{Schedule, ScheduleError};
+use hron::{ErrorKind, Schedule, ScheduleError};
 use jiff::{Timestamp, Zoned};
 use serde_json::{json, Value};
 
@@ -68,20 +68,17 @@ fn format(t: &Zoned) -> String {
 }
 
 fn details(error: &ScheduleError) -> Value {
-    let (kind, span, suggestion) = match error {
-        ScheduleError::Lex { span, .. } => ("lex", Some(span), None),
-        ScheduleError::Parse {
-            span, suggestion, ..
-        } => ("parse", Some(span), suggestion.as_deref()),
-        ScheduleError::Eval { .. } => ("eval", None, None),
-        ScheduleError::Cron { .. } => ("cron", None, None),
-        _ => ("unknown", None, None),
+    let kind = match error.kind() {
+        ErrorKind::Lex => "lex",
+        ErrorKind::Parse => "parse",
+        ErrorKind::Eval => "eval",
+        ErrorKind::Cron => "cron",
     };
     json!({
         "kind": kind,
-        "message": error.to_string(),
-        "span": span.map(|span| [span.start, span.end]),
-        "suggestion": suggestion,
+        "message": error.message(),
+        "span": error.span().map(|span| [span.start, span.end]),
+        "suggestion": error.suggestion(),
     })
 }
 

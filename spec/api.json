@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Canonical public API contract for hron Schedule class. All implementations MUST expose these methods. Names are in camelCase; Rust implementations use snake_case equivalents.",
+  "description": "Canonical public API contract for hron Schedule class. All implementations MUST expose these methods. Names are in camelCase here; each language's note gives its own names.",
   "casing": {
     "canonical": "camelCase",
     "rust": "snake_case"
@@ -12,21 +12,21 @@
         "params": [{ "name": "input", "type": "string" }],
         "returns": "Schedule",
         "throws": true,
-        "description": "Parse an hron expression string."
+        "description": "Parse an hron expression string. A null input is a usage error (spec/README.md, \"Timestamps and counts\")."
       },
       {
         "name": "fromCron",
         "params": [{ "name": "cronExpr", "type": "string" }],
         "returns": "Schedule",
         "throws": true,
-        "description": "Convert a 5-field cron expression to a Schedule."
+        "description": "Convert a 5-field cron expression to a Schedule. A null input is a usage error (spec/README.md, \"Timestamps and counts\")."
       },
       {
         "name": "validate",
         "params": [{ "name": "input", "type": "string" }],
         "returns": "bool",
         "throws": false,
-        "description": "Check if an input string is a valid hron expression (false for anything parse rejects, including unknown timezones)."
+        "description": "Check if an input string is a valid hron expression (false for anything parse rejects, including unknown timezones). A null input is a usage error (spec/README.md, \"Timestamps and counts\")."
       }
     ],
     "instanceMethods": [
@@ -84,18 +84,25 @@
         "params": [],
         "returns": "string",
         "description": "Render as canonical string (roundtrip-safe)."
+      },
+      {
+        "name": "equals",
+        "params": [{ "name": "other", "type": "Schedule" }],
+        "returns": "bool",
+        "description": "True when other is a schedule with equal parts (spec/README.md, \"Equality\"); false for null or any other value. Each language uses its own equality, with a matching hash where the language has one."
       }
     ],
     "getters": [
-      {
-        "name": "timezone",
-        "type": "string?",
-        "description": "The IANA timezone name with its canonical capitalization, if specified."
-      }
+      { "name": "timezone", "type": "string?", "description": "The IANA timezone name with its canonical capitalization, if specified." },
+      { "name": "expression", "type": "ScheduleExpr", "description": "The repeat: its kind, interval, days or target, and its times or window, read-only." },
+      { "name": "except", "type": "Exception[]", "description": "The except dates, read-only; empty without an except clause." },
+      { "name": "until", "type": "UntilSpec?", "description": "The until date, if specified." },
+      { "name": "starting", "type": "Date?", "description": "The starting date, if specified: a jiff::civil::Date in Rust, a YYYY-MM-DD string elsewhere." },
+      { "name": "during", "type": "MonthName[]", "description": "The during months, read-only; empty without a during clause." }
     ]
   },
   "error": {
-    "description": "Error type (named ScheduleError in Rust, HronError in TS/Dart). All implementations must expose the same shape.",
+    "description": "Error type, named in each language's note. All implementations must expose the same shape.",
     "kinds": ["lex", "parse", "eval", "cron"],
     "properties": [
       { "name": "kind", "type": "ErrorKind", "required": true },
@@ -115,8 +122,17 @@
     ]
   },
   "notes": {
-    "wasm": "WASM takes and returns timestamps as strings (spec/README.md, \"Timestamps and counts\"). occurrences(from, limit) and between(from, to) return arrays rather than iterators, and occurrences needs a limit. fromCron is a top-level function. Also exposes toJSON() as a WASM-specific extra.",
-    "rust": "Rust expresses getters as accessor methods: expr(), timezone(), except(), until(), anchor(), during(). Evaluation cannot fail, so nextFrom, nextNFrom, previousFrom and matches return Option, Vec and bool rather than Result, and occurrences and between yield Zoned. Additional Rust-specific: explain_cron(), Schedule::from_parts(ScheduleParts) (spec/README.md, \"Schedules built in code\") and to_parts().",
-    "dart_exception": "Dart names the Exception AST type 'ExceptionSpec' to avoid conflict with dart:core.Exception."
+    "rust": "Names are snake_case. Getters are accessor methods: expression(), timezone(), except(), until(), starting(), during(). toString is Display; equals is PartialEq and Eq, with Hash. Evaluation cannot fail, so next_from, next_n_from, previous_from and matches return Option, Vec and bool rather than Result, and occurrences and between yield Zoned. The error is ScheduleError, with accessors kind() (an ErrorKind), message(), span(), input() and suggestion(), and display_rich(); Span and ErrorKind are re-exported. Also: explain_cron(), Schedule::from_parts(ScheduleParts) and to_parts().",
+    "wasm": "Takes and returns timestamps as strings (spec/README.md, \"Timestamps and counts\"). occurrences(from, limit) and between(from, to) return arrays rather than iterators, and occurrences needs a limit. fromCron is a top-level function. The getters return the same plain objects hron-ts returns, and timezone is null without a zone. equals(other) is false for anything but a schedule. The error is an Error with kind, span, input, suggestion and displayRich(), typed as HronError in the .d.ts; there are no error constructors. Also exposes toJSON() and the top-level explainCron().",
+    "ts": "Getters are properties; objects and arrays are frozen and typed readonly; timezone is null without a zone. Equality is equals(other), as JavaScript has no operator overloading, and there is no hash. The error is HronError.",
+    "go": "Names are PascalCase: ParseSchedule, FromCronExpr, Validate, NewSchedule (builds from ScheduleData), NextFrom, and so on. toString is String(). Getters are methods: Timezone(), Expression(), Except(), Until(), Starting(), During(); Data() returns a copy of all the parts. Equality is Equal(other), and there is no hash; == on schedules compares identity. An absent value is the zero value (\"\" or nil). The error is *HronError, with the fields Kind, Message, Span, Input and Suggestion and the method DisplayRich().",
+    "python": "Names are snake_case: next_from, next_n_from, previous_from, from_cron, to_cron, display_rich. toString is __str__. Getters are properties, and except is except_. Equality is == with __hash__. The error is HronError, with kind, message, span, input, suggestion and display_rich().",
+    "ruby": "Names are snake_case. toString is to_s. Getters are methods; names are Symbols. Equality is ==, eql? and hash. The error is Hron::HronError.",
+    "java": "Getters are methods; optional values are Optional. Equality is equals(Object) and hashCode. The error is HronException; message is getMessage().",
+    "csharp": "Names are PascalCase; getters are properties. Equality is Equals, == and !=, with GetHashCode. A null argument throws ArgumentNullException. The error is HronException.",
+    "dart": "Getters are properties; lists are unmodifiable. Equality is == with hashCode. The error is HronError. Dart names the Exception type ExceptionSpec, to avoid dart:core's Exception."
+  },
+  "parts": {
+    "description": "The types of the getters' values follow spec/grammar.ebnf: one per expression kind, target, date and name. Every implementation exposes them read-only; Rust, Go, Python and Ruby also build a schedule from them (spec/README.md, \"Schedules built in code\"), with the same names: expression, timezone, except, until, starting, during. Those four also return all the parts at once, to change and build again: to_parts() in Rust, Data() in Go, data in Python and Ruby."
   }
 }

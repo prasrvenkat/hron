@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-internal enum NearestDirection
+public enum NearestDirection
 {
     /// <summary>Always prefer following weekday (can cross to next month).</summary>
     Next,
@@ -8,7 +8,14 @@ internal enum NearestDirection
     Previous
 }
 
-internal sealed record MonthTarget(
+/// <summary>
+/// <c>Kind</c> says which fields hold the target: <c>Specs</c> for <see cref="MonthTargetKind.Days"/>;
+/// <c>NearestWeekdayDay</c> and <c>NearestWeekdayDirection</c> for
+/// <see cref="MonthTargetKind.NearestWeekday"/>, the direction null for the closest weekday within the
+/// month (cron's <c>W</c>); <c>OrdinalValue</c> and <c>WeekdayValue</c> for
+/// <see cref="MonthTargetKind.OrdinalWeekday"/>. The fields the kind does not use are empty, 0 or null.
+/// </summary>
+public sealed record MonthTarget(
     MonthTargetKind Kind,
     IReadOnlyList<DayOfMonthSpec> Specs,
     int NearestWeekdayDay = 0,
@@ -16,23 +23,34 @@ internal sealed record MonthTarget(
     OrdinalPosition? OrdinalValue = null,
     Weekday? WeekdayValue = null)
 {
-    public static MonthTarget Days(IReadOnlyList<DayOfMonthSpec> specs) =>
+    public MonthTargetKind Kind { get; } = Kind;
+
+    public IReadOnlyList<DayOfMonthSpec> Specs { get; } = PartList<DayOfMonthSpec>.Of(Specs);
+
+    public int NearestWeekdayDay { get; } = NearestWeekdayDay;
+
+    public NearestDirection? NearestWeekdayDirection { get; } = NearestWeekdayDirection;
+
+    public OrdinalPosition? OrdinalValue { get; } = OrdinalValue;
+
+    public Weekday? WeekdayValue { get; } = WeekdayValue;
+
+    internal static MonthTarget Days(IReadOnlyList<DayOfMonthSpec> specs) =>
         new(MonthTargetKind.Days, specs);
 
-    public static MonthTarget LastDay() =>
+    internal static MonthTarget LastDay() =>
         new(MonthTargetKind.LastDay, []);
 
-    public static MonthTarget LastWeekday() =>
+    internal static MonthTarget LastWeekday() =>
         new(MonthTargetKind.LastWeekday, []);
 
-    /// <param name="direction">Optional direction preference (null for standard cron W behavior).</param>
-    public static MonthTarget NearestWeekday(int day, NearestDirection? direction = null) =>
+    internal static MonthTarget NearestWeekday(int day, NearestDirection? direction = null) =>
         new(MonthTargetKind.NearestWeekday, [], day, direction);
 
-    public static MonthTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday) =>
+    internal static MonthTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday) =>
         new(MonthTargetKind.OrdinalWeekday, [], OrdinalValue: ordinal, WeekdayValue: weekday);
 
-    public IReadOnlyList<int> ExpandDays()
+    internal IReadOnlyList<int> ExpandDays()
     {
         if (Kind != MonthTargetKind.Days)
         {
@@ -48,7 +66,7 @@ internal sealed record MonthTarget(
     }
 }
 
-internal enum MonthTargetKind
+public enum MonthTargetKind
 {
     Days,
     LastDay,

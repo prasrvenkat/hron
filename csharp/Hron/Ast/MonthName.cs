@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-internal enum MonthName
+public enum MonthName
 {
     January = 1,
     February = 2,

@@ -49,7 +49,7 @@ module Hron
     private_constant :Expected, :CLAUSE_ORDER
 
     def self.parse(input)
-      tokens = Hron.tokenize(input)
+      tokens = Lexer.new(input).tokenize
       raise HronError.parse("empty expression", Span.new(0, 0), input) if tokens.empty?
 
       new(tokens, input).parse
@@ -149,7 +149,7 @@ module Hron
     end
 
     def parse_clauses(expr)
-      fields = {expr: expr}
+      fields = {expression: expr}
       fields[:except] = parse_exception_list if eat(TokenKind::EXCEPT)
 
       if peek_kind == TokenKind::UNTIL
@@ -162,7 +162,7 @@ module Hron
       if eat(TokenKind::STARTING)
         raise expected(Expected::ISO_DATE) unless peek_kind.is_a?(TIsoDate)
 
-        fields[:anchor] = iso_date(advance)
+        fields[:starting] = iso_date(advance)
       end
 
       fields[:during] = parse_month_list if eat(TokenKind::DURING)
@@ -179,7 +179,7 @@ module Hron
     def leftover(schedule)
       token = peek
       # Every clause holds at least one item, so a clause was read exactly when its field is set.
-      read = [schedule.except.any?, !schedule.until.nil?, !schedule.anchor.nil?, schedule.during.any?, !schedule.timezone.nil?]
+      read = [schedule.except.any?, !schedule.until.nil?, !schedule.starting.nil?, schedule.during.any?, !schedule.timezone.nil?]
       clause = CLAUSE_ORDER.index { |kind, _| kind == token.kind }
       last_read = read.rindex(true)
       message = if clause && read[clause]
@@ -194,7 +194,7 @@ module Hron
 
     def check_named_until(schedule)
       named = schedule.until
-      return unless named.is_a?(NamedUntil) && schedule.anchor.nil?
+      return unless named.is_a?(NamedUntil) && schedule.starting.nil?
 
       raise error(
         "until #{named.month} #{named.day} has no year: add a starting date, or use an ISO date",

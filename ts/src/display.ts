@@ -9,7 +9,7 @@ import type {
 } from "./ast.js";
 
 export function display(schedule: ScheduleData): string {
-  let out = displayExpr(schedule.expr);
+  let out = displayExpr(schedule.expression);
 
   // Trailing clause order is fixed by the grammar.
   if (schedule.except.length > 0) {
@@ -30,8 +30,8 @@ export function display(schedule: ScheduleData): string {
     }
   }
 
-  if (schedule.anchor) {
-    out += ` starting ${schedule.anchor}`;
+  if (schedule.starting) {
+    out += ` starting ${schedule.starting}`;
   }
 
   if (schedule.during.length > 0) {

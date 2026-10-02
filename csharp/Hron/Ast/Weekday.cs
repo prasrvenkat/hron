@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-internal enum Weekday
+public enum Weekday
 {
     Monday = 1,
     Tuesday = 2,

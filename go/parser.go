@@ -33,18 +33,18 @@ const (
 )
 
 var clauseOrder = []struct {
-	kind    TokenKind
+	kind    tokenKind
 	keyword string
 }{
-	{TokenExcept, "except"},
-	{TokenUntil, "until"},
-	{TokenStarting, "starting"},
-	{TokenDuring, "during"},
-	{TokenIn, "in"},
+	{tokenExcept, "except"},
+	{tokenUntil, "until"},
+	{tokenStarting, "starting"},
+	{tokenDuring, "during"},
+	{tokenIn, "in"},
 }
 
 type parser struct {
-	tokens     []Token
+	tokens     []token
 	pos        int
 	input      string
 	untilBytes Span
@@ -78,31 +78,31 @@ func parse(input string) (*ScheduleData, error) {
 	return schedule, nil
 }
 
-func (p *parser) peek() *Token {
+func (p *parser) peek() *token {
 	if p.pos < len(p.tokens) {
 		return &p.tokens[p.pos]
 	}
 	return nil
 }
 
-func (p *parser) peekKind() TokenKind {
+func (p *parser) peekKind() tokenKind {
 	if tok := p.peek(); tok != nil {
 		return tok.Kind
 	}
 	return -1
 }
 
-func (p *parser) advance() *Token {
+func (p *parser) advance() *token {
 	tok := &p.tokens[p.pos]
 	p.pos++
 	return tok
 }
 
-func (p *parser) previous() *Token {
+func (p *parser) previous() *token {
 	return &p.tokens[p.pos-1]
 }
 
-func (p *parser) eat(kind TokenKind) bool {
+func (p *parser) eat(kind tokenKind) bool {
 	found := p.peekKind() == kind
 	if found {
 		p.pos++
@@ -110,14 +110,14 @@ func (p *parser) eat(kind TokenKind) bool {
 	return found
 }
 
-func (p *parser) expect(kind TokenKind, what string) error {
+func (p *parser) expect(kind tokenKind, what string) error {
 	if p.eat(kind) {
 		return nil
 	}
 	return p.expected(what)
 }
 
-func (p *parser) text(tok *Token) string {
+func (p *parser) text(tok *token) string {
 	return p.input[tok.Span.Start:tok.Span.End]
 }
 
@@ -135,10 +135,10 @@ func (p *parser) expected(what string) error {
 
 func (p *parser) parseExpression() (ScheduleExpr, error) {
 	switch p.peekKind() {
-	case TokenEvery:
+	case tokenEvery:
 		p.advance()
 		return p.parseEvery()
-	case TokenOn:
+	case tokenOn:
 		p.advance()
 		return p.parseOn()
 	default:
@@ -149,7 +149,7 @@ func (p *parser) parseExpression() (ScheduleExpr, error) {
 func (p *parser) parseClauses(expr ScheduleExpr) (*ScheduleData, error) {
 	schedule := NewScheduleData(expr)
 
-	if p.eat(TokenExcept) {
+	if p.eat(tokenExcept) {
 		exceptions, err := p.parseExceptionList()
 		if err != nil {
 			return nil, err
@@ -157,7 +157,7 @@ func (p *parser) parseClauses(expr ScheduleExpr) (*ScheduleData, error) {
 		schedule.Except = exceptions
 	}
 
-	if p.peekKind() == TokenUntil {
+	if p.peekKind() == tokenUntil {
 		until := p.advance()
 		date, err := p.parseDate()
 		if err != nil {
@@ -173,18 +173,18 @@ func (p *parser) parseClauses(expr ScheduleExpr) (*ScheduleData, error) {
 		p.untilBytes = Span{until.Span.Start, p.previous().Span.End}
 	}
 
-	if p.eat(TokenStarting) {
-		if p.peekKind() != TokenISODate {
+	if p.eat(tokenStarting) {
+		if p.peekKind() != tokenISODate {
 			return nil, p.expected(expectedISODate)
 		}
 		tok := p.advance()
 		if err := p.checkISODate(tok); err != nil {
 			return nil, err
 		}
-		schedule.Anchor = tok.ISODateVal
+		schedule.Starting = tok.ISODateVal
 	}
 
-	if p.eat(TokenDuring) {
+	if p.eat(tokenDuring) {
 		months, err := p.parseMonthList()
 		if err != nil {
 			return nil, err
@@ -192,8 +192,8 @@ func (p *parser) parseClauses(expr ScheduleExpr) (*ScheduleData, error) {
 		schedule.During = months
 	}
 
-	if p.eat(TokenIn) {
-		if p.peekKind() != TokenTimezone {
+	if p.eat(tokenIn) {
+		if p.peekKind() != tokenTimezone {
 			return nil, p.expected(expectedTimezone)
 		}
 		tok := p.advance()
@@ -213,7 +213,7 @@ func (p *parser) leftover(schedule *ScheduleData) error {
 	read := []bool{
 		len(schedule.Except) > 0,
 		schedule.Until != nil,
-		schedule.Anchor != "",
+		schedule.Starting != "",
 		len(schedule.During) > 0,
 		schedule.Timezone != "",
 	}
@@ -239,7 +239,7 @@ func (p *parser) leftover(schedule *ScheduleData) error {
 
 func (p *parser) checkNamedUntil(schedule *ScheduleData) error {
 	until := schedule.Until
-	if until == nil || until.Kind != UntilSpecKindNamed || schedule.Anchor != "" {
+	if until == nil || until.Kind != UntilSpecKindNamed || schedule.Starting != "" {
 		return nil
 	}
 	return ParseError(
@@ -266,7 +266,7 @@ func (p *parser) parseExceptionList() ([]ExceptionSpec, error) {
 		} else {
 			exceptions = append(exceptions, NewNamedException(date.Month, date.Day))
 		}
-		if !p.eat(TokenComma) {
+		if !p.eat(tokenComma) {
 			return exceptions, nil
 		}
 	}
@@ -274,13 +274,13 @@ func (p *parser) parseExceptionList() ([]ExceptionSpec, error) {
 
 func (p *parser) parseDate() (DateSpec, error) {
 	switch p.peekKind() {
-	case TokenISODate:
+	case tokenISODate:
 		tok := p.advance()
 		if err := p.checkISODate(tok); err != nil {
 			return DateSpec{}, err
 		}
 		return NewISODate(tok.ISODateVal), nil
-	case TokenMonthName:
+	case tokenMonthName:
 		month := p.advance().MonthNameVal
 		day, err := p.parseDayOf(month)
 		if err != nil {
@@ -292,7 +292,7 @@ func (p *parser) parseDate() (DateSpec, error) {
 	}
 }
 
-func (p *parser) checkISODate(tok *Token) error {
+func (p *parser) checkISODate(tok *token) error {
 	if !isCalendarDate(tok.ISODateVal) {
 		return p.error(invalidDateMessage(tok.ISODateVal), tok.Span.Start, tok.Span.End)
 	}
@@ -305,31 +305,31 @@ func invalidDateMessage(date string) string {
 
 func (p *parser) parseEvery() (ScheduleExpr, error) {
 	switch p.peekKind() {
-	case TokenDay:
+	case tokenDay:
 		p.advance()
 		return p.parseDayRepeat(1, NewDayFilterEvery())
-	case TokenWeekday:
+	case tokenWeekday:
 		p.advance()
 		return p.parseDayRepeat(1, NewDayFilterWeekday())
-	case TokenWeekend:
+	case tokenWeekend:
 		p.advance()
 		return p.parseDayRepeat(1, NewDayFilterWeekend())
-	case TokenDayName:
+	case tokenDayName:
 		days, err := p.parseDayList()
 		if err != nil {
 			return ScheduleExpr{}, err
 		}
 		return p.parseDayRepeat(1, NewDayFilterDays(days))
-	case TokenWeeks:
+	case tokenWeeks:
 		p.advance()
 		return p.parseWeekRepeat(1)
-	case TokenMonth:
+	case tokenMonth:
 		p.advance()
 		return p.parseMonthRepeat(1)
-	case TokenYear:
+	case tokenYear:
 		p.advance()
 		return p.parseYearRepeat(1)
-	case TokenNumber:
+	case tokenNumber:
 		return p.parseNumberRepeat()
 	default:
 		return ScheduleExpr{}, p.expected(expectedRepeater)
@@ -337,7 +337,7 @@ func (p *parser) parseEvery() (ScheduleExpr, error) {
 }
 
 func (p *parser) parseDayRepeat(interval int, days DayFilter) (ScheduleExpr, error) {
-	if err := p.expect(TokenAt, expectedAt); err != nil {
+	if err := p.expect(tokenAt, expectedAt); err != nil {
 		return ScheduleExpr{}, err
 	}
 	times, err := p.parseTimeList()
@@ -355,18 +355,18 @@ func (p *parser) parseNumberRepeat() (ScheduleExpr, error) {
 	}
 
 	switch p.peekKind() {
-	case TokenWeeks:
+	case tokenWeeks:
 		p.advance()
 		return p.parseWeekRepeat(interval)
-	case TokenIntervalUnit:
+	case tokenIntervalUnit:
 		return p.parseIntervalRepeat(interval, p.advance().UnitVal)
-	case TokenDay:
+	case tokenDay:
 		p.advance()
 		return p.parseDayRepeat(interval, NewDayFilterEvery())
-	case TokenMonth:
+	case tokenMonth:
 		p.advance()
 		return p.parseMonthRepeat(interval)
-	case TokenYear:
+	case tokenYear:
 		p.advance()
 		return p.parseYearRepeat(interval)
 	default:
@@ -375,7 +375,7 @@ func (p *parser) parseNumberRepeat() (ScheduleExpr, error) {
 }
 
 func (p *parser) parseIntervalRepeat(interval int, unit IntervalUnit) (ScheduleExpr, error) {
-	if err := p.expect(TokenFrom, expectedFrom); err != nil {
+	if err := p.expect(tokenFrom, expectedFrom); err != nil {
 		return ScheduleExpr{}, err
 	}
 	from, err := p.parseTime()
@@ -383,7 +383,7 @@ func (p *parser) parseIntervalRepeat(interval int, unit IntervalUnit) (ScheduleE
 		return ScheduleExpr{}, err
 	}
 	fromToken := p.previous()
-	if err := p.expect(TokenTo, expectedTo); err != nil {
+	if err := p.expect(tokenTo, expectedTo); err != nil {
 		return ScheduleExpr{}, err
 	}
 	to, err := p.parseTime()
@@ -399,7 +399,7 @@ func (p *parser) parseIntervalRepeat(interval int, unit IntervalUnit) (ScheduleE
 	}
 
 	var dayFilter *DayFilter
-	if p.eat(TokenOn) {
+	if p.eat(tokenOn) {
 		filter, err := p.parseDayTarget()
 		if err != nil {
 			return ScheduleExpr{}, err
@@ -411,14 +411,14 @@ func (p *parser) parseIntervalRepeat(interval int, unit IntervalUnit) (ScheduleE
 }
 
 func (p *parser) parseWeekRepeat(interval int) (ScheduleExpr, error) {
-	if err := p.expect(TokenOn, expectedOn); err != nil {
+	if err := p.expect(tokenOn, expectedOn); err != nil {
 		return ScheduleExpr{}, err
 	}
 	days, err := p.parseDayList()
 	if err != nil {
 		return ScheduleExpr{}, err
 	}
-	if err := p.expect(TokenAt, expectedAt); err != nil {
+	if err := p.expect(tokenAt, expectedAt); err != nil {
 		return ScheduleExpr{}, err
 	}
 	times, err := p.parseTimeList()
@@ -429,42 +429,42 @@ func (p *parser) parseWeekRepeat(interval int) (ScheduleExpr, error) {
 }
 
 func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
-	if err := p.expect(TokenOn, expectedOn); err != nil {
+	if err := p.expect(tokenOn, expectedOn); err != nil {
 		return ScheduleExpr{}, err
 	}
-	if err := p.expect(TokenThe, expectedThe); err != nil {
+	if err := p.expect(tokenThe, expectedThe); err != nil {
 		return ScheduleExpr{}, err
 	}
 
 	var target MonthTarget
 	switch p.peekKind() {
-	case TokenLast:
+	case tokenLast:
 		p.advance()
 		switch p.peekKind() {
-		case TokenDay:
+		case tokenDay:
 			target = NewLastDayTarget()
-		case TokenWeekday:
+		case tokenWeekday:
 			target = NewLastWeekdayTarget()
-		case TokenDayName:
+		case tokenDayName:
 			target = NewOrdinalWeekdayTarget(Last, p.peek().DayNameVal)
 		default:
 			return ScheduleExpr{}, p.expected(expectedMonthLast)
 		}
 		p.advance()
-	case TokenOrdinal:
+	case tokenOrdinal:
 		ordinal := p.advance().OrdinalVal
 		weekday, err := p.parseDayName()
 		if err != nil {
 			return ScheduleExpr{}, err
 		}
 		target = NewOrdinalWeekdayTarget(ordinal, weekday)
-	case TokenOrdinalNumber:
+	case tokenOrdinalNumber:
 		specs, err := p.parseOrdinalDayList()
 		if err != nil {
 			return ScheduleExpr{}, err
 		}
 		target = NewDaysTarget(specs)
-	case TokenNext, TokenPrevious, TokenNearest:
+	case tokenNext, tokenPrevious, tokenNearest:
 		var err error
 		target, err = p.parseNearestWeekdayTarget()
 		if err != nil {
@@ -474,7 +474,7 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 		return ScheduleExpr{}, p.expected(expectedMonthTgt)
 	}
 
-	if err := p.expect(TokenAt, expectedAt); err != nil {
+	if err := p.expect(tokenAt, expectedAt); err != nil {
 		return ScheduleExpr{}, err
 	}
 	times, err := p.parseTimeList()
@@ -486,18 +486,18 @@ func (p *parser) parseMonthRepeat(interval int) (ScheduleExpr, error) {
 
 func (p *parser) parseNearestWeekdayTarget() (MonthTarget, error) {
 	direction := NearestNone
-	if p.eat(TokenNext) {
+	if p.eat(tokenNext) {
 		direction = NearestNext
-	} else if p.eat(TokenPrevious) {
+	} else if p.eat(tokenPrevious) {
 		direction = NearestPrevious
 	}
-	if err := p.expect(TokenNearest, expectedNearest); err != nil {
+	if err := p.expect(tokenNearest, expectedNearest); err != nil {
 		return MonthTarget{}, err
 	}
-	if err := p.expect(TokenWeekday, expectedWeekday); err != nil {
+	if err := p.expect(tokenWeekday, expectedWeekday); err != nil {
 		return MonthTarget{}, err
 	}
-	if err := p.expect(TokenTo, expectedTo); err != nil {
+	if err := p.expect(tokenTo, expectedTo); err != nil {
 		return MonthTarget{}, err
 	}
 	day, _, err := p.parseOrdinalDay()
@@ -515,7 +515,7 @@ func (p *parser) parseOrdinalDayList() ([]DayOfMonthSpec, error) {
 			return nil, err
 		}
 		specs = append(specs, spec)
-		if !p.eat(TokenComma) {
+		if !p.eat(tokenComma) {
 			return specs, nil
 		}
 	}
@@ -526,7 +526,7 @@ func (p *parser) parseOrdinalDaySpec() (DayOfMonthSpec, error) {
 	if err != nil {
 		return DayOfMonthSpec{}, err
 	}
-	if !p.eat(TokenTo) {
+	if !p.eat(tokenTo) {
 		return NewSingleDay(start), nil
 	}
 	end, endToken, err := p.parseOrdinalDay()
@@ -542,8 +542,8 @@ func (p *parser) parseOrdinalDaySpec() (DayOfMonthSpec, error) {
 	return NewDayRange(start, end), nil
 }
 
-func (p *parser) parseOrdinalDay() (int, *Token, error) {
-	if p.peekKind() != TokenOrdinalNumber {
+func (p *parser) parseOrdinalDay() (int, *token, error) {
+	if p.peekKind() != tokenOrdinalNumber {
 		return 0, nil, p.expected(expectedDayOfMonth)
 	}
 	tok := p.advance()
@@ -554,7 +554,7 @@ func (p *parser) parseOrdinalDay() (int, *Token, error) {
 }
 
 func (p *parser) parseDayOf(month MonthName) (int, error) {
-	if kind := p.peekKind(); kind != TokenNumber && kind != TokenOrdinalNumber {
+	if kind := p.peekKind(); kind != tokenNumber && kind != tokenOrdinalNumber {
 		return 0, p.expected(expectedDayNumber)
 	}
 	tok := p.advance()
@@ -567,14 +567,14 @@ func (p *parser) parseDayOf(month MonthName) (int, error) {
 	return tok.NumberVal, nil
 }
 
-func (p *parser) checkDayOfMonth(tok *Token) error {
+func (p *parser) checkDayOfMonth(tok *token) error {
 	if tok.NumberVal < 1 || tok.NumberVal > 31 {
 		return p.error("day must be 1-31, got "+p.text(tok), tok.Span.Start, tok.Span.End)
 	}
 	return nil
 }
 
-func (p *parser) checkDayInMonth(tok *Token, month MonthName) error {
+func (p *parser) checkDayInMonth(tok *token, month MonthName) error {
 	maxDay := 31
 	switch month {
 	case Feb:
@@ -589,20 +589,20 @@ func (p *parser) checkDayInMonth(tok *Token, month MonthName) error {
 }
 
 func (p *parser) parseYearRepeat(interval int) (ScheduleExpr, error) {
-	if err := p.expect(TokenOn, expectedOn); err != nil {
+	if err := p.expect(tokenOn, expectedOn); err != nil {
 		return ScheduleExpr{}, err
 	}
 
 	var target YearTarget
 	switch p.peekKind() {
-	case TokenThe:
+	case tokenThe:
 		p.advance()
 		var err error
 		target, err = p.parseYearTargetAfterThe()
 		if err != nil {
 			return ScheduleExpr{}, err
 		}
-	case TokenMonthName:
+	case tokenMonthName:
 		month := p.advance().MonthNameVal
 		day, err := p.parseDayOf(month)
 		if err != nil {
@@ -613,7 +613,7 @@ func (p *parser) parseYearRepeat(interval int) (ScheduleExpr, error) {
 		return ScheduleExpr{}, p.expected(expectedYearTarget)
 	}
 
-	if err := p.expect(TokenAt, expectedAt); err != nil {
+	if err := p.expect(tokenAt, expectedAt); err != nil {
 		return ScheduleExpr{}, err
 	}
 	times, err := p.parseTimeList()
@@ -625,17 +625,17 @@ func (p *parser) parseYearRepeat(interval int) (ScheduleExpr, error) {
 
 func (p *parser) parseYearTargetAfterThe() (YearTarget, error) {
 	switch p.peekKind() {
-	case TokenLast:
+	case tokenLast:
 		p.advance()
 		switch p.peekKind() {
-		case TokenWeekday:
+		case tokenWeekday:
 			p.advance()
 			month, err := p.parseOfMonth()
 			if err != nil {
 				return YearTarget{}, err
 			}
 			return NewYearLastWeekdayTarget(month), nil
-		case TokenDayName:
+		case tokenDayName:
 			weekday := p.advance().DayNameVal
 			month, err := p.parseOfMonth()
 			if err != nil {
@@ -645,7 +645,7 @@ func (p *parser) parseYearTargetAfterThe() (YearTarget, error) {
 		default:
 			return YearTarget{}, p.expected(expectedYearLast)
 		}
-	case TokenOrdinal:
+	case tokenOrdinal:
 		ordinal := p.advance().OrdinalVal
 		weekday, err := p.parseDayName()
 		if err != nil {
@@ -656,7 +656,7 @@ func (p *parser) parseYearTargetAfterThe() (YearTarget, error) {
 			return YearTarget{}, err
 		}
 		return NewYearOrdinalWeekdayTarget(ordinal, weekday, month), nil
-	case TokenOrdinalNumber:
+	case tokenOrdinalNumber:
 		day, dayToken, err := p.parseOrdinalDay()
 		if err != nil {
 			return YearTarget{}, err
@@ -675,14 +675,14 @@ func (p *parser) parseYearTargetAfterThe() (YearTarget, error) {
 }
 
 func (p *parser) parseOfMonth() (MonthName, error) {
-	if err := p.expect(TokenOf, expectedOf); err != nil {
+	if err := p.expect(tokenOf, expectedOf); err != nil {
 		return 0, err
 	}
 	return p.parseMonthName()
 }
 
 func (p *parser) parseMonthName() (MonthName, error) {
-	if p.peekKind() != TokenMonthName {
+	if p.peekKind() != tokenMonthName {
 		return 0, p.expected(expectedMonthName)
 	}
 	return p.advance().MonthNameVal, nil
@@ -696,7 +696,7 @@ func (p *parser) parseMonthList() ([]MonthName, error) {
 			return nil, err
 		}
 		months = append(months, month)
-		if !p.eat(TokenComma) {
+		if !p.eat(tokenComma) {
 			return months, nil
 		}
 	}
@@ -707,7 +707,7 @@ func (p *parser) parseOn() (ScheduleExpr, error) {
 	if err != nil {
 		return ScheduleExpr{}, err
 	}
-	if err := p.expect(TokenAt, expectedAt); err != nil {
+	if err := p.expect(tokenAt, expectedAt); err != nil {
 		return ScheduleExpr{}, err
 	}
 	times, err := p.parseTimeList()
@@ -719,16 +719,16 @@ func (p *parser) parseOn() (ScheduleExpr, error) {
 
 func (p *parser) parseDayTarget() (DayFilter, error) {
 	switch p.peekKind() {
-	case TokenDay:
+	case tokenDay:
 		p.advance()
 		return NewDayFilterEvery(), nil
-	case TokenWeekday:
+	case tokenWeekday:
 		p.advance()
 		return NewDayFilterWeekday(), nil
-	case TokenWeekend:
+	case tokenWeekend:
 		p.advance()
 		return NewDayFilterWeekend(), nil
-	case TokenDayName:
+	case tokenDayName:
 		days, err := p.parseDayList()
 		if err != nil {
 			return DayFilter{}, err
@@ -740,7 +740,7 @@ func (p *parser) parseDayTarget() (DayFilter, error) {
 }
 
 func (p *parser) parseDayName() (Weekday, error) {
-	if p.peekKind() != TokenDayName {
+	if p.peekKind() != tokenDayName {
 		return 0, p.expected(expectedDayName)
 	}
 	return p.advance().DayNameVal, nil
@@ -754,7 +754,7 @@ func (p *parser) parseDayList() ([]Weekday, error) {
 			return nil, err
 		}
 		days = append(days, day)
-		if !p.eat(TokenComma) {
+		if !p.eat(tokenComma) {
 			return days, nil
 		}
 	}
@@ -768,14 +768,14 @@ func (p *parser) parseTimeList() ([]TimeOfDay, error) {
 			return nil, err
 		}
 		times = append(times, t)
-		if !p.eat(TokenComma) {
+		if !p.eat(tokenComma) {
 			return times, nil
 		}
 	}
 }
 
 func (p *parser) parseTime() (TimeOfDay, error) {
-	if p.peekKind() != TokenTime {
+	if p.peekKind() != tokenTime {
 		return TimeOfDay{}, p.expected(expectedTime)
 	}
 	tok := p.advance()

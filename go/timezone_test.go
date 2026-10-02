@@ -30,7 +30,7 @@ func TestAddZoneNamesFollowsSymlinkedRoot(t *testing.T) {
 }
 
 func TestNewScheduleStoresCanonicalTimezone(t *testing.T) {
-	data := &ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{Hour: 9}}), Timezone: "america/new_york"}
+	data := &ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), []TimeOfDay{{Hour: 9}}), Timezone: "america/new_york"}
 	s, err := NewSchedule(data)
 	if err != nil {
 		t.Fatal(err)

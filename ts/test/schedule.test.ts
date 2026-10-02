@@ -22,7 +22,7 @@ const everyKind = [
 ];
 
 const parts = {
-  expr: {
+  expression: {
     type: "dayRepeat",
     interval: 1,
     days: { type: "every" },
@@ -31,7 +31,7 @@ const parts = {
   timezone: null,
   except: [],
   until: null,
-  anchor: null,
+  starting: null,
   during: [],
 };
 
@@ -81,6 +81,11 @@ describe("building", () => {
     ["toString", (s) => s.toString()],
     ["timezone", (s) => s.timezone],
     ["expression", (s) => s.expression],
+    ["except", (s) => s.except],
+    ["until", (s) => s.until],
+    ["starting", (s) => s.starting],
+    ["during", (s) => s.during],
+    ["equals", (s) => s.equals(Schedule.parse("every day at 09:00"))],
   ];
   for (const [name, call] of methods) {
     it(`${name} throws a TypeError on an object that only looks like a Schedule`, () => {
@@ -94,8 +99,12 @@ describe("building", () => {
 
 describe("a built schedule cannot change", () => {
   for (const input of everyKind) {
-    it(`freezes every part of the expression of ${input}`, () => {
-      expect(unfrozen(Schedule.parse(input).expression)).toEqual([]);
+    it(`freezes every part of ${input}`, () => {
+      const schedule = Schedule.parse(input);
+      expect(unfrozen(schedule.expression)).toEqual([]);
+      expect(unfrozen(schedule.except, "except")).toEqual([]);
+      expect(unfrozen(schedule.until, "until")).toEqual([]);
+      expect(unfrozen(schedule.during, "during")).toEqual([]);
     });
   }
 
@@ -128,5 +137,242 @@ describe("a built schedule cannot change", () => {
     const schedule = Schedule.parse("every day at 09:00");
     expect(Object.keys(schedule)).toEqual([]);
     expect(Object.getOwnPropertyNames(schedule)).toEqual([]);
+  });
+});
+
+describe("getters", () => {
+  const all = Schedule.parse(
+    "every day at 09:00 except dec 25, 2026-12-31 until 2027-01-01 starting 2026-01-01 during jan, feb in America/New_York",
+  );
+  const none = Schedule.parse("every day at 09:00");
+
+  it("read the expression", () => {
+    expect(none.expression).toEqual({
+      type: "dayRepeat",
+      interval: 1,
+      days: { type: "every" },
+      times: [{ hour: 9, minute: 0 }],
+    });
+  });
+
+  it("read every clause", () => {
+    expect(all.except).toEqual([
+      { type: "named", month: "dec", day: 25 },
+      { type: "iso", date: "2026-12-31" },
+    ]);
+    expect(all.until).toEqual({ type: "iso", date: "2027-01-01" });
+    expect(all.starting).toBe("2026-01-01");
+    expect(all.during).toEqual(["jan", "feb"]);
+    expect(all.timezone).toBe("America/New_York");
+  });
+
+  it("read a named until", () => {
+    const named = Schedule.parse(
+      "every day at 09:00 until dec 31 starting 2026-01-01",
+    );
+    expect(named.until).toEqual({ type: "named", month: "dec", day: 31 });
+  });
+
+  it("read an absent clause as empty or null", () => {
+    expect(none.except).toEqual([]);
+    expect(none.until).toBeNull();
+    expect(none.starting).toBeNull();
+    expect(none.during).toEqual([]);
+    expect(none.timezone).toBeNull();
+  });
+
+  it("read the during months of a schedule from cron", () => {
+    expect(Schedule.fromCron("0 9 * 1,2 *").during).toEqual(["jan", "feb"]);
+  });
+
+  it("throw on a write, and the schedule still fires as parsed", () => {
+    // biome-ignore lint/suspicious/noExplicitAny: writes as JavaScript can
+    const writable = all as any;
+    expect(() =>
+      writable.except.push({ type: "iso", date: "2026-06-01" }),
+    ).toThrow(TypeError);
+    expect(() => {
+      writable.except[0].day = 24;
+    }).toThrow(TypeError);
+    expect(() => {
+      writable.until.date = "2030-01-01";
+    }).toThrow(TypeError);
+    expect(() => writable.during.push("mar")).toThrow(TypeError);
+    for (const getter of [
+      "timezone",
+      "expression",
+      "except",
+      "until",
+      "starting",
+      "during",
+    ]) {
+      expect(() => {
+        writable[getter] = null;
+      }, getter).toThrow(TypeError);
+    }
+    expect(all.toString()).toBe(
+      "every day at 09:00 except dec 25, 2026-12-31 until 2027-01-01 starting 2026-01-01 during jan, feb in America/New_York",
+    );
+    expect(
+      all.nextFrom(Temporal.Instant.from("2026-02-28T15:00:00Z"))?.toString(),
+    ).toBe("2027-01-01T09:00:00-05:00[America/New_York]");
+  });
+});
+
+describe("equality", () => {
+  const equal: [string, string][] = [
+    ["every day at 9:00", "every day at 09:00"],
+    [
+      "every day at 09:00 in america/new_york",
+      "every day at 09:00 in America/New_York",
+    ],
+    ["Every Weekday At 09:00", "every weekday at 09:00"],
+  ];
+  for (const [a, b] of equal) {
+    it(`${a} equals ${b}`, () => {
+      expect(Schedule.parse(a).equals(Schedule.parse(b))).toBe(true);
+      expect(Schedule.parse(b).equals(Schedule.parse(a))).toBe(true);
+    });
+  }
+
+  it("holds for a schedule and itself", () => {
+    const schedule = Schedule.parse("every day at 09:00");
+    expect(schedule.equals(schedule)).toBe(true);
+  });
+
+  it("holds for a schedule from cron and the same schedule parsed", () => {
+    expect(
+      Schedule.fromCron("0 9 * * 1-5").equals(
+        Schedule.parse("every weekday at 09:00"),
+      ),
+    ).toBe(true);
+  });
+
+  const base =
+    "every day at 09:00 except dec 25 until 2027-01-01 starting 2026-01-01 during jan in UTC";
+  const differ: [string, string][] = [
+    [
+      "expression",
+      "every day at 10:00 except dec 25 until 2027-01-01 starting 2026-01-01 during jan in UTC",
+    ],
+    [
+      "timezone",
+      "every day at 09:00 except dec 25 until 2027-01-01 starting 2026-01-01 during jan in Europe/London",
+    ],
+    [
+      "timezone, absent",
+      "every day at 09:00 except dec 25 until 2027-01-01 starting 2026-01-01 during jan",
+    ],
+    [
+      "except",
+      "every day at 09:00 except dec 24 until 2027-01-01 starting 2026-01-01 during jan in UTC",
+    ],
+    [
+      "until",
+      "every day at 09:00 except dec 25 until 2027-01-02 starting 2026-01-01 during jan in UTC",
+    ],
+    [
+      "starting",
+      "every day at 09:00 except dec 25 until 2027-01-01 starting 2026-01-02 during jan in UTC",
+    ],
+    [
+      "during",
+      "every day at 09:00 except dec 25 until 2027-01-01 starting 2026-01-01 during feb in UTC",
+    ],
+  ];
+  for (const [part, other] of differ) {
+    it(`fails when only the ${part} differs`, () => {
+      expect(Schedule.parse(base).equals(Schedule.parse(other))).toBe(false);
+      expect(Schedule.parse(other).equals(Schedule.parse(base))).toBe(false);
+    });
+  }
+
+  const unequal: [string, string, string][] = [
+    [
+      "a list in another order",
+      "every day at 09:00, 17:00",
+      "every day at 17:00, 09:00",
+    ],
+    [
+      "a duplicate in a list",
+      "every day at 09:00 during jan, jan",
+      "every day at 09:00 during jan",
+    ],
+    [
+      "a list one item longer",
+      "every day at 09:00 except dec 25, dec 26",
+      "every day at 09:00 except dec 25",
+    ],
+    [
+      "a day filter against none",
+      "every 30 min from 09:00 to 17:00 on weekday",
+      "every 30 min from 09:00 to 17:00",
+    ],
+    [
+      "another expression kind",
+      "every weekday at 09:00",
+      "every week on monday, tuesday, wednesday, thursday, friday at 09:00",
+    ],
+    [
+      "a nested item",
+      "every 30 min from 09:00 to 17:00 on monday, friday",
+      "every 30 min from 09:00 to 17:00 on monday, saturday",
+    ],
+  ];
+  for (const [label, a, b] of unequal) {
+    it(`fails for ${label}`, () => {
+      expect(Schedule.parse(a).equals(Schedule.parse(b))).toBe(false);
+      expect(Schedule.parse(b).equals(Schedule.parse(a))).toBe(false);
+    });
+  }
+
+  const others: [string, unknown][] = [
+    ["null", null],
+    ["undefined", undefined],
+    ["its string", "every day at 09:00"],
+    ["a number", 9],
+    [
+      "its parts",
+      { ...parts, expression: Schedule.parse("every day at 09:00").expression },
+    ],
+    [
+      "an object built on Schedule.prototype",
+      Object.create(Schedule.prototype),
+    ],
+  ];
+  for (const [label, other] of others) {
+    it(`is false, not an error, against ${label}`, () => {
+      expect(Schedule.parse("every day at 09:00").equals(other)).toBe(false);
+    });
+  }
+});
+
+describe("an input that is not a string", () => {
+  const calls: [string, string, (input: unknown) => unknown][] = [
+    ["parse", "input", (input) => Schedule.parse(input as string)],
+    ["validate", "input", (input) => Schedule.validate(input as string)],
+    ["fromCron", "cronExpr", (input) => Schedule.fromCron(input as string)],
+  ];
+  const inputs: [string, unknown][] = [
+    ["null", null],
+    ["undefined", undefined],
+    ["a number", 9],
+    ["a String object", new String("every day at 09:00")],
+    ["an array", ["every day at 09:00"]],
+  ];
+  for (const [method, name, call] of calls) {
+    for (const [label, input] of inputs) {
+      it(`makes ${method} throw a TypeError for ${label}`, () => {
+        expect(() => call(input)).toThrow(
+          new TypeError(`${name} must be a string`),
+        );
+      });
+    }
+  }
+
+  it("leaves validate false, not throwing, for a string parse rejects", () => {
+    expect(Schedule.validate("")).toBe(false);
+    expect(Schedule.validate("every")).toBe(false);
+    expect(Schedule.validate("every day at 09:00 in Mars/Base")).toBe(false);
   });
 });

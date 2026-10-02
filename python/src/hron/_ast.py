@@ -388,11 +388,11 @@ class ScheduleData:
     """The parts of a schedule, for `Schedule(ScheduleData(...))` to check and build. An empty
     `except_` or `during` is no clause."""
 
-    expr: ScheduleExpr
+    expression: ScheduleExpr
     timezone: str | None = None
     except_: tuple[ExceptionSpec, ...] = ()
     until: UntilSpec | None = None
-    anchor: str | None = None
+    starting: str | None = None
     during: tuple[MonthName, ...] = ()
 
 

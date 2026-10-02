@@ -107,12 +107,12 @@ class _Parser {
       untilEnd = previous().end;
     }
 
-    String? anchor;
+    String? starting;
     if (eat<StartingToken>()) {
       final kind = peekKind();
       if (kind is! IsoDateToken) throw expected(_Expected.isoDate);
       _checkIsoDate(advance());
-      anchor = kind.date;
+      starting = kind.date;
     }
 
     final during = eat<DuringToken>() ? _parseMonthList() : const <MonthName>[];
@@ -127,7 +127,7 @@ class _Parser {
       expr,
       except: except,
       until: until,
-      anchor: anchor,
+      starting: starting,
       during: during,
       timezone: timezone,
     );
@@ -139,7 +139,7 @@ class _Parser {
     final read = [
       schedule.except.isNotEmpty,
       schedule.until != null,
-      schedule.anchor != null,
+      schedule.starting != null,
       schedule.during.isNotEmpty,
       schedule.timezone != null,
     ];
@@ -168,7 +168,7 @@ class _Parser {
     if (schedule.until case NamedUntil(
       :final month,
       :final day,
-    ) when schedule.anchor == null) {
+    ) when schedule.starting == null) {
       throw HronError.parse(
         'until ${month.name} $day has no year: add a starting date, or use an ISO date',
         codePointSpan(input, untilStart!, untilEnd!),
@@ -183,7 +183,7 @@ class _Parser {
     while (eat<CommaToken>()) {
       exceptions.add(_parseException());
     }
-    return exceptions;
+    return List.unmodifiable(exceptions);
   }
 
   ExceptionSpec _parseException() => switch (_parseDate()) {
@@ -398,7 +398,7 @@ class _Parser {
     while (eat<CommaToken>()) {
       specs.add(_parseOrdinalDaySpec());
     }
-    return specs;
+    return List.unmodifiable(specs);
   }
 
   DayOfMonthSpec _parseOrdinalDaySpec() {
@@ -526,7 +526,7 @@ class _Parser {
     while (eat<CommaToken>()) {
       months.add(_parseMonthName());
     }
-    return months;
+    return List.unmodifiable(months);
   }
 
   ScheduleExpr _parseOn() {
@@ -565,7 +565,7 @@ class _Parser {
     while (eat<CommaToken>()) {
       days.add(_parseDayName());
     }
-    return days;
+    return List.unmodifiable(days);
   }
 
   List<TimeOfDay> _parseTimeList() {
@@ -573,7 +573,7 @@ class _Parser {
     while (eat<CommaToken>()) {
       times.add(_parseTime());
     }
-    return times;
+    return List.unmodifiable(times);
   }
 
   TimeOfDay _parseTime() {

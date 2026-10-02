@@ -240,6 +240,9 @@ func TestParse(t *testing.T) {
 						t.Errorf("parse(%q).String() = %q, want %q", tc.Input, got, tc.Canonical)
 					}
 					assertRebuilds(t, tc.Input, s)
+					if !s.Equal(MustParse(got)) {
+						t.Errorf("parse(%q) does not equal the parse of its String() %q", tc.Input, got)
+					}
 
 					s2, err := ParseSchedule(tc.Canonical)
 					if err != nil {
@@ -540,6 +543,9 @@ func TestFromCron(t *testing.T) {
 			got := s.String()
 			if got != tc.Hron {
 				t.Errorf("FromCron(%q).String() = %q, want %q", tc.Cron, got, tc.Hron)
+			}
+			if !s.Equal(MustParse(got)) {
+				t.Errorf("FromCron(%q) does not equal the parse of its String() %q", tc.Cron, got)
 			}
 		})
 	}
@@ -1051,7 +1057,7 @@ func assertParsesBack(t *testing.T, s *Schedule) {
 	if err != nil {
 		t.Fatalf("%q does not parse: %v", s, err)
 	}
-	if !reflect.DeepEqual(parsed.data, s.data) {
+	if !parsed.Equal(s) {
 		t.Errorf("parse(%q) = %+v, built %+v", s, *parsed.data, *s.data)
 	}
 }
@@ -1097,7 +1103,7 @@ func buildPartsOf(t *testing.T, raw json.RawMessage) (parts *ScheduleData, empty
 	if !fits {
 		return nil, false, false
 	}
-	parts = &ScheduleData{Expr: expr}
+	parts = &ScheduleData{Expression: expr}
 	for _, exception := range in.Except {
 		date := buildDate(t, exception)
 		except := NewISOException(date.Date)
@@ -1115,7 +1121,7 @@ func buildPartsOf(t *testing.T, raw json.RawMessage) (parts *ScheduleData, empty
 		parts.Until = &until
 	}
 	if in.Starting != nil {
-		parts.Anchor = *in.Starting
+		parts.Starting = *in.Starting
 	}
 	for _, month := range in.During {
 		parts.During = append(parts.During, MonthName(buildName(t, buildMonths, month)))

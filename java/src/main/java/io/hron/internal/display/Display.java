@@ -9,35 +9,24 @@ public final class Display {
   private Display() {}
 
   public static String render(Schedule schedule) {
-    ScheduleData data = schedule.data();
     StringBuilder sb = new StringBuilder();
 
-    sb.append(renderExpr(data.expr()));
+    sb.append(renderExpr(schedule.expression()));
 
-    if (!data.except().isEmpty()) {
+    if (!schedule.except().isEmpty()) {
       sb.append(" except ");
-      sb.append(renderExceptions(data.except()));
+      sb.append(renderExceptions(schedule.except()));
     }
 
-    if (data.until() != null) {
-      sb.append(" until ");
-      sb.append(renderUntil(data.until()));
-    }
+    schedule.until().ifPresent(until -> sb.append(" until ").append(renderUntil(until)));
+    schedule.starting().ifPresent(starting -> sb.append(" starting ").append(starting));
 
-    if (data.anchor() != null && !data.anchor().isEmpty()) {
-      sb.append(" starting ");
-      sb.append(data.anchor());
-    }
-
-    if (!data.during().isEmpty()) {
+    if (!schedule.during().isEmpty()) {
       sb.append(" during ");
-      sb.append(renderMonthList(data.during()));
+      sb.append(renderMonthList(schedule.during()));
     }
 
-    if (data.timezone() != null && !data.timezone().isEmpty()) {
-      sb.append(" in ");
-      sb.append(data.timezone());
-    }
+    schedule.timezone().ifPresent(timezone -> sb.append(" in ").append(timezone));
 
     return sb.toString();
   }

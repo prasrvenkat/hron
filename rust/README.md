@@ -27,12 +27,12 @@ Pipeline: `lexer.rs` → `parser.rs` → `eval/`
 
 ## Features
 
-```toml
+```sh
 # Default — lib + serde
-hron = "0.1"
+cargo add hron
 
 # Library only — just jiff as dependency
-hron = { version = "0.1", default-features = false }
+cargo add hron --no-default-features
 ```
 
 - `serde` (default): enables Serialize/Deserialize on all AST types

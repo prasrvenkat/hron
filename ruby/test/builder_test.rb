@@ -11,7 +11,7 @@ class BuilderTest < Minitest::Test
   end
 
   def build(expr = every_day, **clauses)
-    Hron::Schedule.new(Hron::ScheduleData.new(expr: expr, **clauses))
+    Hron::Schedule.new(Hron::ScheduleData.new(expression: expr, **clauses))
   end
 
   def eval_message
@@ -25,9 +25,9 @@ class BuilderTest < Minitest::Test
     days = [Hron::Weekday::MONDAY]
     except = [Hron::IsoException.new(+"2026-12-25")]
     during = [Hron::MonthName::JAN]
-    anchor = +"2026-01-05"
+    starting = +"2026-01-05"
     timezone = +"Europe/London"
-    schedule = build(Hron::WeekRepeat.new(1, days, times), except: except, anchor: anchor, during: during, timezone: timezone)
+    schedule = build(Hron::WeekRepeat.new(1, days, times), except: except, starting: starting, during: during, timezone: timezone)
     before = schedule.to_s
 
     times << Hron::TimeOfDay.new(17, 0)
@@ -35,25 +35,43 @@ class BuilderTest < Minitest::Test
     except.first.date.replace("2026-12-26")
     except << Hron::NamedException.new(Hron::MonthName::JAN, 1)
     during << Hron::MonthName::FEB
-    anchor.replace("2026-01-06")
+    starting.replace("2026-01-06")
     timezone.replace("Asia/Tokyo")
 
     assert_equal "every week on monday at 09:00 except 2026-12-25 starting 2026-01-05 during jan in Europe/London", before
     assert_equal before, schedule.to_s
     refute times.frozen?, "the caller's own list stays the caller's"
-    refute anchor.frozen?
+    refute starting.frozen?
   end
 
   def test_what_the_getters_return_cannot_change_the_schedule
-    schedule = Hron::Schedule.parse("every monday at 09:00 except 2026-12-25 during jan in UTC")
+    schedule = Hron::Schedule.parse("every monday at 09:00 except 2026-12-25 until 2027-06-30 starting 2026-01-05 during jan in UTC")
     before = schedule.to_s
     assert_raises(FrozenError) { schedule.expression.days.days << Hron::Weekday::FRIDAY }
     assert_raises(FrozenError) { schedule.expression.times << NINE }
-    assert_raises(FrozenError) { schedule.data.except.first.date << "x" }
-    assert_raises(FrozenError) { schedule.data.during.clear }
+    assert_raises(FrozenError) { schedule.except.first.date << "x" }
+    assert_raises(FrozenError) { schedule.except << Hron::IsoException.new("2026-12-26") }
+    assert_raises(FrozenError) { schedule.until.date << "x" }
+    assert_raises(FrozenError) { schedule.starting << "x" }
+    assert_raises(FrozenError) { schedule.during.clear }
     assert_raises(FrozenError) { schedule.timezone << "x" }
     assert Ractor.shareable?(schedule.data)
     assert_equal before, schedule.to_s
+  end
+
+  def test_the_getters_return_each_part
+    schedule = Hron::Schedule.parse("every monday at 9:00 except dec 25, 2026-12-31 until 2027-06-30 starting 2026-01-05 during jan, feb in utc")
+    assert_equal Hron::DayRepeat.new(1, Hron::DayFilterDays.new([:monday]), [NINE]), schedule.expression
+    assert_equal [Hron::NamedException.new(:dec, 25), Hron::IsoException.new("2026-12-31")], schedule.except
+    assert_equal Hron::IsoUntil.new("2027-06-30"), schedule.until
+    assert_equal "2026-01-05", schedule.starting
+    assert_equal %i[jan feb], schedule.during
+    assert_equal "UTC", schedule.timezone
+  end
+
+  def test_the_getters_without_clauses
+    schedule = Hron::Schedule.parse("every day at 09:00")
+    assert_equal [[], nil, nil, [], nil], [schedule.except, schedule.until, schedule.starting, schedule.during, schedule.timezone]
   end
 
   def test_a_built_schedule_is_deeply_frozen_too
@@ -74,7 +92,9 @@ class BuilderTest < Minitest::Test
     assert_equal parsed, built
     assert parsed.eql?(built)
     assert_equal parsed.hash, built.hash
-    refute_equal Hron::Schedule.parse("every day at 09:01 in UTC"), built
+    other = Hron::Schedule.parse("every day at 09:01 in UTC")
+    refute_equal other, built
+    refute other.eql?(built)
   end
 
   def test_an_empty_except_or_during_list_is_no_clause
@@ -111,7 +131,7 @@ class BuilderTest < Minitest::Test
       -> { build(Hron::SingleDateExpr.new(Hron::IsoDate.new(Date.new(2026, 3, 1)), [NINE])) },
       -> { build(except: nil) },
       -> { build(during: nil) },
-      -> { build(anchor: Date.new(2026, 1, 1)) },
+      -> { build(starting: Date.new(2026, 1, 1)) },
       -> { build(timezone: :utc) },
       -> { build(timezone: false) }
     ].each_with_index do |call, i|
@@ -185,11 +205,11 @@ class BuilderTest < Minitest::Test
     assert_instance_of Hron::DayRepeat, every_day.expression
     assert_instance_of Array, every_day.expression.times
     assert_instance_of Hron::TimeOfDay, every_day.expression.times.first
-    monthly = Hron::Schedule.new(parts.new(expr: Hron::MonthRepeat.new(1, target.new(15, nil), [NINE]), anchor: Class.new(String).new("2026-01-01")))
+    monthly = Hron::Schedule.new(parts.new(expression: Hron::MonthRepeat.new(1, target.new(15, nil), [NINE]), starting: Class.new(String).new("2026-01-01")))
     assert_equal Hron::Schedule.parse(monthly.to_s), monthly
     assert_instance_of Hron::ScheduleData, monthly.data
     assert_instance_of Hron::NearestWeekdayTarget, monthly.expression.target
-    assert_instance_of String, monthly.data.anchor
+    assert_instance_of String, monthly.starting
   end
 
   def test_dates_and_timezones_in_other_encodings
@@ -199,7 +219,7 @@ class BuilderTest < Minitest::Test
     # Ten UTF-16 bytes that spell an ISO date are five CJK characters.
     cjk = "㈰㈶ⴰ㈭〱".encode(Encoding::UTF_16BE)
     assert_equal "2026-02-01", cjk.b
-    assert_match(/\Adate must be a calendar date/, eval_message { build(anchor: cjk) })
+    assert_match(/\Adate must be a calendar date/, eval_message { build(starting: cjk) })
     assert_equal "on 2026-03-01 at 09:00", build(Hron::SingleDateExpr.new(Hron::IsoDate.new("2026-03-01".b), [NINE])).to_s
     assert_equal "timezone must be UTC or an Area/Location name such as America/New_York, got UTC",
       eval_message { build(timezone: "UTC".encode(Encoding::UTF_16LE)) }
@@ -214,8 +234,15 @@ class BuilderTest < Minitest::Test
   end
 
   def test_internals_that_take_unchecked_parts_are_private
-    assert_empty Hron.constants & %i[Parser Evaluator Display Cron Parts]
-    refute_respond_to Hron, :parse
+    assert_equal %i[
+      DayFilterDays DayFilterEvery DayFilterWeekday DayFilterWeekend DayRange DayRepeat DaysTarget ErrorKind
+      HronError IntervalRepeat IntervalUnit IsoDate IsoException IsoUntil LastDayTarget LastWeekdayTarget
+      MonthName MonthRepeat NamedDate NamedException NamedUntil NearestDirection NearestWeekdayTarget
+      OrdinalPosition OrdinalWeekdayTarget Schedule ScheduleData SingleDateExpr SingleDay Span TimeOfDay
+      VERSION WeekRepeat Weekday YearDateTarget YearDayOfMonthTarget YearLastWeekdayTarget
+      YearOrdinalWeekdayTarget YearRepeat
+    ], Hron.constants.sort
+    assert_equal %i[from_cron parse_schedule validate], Hron.singleton_methods.sort
   end
 
   # Mostly values that keep the rules, with values just past each limit mixed in, so that
@@ -287,11 +314,11 @@ class BuilderTest < Minitest::Test
 
     def data
       Hron::ScheduleData.new(
-        expr: expression,
+        expression: expression,
         timezone: pick([9, nil], [9, "utc"], [9, "america/new_york"], [1, "EST"]),
         except: Array.new(@rng.rand(2)) { pick([1, -> { Hron::NamedException.new(month, day) }], [1, -> { Hron::IsoException.new(iso) }]) },
         until: pick([1, nil], [1, -> { Hron::NamedUntil.new(month, day) }], [1, -> { Hron::IsoUntil.new(iso) }]),
-        anchor: pick([1, nil], [19, "2026-02-06"], [1, "0000-01-01"]),
+        starting: pick([1, nil], [19, "2026-02-06"], [1, "0000-01-01"]),
         during: Array.new(@rng.rand(2)) { month }
       )
     end

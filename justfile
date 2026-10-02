@@ -138,6 +138,10 @@ lint-java:
 comments base="main":
     python3 tools/comments.py {{base}}
 
+# Test the differential tool's report
+test-tools:
+    cd python && uv run pytest -v ../tools/differential
+
 # Lint the differential tool's Python
 lint-tools:
     cd python && uv run ruff check ../tools && uv run ruff format --check ../tools

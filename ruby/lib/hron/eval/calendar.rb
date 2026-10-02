@@ -60,7 +60,7 @@ module Hron
       def month_target_dates(year, month, target)
         case target
         when DaysTarget
-          Hron.expand_month_target(target).uniq.sort.filter_map { |day| date(year, month, day) }
+          Evaluator.days_of(target).uniq.sort.filter_map { |day| date(year, month, day) }
         when LastDayTarget then [last_day_of_month(year, month)]
         when LastWeekdayTarget then [last_weekday_of_month(year, month)]
         when NearestWeekdayTarget then [nearest_weekday(year, month, target.day, target.direction)].compact

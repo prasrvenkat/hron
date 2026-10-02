@@ -1,11 +1,14 @@
 package io.hron;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.hron.ast.OrdinalPosition;
+import io.hron.internal.ScheduleData;
 import java.io.IOException;
 import java.lang.module.ModuleDescriptor;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Method;
@@ -103,7 +106,6 @@ class PublicSurfaceTest {
                 "MonthTarget.Kind",
                 "NearestDirection",
                 "OrdinalPosition",
-                "ScheduleData",
                 "ScheduleExpr",
                 "SingleDate",
                 "TimeOfDay",
@@ -120,6 +122,12 @@ class PublicSurfaceTest {
     expected.addAll(
         Set.of("io.hron.ErrorKind", "io.hron.HronException", "io.hron.Schedule", "io.hron.Span"));
     assertEquals(expected, names);
+  }
+
+  @Test
+  void scheduleDataIsNotExported() throws Exception {
+    assertFalse(EXPORTED.contains(ScheduleData.class.getPackageName()));
+    assertFalse(exportedTypes().contains(ScheduleData.class));
   }
 
   @Test
@@ -151,7 +159,7 @@ class PublicSurfaceTest {
           continue;
         }
         for (Class<?> parameter : executable.getParameterTypes()) {
-          if (parameter.getPackageName().equals("io.hron.ast")) {
+          if (parameter.getPackageName().equals("io.hron.ast") || parameter == ScheduleData.class) {
             takers.add(executable.toString());
           }
         }
@@ -181,7 +189,9 @@ class PublicSurfaceTest {
       List<Executable> executables = new ArrayList<>(List.of(type.getDeclaredMethods()));
       executables.addAll(List.of(type.getDeclaredConstructors()));
       for (Executable executable : executables) {
-        if (!Modifier.isPublic(executable.getModifiers())) {
+        // Unchecked parts in a ScheduleData are harmless while nothing public takes one.
+        boolean exempt = executable instanceof Constructor && type == ScheduleData.class;
+        if (!Modifier.isPublic(executable.getModifiers()) || exempt) {
           continue;
         }
         for (Type parameter : executable.getGenericParameterTypes()) {
@@ -198,7 +208,8 @@ class PublicSurfaceTest {
   private static boolean mentionsAPart(Type type) {
     if (type instanceof Class<?> c) {
       Class<?> element = c.isArray() ? c.getComponentType() : c;
-      return element.getPackageName().equals("io.hron.ast") && !element.isEnum();
+      return (element.getPackageName().equals("io.hron.ast") && !element.isEnum())
+          || element == ScheduleData.class;
     }
     if (type instanceof ParameterizedType p) {
       return mentionsAPart(p.getRawType())

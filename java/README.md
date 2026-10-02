@@ -155,10 +155,45 @@ String spanned =
 | `between(ZonedDateTime from, ZonedDateTime to)` | Get a lazy stream of occurrences after `from` and up to `to` |
 | `toCron()` | Convert to a 5-field cron expression |
 | `toString()` | Get the canonical string form |
-| `timezone()` | Get the IANA timezone name with its canonical capitalization (if specified) |
-| `data()` | Get the schedule's parts as read-only records from `io.hron.ast` |
+| `equals(Object other)`, `hashCode()` | Equal when `other` is a schedule with equal parts |
 
-A schedule is built only by `parse` and `fromCron`, and cannot change afterwards. The records `data()` returns hold only unmodifiable lists, and nothing builds a schedule back from them. The module `io.hron` exports `io.hron` and `io.hron.ast`; `io.hron.internal` is not API.
+#### Getters
+
+| Method | Description |
+|--------|-------------|
+| `timezone()` | The IANA timezone name with its canonical capitalization (`Optional<String>`) |
+| `expression()` | The repeat: its kind, interval, days or target, and its times or window (`ScheduleExpr`) |
+| `except()` | The except dates (`List<ExceptionSpec>`), empty without an except clause |
+| `until()` | The until date (`Optional<UntilSpec>`) |
+| `starting()` | The starting date as `YYYY-MM-DD` (`Optional<String>`) |
+| `during()` | The during months (`List<MonthName>`), empty without a during clause |
+
+```java
+Schedule s = Schedule.parse("every weekday at 9:00 except dec 25 starting 2026-01-05 in america/new_york");
+s.expression(); // DayRepeat[interval=1, days=DayFilter[kind=WEEKDAY, days=[]], times=[09:00]]
+s.except();     // [ExceptionSpec[kind=NAMED, month=dec, day=25, date=null]]
+s.until();      // Optional.empty
+s.starting();   // Optional[2026-01-05]
+s.during();     // []
+s.timezone();   // Optional[America/New_York]
+```
+
+A schedule is built only by `parse` and `fromCron`, and cannot change afterwards. The getters return records from `io.hron.ast` and unmodifiable lists, and nothing builds a schedule back from them. The module `io.hron` exports `io.hron` and `io.hron.ast`; `io.hron.internal` is not API.
+
+#### Equality
+
+Two schedules are equal when their parts are equal, with lists compared in order, duplicates included, and equal schedules have equal `hashCode()`s. Comparing with `null` or anything that is not a `Schedule` is `false`:
+
+```java
+Schedule.parse("every day at 9:00").equals(Schedule.parse("every day at 09:00"));  // true
+Schedule.fromCron("0 9 * * *").equals(Schedule.parse("every day at 09:00"));       // true
+Schedule.parse("every monday, friday at 09:00")
+    .equals(Schedule.parse("every friday, monday at 09:00"));                       // false
+```
+
+#### Usage errors
+
+`parse`, `validate` and `fromCron` throw `NullPointerException` for a `null` input, rather than a `HronException` or `false`.
 
 #### Timestamps
 
@@ -192,6 +227,7 @@ Exception thrown for parsing and cron conversion errors.
 | Method | Description |
 |--------|-------------|
 | `kind()` | Get the error kind (LEX, PARSE, EVAL, CRON) |
+| `getMessage()` | Get the error message |
 | `span()` | Get the error location in code points (Optional) |
 | `input()` | Get the original input (Optional) |
 | `suggestion()` | Get a suggested fix (Optional) |

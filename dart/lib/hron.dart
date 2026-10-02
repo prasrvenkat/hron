@@ -11,6 +11,49 @@ import 'src/error.dart';
 import 'src/eval.dart' as eval_impl;
 import 'src/parser.dart' as parser_impl;
 
+export 'src/ast.dart'
+    show
+        DateSpec,
+        DateTarget,
+        DayFilter,
+        DayOfMonthSpec,
+        DayOfMonthTarget,
+        DayRange,
+        DayRepeat,
+        DaysTarget,
+        EveryDay,
+        ExceptionSpec,
+        IntervalRepeat,
+        IntervalUnit,
+        IsoDate,
+        IsoException,
+        IsoUntil,
+        LastDayTarget,
+        LastWeekdayTarget,
+        LastWeekdayYearTarget,
+        MonthName,
+        MonthRepeat,
+        MonthTarget,
+        NamedDate,
+        NamedException,
+        NamedUntil,
+        NearestDirection,
+        NearestWeekdayTarget,
+        OrdinalPosition,
+        OrdinalWeekdayMonthTarget,
+        OrdinalWeekdayTarget,
+        ScheduleExpr,
+        SingleDate,
+        SingleDay,
+        SpecificDays,
+        TimeOfDay,
+        UntilSpec,
+        WeekRepeat,
+        Weekday,
+        WeekdayFilter,
+        WeekendFilter,
+        YearRepeat,
+        YearTarget;
 export 'src/error.dart';
 
 /// Built only by [Schedule.parse] or [Schedule.fromCron].
@@ -20,7 +63,7 @@ export 'src/error.dart';
 /// location named `UTC` when it has none. An argument outside
 /// `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z` is not an error: it gives
 /// `null`, `false` or no occurrences.
-class Schedule {
+final class Schedule {
   final ScheduleData _data;
 
   Schedule._(this._data);
@@ -86,7 +129,28 @@ class Schedule {
   @override
   String toString() => display_impl.display(_data);
 
+  /// True when [other] is a [Schedule] with equal parts: lists compare in
+  /// order, duplicates included.
+  @override
+  bool operator ==(Object other) => other is Schedule && other._data == _data;
+
+  @override
+  int get hashCode => _data.hashCode;
+
   /// The IANA timezone name, in its canonical capitalization, or `null` if not
   /// specified.
   String? get timezone => _data.timezone;
+
+  ScheduleExpr get expression => _data.expression;
+
+  /// Unmodifiable; empty without an `except` clause.
+  List<ExceptionSpec> get except => _data.except;
+
+  UntilSpec? get until => _data.until;
+
+  /// The `starting` date as `YYYY-MM-DD`, or `null` if not specified.
+  String? get starting => _data.starting;
+
+  /// Unmodifiable; empty without a `during` clause.
+  List<MonthName> get during => _data.during;
 }

@@ -12,15 +12,20 @@ struct Cli {
     /// Schedule expression (e.g., "every weekday at 9:00")
     expression: Option<String>,
 
-    /// Number of occurrences to show
-    #[arg(short, long, default_value = "1")]
-    n: u32,
+    /// Number of occurrences to show, after now or after --from (at most 1000)
+    #[arg(
+        short = 'n',
+        long = "count",
+        default_value = "1",
+        conflicts_with = "to"
+    )]
+    count: u32,
 
-    /// Start time for iterator query, with a UTC offset or Z (e.g., 2026-02-06T09:00:00+01:00[Europe/Berlin]). Shows up to 100 occurrences unless --to is specified.
-    #[arg(long, conflicts_with = "n", allow_hyphen_values = true)]
+    /// Show occurrences after this time instead of now, with a UTC offset or Z (e.g., 2026-02-06T09:00:00+01:00[Europe/Berlin])
+    #[arg(long, allow_hyphen_values = true)]
     from: Option<String>,
 
-    /// End of range for --from query, with a UTC offset or Z. When specified, shows all occurrences in (from, to].
+    /// With --from, show every occurrence in (from, to] instead of a count, with a UTC offset or Z
     #[arg(long, requires = "from", allow_hyphen_values = true)]
     to: Option<String>,
 
@@ -41,11 +46,11 @@ struct Cli {
     to_cron: bool,
 
     /// Convert cron to hron expression
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["expression", "explain"])]
     from_cron: Option<String>,
 
     /// Explain a cron expression in human-readable form
-    #[arg(long)]
+    #[arg(long, conflicts_with = "expression")]
     explain: Option<String>,
 }
 
@@ -125,41 +130,34 @@ fn main() {
         }
     }
 
-    if let Some(ref from_str) = cli.from {
-        let from = timestamp_option("--from", from_str);
+    let from = match cli.from {
+        Some(ref from) => timestamp_option("--from", from),
+        None => Zoned::now(),
+    };
 
-        let results: Vec<Zoned> = if let Some(ref to_str) = cli.to {
-            let to = timestamp_option("--to", to_str);
-
-            schedule.between(&from, &to).collect()
-        } else {
-            let limit = 100;
-            schedule.occurrences(&from).take(limit).collect()
-        };
-
-        if results.is_empty() {
+    if let Some(ref to) = cli.to {
+        let to = timestamp_option("--to", to);
+        let results: Vec<Zoned> = schedule.between(&from, &to).collect();
+        if results.is_empty() && !cli.json {
             eprintln!("no occurrences in range");
-            process::exit(0);
         }
-
         print_timestamps(&results, cli.json);
         process::exit(0);
     }
 
-    let mut n = cli.n;
-    if n > 1000 {
+    let mut count = cli.count;
+    if count > 1000 {
         eprintln!("warning: capped at 1000 occurrences");
-        n = 1000;
+        count = 1000;
     }
 
-    let now = Zoned::now();
-    let results = schedule.next_n_from(&now, n as usize);
-
-    if results.is_empty() {
-        eprintln!("no upcoming occurrences");
-        process::exit(0);
+    let results = schedule.next_n_from(&from, count as usize);
+    if results.is_empty() && !cli.json {
+        match cli.from {
+            Some(_) => eprintln!("no occurrences after --from"),
+            None => eprintln!("no upcoming occurrences"),
+        }
     }
-
     print_timestamps(&results, cli.json);
 }
 

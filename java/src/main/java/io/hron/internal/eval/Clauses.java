@@ -1,8 +1,8 @@
 package io.hron.internal.eval;
 
+import io.hron.Schedule;
 import io.hron.ast.ExceptionSpec;
 import io.hron.ast.MonthName;
-import io.hron.ast.ScheduleData;
 import io.hron.ast.UntilSpec;
 import java.time.LocalDate;
 import java.time.Month;
@@ -28,20 +28,20 @@ record Clauses(
   /** Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29. */
   static final int NAMED_UNTIL_MAX_YEARS = 8;
 
-  static Clauses of(ScheduleData data, LocalDate starting) {
+  static Clauses of(Schedule schedule, LocalDate starting) {
     Set<Month> during = EnumSet.noneOf(Month.class);
-    for (MonthName month : data.during()) {
+    for (MonthName month : schedule.during()) {
       during.add(month.toMonth());
     }
     Set<MonthDay> exceptMonthDays = new HashSet<>();
     NavigableSet<LocalDate> exceptDates = new TreeSet<>();
-    for (ExceptionSpec exception : data.except()) {
+    for (ExceptionSpec exception : schedule.except()) {
       switch (exception.kind()) {
         case NAMED -> exceptMonthDays.add(MonthDay.of(exception.month().number(), exception.day()));
         case ISO -> exceptDates.add(LocalDate.parse(exception.date()));
       }
     }
-    LocalDate until = data.until() == null ? null : resolveUntil(data.until(), starting);
+    LocalDate until = schedule.until().map(u -> resolveUntil(u, starting)).orElse(null);
     return new Clauses(during, exceptMonthDays, exceptDates, until, starting);
   }
 

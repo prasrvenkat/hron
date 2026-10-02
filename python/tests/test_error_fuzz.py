@@ -444,7 +444,7 @@ def matching_template_index(text: str, error: HronError) -> int:
     message = str(error)
     assert error.kind in ("lex", "parse"), f"neither lex nor parse: {error.kind}"
     assert not Schedule.validate(text), "validate is true"
-    assert error.input_text == text, f"error input is {error.input_text!r}"
+    assert error.input == text, f"error input is {error.input!r}"
     span = error.span
     assert span is not None, "no span"
     assert 0 <= span.start <= span.end <= len(text), f"span {span} outside 0..={len(text)}"

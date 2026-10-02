@@ -2,7 +2,9 @@ using Hron.Ast;
 
 namespace Hron.Lexer;
 
-/// <param name="Span">UTF-16 offsets into the input; errors convert them to code points.</param>
+/// <summary>
+/// <c>Span</c> is in UTF-16 offsets into the input; errors convert them to code points.
+/// </summary>
 internal sealed record Token(
     TokenKind Kind,
     Span Span,

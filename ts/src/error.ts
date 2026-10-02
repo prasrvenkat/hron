@@ -36,26 +36,50 @@ export class HronError extends Error {
     this.suggestion = suggestion;
   }
 
+  /**
+   * Throws a `TypeError` if `message` or `input` is not a string, or `span` is
+   * not an object whose `start` and `end` are numbers.
+   */
   static lex(message: string, span: Span, input: string): HronError {
-    return new HronError("lex", message, span, input);
+    return new HronError(
+      "lex",
+      text(message, "message"),
+      checkedSpan(span),
+      text(input, "input"),
+    );
   }
 
+  /**
+   * Throws a `TypeError` if `message` or `input` is not a string, `span` is not
+   * an object whose `start` and `end` are numbers, or `suggestion` is neither a
+   * string nor `undefined`.
+   */
   static parse(
     message: string,
     span: Span,
     input: string,
     suggestion?: string,
   ): HronError {
-    return new HronError("parse", message, span, input, suggestion);
+    return new HronError(
+      "parse",
+      text(message, "message"),
+      checkedSpan(span),
+      text(input, "input"),
+      suggestion === undefined ? undefined : text(suggestion, "suggestion"),
+    );
   }
 
-  /** Never thrown by this package; spec/api.json lists it with the other kinds. */
+  /**
+   * Never thrown by this package; spec/api.json lists it with the other kinds.
+   * Throws a `TypeError` if `message` is not a string.
+   */
   static eval(message: string): HronError {
-    return new HronError("eval", message);
+    return new HronError("eval", text(message, "message"));
   }
 
+  /** Throws a `TypeError` if `message` is not a string. */
   static cron(message: string): HronError {
-    return new HronError("cron", message);
+    return new HronError("cron", text(message, "message"));
   }
 
   /**
@@ -80,6 +104,21 @@ export class HronError extends Error {
     }
     return out;
   }
+}
+
+export function text(value: unknown, name: string): string {
+  if (typeof value !== "string")
+    throw new TypeError(`${name} must be a string`);
+  return value;
+}
+
+function checkedSpan(value: unknown): Span {
+  const span = value as Partial<Span> | null | undefined;
+  if (typeof span?.start !== "number" || typeof span.end !== "number")
+    throw new TypeError(
+      "span must be an object whose start and end are numbers",
+    );
+  return value as Span;
 }
 
 // Token offsets are UTF-16 units; spans count code points (spec/README.md, "Error Structure").

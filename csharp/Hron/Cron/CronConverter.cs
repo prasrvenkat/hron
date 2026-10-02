@@ -422,13 +422,13 @@ internal static class CronConverter
         {
             throw NotExpressible("until clauses not supported");
         }
-        if (data.Anchor is not null)
+        if (data.Starting is not null)
         {
             throw NotExpressible("starting clauses not supported");
         }
-        var (dayOfMonth, dayOfWeek) = DayFields(data.Expr);
+        var (dayOfMonth, dayOfWeek) = DayFields(data.Expression);
         var month = MonthField(data);
-        var (minute, hour) = TimeFields(data.Expr);
+        var (minute, hour) = TimeFields(data.Expression);
         return $"{minute} {hour} {dayOfMonth} {month} {dayOfWeek}";
     }
 
@@ -490,7 +490,7 @@ internal static class CronConverter
     private static string MonthField(ScheduleData data)
     {
         var during = data.During;
-        if (OwnMonth(data.Expr) is { } month)
+        if (OwnMonth(data.Expression) is { } month)
         {
             if (during.Count > 0 && !during.Contains(month))
             {

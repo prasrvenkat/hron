@@ -21,12 +21,12 @@ internal sealed class Search
 
     public static Search Of(ScheduleData data, TimeZoneInfo zone)
     {
-        DateOnly? starting = data.Anchor is null ? null : IsoDate.Parse(data.Anchor);
+        DateOnly? starting = data.Starting is null ? null : IsoDate.Parse(data.Starting);
         return new Search(
-            data.Expr,
+            data.Expression,
             zone,
-            Cadence.Of(data.Expr, starting),
-            DailyTimes.Of(data.Expr),
+            Cadence.Of(data.Expression, starting),
+            DailyTimes.Of(data.Expression),
             Clauses.Of(data, starting));
     }
 

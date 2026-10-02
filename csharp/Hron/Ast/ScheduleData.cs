@@ -1,30 +1,32 @@
 namespace Hron.Ast;
 
-/// <param name="Timezone">The IANA timezone name, or null for UTC</param>
-/// <param name="Anchor">The <c>starting</c> date as an ISO string, or null</param>
 internal sealed record ScheduleData(
-    IScheduleExpr Expr,
+    IScheduleExpr Expression,
     string? Timezone,
     IReadOnlyList<ExceptionSpec> Except,
     UntilSpec? Until,
-    string? Anchor,
+    string? Starting,
     IReadOnlyList<MonthName> During)
 {
-    public static ScheduleData Of(IScheduleExpr expr)
-        => new(expr, null, [], null, null, []);
+    public IReadOnlyList<ExceptionSpec> Except { get; } = PartList<ExceptionSpec>.Of(Except);
+
+    public IReadOnlyList<MonthName> During { get; } = PartList<MonthName>.Of(During);
+
+    public static ScheduleData Of(IScheduleExpr expression)
+        => new(expression, null, [], null, null, []);
 
     public ScheduleData WithTimezone(string? timezone)
-        => new(Expr, timezone, Except, Until, Anchor, During);
+        => new(Expression, timezone, Except, Until, Starting, During);
 
     public ScheduleData WithExcept(IReadOnlyList<ExceptionSpec> except)
-        => new(Expr, Timezone, except, Until, Anchor, During);
+        => new(Expression, Timezone, except, Until, Starting, During);
 
     public ScheduleData WithUntil(UntilSpec? until)
-        => new(Expr, Timezone, Except, until, Anchor, During);
+        => new(Expression, Timezone, Except, until, Starting, During);
 
-    public ScheduleData WithAnchor(string? anchor)
-        => new(Expr, Timezone, Except, Until, anchor, During);
+    public ScheduleData WithStarting(string? starting)
+        => new(Expression, Timezone, Except, Until, starting, During);
 
     public ScheduleData WithDuring(IReadOnlyList<MonthName> during)
-        => new(Expr, Timezone, Except, Until, Anchor, during);
+        => new(Expression, Timezone, Except, Until, Starting, during);
 }

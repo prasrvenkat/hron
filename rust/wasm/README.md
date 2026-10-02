@@ -56,7 +56,68 @@ const str = schedule.toString();
 const valid = Schedule.validate("every day at 9:00");
 
 // Timezone getter
-const tz = schedule.timezone; // "America/New_York" or undefined
+const tz = schedule.timezone; // "America/New_York", or null without an `in` clause
+```
+
+## API
+
+### Building a schedule
+
+- `Schedule.parse(input: string): Schedule` - Parse an hron expression
+- `fromCron(cronExpr: string): Schedule` - Convert a 5-field cron expression to the schedule that fires at the same times
+- `Schedule.validate(input: string): boolean` - False for anything `parse` rejects, including unknown timezones
+- `explainCron(cronExpr: string): string` - The same as `fromCron(cronExpr).toString()`
+
+### Schedule methods
+
+- `nextFrom(now: string): string | null` - The next occurrence after `now`
+- `nextNFrom(now: string, n: number): string[]` - Up to `n` occurrences after `now`
+- `previousFrom(now: string): string | null` - The most recent occurrence before `now`
+- `matches(datetime: string): boolean` - Whether the minute containing `datetime` is an occurrence
+- `occurrences(from: string, limit: number): string[]` - Up to `limit` occurrences after `from`; an array, not an iterator, so it needs a limit
+- `between(from: string, to: string): string[]` - The occurrences where `from < occurrence <= to`
+- `toCron(): string` - The 5-field cron expression that fires at the same times; run it in the schedule's timezone
+- `toString(): string` - The canonical expression, which parses back to an equal schedule
+- `equals(other: unknown): boolean` - Whether `other` is a schedule with the same parts (below)
+- `toJSON(): any` - A structured view for logging, which `JSON.stringify` uses
+
+### Getters
+
+Each getter returns the same plain objects [`hron-ts`](https://github.com/simpllyf/hron/tree/main/ts) returns, typed in `hron-wasm`'s `.d.ts` with the same names (`ScheduleExpr`, `Exception`, `UntilSpec`, `MonthName` and the rest), so code that reads one reads the other. They are frozen at every level, as hron-ts's are: a write to one throws in strict mode, and the schedule never changes.
+
+- `timezone: string | null` - The IANA timezone name with its canonical capitalization
+- `expression: ScheduleExpr` - The repeat, tagged by `type`: `intervalRepeat`, `dayRepeat`, `weekRepeat`, `monthRepeat`, `singleDate` or `yearRepeat`
+- `except: Exception[]` - The except dates, `[]` without an `except` clause
+- `until: UntilSpec | null` - The until date
+- `starting: string | null` - The starting date as `YYYY-MM-DD`
+- `during: MonthName[]` - The during months, `[]` without a `during` clause
+
+```javascript
+const schedule = Schedule.parse(
+  "every weekday at 09:00, 17:00 except dec 25 starting 2026-01-05 during jan, feb in america/new_york",
+);
+schedule.expression.type;         // "dayRepeat"
+schedule.expression.days;         // { type: "weekday" }
+schedule.expression.times.length; // 2
+schedule.expression.times[1];     // { hour: 17, minute: 0 }
+schedule.except;                  // [{ type: "named", month: "dec", day: 25 }]
+schedule.until;                   // null
+schedule.starting;                // "2026-01-05"
+schedule.during;                  // ["jan", "feb"]
+schedule.timezone;                // "America/New_York"
+```
+
+### Equality
+
+`equals` compares the parts, lists in order with duplicates included, so `every day at 9:00` equals `every day at 09:00`, and a schedule equals the one `Schedule.parse` reads from its `toString()` ([spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#equality)). It is `false` for anything that is not a schedule, `null` and `undefined` included, and never throws. There is no hash: equal schedules have the same `toString()`, which can serve as a `Map` key.
+
+```javascript
+const nine = Schedule.parse("every day at 9:00");
+nine.equals(Schedule.parse("every day at 09:00")); // true
+nine.equals(fromCron("0 9 * * *"));                 // true
+nine === Schedule.parse("every day at 9:00");       // false
+nine.equals("every day at 09:00");                  // false
+nine.equals(null);                                  // false
 ```
 
 ## Timestamps
@@ -64,7 +125,7 @@ const tz = schedule.timezone; // "America/New_York" or undefined
 Every method takes and returns timestamps as strings ([spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#timestamps-and-counts)):
 
 - A timestamp you pass needs a UTC offset or `Z`, in either case: `2026-02-06T12:00:00+09:00[Asia/Tokyo]`, `2026-02-06T03:00:00Z` and `2026-02-06t03:00:00.000z` all name the same instant, and only the instant matters. The offset decides it: a zone in brackets that disagrees with the offset is ignored, unless it is marked critical (`[!Asia/Tokyo]`).
-- `new Date().toISOString()` gives a valid timestamp. Its six-digit years (`+010000-01-01T00:00:00.000Z`) lie outside the supported range, 0001-01-02 to 9999-12-30, where `nextFrom` and `previousFrom` return `undefined`, `matches` returns `false`, and the others return `[]`.
+- `new Date().toISOString()` gives a valid timestamp. Its six-digit years (`+010000-01-01T00:00:00.000Z`) lie outside the supported range, 0001-01-02 to 9999-12-30, where `nextFrom` and `previousFrom` return `null`, `matches` returns `false`, and the others return `[]`.
 - Every returned timestamp has seconds, an offset as `±HH:MM` and the schedule's timezone, or `UTC` when it has none: `2026-02-06T09:00:00-05:00[America/New_York]`, `2026-02-07T09:00:00+00:00[UTC]`.
 - `nextNFrom(now, n)` and `occurrences(from, limit)` return at most `n` or `limit` results, and `[]` when it is 0 or less. A large count only caps the results.
 
@@ -72,15 +133,17 @@ Every method takes and returns timestamps as strings ([spec](https://github.com/
 const daily = Schedule.parse("every day at 09:00");
 daily.nextFrom("2026-02-06T12:00:00+09:00[Asia/Tokyo]"); // "2026-02-06T09:00:00+00:00[UTC]"
 daily.nextFrom("2026-02-06T08:59:00+00:00[Asia/Tokyo]"); // "2026-02-06T09:00:00+00:00[UTC]"
-daily.nextFrom("+010000-01-01T00:00:00.000Z");           // undefined
+daily.nextFrom("+010000-01-01T00:00:00.000Z");           // null
 daily.nextNFrom("2026-02-06T03:00:00Z", -1);             // []
 ```
 
-A bad argument throws the platform's own error, with no `kind`: a `TypeError` for a value of the wrong type, such as a `Date`, a number or `undefined` where a timestamp string goes, or a string where `n` or `limit` goes; and a `RangeError` for a bad value, such as a timestamp without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`), an unknown timezone, an offset that disagrees with a critical zone, or an `n` or `limit` that is not an integer.
+## Usage errors
+
+A bad argument throws the platform's own error, with no `kind`: a `TypeError` for a value of the wrong type, such as anything but a string, `null` and `undefined` included, as the input of `Schedule.parse`, `Schedule.validate`, `fromCron` or `explainCron`, a `Date`, a number or `undefined` where a timestamp string goes, or a string where `n` or `limit` goes; and a `RangeError` for a bad value, such as a timestamp without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`), an unknown timezone, an offset that disagrees with a critical zone, or an `n` or `limit` that is not an integer.
 
 ## Errors
 
-Apart from the bad arguments above, methods throw an `Error` whose `message` is the hron error message and whose `kind` says what failed:
+Apart from the bad arguments above, methods throw an `Error` whose `message` is the hron error message and whose `kind` says what failed. The `.d.ts` types it as `HronError`, an interface, so `catch (error) { (error as HronError).kind }` type-checks; there is no class to test with `instanceof`, and no error constructors.
 
 | `kind` | Thrown by |
 |---|---|

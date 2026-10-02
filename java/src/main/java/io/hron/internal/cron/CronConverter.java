@@ -12,7 +12,6 @@ import io.hron.ast.MonthName;
 import io.hron.ast.MonthRepeat;
 import io.hron.ast.MonthTarget;
 import io.hron.ast.OrdinalPosition;
-import io.hron.ast.ScheduleData;
 import io.hron.ast.ScheduleExpr;
 import io.hron.ast.SingleDate;
 import io.hron.ast.TimeOfDay;
@@ -20,6 +19,7 @@ import io.hron.ast.WeekRepeat;
 import io.hron.ast.Weekday;
 import io.hron.ast.YearRepeat;
 import io.hron.ast.YearTarget;
+import io.hron.internal.ScheduleData;
 import io.hron.internal.eval.Evaluator;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -521,18 +521,17 @@ public final class CronConverter {
   }
 
   public static String toCron(Schedule schedule) throws HronException {
-    ScheduleData data = schedule.data();
-    if (!data.except().isEmpty()) {
+    if (!schedule.except().isEmpty()) {
       throw notExpressible("except clauses not supported");
     }
-    if (data.until() != null) {
+    if (schedule.until().isPresent()) {
       throw notExpressible("until clauses not supported");
     }
-    if (data.anchor() != null) {
+    if (schedule.starting().isPresent()) {
       throw notExpressible("starting clauses not supported");
     }
-    DayFields days = dayFields(data.expr());
-    String month = monthField(data);
+    DayFields days = dayFields(schedule.expression());
+    String month = monthField(schedule);
     TimeFields times = timeFields(schedule);
     return times.minute()
         + " "
@@ -600,9 +599,9 @@ public final class CronConverter {
     };
   }
 
-  private static String monthField(ScheduleData data) throws HronException {
-    List<MonthName> during = data.during();
-    MonthName month = ownMonth(data.expr());
+  private static String monthField(Schedule schedule) throws HronException {
+    List<MonthName> during = schedule.during();
+    MonthName month = ownMonth(schedule.expression());
     if (month != null && !during.isEmpty() && !during.contains(month)) {
       throw notExpressible("during excludes the schedule's month");
     }
@@ -635,7 +634,7 @@ public final class CronConverter {
 
   private static List<Integer> dailyTimes(Schedule schedule) {
     List<TimeOfDay> times;
-    switch (schedule.data().expr()) {
+    switch (schedule.expression()) {
       case IntervalRepeat _ -> {
         return Arrays.stream(Evaluator.intervalSlots(schedule)).boxed().toList();
       }

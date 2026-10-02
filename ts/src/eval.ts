@@ -171,9 +171,9 @@ class Search {
   constructor(schedule: ScheduleData) {
     this.zone = new Zone(schedule.timezone ?? "UTC");
     this.cadence = Cadence.of(schedule);
-    this.times = dailyTimes(schedule.expr);
+    this.times = dailyTimes(schedule.expression);
     this.clauses = new Clauses(schedule);
-    this.candidatesInPeriod = candidatesInPeriod(schedule.expr);
+    this.candidatesInPeriod = candidatesInPeriod(schedule.expression);
   }
 
   /**
@@ -406,7 +406,7 @@ class Clauses {
     this.earliestExceptDate = any ? Math.min(...this.exceptDates) : null;
     this.latestExceptDate = any ? Math.max(...this.exceptDates) : null;
     this.starting =
-      schedule.anchor === null ? null : parseIsoDate(schedule.anchor);
+      schedule.starting === null ? null : parseIsoDate(schedule.starting);
     this.until =
       schedule.until === null
         ? null
@@ -504,13 +504,13 @@ class Cadence {
     this.latest = unitIndex(unit, LAST_DATE) + 1;
   }
 
-  static of({ expr, anchor }: ScheduleData): Cadence {
+  static of({ expression: expr, starting }: ScheduleData): Cadence {
     if (expr.type === "singleDate" && expr.date.type === "iso") {
       return new Cadence("day", parseIsoDate(expr.date.date), 1, true);
     }
     const [unit, interval] = repetition(expr);
     const defaultAnchor = unit === "week" ? EPOCH_MONDAY : EPOCH_DATE;
-    const start = anchor === null ? defaultAnchor : parseIsoDate(anchor);
+    const start = starting === null ? defaultAnchor : parseIsoDate(starting);
     return new Cadence(unit, unitIndex(unit, start), interval);
   }
 

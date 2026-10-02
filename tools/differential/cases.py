@@ -329,7 +329,25 @@ def generate() -> list[dict]:
     add_range(cases)
     add_sparse(cases)
     add_cron(cases, rng)
+    add_subminute(cases)
     return cases
+
+
+def add_subminute(cases: Cases) -> None:
+    """Monrovia was -00:44:30 throughout 1971, so 09:00 there is 09:44:30Z, and a platform
+    that keeps offsets in whole minutes moves it to 09:44Z or 09:45Z (spec/README.md,
+    "Timezone data")."""
+    expr = "every day at 09:00 in Africa/Monrovia"
+    day = datetime(1971, 6, 15, tzinfo=UTC)
+    nine = day + timedelta(hours=9, minutes=44, seconds=30)
+    between_minutes = [nine - timedelta(seconds=30), nine - timedelta(seconds=15)]
+    for now in [day, *between_minutes, nine, nine + MINUTE]:
+        cases.add("subminute", "next", expr, {"now": stamp(now)})
+        cases.add("subminute", "prev", expr, {"now": stamp(now)})
+    cases.add("subminute", "nextN", expr, {"now": stamp(day), "n": 3})
+    cases.add("subminute", "between", expr, {"from": stamp(day), "to": stamp(day + 2 * DAY)})
+    for instant in [*between_minutes, nine, nine + timedelta(seconds=30), nine + MINUTE]:
+        cases.add("subminute", "matches", expr, {"datetime": stamp(instant)})
 
 
 def generate_stress() -> list[dict]:

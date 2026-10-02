@@ -4,15 +4,34 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.hron.ast.DayFilter;
+import io.hron.ast.DayRepeat;
+import io.hron.ast.ExceptionSpec;
+import io.hron.ast.MonthName;
+import io.hron.ast.ScheduleExpr;
+import io.hron.ast.TimeOfDay;
+import io.hron.ast.UntilSpec;
+import io.hron.ast.Weekday;
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 public class ApiConformanceTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -105,6 +124,37 @@ public class ApiConformanceTest {
   }
 
   @Test
+  void gettersReturnTheParts() throws HronException {
+    Schedule s =
+        Schedule.parse(
+            "every monday, friday at 9:00 except dec 25, 2026-07-04 until 2027-01-01"
+                + " starting 2026-02-09 during jul, jan in america/new_york");
+    assertEquals(
+        new DayRepeat(
+            1,
+            DayFilter.days(List.of(Weekday.MONDAY, Weekday.FRIDAY)),
+            List.of(new TimeOfDay(9, 0))),
+        s.expression());
+    assertEquals(
+        List.of(ExceptionSpec.named(MonthName.DECEMBER, 25), ExceptionSpec.iso("2026-07-04")),
+        s.except());
+    assertEquals(Optional.of(UntilSpec.iso("2027-01-01")), s.until());
+    assertEquals(Optional.of("2026-02-09"), s.starting());
+    assertEquals(List.of(MonthName.JULY, MonthName.JANUARY), s.during());
+    assertEquals(Optional.of("America/New_York"), s.timezone());
+  }
+
+  @Test
+  void gettersAreEmptyWithoutTheirClauses() throws HronException {
+    Schedule s = Schedule.parse("every day at 09:00");
+    assertEquals(List.of(), s.except());
+    assertEquals(Optional.empty(), s.until());
+    assertEquals(Optional.empty(), s.starting());
+    assertEquals(List.of(), s.during());
+    assertEquals(Optional.empty(), s.timezone());
+  }
+
+  @Test
   void testErrorKinds() {
     assertEquals("lex", ErrorKind.LEX.value());
     assertEquals("parse", ErrorKind.PARSE.value());
@@ -180,99 +230,201 @@ public class ApiConformanceTest {
   }
 
   @Test
-  void specStaticMethodsExist() {
-    JsonNode schedule = SPEC.get("schedule");
-    JsonNode staticMethods = schedule.get("staticMethods");
-
-    Map<String, String> expectedMethods =
-        Map.of(
-            "parse", "parse",
-            "fromCron", "fromCron",
-            "validate", "validate");
-
-    for (JsonNode method : staticMethods) {
-      String name = method.get("name").asText();
-      assertTrue(expectedMethods.containsKey(name), "Unmapped spec static method: " + name);
-    }
+  void equalSchedulesHaveEqualParts() throws HronException {
+    Schedule schedule = Schedule.parse("every day at 9:00");
+    assertEquals(schedule, Schedule.parse("every day at 09:00"));
+    assertEquals(schedule.hashCode(), Schedule.parse("every day at 09:00").hashCode());
+    assertEquals(Schedule.fromCron("0 9 * * *"), schedule);
+    assertNotEquals(schedule, Schedule.parse("every day at 09:00 in UTC"));
+    assertNotEquals(schedule, Schedule.parse("every day at 09:01"));
   }
 
   @Test
-  void specInstanceMethodsExist() {
-    JsonNode schedule = SPEC.get("schedule");
-    JsonNode instanceMethods = schedule.get("instanceMethods");
-
-    Map<String, String> expectedMethods =
-        Map.ofEntries(
-            Map.entry("nextFrom", "nextFrom"),
-            Map.entry("nextNFrom", "nextNFrom"),
-            Map.entry("previousFrom", "previousFrom"),
-            Map.entry("matches", "matches"),
-            Map.entry("occurrences", "occurrences"),
-            Map.entry("between", "between"),
-            Map.entry("toCron", "toCron"),
-            Map.entry("toString", "toString"));
-
-    for (JsonNode method : instanceMethods) {
-      String name = method.get("name").asText();
-      assertTrue(expectedMethods.containsKey(name), "Unmapped spec instance method: " + name);
-    }
+  void listsCompareInOrderWithDuplicates() throws HronException {
+    Schedule mondayFriday = Schedule.parse("every monday, friday at 09:00");
+    assertNotEquals(mondayFriday, Schedule.parse("every friday, monday at 09:00"));
+    assertNotEquals(mondayFriday, Schedule.parse("every monday, friday, friday at 09:00"));
+    assertNotEquals(
+        Schedule.parse("every day at 09:00 during jan, feb"),
+        Schedule.parse("every day at 09:00 during feb, jan"));
   }
 
   @Test
-  void specGettersExist() {
-    JsonNode schedule = SPEC.get("schedule");
-    JsonNode getters = schedule.get("getters");
-
-    Map<String, String> expectedGetters = Map.of("timezone", "timezone");
-
-    for (JsonNode getter : getters) {
-      String name = getter.get("name").asText();
-      assertTrue(expectedGetters.containsKey(name), "Unmapped spec getter: " + name);
-    }
+  void aScheduleEqualsNothingButASchedule() throws HronException {
+    Schedule schedule = Schedule.parse("every day at 09:00");
+    assertFalse(schedule.equals(null));
+    assertFalse(schedule.equals("every day at 09:00"));
+    assertTrue(schedule.equals(schedule));
   }
 
   @Test
-  void specErrorKindsMatch() {
-    JsonNode error = SPEC.get("error");
-    JsonNode kinds = error.get("kinds");
-
-    Set<String> expectedKinds = Set.of("lex", "parse", "eval", "cron");
-
-    for (JsonNode kind : kinds) {
-      String name = kind.asText();
-      assertTrue(expectedKinds.contains(name), "Unexpected error kind in spec: " + name);
-    }
+  void nullInputIsAUsageError() {
+    assertAll(
+        () -> assertThrows(NullPointerException.class, () -> Schedule.parse(null)),
+        () -> assertThrows(NullPointerException.class, () -> Schedule.validate(null)),
+        () -> assertThrows(NullPointerException.class, () -> Schedule.fromCron(null)));
   }
 
   @Test
-  void specErrorConstructorsExist() {
-    JsonNode error = SPEC.get("error");
-    JsonNode constructors = error.get("constructors");
+  void aNullArgumentToAnErrorConstructorIsAUsageError() {
+    Span span = new Span(0, 1);
+    List<Executable> calls =
+        List.of(
+            () -> HronException.lex(null, span, "x"),
+            () -> HronException.lex("m", null, "x"),
+            () -> HronException.lex("m", span, null),
+            () -> HronException.parse(null, span, "x", "y"),
+            () -> HronException.parse("m", null, "x", "y"),
+            () -> HronException.parse("m", span, null, "y"),
+            () -> HronException.eval(null),
+            () -> HronException.cron(null));
+    for (int i = 0; i < calls.size(); i++) {
+      Throwable thrown = assertThrows(Throwable.class, calls.get(i), "call " + i);
+      assertEquals(NullPointerException.class, thrown.getClass(), "call " + i);
+    }
+    assertTrue(HronException.parse("m", span, "x", null).suggestion().isEmpty());
+  }
 
-    Map<String, String> expectedConstructors =
-        Map.of(
-            "lex", "lex",
-            "parse", "parse",
-            "eval", "eval",
-            "cron", "cron");
+  @Test
+  void theApiHasEveryMemberOfApiJson() {
+    assertEquals(List.of(), missing(SPEC));
+  }
 
-    for (JsonNode constructor : constructors) {
+  @Test
+  void aMemberMissingFromTheApiIsReported() {
+    ObjectNode spec = SPEC.deepCopy();
+    ObjectNode schedule = (ObjectNode) spec.get("schedule");
+    ObjectNode error = (ObjectNode) spec.get("error");
+    ((ArrayNode) schedule.get("staticMethods"))
+        .addObject()
+        .put("name", "fakeStatic")
+        .put("returns", "bool");
+    ((ArrayNode) schedule.get("instanceMethods"))
+        .addObject()
+        .put("name", "fakeMethod")
+        .put("returns", "bool");
+    ((ArrayNode) schedule.get("getters")).addObject().put("name", "fakeGetter").put("type", "int");
+    ((ArrayNode) error.get("properties"))
+        .addObject()
+        .put("name", "fakeProperty")
+        .put("type", "int");
+    ((ArrayNode) error.get("methods"))
+        .addObject()
+        .put("name", "fakeErrorMethod")
+        .put("returns", "string");
+    ((ArrayNode) error.get("constructors")).add("fakeConstructor");
+    ((ArrayNode) error.get("kinds")).add("fakeKind");
+    ((ObjectNode) schedule.get("getters").get(0)).put("type", "string");
+    assertEquals(
+        List.of(
+            "static method fakeStatic",
+            "instance method fakeMethod",
+            "getter timezone",
+            "getter fakeGetter",
+            "error property fakeProperty",
+            "error method fakeErrorMethod",
+            "error constructor fakeConstructor",
+            "error kind fakeKind"),
+        missing(spec));
+  }
+
+  private static final Map<String, String> JAVA_NOTE_NAMES = Map.of("message", "getMessage");
+
+  private static List<String> missing(JsonNode spec) {
+    JsonNode schedule = spec.get("schedule");
+    JsonNode error = spec.get("error");
+    List<String> missing = new ArrayList<>();
+    for (JsonNode method : schedule.get("staticMethods")) {
+      check(missing, "static method", Schedule.class, method, true);
+    }
+    for (JsonNode method : schedule.get("instanceMethods")) {
+      check(missing, "instance method", Schedule.class, method, false);
+    }
+    for (JsonNode getter : schedule.get("getters")) {
+      check(missing, "getter", Schedule.class, getter, false);
+    }
+    for (JsonNode property : error.get("properties")) {
+      check(missing, "error property", HronException.class, property, false);
+    }
+    for (JsonNode method : error.get("methods")) {
+      check(missing, "error method", HronException.class, method, false);
+    }
+    for (JsonNode constructor : error.get("constructors")) {
       String name = constructor.asText();
-      assertTrue(
-          expectedConstructors.containsKey(name), "Unmapped spec error constructor: " + name);
+      boolean found =
+          Arrays.stream(HronException.class.getMethods())
+              .anyMatch(
+                  m ->
+                      m.getName().equals(name)
+                          && Modifier.isStatic(m.getModifiers())
+                          && m.getReturnType() == HronException.class);
+      if (!found) {
+        missing.add("error constructor " + name);
+      }
+    }
+    Set<String> kinds =
+        Arrays.stream(ErrorKind.values()).map(ErrorKind::value).collect(Collectors.toSet());
+    for (JsonNode kind : error.get("kinds")) {
+      if (!kinds.remove(kind.asText())) {
+        missing.add("error kind " + kind.asText());
+      }
+    }
+    kinds.forEach(kind -> missing.add("error kind not in api.json: " + kind));
+    return missing;
+  }
+
+  private static void check(
+      List<String> missing, String what, Class<?> owner, JsonNode member, boolean isStatic) {
+    String name = member.get("name").asText();
+    // api.json gives a getter or property a "type", which is what it returns.
+    String returns = (member.has("returns") ? member.get("returns") : member.get("type")).asText();
+    try {
+      List<Class<?>> params = new ArrayList<>();
+      for (JsonNode param : member.path("params")) {
+        params.add(javaType(param.get("type").asText()));
+      }
+      // The java note: equality is equals(Object) with hashCode.
+      if (name.equals("equals")) {
+        params = List.of(Object.class);
+      }
+      Method method =
+          owner.getMethod(
+              JAVA_NOTE_NAMES.getOrDefault(name, name), params.toArray(Class<?>[]::new));
+      boolean declared = owner == HronException.class || method.getDeclaringClass() == owner;
+      boolean hashed =
+          !name.equals("equals") || owner.getMethod("hashCode").getDeclaringClass() == owner;
+      if (!declared
+          || !hashed
+          || Modifier.isStatic(method.getModifiers()) != isStatic
+          || method.getReturnType() != javaType(returns)) {
+        missing.add(what + " " + name);
+      }
+    } catch (NoSuchMethodException e) {
+      missing.add(what + " " + name);
     }
   }
 
-  @Test
-  void specErrorMethodsExist() {
-    JsonNode error = SPEC.get("error");
-    JsonNode methods = error.get("methods");
-
-    Map<String, String> expectedMethods = Map.of("displayRich", "displayRich");
-
-    for (JsonNode method : methods) {
-      String name = method.get("name").asText();
-      assertTrue(expectedMethods.containsKey(name), "Unmapped spec error method: " + name);
+  // Optional for "?" is the "java" note's rule. List for "[]" and Stream for an Iterator are
+  // this test's own mapping; the note does not name them.
+  private static Class<?> javaType(String type) {
+    if (type.endsWith("?")) {
+      return Optional.class;
     }
+    if (type.endsWith("[]")) {
+      return List.class;
+    }
+    if (type.startsWith("Iterator<")) {
+      return Stream.class;
+    }
+    return switch (type) {
+      case "string" -> String.class;
+      case "bool" -> boolean.class;
+      case "int" -> int.class;
+      case "ZonedDateTime" -> ZonedDateTime.class;
+      case "Schedule" -> Schedule.class;
+      case "ScheduleExpr" -> ScheduleExpr.class;
+      case "ErrorKind" -> ErrorKind.class;
+      default -> throw new IllegalArgumentException("unmapped api.json type " + type);
+    };
   }
 }

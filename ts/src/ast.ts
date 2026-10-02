@@ -131,13 +131,12 @@ export type ScheduleExpr =
     };
 
 export interface ScheduleData {
-  readonly expr: ScheduleExpr;
+  readonly expression: ScheduleExpr;
   /** Null means UTC. */
   readonly timezone: string | null;
   readonly except: readonly Exception[];
   readonly until: UntilSpec | null;
-  /** The `starting` date, as YYYY-MM-DD. */
-  readonly anchor: string | null;
+  readonly starting: string | null;
   readonly during: readonly MonthName[];
 }
 
@@ -239,11 +238,11 @@ export const ALL_WEEKEND: readonly Weekday[] = ["saturday", "sunday"];
 
 export function newScheduleData(expr: ScheduleExpr): ScheduleData {
   return {
-    expr,
+    expression: expr,
     timezone: null,
     except: [],
     until: null,
-    anchor: null,
+    starting: null,
     during: [],
   };
 }

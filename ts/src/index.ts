@@ -1,7 +1,14 @@
 import type { Temporal } from "@js-temporal/polyfill";
-import type { ScheduleData, ScheduleExpr } from "./ast.js";
+import type {
+  Exception,
+  MonthName,
+  ScheduleData,
+  ScheduleExpr,
+  UntilSpec,
+} from "./ast.js";
 import { fromCron, toCron } from "./cron.js";
 import { display } from "./display.js";
+import { HronError, text } from "./error.js";
 import {
   between,
   matches,
@@ -38,26 +45,35 @@ export class Schedule {
     this.#data = deepFreeze(data);
   }
 
-  /** Parse an hron expression string. Throws `HronError` if it is invalid. */
+  /**
+   * Parse an hron expression string. Throws `HronError` if it is invalid, and
+   * a `TypeError` if `input` is not a string.
+   */
   static parse(input: string): Schedule {
-    return new Schedule(BUILDER, parse(input));
+    return new Schedule(BUILDER, parse(text(input, "input")));
   }
 
   /**
    * Convert a 5-field cron expression to a Schedule that fires at the same times.
-   * Throws a `cron` `HronError` when the input is not valid cron or has no exact hron equivalent.
+   * Throws a `cron` `HronError` when the input is not valid cron or has no exact hron equivalent,
+   * and a `TypeError` if `cronExpr` is not a string.
    */
   static fromCron(cronExpr: string): Schedule {
-    return new Schedule(BUILDER, fromCron(cronExpr));
+    return new Schedule(BUILDER, fromCron(text(cronExpr, "cronExpr")));
   }
 
-  /** False, rather than throwing, for anything `parse` rejects. */
+  /**
+   * False, rather than throwing, for anything `parse` rejects. Throws a
+   * `TypeError` if `input` is not a string.
+   */
   static validate(input: string): boolean {
+    const checked = text(input, "input");
     try {
-      parse(input);
+      parse(checked);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (error instanceof HronError) return false;
+      throw error;
     }
   }
 
@@ -126,8 +142,59 @@ export class Schedule {
 
   /** The schedule's expression, frozen: a write to it throws in strict mode. */
   get expression(): ScheduleExpr {
-    return this.#data.expr;
+    return this.#data.expression;
   }
+
+  /** The except dates, frozen; empty without an except clause. */
+  get except(): readonly Exception[] {
+    return this.#data.except;
+  }
+
+  /** The until date, frozen, or null without an until clause. */
+  get until(): UntilSpec | null {
+    return this.#data.until;
+  }
+
+  /** The starting date as `YYYY-MM-DD`, or null without a starting clause. */
+  get starting(): string | null {
+    return this.#data.starting;
+  }
+
+  /** The during months, frozen; empty without a during clause. */
+  get during(): readonly MonthName[] {
+    return this.#data.during;
+  }
+
+  /**
+   * True when `other` is a schedule with equal parts (spec/README.md,
+   * "Equality"); false for anything else, `null` and `undefined` included.
+   */
+  equals(other: unknown): boolean {
+    return (
+      typeof other === "object" &&
+      other !== null &&
+      #data in other &&
+      sameParts(this.#data, (other as Schedule).#data)
+    );
+  }
+}
+
+function sameParts(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+  if (a === null || b === null) return false;
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every(
+      (key) =>
+        Object.hasOwn(b, key) &&
+        sameParts(
+          (a as Record<string, unknown>)[key],
+          (b as Record<string, unknown>)[key],
+        ),
+    )
+  );
 }
 
 function deepFreeze<T>(value: T): T {
@@ -165,8 +232,8 @@ export type {
   IntervalUnit,
   MonthName,
   MonthTarget,
+  NearestDirection,
   OrdinalPosition,
-  ScheduleData,
   ScheduleExpr,
   TimeOfDay,
   UntilSpec,

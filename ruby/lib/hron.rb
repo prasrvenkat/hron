@@ -13,23 +13,26 @@ require_relative "hron/schedule"
 
 module Hron
   # Parser, Evaluator, Display and Cron take or return a schedule's parts without the checks
-  # of Schedule.new, and Parts is those checks, so only code inside Hron uses them (spec/README.md,
-  # "Schedules built in code").
-  private_constant :Parser, :Evaluator, :Display, :Cron, :Parts
+  # of Schedule.new, Parts is those checks, and Lexer gives Parser its tokens, so only code
+  # inside Hron uses them (spec/README.md, "Schedules built in code").
+  private_constant :Lexer, :Parser, :Evaluator, :Display, :Cron, :Parts
 
   class << self
-    # Parses a hron expression into a Schedule. Raises HronError if it is invalid.
+    # Parses a hron expression into a Schedule. Raises HronError if it is invalid, and TypeError
+    # unless input is a String.
     def parse_schedule(input)
       Schedule.parse(input)
     end
 
-    # Validate a hron expression without raising an error
+    # True when parse accepts input, false when it raises HronError. Raises TypeError unless
+    # input is a String.
     def validate(input)
       Schedule.validate(input)
     end
 
     # Converts a 5-field cron expression to a Schedule that fires at the same times. Raises
-    # HronError of kind :cron when it is not valid cron or has no exact hron equivalent.
+    # HronError of kind :cron when it is not valid cron or has no exact hron equivalent, and
+    # TypeError unless cron_expr is a String.
     def from_cron(cron_expr)
       Schedule.from_cron(cron_expr)
     end

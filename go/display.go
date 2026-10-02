@@ -8,7 +8,7 @@ import (
 func display(schedule *ScheduleData) string {
 	var sb strings.Builder
 
-	sb.WriteString(displayExpr(schedule.Expr))
+	sb.WriteString(displayExpr(schedule.Expression))
 
 	if len(schedule.Except) > 0 {
 		sb.WriteString(" except ")
@@ -20,9 +20,9 @@ func display(schedule *ScheduleData) string {
 		sb.WriteString(displayUntil(*schedule.Until))
 	}
 
-	if schedule.Anchor != "" {
+	if schedule.Starting != "" {
 		sb.WriteString(" starting ")
-		sb.WriteString(schedule.Anchor)
+		sb.WriteString(schedule.Starting)
 	}
 
 	if len(schedule.During) > 0 {

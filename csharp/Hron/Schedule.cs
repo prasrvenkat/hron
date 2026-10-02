@@ -8,9 +8,10 @@ namespace Hron;
 
 /// <summary>
 /// Only the instant of a <see cref="DateTimeOffset"/> argument matters. Every result has the offset
-/// of the schedule's timezone at that instant, or zero when it has none.
+/// of the schedule's timezone at that instant, or zero when it has none. A schedule never changes,
+/// and two schedules are equal when their parts are.
 /// </summary>
-public sealed class Schedule
+public sealed class Schedule : IEquatable<Schedule>
 {
     private readonly ScheduleData _data;
     private readonly TimeZoneInfo _zoneInfo;
@@ -24,9 +25,11 @@ public sealed class Schedule
     /// <summary>
     /// Parses an hron expression into a Schedule.
     /// </summary>
-    /// <exception cref="HronException">If the input is invalid</exception>
+    /// <exception cref="ArgumentNullException">If input is null</exception>
+    /// <exception cref="HronException">A lex or parse error when the input is not a valid expression</exception>
     public static Schedule Parse(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         var data = HronParser.Parse(input);
         var zoneInfo = ResolveTimezone(data.Timezone);
         return new Schedule(data, zoneInfo);
@@ -46,10 +49,13 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Validates an hron expression without throwing.
+    /// Checks an hron expression without throwing a <see cref="HronException"/>.
     /// </summary>
+    /// <returns>True when <see cref="Parse"/> would accept the input, false when it would throw a <see cref="HronException"/></returns>
+    /// <exception cref="ArgumentNullException">If input is null</exception>
     public static bool Validate(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         try
         {
             HronParser.Parse(input);
@@ -71,12 +77,12 @@ public sealed class Schedule
     }
 
     /// <summary>
-    /// Computes up to count occurrences strictly after the given time.
+    /// Computes up to n occurrences strictly after the given time.
     /// </summary>
-    /// <returns>At most count occurrences in order, empty when count &lt;= 0 or now is outside the supported range</returns>
-    public IReadOnlyList<DateTimeOffset> NextNFrom(DateTimeOffset now, int count)
+    /// <returns>At most n occurrences in order, empty when n &lt;= 0 or now is outside the supported range</returns>
+    public IReadOnlyList<DateTimeOffset> NextNFrom(DateTimeOffset now, int n)
     {
-        return Evaluator.NextNFrom(_data, now, count, _zoneInfo);
+        return Evaluator.NextNFrom(_data, now, n, _zoneInfo);
     }
 
     /// <summary>
@@ -123,14 +129,63 @@ public sealed class Schedule
     public string ToCron() => CronConverter.ToCron(_data);
 
     /// <summary>
-    /// Returns the IANA timezone name in its canonical capitalization, or null if not specified.
+    /// The IANA timezone name in its canonical capitalization, or null if not specified.
     /// </summary>
     public string? Timezone => string.IsNullOrEmpty(_data.Timezone) ? null : _data.Timezone;
 
     /// <summary>
-    /// Returns the canonical string representation of this schedule.
+    /// The repeat: a <see cref="DayRepeat"/>, <see cref="IntervalRepeat"/>, <see cref="WeekRepeat"/>,
+    /// <see cref="MonthRepeat"/>, <see cref="YearRepeat"/> or <see cref="SingleDate"/>.
+    /// </summary>
+    public IScheduleExpr Expression => _data.Expression;
+
+    /// <summary>
+    /// The except dates in the order written, empty without an except clause.
+    /// </summary>
+    public IReadOnlyList<ExceptionSpec> Except => _data.Except;
+
+    /// <summary>
+    /// The until date, or null if not specified.
+    /// </summary>
+    public UntilSpec? Until => _data.Until;
+
+    /// <summary>
+    /// The starting date as <c>YYYY-MM-DD</c>, or null if not specified.
+    /// </summary>
+    public string? Starting => _data.Starting;
+
+    /// <summary>
+    /// The during months in the order written, empty without a during clause.
+    /// </summary>
+    public IReadOnlyList<MonthName> During => _data.During;
+
+    /// <summary>
+    /// Returns the canonical string representation of this schedule, which parses back to an equal schedule.
     /// </summary>
     public override string ToString() => HronDisplay.Render(_data);
+
+    /// <summary>
+    /// True when other is a schedule with equal parts: every getter equal, lists in the same order with
+    /// the same duplicates. False for null.
+    /// </summary>
+    public bool Equals(Schedule? other) => other is not null && _data.Equals(other._data);
+
+    /// <summary>
+    /// True when obj is a <see cref="Schedule"/> with equal parts; false for null or any other type.
+    /// </summary>
+    public override bool Equals(object? obj) => obj is Schedule other && Equals(other);
+
+    /// <summary>
+    /// Equal schedules have equal hash codes.
+    /// </summary>
+    public override int GetHashCode() => _data.GetHashCode();
+
+    /// <summary>
+    /// True when both are null, or both are schedules with equal parts.
+    /// </summary>
+    public static bool operator ==(Schedule? left, Schedule? right) => left is null ? right is null : left.Equals(right);
+
+    public static bool operator !=(Schedule? left, Schedule? right) => !(left == right);
 
     /// <summary>
     /// UTC when unset, so results never depend on the host zone.

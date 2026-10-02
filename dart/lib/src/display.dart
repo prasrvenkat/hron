@@ -2,7 +2,7 @@ import 'ast.dart';
 
 String display(ScheduleData schedule) {
   final buf = StringBuffer();
-  buf.write(_displayExpr(schedule.expr));
+  buf.write(_displayExpr(schedule.expression));
 
   if (schedule.except.isNotEmpty) {
     buf.write(' except ');
@@ -26,8 +26,8 @@ String display(ScheduleData schedule) {
     }
   }
 
-  if (schedule.anchor != null) {
-    buf.write(' starting ${schedule.anchor}');
+  if (schedule.starting != null) {
+    buf.write(' starting ${schedule.starting}');
   }
 
   if (schedule.during.isNotEmpty) {

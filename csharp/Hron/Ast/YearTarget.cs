@@ -1,26 +1,42 @@
 namespace Hron.Ast;
 
-internal sealed record YearTarget(
+/// <summary>
+/// <c>Kind</c> says which fields hold the target besides <c>Month</c>: <c>Day</c> for
+/// <see cref="YearTargetKind.Date"/> and <see cref="YearTargetKind.DayOfMonth"/>; <c>Ordinal</c> and
+/// <c>WeekdayValue</c> for <see cref="YearTargetKind.OrdinalWeekday"/>; none for
+/// <see cref="YearTargetKind.LastWeekday"/>. The fields the kind does not use are 0 or null.
+/// </summary>
+public sealed record YearTarget(
     YearTargetKind Kind,
     MonthName Month,
     int Day,
     OrdinalPosition? Ordinal,
     Weekday? WeekdayValue)
 {
-    public static YearTarget Date(MonthName month, int day)
+    public YearTargetKind Kind { get; } = Kind;
+
+    public MonthName Month { get; } = Month;
+
+    public int Day { get; } = Day;
+
+    public OrdinalPosition? Ordinal { get; } = Ordinal;
+
+    public Weekday? WeekdayValue { get; } = WeekdayValue;
+
+    internal static YearTarget Date(MonthName month, int day)
         => new(YearTargetKind.Date, month, day, null, null);
 
-    public static YearTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday, MonthName month)
+    internal static YearTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday, MonthName month)
         => new(YearTargetKind.OrdinalWeekday, month, 0, ordinal, weekday);
 
-    public static YearTarget DayOfMonth(int day, MonthName month)
+    internal static YearTarget DayOfMonth(int day, MonthName month)
         => new(YearTargetKind.DayOfMonth, month, day, null, null);
 
-    public static YearTarget LastWeekday(MonthName month)
+    internal static YearTarget LastWeekday(MonthName month)
         => new(YearTargetKind.LastWeekday, month, 0, null, null);
 }
 
-internal enum YearTargetKind
+public enum YearTargetKind
 {
     /// <summary>A specific month and day (e.g., dec 25).</summary>
     Date,

@@ -122,6 +122,8 @@ module Hron
     "hr" => TIntervalUnit.new(IntervalUnit::HOURS),
     "hrs" => TIntervalUnit.new(IntervalUnit::HOURS)
   }.freeze
+  private_constant :TokenKind, :TDayName, :TMonthName, :TOrdinal, :TIntervalUnit, :TNumber, :TOrdinalNumber,
+    :TTime, :TIsoDate, :TTimezone, :Token, :KEYWORD_MAP
 
   class Lexer
     # Every number must fit a 32-bit signed integer, which is also the largest interval.
@@ -243,9 +245,5 @@ module Hron
       shown = (c.ord.between?(0x21, 0x7E) && c != "'") ? "'#{c}'" : format("U+%04X", c.ord)
       HronError.lex("unexpected character #{shown}", Span.new(start, start + 1), @input)
     end
-  end
-
-  def self.tokenize(input)
-    Lexer.new(input).tokenize
   end
 end
