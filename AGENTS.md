@@ -78,7 +78,7 @@ Tool directives (`# frozen_string_literal`, `// biome-ignore`, `# noqa` and the 
 
 ## Versioning
 
-Lock-step across all packages. `VERSION` file at root is stamped into each language's manifest at release time. One tag, CI publishes everything.
+Lock-step across all packages. `VERSION` file at root is stamped into each language's manifest at release time; Swift has no manifest version, as SwiftPM reads the `vX.Y.Z` tag itself. One tag, CI publishes everything.
 
 ## Tool Management
 

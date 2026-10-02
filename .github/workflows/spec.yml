@@ -76,7 +76,7 @@ jobs:
         with:
           install_args: rust nodejs pnpm
       - run: rustup target add wasm32-unknown-unknown
-      - run: cargo install wasm-pack
+      - run: cargo install wasm-pack --locked
       - run: wasm-pack build --release
         working-directory: rust/wasm
       - run: cp rust/wasm/hron_wasm_entry.js rust/wasm/pkg/hron_wasm.js
