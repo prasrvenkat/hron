@@ -19,6 +19,8 @@ go/               # Native Go implementation
 java/             # Native Java implementation
 csharp/           # Native C# implementation
 ruby/             # Native Ruby implementation
+swift/            # Native Swift implementation
+Package.swift     # Swift package manifest, at the root because SwiftPM reads a git package's manifest only from there
 ```
 
 ## Code Style
@@ -101,6 +103,9 @@ just test-go          # Go only
 just test-java        # Java only
 just test-csharp      # C# only
 just test-ruby        # Ruby only
+just test-swift       # Swift only
+just test-swift-32    # Swift with a 32-bit Int (wasm32; run just setup-swift-32 once)
+just check-swift-client # Swift enums that may gain cases need @unknown default in clients
 just build-wasm       # WASM target
 just lint             # Lint all languages
 just fmt              # Format all languages

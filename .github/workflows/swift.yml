@@ -1,0 +1,115 @@
+name: Swift
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Package.swift"
+      - "swift/**"
+      - "tools/differential/runners/swift/**"
+      - "spec/**"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/swift.yml"
+  pull_request:
+    paths:
+      - "Package.swift"
+      - "swift/**"
+      - "tools/differential/runners/swift/**"
+      - "spec/**"
+      - "justfile"
+      - ".tool-versions"
+      - ".mise.toml"
+      - ".github/workflows/swift.yml"
+
+jobs:
+  check:
+    name: Format & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: swift just
+      - name: Format & Lint
+        run: just lint-swift
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: swift just
+      - name: Build
+        run: just build-swift
+      - name: Test
+        run: just test-swift
+      - name: Check a client's switches
+        run: just check-swift-client
+
+  # Apple Watch Series 4 to 8 and SE have a 32-bit Int: the apple job builds for them, and this
+  # job runs the tests at 32 bits, on wasm32.
+  wasm32:
+    name: Test (32-bit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: swift just wasmtime@49.0.1
+      - name: Install the Swift SDK for WebAssembly
+        run: just setup-swift-32
+      - name: Test
+        run: mise exec wasmtime@49.0.1 -- just test-swift-32
+
+  # Package.swift declares swift-tools-version 6.0, so the oldest toolchain it claims must build
+  # and pass too.
+  oldest:
+    name: Test (Swift 6.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: swift@6.0.3
+      - name: Test
+        run: mise exec swift@6.0.3 -- swift test
+      - name: Build a client's switches
+        run: mise exec swift@6.0.3 -- swift build --package-path swift/ClientCheck
+
+  # Linux cannot build for Apple platforms, so this job checks that the package compiles for each
+  # one at its declared deployment target, with the runner's default Xcode: for each Simulator,
+  # and for watchOS devices too, as arm64_32 has a 32-bit Int that no Simulator has. The tests
+  # also run on an iOS Simulator, because Apple's Foundation is not the one Linux uses.
+  apple:
+    name: Apple platforms
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test (macOS)
+        run: swift test
+      - name: Build (iOS)
+        run: xcodebuild build -scheme Hron -destination 'generic/platform=iOS Simulator'
+      - name: Test (iOS Simulator)
+        run: |
+          device=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')
+          # The tests are in hron-Package when Xcode generates that scheme, and otherwise in Hron.
+          scheme=$(xcodebuild -list -json | jq -r '.workspace.schemes | if index("hron-Package") then "hron-Package" else "Hron" end')
+          xcodebuild test -scheme "$scheme" -destination "id=$device"
+      - name: Build (watchOS)
+        run: xcodebuild build -scheme Hron -destination 'generic/platform=watchOS Simulator'
+      - name: Build (watchOS devices)
+        run: xcodebuild build -scheme Hron -destination 'generic/platform=watchOS'
+      - name: Build (tvOS)
+        run: xcodebuild build -scheme Hron -destination 'generic/platform=tvOS Simulator'
+      - name: Build (visionOS)
+        run: xcodebuild build -scheme Hron -destination 'generic/platform=visionOS Simulator'

@@ -1,7 +1,7 @@
 version := `cat VERSION`
 
 # Run all tests
-test-all: test-rust test-ts test-dart test-python test-wasm test-go test-java test-csharp test-ruby
+test-all: test-rust test-ts test-dart test-python test-wasm test-go test-java test-csharp test-ruby test-swift
 
 # Rust tests
 test-rust:
@@ -35,13 +35,49 @@ test-csharp:
 test-ruby:
     cd ruby && bundle install && bundle exec rake test
 
+# Swift tests
+test-swift:
+    swift test
+
+# The Swift SDK for WebAssembly must match the toolchain in .tool-versions exactly
+swift_wasm_sdk := "swift-6.4.0-RELEASE_wasm"
+
+# Swift tests with a 32-bit Int, as on Apple Watch Series 4 to 8 and SE: wasm32 under wasmtime, after setup-swift-32
+test-swift-32:
+    swift build --build-tests --swift-sdk {{swift_wasm_sdk}} --scratch-path .build/wasm32
+    # The tests read spec/ at its path on the host.
+    wasmtime run --dir "$PWD::$PWD" .build/wasm32/debug/HronTests-test-runner.wasm --testing-library swift-testing
+
+# A client's switch over each enum marked @nonexhaustive builds with `@unknown default`, and fails without it
+check-swift-client:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd swift/ClientCheck
+    swift build
+    marked=$(grep -rh -A3 '@nonexhaustive' ../Sources/Hron | sed -n 's/^public enum \([A-Za-z]*\).*/\1/p' | sort)
+    switched=$(sed -n 's/^func name(_ value: \([A-Za-z]*\)).*/\1/p' Sources/ClientCheck/Switches.swift | sort)
+    if strict=$(swift build -Xswiftc -DSTRICT 2>&1); then
+      echo "error: the client built without @unknown default" >&2
+      exit 1
+    fi
+    failed=$(echo "$strict" | sed 's/\x1b\[[0-9;]*m//g' \
+      | sed -n "s/.*: error: switch covers known cases, but '\([A-Za-z]*\)' may have additional unknown values.*/\1/p" | sort)
+    if [ "$failed" != "$marked" ] || [ "$failed" != "$switched" ]; then
+      echo "error: each enum marked @nonexhaustive needs a switch that fails without @unknown default" >&2
+      echo "marked:   " $marked >&2
+      echo "switched: " $switched >&2
+      echo "failed:   " $failed >&2
+      exit 1
+    fi
+    echo "$(echo "$marked" | wc -l) enums marked @nonexhaustive; a switch over each fails without @unknown default"
+
 # Run every implementation on the same generated cases and report where they disagree
 [positional-arguments]
 diff *args:
     python3 tools/differential/diff.py "$@"
 
 # Install dependencies for all languages
-setup: setup-rust setup-ts setup-python setup-go setup-ruby setup-dart setup-csharp setup-java
+setup: setup-rust setup-ts setup-python setup-go setup-ruby setup-dart setup-csharp setup-java setup-swift
 
 setup-rust:
     rustup component add rustfmt clippy
@@ -67,11 +103,17 @@ setup-csharp:
 setup-java:
     cd java && mvn dependency:resolve -q
 
+setup-swift:
+    swift package resolve
+
+setup-swift-32:
+    swift sdk list | grep -qx {{swift_wasm_sdk}} || swift sdk install https://download.swift.org/swift-6.4.0-release/wasm-sdk/swift-6.4.0-RELEASE/{{swift_wasm_sdk}}.artifactbundle.tar.gz --checksum f07b7be3c586d92d7a07051fc6d303b87ebea67eadc40640ba59d5a8b79aa86d
+
 # Format all
-fmt: fmt-rust fmt-ts fmt-python fmt-go fmt-ruby fmt-dart fmt-csharp fmt-java
+fmt: fmt-rust fmt-ts fmt-python fmt-go fmt-ruby fmt-dart fmt-csharp fmt-java fmt-swift
 
 # Lint/check all (CI-safe, no auto-fix)
-lint: lint-rust lint-ts lint-python lint-go lint-ruby lint-dart lint-csharp lint-java lint-tools
+lint: lint-rust lint-ts lint-python lint-go lint-ruby lint-dart lint-csharp lint-java lint-swift lint-tools
 
 fmt-rust:
     cd rust && cargo fmt --all
@@ -96,6 +138,9 @@ fmt-csharp:
 
 fmt-java:
     cd java && mvn fmt:format
+
+fmt-swift:
+    swift format format --in-place --recursive Package.swift swift tools/differential/runners/swift
 
 lint-rust:
     cd rust && cargo fmt --all --check
@@ -134,6 +179,10 @@ lint-java:
     cd java && mvn fmt:check
     cd java && mvn compile javadoc:jar -q
 
+lint-swift:
+    swift format lint --strict --recursive Package.swift swift tools/differential/runners/swift
+    swift build -Xswiftc -warnings-as-errors
+
 # List the comment lines this branch adds, so each gets a reason or goes (AGENTS.md, "Comments")
 comments base="main":
     python3 tools/comments.py {{base}}
@@ -163,6 +212,10 @@ build-java:
 build-csharp:
     dotnet build csharp/Hron.sln
 
+# Swift build
+build-swift:
+    swift build
+
 # WASM build
 build-wasm:
     cd rust/wasm && cargo build --target wasm32-unknown-unknown
@@ -187,6 +240,7 @@ versions:
     echo "java=$(mvn -f java/pom.xml help:evaluate -Dexpression=project.version -q -DforceStdout)"
     echo "csharp=$(grep '<Version>' csharp/Hron/Hron.csproj | sed 's/.*<Version>\(.*\)<\/Version>.*/\1/')"
     echo "ruby=$(ruby -r ./ruby/lib/hron/version.rb -e 'puts Hron::VERSION')"
+    # No Swift line: SwiftPM takes a package's version from the git tag, so there is none to check against it
 
 # Stamp VERSION into all package manifests and regenerate lockfiles
 stamp-versions:

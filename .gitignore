@@ -39,6 +39,10 @@ dart/.dart_tool/
 dart/pubspec.lock
 .packages
 
+# Swift
+.build/
+.swiftpm/
+
 # OS
 .DS_Store
 .secrets/

@@ -1,6 +1,6 @@
 # Differential testing
 
-Runs all eight implementations on the same generated cases and reports every case where their answers differ. The conformance suite checks the cases someone thought to write down; this finds the ones nobody did. It also shows that a refactor changed nothing: save one run's answers, then compare a later run against them.
+Runs all nine implementations on the same generated cases and reports every case where their answers differ. The conformance suite checks the cases someone thought to write down; this finds the ones nobody did. It also shows that a refactor changed nothing: save one run's answers, then compare a later run against them.
 
 It is a developer tool, not a CI check.
 
@@ -17,7 +17,7 @@ just diff --stress                                          # run the DST stress
 
 | Flag | |
 |---|---|
-| `--only LANGS` | Comma-separated languages: `rust`, `ts`, `python`, `go`, `java`, `csharp`, `ruby`, `dart`. |
+| `--only LANGS` | Comma-separated languages: `rust`, `ts`, `python`, `go`, `java`, `csharp`, `ruby`, `dart`, `swift`. |
 | `--cases FILE` | A JSON array of cases to run in place of the generated ones. |
 | `--stress` | Run the DST stress cases (below) in place of the default ones. |
 | `--save FILE` | Write the cases, every language's answers and how long each took. |
@@ -38,7 +38,7 @@ A few splits are expected, listed by case family in `EXPECTED_SPLITS` in `report
 
 `cases.py` generates about 25,000 cases from a fixed seed: every expression kind with random trailing clauses and timezones (zoneless schedules also get times written in other zones), schedules at, just before and just after the wall-clock times that each 2026 DST transition skips or repeats in eight zones (and Apia's transitions in 2011, including its skipped day), with `now` a day before, a minute before and a minute after the transition, month ends, leap days, nearest weekday, `starting` and `until`, the edges of the supported range, huge intervals, schedules that fire rarely or never (so the search runs to its horizon), invalid and mutated expressions, and cron strings. Last comes the `subminute` family: `every day at 09:00 in Africa/Monrovia` in 1971, when Monrovia's offset was `-00:44:30`, with `next`, `prev`, `nextN`, `between` and `matches`, including instants between 09:44:00Z and 09:44:30Z, where an offset rounded to whole minutes puts 09:00 on the other side of `now`.
 
-`--stress` runs a larger DST set in its place: about 900,000 cases, generated in a few seconds. From Python's timezone data for 1971 to 2035 it takes every transition (other than a zone's first) whose skipped or repeated wall-clock range crosses midnight (such as Newfoundland's fall-back from 00:01 to 23:01) or lasts a day or more (Apia skipping 2011-12-30), one transition for each kind of range that starts or ends at midnight, and one transition in each of ten other zones chosen by the seed. Around each it builds about 100 schedules that fire in, beside and across the range: daily times and pairs of times either side of it, weekly, monthly, yearly, nearest weekday, `except`, `until`, `starting` and interval slots. Each is evaluated with `next` and `prev` from instants between two days before and two days after the transition, with `next`, `prev` and `matches` at each wall time read with either offset, and with `between` over the week around it. Rust and Go run it in under a minute; all eight take about three minutes and 4 GB of memory.
+`--stress` runs a larger DST set in its place: about 900,000 cases, generated in a few seconds. From Python's timezone data for 1971 to 2035 it takes every transition (other than a zone's first) whose skipped or repeated wall-clock range crosses midnight (such as Newfoundland's fall-back from 00:01 to 23:01) or lasts a day or more (Apia skipping 2011-12-30), one transition for each kind of range that starts or ends at midnight, and one transition in each of ten other zones chosen by the seed. Around each it builds about 100 schedules that fire in, beside and across the range: daily times and pairs of times either side of it, weekly, monthly, yearly, nearest weekday, `except`, `until`, `starting` and interval slots. Each is evaluated with `next` and `prev` from instants between two days before and two days after the transition, with `next`, `prev` and `matches` at each wall time read with either offset, and with `between` over the week around it. Rust and Go run it in under a minute; all nine take about two and a half minutes and 4 GB of memory.
 
 A case is a JSON object:
 

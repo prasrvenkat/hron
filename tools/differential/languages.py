@@ -61,6 +61,11 @@ LANGUAGES = {
                 "-o", f"{BUILD}/dart/runner"]],
         run=[f"{BUILD}/dart/runner"],
     ),
+    "swift": Language(
+        build=[["swift", "build", "-c", "release", "--quiet", "--package-path", f"{RUNNERS}/swift",
+                "--scratch-path", f"{BUILD}/swift"]],
+        run=[f"{BUILD}/swift/release/hron-differential"],
+    ),
 }  # fmt: skip
 
 

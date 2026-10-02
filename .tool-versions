@@ -9,4 +9,5 @@ dart   3.13.5
 python 3.14.7
 uv     latest
 ruby   4.0.7
+swift  6.4.0
 just   1.58.0
