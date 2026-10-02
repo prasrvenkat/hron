@@ -10,6 +10,9 @@
 //! let schedule: Schedule = "every weekday at 09:00".parse().unwrap();
 //! println!("{}", schedule); // "every weekday at 09:00"
 //! ```
+//!
+//! [`Schedule::from_parts`] builds a schedule in code, checked by the rules
+//! `parse` applies. Evaluating a schedule, parsed or built, never fails.
 
 pub mod ast;
 pub(crate) mod cron;
@@ -18,8 +21,9 @@ pub mod error;
 pub(crate) mod eval;
 pub(crate) mod lexer;
 pub(crate) mod parser;
+pub(crate) mod parts;
 
-pub use ast::{Schedule, ScheduleExpr};
+pub use ast::{Schedule, ScheduleExpr, ScheduleParts};
 pub use error::ScheduleError;
 pub use eval::{BoundedOccurrences, Occurrences};
 
@@ -46,15 +50,73 @@ impl Schedule {
         parser::parse(input)
     }
 
+    /// Build a schedule from its parts, checked by the rules `parse` applies.
+    ///
+    /// Errors with an `eval` error, which has no span, for the first part that
+    /// breaks a rule, in the order of spec/README.md, "Schedules built in code".
+    /// The timezone is kept in the database's capitalization.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hron::ast::{DayFilter, TimeOfDay};
+    /// use hron::{Schedule, ScheduleExpr, ScheduleParts};
+    ///
+    /// let schedule = Schedule::from_parts(ScheduleParts {
+    ///     expression: ScheduleExpr::DayRepeat {
+    ///         interval: 1,
+    ///         days: DayFilter::Weekday,
+    ///         times: vec![TimeOfDay { hour: 9, minute: 0 }],
+    ///     },
+    ///     timezone: Some("america/new_york".into()),
+    ///     except: vec![],
+    ///     until: None,
+    ///     starting: None,
+    ///     during: vec![],
+    /// })
+    /// .unwrap();
+    /// assert_eq!(schedule.to_string(), "every weekday at 09:00 in America/New_York");
+    ///
+    /// let mut parts = schedule.to_parts();
+    /// parts.timezone = Some("EST".into());
+    /// assert_eq!(
+    ///     Schedule::from_parts(parts).unwrap_err().to_string(),
+    ///     "timezone must be UTC or an Area/Location name such as America/New_York, got EST"
+    /// );
+    /// ```
+    pub fn from_parts(parts: ScheduleParts) -> Result<Self, ScheduleError> {
+        parts::checked(parts).map(Self::from_valid_parts)
+    }
+
+    /// For `parse` and `from_cron`, whose parts already keep every rule.
+    pub(crate) fn from_valid_parts(parts: ScheduleParts) -> Self {
+        Self {
+            expr: parts.expression,
+            timezone: parts.timezone,
+            except: parts.except,
+            until: parts.until,
+            anchor: parts.starting,
+            during: parts.during,
+        }
+    }
+
+    /// The parts this schedule was built from, to change and build again.
+    pub fn to_parts(&self) -> ScheduleParts {
+        ScheduleParts {
+            expression: self.expr.clone(),
+            timezone: self.timezone.clone(),
+            except: self.except.clone(),
+            until: self.until.clone(),
+            starting: self.anchor,
+            during: self.during.clone(),
+        }
+    }
+
     /// Compute the next occurrence strictly after `now`.
     ///
-    /// Returns `Ok(None)` when there are no future occurrences (e.g., past the
+    /// Returns `None` when there are no future occurrences (e.g., past the
     /// `until` date), and when `now` or the occurrence is outside the supported
-    /// range, 0001-01-02T00:00Z up to 9999-12-30T00:00Z. A parsed schedule never
-    /// fails to evaluate; `Err` comes only from values set through the builder
-    /// methods that parse would reject, such as an unknown timezone passed to
-    /// [`Schedule::with_timezone`], and a `now` outside the supported range returns
-    /// `Ok(None)` before those are checked.
+    /// range, 0001-01-02T00:00Z up to 9999-12-30T00:00Z.
     ///
     /// A fixed time in a DST spring-forward gap shifts forward by the length of
     /// the gap (02:30 becomes 03:30), while an interval slot in the gap is
@@ -68,10 +130,10 @@ impl Schedule {
     ///
     /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     /// let now: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
-    /// let next = schedule.next_from(&now).unwrap().unwrap();
+    /// let next = schedule.next_from(&now).unwrap();
     /// assert_eq!(next.to_string(), "2025-06-15T09:00:00+00:00[UTC]");
     /// ```
-    pub fn next_from(&self, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+    pub fn next_from(&self, now: &Zoned) -> Option<Zoned> {
         eval::next_from(self, now)
     }
 
@@ -86,18 +148,18 @@ impl Schedule {
     ///
     /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     /// let now: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
-    /// let next_3 = schedule.next_n_from(&now, 3).unwrap();
+    /// let next_3 = schedule.next_n_from(&now, 3);
     /// assert_eq!(next_3.len(), 3);
     /// assert_eq!(next_3[0].to_string(), "2025-06-15T09:00:00+00:00[UTC]");
     /// assert_eq!(next_3[2].to_string(), "2025-06-17T09:00:00+00:00[UTC]");
     /// ```
-    pub fn next_n_from(&self, now: &Zoned, n: usize) -> Result<Vec<Zoned>, ScheduleError> {
+    pub fn next_n_from(&self, now: &Zoned, n: usize) -> Vec<Zoned> {
         eval::next_n_from(self, now, n)
     }
 
     /// Compute the most recent occurrence strictly before `now`.
     ///
-    /// Returns `Ok(None)` when there is no earlier occurrence in the supported range.
+    /// Returns `None` when there is no earlier occurrence in the supported range.
     ///
     /// # Examples
     ///
@@ -106,10 +168,10 @@ impl Schedule {
     ///
     /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     /// let now: jiff::Zoned = "2025-06-15T12:00:00+00:00[UTC]".parse().unwrap();
-    /// let prev = schedule.previous_from(&now).unwrap().unwrap();
+    /// let prev = schedule.previous_from(&now).unwrap();
     /// assert_eq!(prev.to_string(), "2025-06-15T09:00:00+00:00[UTC]");
     /// ```
-    pub fn previous_from(&self, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+    pub fn previous_from(&self, now: &Zoned) -> Option<Zoned> {
         eval::previous_from(self, now)
     }
 
@@ -125,31 +187,13 @@ impl Schedule {
     /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     ///
     /// let matching: jiff::Zoned = "2025-06-15T09:00:00+00:00[UTC]".parse().unwrap();
-    /// assert!(schedule.matches(&matching).unwrap());
+    /// assert!(schedule.matches(&matching));
     ///
     /// let non_matching: jiff::Zoned = "2025-06-15T10:00:00+00:00[UTC]".parse().unwrap();
-    /// assert!(!schedule.matches(&non_matching).unwrap());
+    /// assert!(!schedule.matches(&non_matching));
     /// ```
-    pub fn matches(&self, datetime: &Zoned) -> Result<bool, ScheduleError> {
+    pub fn matches(&self, datetime: &Zoned) -> bool {
         eval::matches(self, datetime)
-    }
-
-    /// Set the anchor date (the `starting` clause) for day, week, month and year intervals.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use hron::Schedule;
-    ///
-    /// let schedule = Schedule::parse("every 2 weeks on monday at 09:00 in UTC").unwrap()
-    ///     .with_anchor(jiff::civil::date(2025, 1, 6));
-    /// let now: jiff::Zoned = "2025-01-19T10:00:00+00:00[UTC]".parse().unwrap();
-    /// let next = schedule.next_from(&now).unwrap().unwrap();
-    /// assert_eq!(next.to_string(), "2025-01-20T09:00:00+00:00[UTC]");
-    /// ```
-    pub fn with_anchor(mut self, date: jiff::civil::Date) -> Self {
-        self.anchor = Some(date);
-        self
     }
 
     /// Check if an input string is a valid hron expression: false for anything
@@ -257,30 +301,6 @@ impl Schedule {
         &self.during
     }
 
-    /// Set the timezone. Unlike `parse`, this does not validate the name; an
-    /// unknown one makes evaluation return `Err`.
-    pub fn with_timezone(mut self, tz: impl Into<String>) -> Self {
-        self.timezone = Some(tz.into());
-        self
-    }
-
-    pub fn with_except(mut self, exceptions: Vec<ast::Exception>) -> Self {
-        self.except = exceptions;
-        self
-    }
-
-    /// Set the until spec. A named date resolves from the anchor (`starting`),
-    /// or from the epoch when there is none.
-    pub fn with_until(mut self, until: ast::UntilSpec) -> Self {
-        self.until = Some(until);
-        self
-    }
-
-    pub fn with_during(mut self, months: Vec<ast::MonthName>) -> Self {
-        self.during = months;
-        self
-    }
-
     /// Returns a lazy iterator of occurrences strictly after `from`.
     ///
     /// Unbounded for repeating schedules unless an `until` clause ends them.
@@ -293,7 +313,7 @@ impl Schedule {
     /// let schedule = Schedule::parse("every day at 09:00 in UTC").unwrap();
     /// let from: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
     ///
-    /// let first_5: Vec<_> = schedule.occurrences(&from).take(5).collect::<Result<_, _>>().unwrap();
+    /// let first_5: Vec<_> = schedule.occurrences(&from).take(5).collect();
     /// assert_eq!(first_5.len(), 5);
     /// assert_eq!(first_5[0].to_string(), "2025-06-15T09:00:00+00:00[UTC]");
     /// ```
@@ -312,7 +332,7 @@ impl Schedule {
     /// let from: jiff::Zoned = "2025-06-15T08:00:00+00:00[UTC]".parse().unwrap();
     /// let to: jiff::Zoned = "2025-06-18T10:00:00+00:00[UTC]".parse().unwrap();
     ///
-    /// let occurrences: Vec<_> = schedule.between(&from, &to).collect::<Result<_, _>>().unwrap();
+    /// let occurrences: Vec<_> = schedule.between(&from, &to).collect();
     /// assert_eq!(occurrences.len(), 4); // June 15, 16, 17, 18 at 09:00
     /// ```
     pub fn between(&self, from: &Zoned, to: &Zoned) -> eval::BoundedOccurrences<'_> {

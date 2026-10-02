@@ -5,7 +5,7 @@ require_relative "test_helper"
 # Slot keys must never decrease in wall-clock order for one binary search to find where they
 # part; a key out of order would otherwise show only as a search that never ends.
 class SearchTest < Minitest::Test
-  WallClock = Hron::Evaluator.const_get(:WallClock)
+  WallClock = Hron.const_get(:Evaluator).const_get(:WallClock)
 
   GAPS = {
     "new-york" => ["America/New_York", Time.utc(2026, 3, 8, 2, 0), Time.utc(2026, 3, 8, 3, 0), Time.utc(2026, 3, 8, 7, 0)],

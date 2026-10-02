@@ -38,6 +38,7 @@ from ._ast import (
     SingleDateExpr,
     SingleDay,
     TimeOfDay,
+    UntilSpec,
     Weekday,
     WeekRepeat,
     YearDateTarget,
@@ -46,7 +47,7 @@ from ._ast import (
     YearOrdinalWeekdayTarget,
     YearRepeat,
     YearTarget,
-    new_schedule_data,
+    max_day,
 )
 from ._error import HronError, Span
 from ._lexer import (
@@ -128,13 +129,10 @@ _CLAUSE_ORDER: tuple[tuple[type, str], ...] = (
     (TIn, "in"),
 )
 
-_MONTH_LENGTHS = {
-    MonthName.FEB: 29,
-    MonthName.APR: 30,
-    MonthName.JUN: 30,
-    MonthName.SEP: 30,
-    MonthName.NOV: 30,
-}
+
+def canonical_timezone(name: str) -> str | None:
+    # The ASCII check comes first: lowercasing non-ASCII can produce ASCII (Kelvin sign to "k").
+    return _timezones_by_lowercase_name().get(name.lower()) if name.isascii() else None
 
 
 @functools.cache
@@ -203,34 +201,38 @@ class _Parser:
         raise self._expected(_Expected.EVERY_OR_ON)
 
     def parse_clauses(self, expr: ScheduleExpr) -> ScheduleData:
-        schedule = new_schedule_data(expr)
+        except_: tuple[ExceptionSpec, ...] = ()
+        until: UntilSpec | None = None
+        anchor: str | None = None
+        during: tuple[MonthName, ...] = ()
+        timezone: str | None = None
 
         if self._eat(TExcept):
-            schedule.except_ = tuple(self._parse_exception_list())
+            except_ = tuple(self._parse_exception_list())
 
         if isinstance(self._peek_kind(), TUntil):
-            until = self._advance()
+            until_token = self._advance()
             match self._parse_date():
                 case IsoDate(date=date):
-                    schedule.until = IsoUntil(date)
+                    until = IsoUntil(date)
                 case NamedDate(month=month, day=day):
-                    schedule.until = NamedUntil(month, day)
-            self._until_span = Span(until.span.start, self._previous().span.end)
+                    until = NamedUntil(month, day)
+            self._until_span = Span(until_token.span.start, self._previous().span.end)
 
         if self._eat(TStarting):
             if not isinstance(self._peek_kind(), TIsoDate):
                 raise self._expected(_Expected.ISO_DATE)
-            schedule.anchor = self._iso_date(self._advance())
+            anchor = self._iso_date(self._advance())
 
         if self._eat(TDuring):
-            schedule.during = tuple(self._parse_month_list())
+            during = tuple(self._parse_month_list())
 
         if self._eat(TIn):
             if not isinstance(self._peek_kind(), TTimezone):
                 raise self._expected(_Expected.TIMEZONE)
-            schedule.timezone = self._timezone(self._advance())
+            timezone = self._timezone(self._advance())
 
-        return schedule
+        return ScheduleData(expr, timezone, except_, until, anchor, during)
 
     def leftover(self, schedule: ScheduleData) -> HronError:
         token = self._tokens[self._pos]
@@ -300,11 +302,8 @@ class _Parser:
         return text
 
     def _timezone(self, token: Token) -> str:
-        """spec/README.md, "Parse-time validation": `UTC` or an IANA Area/Location name in any
-        case, stored with the database's capitalization."""
         name = self._text(token)
-        # The ASCII check comes first: lowercasing non-ASCII can produce ASCII (Kelvin sign to "k").
-        canonical = _timezones_by_lowercase_name().get(name.lower()) if name.isascii() else None
+        canonical = canonical_timezone(name)
         if canonical is None:
             raise self._error(
                 "timezone must be UTC or an Area/Location name such as America/New_York,"
@@ -485,7 +484,7 @@ class _Parser:
         return n
 
     def _check_day_in_month(self, day: int, token: Token, month: MonthName) -> None:
-        length = _MONTH_LENGTHS.get(month, 31)
+        length = max_day(month)
         if day > length:
             raise self._error(
                 f"day must be 1-{length} for {month.value}, got {self._text(token)}",

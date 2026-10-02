@@ -85,7 +85,7 @@ Apart from the bad arguments above, methods throw an `Error` whose `message` is 
 | `kind` | Thrown by |
 |---|---|
 | `lex`, `parse` | `Schedule.parse` on an invalid expression |
-| `eval` | reserved: evaluating a schedule from `Schedule.parse` or `fromCron` never fails |
+| `eval` | never: it is reserved for schedules built in code, and WebAssembly builds one only with `Schedule.parse` or `fromCron`, whose schedules never fail to evaluate |
 | `cron` | `fromCron` and `explainCron` on invalid cron or cron hron cannot express exactly; `toCron` when no cron fires at the same times |
 
 ```javascript

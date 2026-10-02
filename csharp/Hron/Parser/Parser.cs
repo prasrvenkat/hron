@@ -4,7 +4,7 @@ using static System.FormattableString;
 
 namespace Hron.Parser;
 
-public sealed class Parser
+internal sealed class Parser
 {
     /// <summary>
     /// The <c>{what}</c> of each <c>expected {what}, got ...</c> error, one per phrase in the

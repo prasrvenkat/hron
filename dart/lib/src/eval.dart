@@ -273,13 +273,9 @@ List<int> intervalSlots(IntervalRepeat expr) {
 final class _Slots implements _DailyTimes {
   factory _Slots.of(IntervalRepeat expr) {
     final from = minuteOfDay(expr.from);
-    // A ScheduleData built in code can have an interval below 1, which counts
-    // as 1 of its unit. Capping hours at a day keeps the product from
-    // overflowing, and any step of a day or more leaves only the from slot.
-    final interval = max(expr.interval, 1);
     final step = switch (expr.unit) {
-      IntervalUnit.min => interval,
-      IntervalUnit.hours => min(interval, hoursPerDay) * minutesPerHour,
+      IntervalUnit.min => expr.interval,
+      IntervalUnit.hours => expr.interval * minutesPerHour,
     };
     return _Slots._(from, step, floorDiv(minuteOfDay(expr.to) - from, step));
   }
@@ -414,14 +410,13 @@ final class _Clauses {
 }
 
 /// A named until date is the first such date on or after the starting date
-/// (spec/README.md, "Named `until`"). Parse requires `starting`; a schedule
-/// built without one resolves from the default anchor, the epoch.
+/// (spec/README.md, "Named `until`").
 DateTime _resolveUntil(UntilSpec until, DateTime? starting) {
   switch (until) {
     case IsoUntil(:final date):
       return parseIsoDate(date);
     case NamedUntil(:final month, :final day):
-      final from = starting ?? _epochDate;
+      final from = starting!;
       return [
         for (var k = 0; k <= _namedUntilMaxYears; k++)
           ?validDate(from.year + k, month.number, day),

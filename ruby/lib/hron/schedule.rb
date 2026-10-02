@@ -4,32 +4,45 @@ require_relative "parser"
 require_relative "evaluator"
 require_relative "display"
 require_relative "cron"
+require_relative "parts"
 
 module Hron
   # Each method that takes a time takes a Time in any zone and reads only its instant, and
   # raises TypeError for anything else. Each Time returned is in the schedule's timezone, with
   # that TZInfo::Timezone as its zone, or in UTC when the schedule has none.
   class Schedule
+    # The frozen ScheduleData this schedule was built from, with the timezone in its IANA
+    # capitalization.
     attr_reader :data
 
+    # Builds a schedule from a ScheduleData, checked by the rules parse applies. Raises HronError
+    # of kind :eval for the first part that breaks one, in the order of spec/README.md,
+    # "Schedules built in code", and TypeError for a part of the wrong type. Keeps a frozen
+    # copy, so later changes to data's lists and strings do not change the schedule.
     def initialize(data)
-      @data = data
+      @data = Ractor.make_shareable(Parts.checked(data))
     end
+
+    # For parse and from_cron, whose parts already keep every rule and are their own.
+    def self.from_valid(data)
+      allocate.tap { |schedule| schedule.instance_variable_set(:@data, Ractor.make_shareable(data)) }
+    end
+    private_class_method :from_valid
 
     # Raises HronError if the expression is invalid.
     def self.parse(input)
-      new(Hron.parse(input))
+      from_valid(Parser.parse(input))
     end
 
     # Converts a 5-field cron expression to a Schedule that fires at the same times. Raises
     # HronError of kind :cron when it is not valid cron or has no exact hron equivalent.
     def self.from_cron(cron_expr)
-      new(Cron.from_cron(cron_expr))
+      from_valid(Cron.from_cron(cron_expr))
     end
 
     # Validate a hron expression without raising an error
     def self.validate(input)
-      Hron.parse(input)
+      Parser.parse(input)
       true
     rescue HronError
       false
@@ -81,6 +94,19 @@ module Hron
 
     def inspect
       "Schedule(\"#{self}\")"
+    end
+
+    # Schedules are equal when their parts are.
+    def ==(other)
+      other.is_a?(Schedule) && data == other.data
+    end
+
+    def eql?(other)
+      other.is_a?(Schedule) && data.eql?(other.data)
+    end
+
+    def hash
+      data.hash
     end
 
     # Returns the IANA timezone name with its canonical capitalization, or nil if none was given.

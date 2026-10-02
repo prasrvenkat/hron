@@ -1,13 +1,16 @@
 package hron
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -236,6 +239,7 @@ func TestParse(t *testing.T) {
 					if got != tc.Canonical {
 						t.Errorf("parse(%q).String() = %q, want %q", tc.Input, got, tc.Canonical)
 					}
+					assertRebuilds(t, tc.Input, s)
 
 					s2, err := ParseSchedule(tc.Canonical)
 					if err != nil {
@@ -898,4 +902,408 @@ func sameInstants(a, b []time.Time) bool {
 		}
 	}
 	return true
+}
+
+type buildCase struct {
+	Name      string          `json:"name"`
+	Parts     json.RawMessage `json:"parts"`
+	Error     json.RawMessage `json:"error"`
+	Canonical *string         `json:"canonical"`
+}
+
+type buildError struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+}
+
+type buildPartsJSON struct {
+	Expression json.RawMessage   `json:"expression"`
+	Except     []json.RawMessage `json:"except"`
+	Until      json.RawMessage   `json:"until"`
+	Starting   *string           `json:"starting"`
+	During     []string          `json:"during"`
+	Timezone   *string           `json:"timezone"`
+}
+
+type buildRepeatJSON struct {
+	Interval  json.Number     `json:"interval"`
+	Unit      string          `json:"unit"`
+	From      string          `json:"from"`
+	To        string          `json:"to"`
+	DayFilter json.RawMessage `json:"day_filter"`
+	Days      json.RawMessage `json:"days"`
+	Target    json.RawMessage `json:"target"`
+	Date      json.RawMessage `json:"date"`
+	Times     []string        `json:"times"`
+}
+
+type buildNamedJSON struct {
+	Month   string  `json:"month"`
+	Day     int     `json:"day"`
+	Ordinal string  `json:"ordinal"`
+	Weekday string  `json:"weekday"`
+	Dir     *string `json:"direction"`
+}
+
+var (
+	buildWeekdays = []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+	buildMonths   = []string{"january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"}
+	buildOrdinals = []string{"first", "second", "third", "fourth", "fifth", "last"}
+)
+
+func TestBuild(t *testing.T) {
+	raw, err := os.ReadFile("../spec/build.json")
+	if err != nil {
+		t.Fatalf("failed to read build.json: %v", err)
+	}
+	var groups map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &groups); err != nil {
+		t.Fatalf("failed to parse build.json: %v", err)
+	}
+	checkKnownKeys(t, "build.json", groups, "description", "rules", "order", "canonical")
+	for _, group := range []string{"rules", "order", "canonical"} {
+		t.Run(group, func(t *testing.T) {
+			for _, tc := range decodeCases[buildCase](t, groups[group], "parts", "error", "canonical") {
+				t.Run(tc.Name, func(t *testing.T) { runBuild(t, tc) })
+			}
+		})
+	}
+}
+
+// spec/README.md, "Writing a runner": in Go the empty timezone means none, so
+// a case with "timezone": "" builds as the parts without one; and a value
+// Go's int cannot hold is checked by failing to write it there.
+func runBuild(t *testing.T, tc buildCase) {
+	if (tc.Error == nil) == (tc.Canonical == nil) {
+		t.Fatalf("case needs exactly one of error and canonical")
+	}
+	parts, emptyTimezone, fits := buildPartsOf(t, tc.Parts)
+	if !fits {
+		if tc.Error == nil {
+			t.Fatalf("int cannot hold a value of a case that builds")
+		}
+		return
+	}
+	s, err := NewSchedule(parts)
+	switch {
+	case emptyTimezone:
+		if err != nil {
+			t.Fatalf("NewSchedule with the empty timezone failed: %v", err)
+		}
+		if s.Timezone() != "" {
+			t.Errorf("Timezone() = %q, want none", s.Timezone())
+		}
+		assertParsesBack(t, s)
+	case tc.Error != nil:
+		var want buildError
+		strictDecode(t, tc.Error, &want)
+		if want.Kind != "eval" {
+			t.Fatalf("case expects a %q error", want.Kind)
+		}
+		var got *HronError
+		if !errors.As(err, &got) {
+			t.Fatalf("NewSchedule = %v, %v, want an eval error", s, err)
+		}
+		if got.Kind != ErrorKindEval || got.Message != want.Message {
+			t.Errorf("got %s error %q, want eval error %q", got.Kind, got.Message, want.Message)
+		}
+		if got.Span != nil || got.Input != "" || got.Suggestion != "" {
+			t.Errorf("error has span %v, input %q, suggestion %q, want none", got.Span, got.Input, got.Suggestion)
+		}
+		if got.DisplayRich() != "error: "+want.Message {
+			t.Errorf("DisplayRich() = %q", got.DisplayRich())
+		}
+	default:
+		if err != nil {
+			t.Fatalf("NewSchedule failed: %v", err)
+		}
+		if s.String() != *tc.Canonical {
+			t.Errorf("String() = %q, want %q", s.String(), *tc.Canonical)
+		}
+		assertParsesBack(t, s)
+	}
+}
+
+// spec/README.md, "Schedules built in code": building from a parsed
+// schedule's parts gives an equal schedule, and parse already writes the parts
+// as building keeps them.
+func assertRebuilds(t *testing.T, input string, s *Schedule) {
+	t.Helper()
+	rebuilt, err := NewSchedule(s.Data())
+	if err != nil {
+		t.Fatalf("NewSchedule(parse(%q).Data()) failed: %v", input, err)
+	}
+	if !reflect.DeepEqual(rebuilt.data, s.data) || rebuilt.String() != s.String() {
+		t.Errorf("NewSchedule(parse(%q).Data()) = %q %+v, want %q %+v", input, rebuilt, *rebuilt.data, s, *s.data)
+	}
+	raw, err := parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(raw, s.data) {
+		t.Errorf("parse(%q) = %+v, NewSchedule keeps %+v", input, *raw, *s.data)
+	}
+}
+
+func assertParsesBack(t *testing.T, s *Schedule) {
+	t.Helper()
+	parsed, err := ParseSchedule(s.String())
+	if err != nil {
+		t.Fatalf("%q does not parse: %v", s, err)
+	}
+	if !reflect.DeepEqual(parsed.data, s.data) {
+		t.Errorf("parse(%q) = %+v, built %+v", s, *parsed.data, *s.data)
+	}
+}
+
+func strictDecode(t *testing.T, raw json.RawMessage, v any) {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(v); err != nil {
+		t.Fatalf("cannot read %s: %v", raw, err)
+	}
+}
+
+// Kinds share a struct to decode into, so each checks its own keys.
+func allowKeys(t *testing.T, raw json.RawMessage, allowed ...string) {
+	t.Helper()
+	var object map[string]json.RawMessage
+	strictDecode(t, raw, &object)
+	for key := range object {
+		if !slices.Contains(allowed, key) {
+			t.Fatalf("field %q is not checked by this runner in %s", key, raw)
+		}
+	}
+}
+
+func onlyKey(t *testing.T, raw json.RawMessage) (string, json.RawMessage) {
+	t.Helper()
+	var object map[string]json.RawMessage
+	strictDecode(t, raw, &object)
+	if len(object) != 1 {
+		t.Fatalf("%s should have exactly one key", raw)
+	}
+	for key, value := range object {
+		return key, value
+	}
+	panic("unreachable")
+}
+
+func buildPartsOf(t *testing.T, raw json.RawMessage) (parts *ScheduleData, emptyTimezone, fits bool) {
+	var in buildPartsJSON
+	strictDecode(t, raw, &in)
+	expr, fits := buildExpr(t, in.Expression)
+	if !fits {
+		return nil, false, false
+	}
+	parts = &ScheduleData{Expr: expr}
+	for _, exception := range in.Except {
+		date := buildDate(t, exception)
+		except := NewISOException(date.Date)
+		if date.Kind == DateSpecKindNamed {
+			except = NewNamedException(date.Month, date.Day)
+		}
+		parts.Except = append(parts.Except, except)
+	}
+	if in.Until != nil {
+		date := buildDate(t, in.Until)
+		until := NewISOUntil(date.Date)
+		if date.Kind == DateSpecKindNamed {
+			until = NewNamedUntil(date.Month, date.Day)
+		}
+		parts.Until = &until
+	}
+	if in.Starting != nil {
+		parts.Anchor = *in.Starting
+	}
+	for _, month := range in.During {
+		parts.During = append(parts.During, MonthName(buildName(t, buildMonths, month)))
+	}
+	if in.Timezone != nil {
+		parts.Timezone = *in.Timezone
+	}
+	return parts, in.Timezone != nil && *in.Timezone == "", true
+}
+
+func buildExpr(t *testing.T, raw json.RawMessage) (ScheduleExpr, bool) {
+	kind, body := onlyKey(t, raw)
+	var in buildRepeatJSON
+	strictDecode(t, body, &in)
+	times := make([]TimeOfDay, len(in.Times))
+	for i, text := range in.Times {
+		times[i] = buildTime(t, text)
+	}
+	allowKeys(t, body, map[string][]string{
+		"interval_repeat": {"interval", "unit", "from", "to", "day_filter"},
+		"day_repeat":      {"interval", "days", "times"},
+		"week_repeat":     {"interval", "days", "times"},
+		"month_repeat":    {"interval", "target", "times"},
+		"single_date":     {"date", "times"},
+		"year_repeat":     {"interval", "target", "times"},
+	}[kind]...)
+	interval := 0
+	if in.Interval != "" {
+		var err error
+		interval, err = strconv.Atoi(in.Interval.String())
+		if errors.Is(err, strconv.ErrRange) {
+			return ScheduleExpr{}, false
+		}
+		if err != nil {
+			t.Fatalf("interval %s is not an integer", in.Interval)
+		}
+	}
+	switch kind {
+	case "interval_repeat":
+		var filter *DayFilter
+		if in.DayFilter != nil {
+			f := buildDayFilter(t, in.DayFilter)
+			filter = &f
+		}
+		unit := IntervalUnit(buildName(t, []string{"minutes", "hours"}, in.Unit) - 1)
+		return NewIntervalRepeat(interval, unit, buildTime(t, in.From), buildTime(t, in.To), filter), true
+	case "day_repeat":
+		return NewDayRepeat(interval, buildDayFilter(t, in.Days), times), true
+	case "week_repeat":
+		return NewWeekRepeat(interval, buildWeekdayList(t, in.Days), times), true
+	case "month_repeat":
+		return NewMonthRepeat(interval, buildMonthTarget(t, in.Target), times), true
+	case "single_date":
+		return NewSingleDateExpr(buildDate(t, in.Date), times), true
+	case "year_repeat":
+		return NewYearRepeat(interval, buildYearTarget(t, in.Target), times), true
+	}
+	t.Fatalf("unknown expression %q", kind)
+	return ScheduleExpr{}, false
+}
+
+func buildName(t *testing.T, names []string, name string) int {
+	t.Helper()
+	i := slices.Index(names, name)
+	if i < 0 {
+		t.Fatalf("%q is not one of %v", name, names)
+	}
+	return i + 1
+}
+
+func buildTime(t *testing.T, text string) TimeOfDay {
+	hour, minute, found := strings.Cut(text, ":")
+	h, errH := strconv.Atoi(hour)
+	m, errM := strconv.Atoi(minute)
+	if !found || errH != nil || errM != nil {
+		t.Fatalf("cannot read the time %q", text)
+	}
+	return TimeOfDay{Hour: h, Minute: m}
+}
+
+func buildWeekdayList(t *testing.T, raw json.RawMessage) []Weekday {
+	var names []string
+	strictDecode(t, raw, &names)
+	days := make([]Weekday, len(names))
+	for i, name := range names {
+		days[i] = Weekday(buildName(t, buildWeekdays, name))
+	}
+	return days
+}
+
+func buildDayFilter(t *testing.T, raw json.RawMessage) DayFilter {
+	var name string
+	if json.Unmarshal(raw, &name) == nil {
+		return [...]DayFilter{NewDayFilterEvery(), NewDayFilterWeekday(), NewDayFilterWeekend()}[buildName(t, []string{"every", "weekday", "weekend"}, name)-1]
+	}
+	key, days := onlyKey(t, raw)
+	if key != "days" {
+		t.Fatalf("unknown day filter %q", key)
+	}
+	return NewDayFilterDays(buildWeekdayList(t, days))
+}
+
+func buildMonthTarget(t *testing.T, raw json.RawMessage) MonthTarget {
+	var name string
+	if json.Unmarshal(raw, &name) == nil {
+		return [...]MonthTarget{NewLastDayTarget(), NewLastWeekdayTarget()}[buildName(t, []string{"last_day", "last_weekday"}, name)-1]
+	}
+	key, body := onlyKey(t, raw)
+	if key == "days" {
+		var items []json.RawMessage
+		strictDecode(t, body, &items)
+		specs := make([]DayOfMonthSpec, len(items))
+		for i, item := range items {
+			specs[i] = buildDayOfMonthSpec(t, item)
+		}
+		return NewDaysTarget(specs)
+	}
+	var in buildNamedJSON
+	strictDecode(t, body, &in)
+	allowKeys(t, body, map[string][]string{"nearest_weekday": {"day", "direction"}, "ordinal_weekday": {"ordinal", "weekday"}}[key]...)
+	switch key {
+	case "nearest_weekday":
+		direction := NearestNone
+		if in.Dir != nil {
+			direction = NearestDirection(buildName(t, []string{"next", "previous"}, *in.Dir))
+		}
+		return NewNearestWeekdayTarget(in.Day, direction)
+	case "ordinal_weekday":
+		return NewOrdinalWeekdayTarget(OrdinalPosition(buildName(t, buildOrdinals, in.Ordinal)), Weekday(buildName(t, buildWeekdays, in.Weekday)))
+	}
+	t.Fatalf("unknown month target %q", key)
+	return MonthTarget{}
+}
+
+func buildDayOfMonthSpec(t *testing.T, raw json.RawMessage) DayOfMonthSpec {
+	key, body := onlyKey(t, raw)
+	switch key {
+	case "single":
+		var day int
+		strictDecode(t, body, &day)
+		return NewSingleDay(day)
+	case "range":
+		var bounds [2]int
+		strictDecode(t, body, &bounds)
+		return NewDayRange(bounds[0], bounds[1])
+	}
+	t.Fatalf("unknown day spec %q", key)
+	return DayOfMonthSpec{}
+}
+
+func buildYearTarget(t *testing.T, raw json.RawMessage) YearTarget {
+	key, body := onlyKey(t, raw)
+	var in buildNamedJSON
+	strictDecode(t, body, &in)
+	allowKeys(t, body, map[string][]string{
+		"date":            {"month", "day"},
+		"ordinal_weekday": {"ordinal", "weekday", "month"},
+		"day_of_month":    {"day", "month"},
+		"last_weekday":    {"month"},
+	}[key]...)
+	month := MonthName(buildName(t, buildMonths, in.Month))
+	switch key {
+	case "date":
+		return NewYearDateTarget(month, in.Day)
+	case "ordinal_weekday":
+		return NewYearOrdinalWeekdayTarget(OrdinalPosition(buildName(t, buildOrdinals, in.Ordinal)), Weekday(buildName(t, buildWeekdays, in.Weekday)), month)
+	case "day_of_month":
+		return NewYearDayOfMonthTarget(in.Day, month)
+	case "last_weekday":
+		return NewYearLastWeekdayTarget(month)
+	}
+	t.Fatalf("unknown year target %q", key)
+	return YearTarget{}
+}
+
+func buildDate(t *testing.T, raw json.RawMessage) DateSpec {
+	key, body := onlyKey(t, raw)
+	switch key {
+	case "named":
+		var in buildNamedJSON
+		strictDecode(t, body, &in)
+		allowKeys(t, body, "month", "day")
+		return NewNamedDate(MonthName(buildName(t, buildMonths, in.Month)), in.Day)
+	case "iso":
+		var date string
+		strictDecode(t, body, &date)
+		return NewISODate(date)
+	}
+	t.Fatalf("unknown date %q", key)
+	return DateSpec{}
 }

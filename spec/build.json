@@ -1,0 +1,3157 @@
+{
+  "description": "Building a schedule from its parts (spec/README.md, \"Schedules built in code\"). Each case builds from `parts` and asserts either `error` or `canonical`; see \"Writing a runner\".",
+  "rules": {
+    "description": "Each row of the table, in each place it applies, and values next to each limit that build.",
+    "tests": [
+      {
+        "name": "interval_0_interval_repeat",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 0,
+              "unit": "minutes",
+              "from": "09:00",
+              "to": "17:00"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 0"
+        }
+      },
+      {
+        "name": "interval_0_day_repeat",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 0,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 0"
+        }
+      },
+      {
+        "name": "interval_0_week_repeat",
+        "parts": {
+          "expression": {
+            "week_repeat": {
+              "interval": 0,
+              "days": [
+                "monday"
+              ],
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 0"
+        }
+      },
+      {
+        "name": "interval_0_month_repeat",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 0,
+              "target": {
+                "days": [
+                  {
+                    "single": 1
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 0"
+        }
+      },
+      {
+        "name": "interval_0_year_repeat",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 0,
+              "target": {
+                "date": {
+                  "month": "january",
+                  "day": 1
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 0"
+        }
+      },
+      {
+        "name": "interval_above_2147483647",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 2147483648,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 2147483648"
+        }
+      },
+      {
+        "name": "interval_2147483647_builds",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 2147483647,
+              "unit": "minutes",
+              "from": "00:00",
+              "to": "23:59"
+            }
+          }
+        },
+        "canonical": "every 2147483647 min from 00:00 to 23:59"
+      },
+      {
+        "name": "interval_1_builds",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 1,
+              "unit": "minutes",
+              "from": "09:00",
+              "to": "09:30"
+            }
+          }
+        },
+        "canonical": "every 1 minute from 09:00 to 09:30"
+      },
+      {
+        "name": "day_repeat_interval_2_on_weekdays",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 2,
+              "days": "weekday",
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must be every day when the interval is above 1"
+        }
+      },
+      {
+        "name": "day_repeat_interval_2_on_the_weekend",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 2,
+              "days": "weekend",
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must be every day when the interval is above 1"
+        }
+      },
+      {
+        "name": "day_repeat_interval_2_on_listed_days",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 2,
+              "days": {
+                "days": [
+                  "monday"
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must be every day when the interval is above 1"
+        }
+      },
+      {
+        "name": "day_repeat_interval_2_every_day_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 2,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every 2 days at 09:00"
+      },
+      {
+        "name": "day_repeat_interval_1_on_weekdays_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "weekday",
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every weekday at 09:00"
+      },
+      {
+        "name": "time_hour_24",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "24:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 24:00"
+        }
+      },
+      {
+        "name": "time_minute_60_written_with_two_digits",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "7:60"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 07:60"
+        }
+      },
+      {
+        "name": "time_later_in_the_list",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00",
+                "25:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 25:00"
+        }
+      },
+      {
+        "name": "time_interval_from",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "24:00",
+              "to": "23:59"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 24:00"
+        }
+      },
+      {
+        "name": "time_interval_to",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "09:00",
+              "to": "17:60"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 17:60"
+        }
+      },
+      {
+        "name": "time_week_repeat",
+        "parts": {
+          "expression": {
+            "week_repeat": {
+              "interval": 1,
+              "days": [
+                "monday"
+              ],
+              "times": [
+                "09:60"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 09:60"
+        }
+      },
+      {
+        "name": "time_month_repeat",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": "last_day",
+              "times": [
+                "99:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 99:00"
+        }
+      },
+      {
+        "name": "time_single_date",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "named": {
+                  "month": "march",
+                  "day": 1
+                }
+              },
+              "times": [
+                "24:30"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 24:30"
+        }
+      },
+      {
+        "name": "time_year_repeat",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "last_weekday": {
+                  "month": "june"
+                }
+              },
+              "times": [
+                "23:99"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 23:99"
+        }
+      },
+      {
+        "name": "times_at_both_ends_of_the_day_build",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "00:00",
+                "23:59"
+              ]
+            }
+          }
+        },
+        "canonical": "every day at 00:00, 23:59"
+      },
+      {
+        "name": "window_backwards",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "17:00",
+              "to": "09:00"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time window must not run backwards: 17:00 to 09:00 (a window cannot cross midnight)"
+        }
+      },
+      {
+        "name": "window_backwards_by_a_minute",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "09:01",
+              "to": "09:00"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time window must not run backwards: 09:01 to 09:00 (a window cannot cross midnight)"
+        }
+      },
+      {
+        "name": "window_with_equal_ends_builds",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "09:00",
+              "to": "09:00"
+            }
+          }
+        },
+        "canonical": "every 30 min from 09:00 to 09:00"
+      },
+      {
+        "name": "times_empty_day_repeat",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "times must not be empty"
+        }
+      },
+      {
+        "name": "times_empty_week_repeat",
+        "parts": {
+          "expression": {
+            "week_repeat": {
+              "interval": 1,
+              "days": [
+                "monday"
+              ],
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "times must not be empty"
+        }
+      },
+      {
+        "name": "times_empty_month_repeat",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": "last_weekday",
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "times must not be empty"
+        }
+      },
+      {
+        "name": "times_empty_single_date",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "2026-03-15"
+              },
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "times must not be empty"
+        }
+      },
+      {
+        "name": "times_empty_year_repeat",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "december",
+                  "day": 25
+                }
+              },
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "times must not be empty"
+        }
+      },
+      {
+        "name": "days_empty_day_repeat",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": {
+                "days": []
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must not be empty"
+        }
+      },
+      {
+        "name": "days_empty_interval_day_filter",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "09:00",
+              "to": "17:00",
+              "day_filter": {
+                "days": []
+              }
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must not be empty"
+        }
+      },
+      {
+        "name": "days_empty_week_repeat",
+        "parts": {
+          "expression": {
+            "week_repeat": {
+              "interval": 1,
+              "days": [],
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must not be empty"
+        }
+      },
+      {
+        "name": "days_empty_month_repeat",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": []
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must not be empty"
+        }
+      },
+      {
+        "name": "day_0_month_repeat",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "single": 0
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 0th"
+        }
+      },
+      {
+        "name": "day_32_month_repeat",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "single": 32
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32nd"
+        }
+      },
+      {
+        "name": "day_range_start_0",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      0,
+                      5
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 0th"
+        }
+      },
+      {
+        "name": "day_range_end_32",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      5,
+                      32
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32nd"
+        }
+      },
+      {
+        "name": "day_33_nearest_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "nearest_weekday": {
+                  "day": 33,
+                  "direction": null
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 33rd"
+        }
+      },
+      {
+        "name": "day_111_nearest_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "nearest_weekday": {
+                  "day": 111,
+                  "direction": "next"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 111th"
+        }
+      },
+      {
+        "name": "day_32_year_day_of_month",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "day_of_month": {
+                  "day": 32,
+                  "month": "march"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32nd"
+        }
+      },
+      {
+        "name": "day_32_year_date",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "march",
+                  "day": 32
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32"
+        }
+      },
+      {
+        "name": "day_0_year_date",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "january",
+                  "day": 0
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 0"
+        }
+      },
+      {
+        "name": "day_0_single_date",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "named": {
+                  "month": "may",
+                  "day": 0
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 0"
+        }
+      },
+      {
+        "name": "day_32_except",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "named": {
+                "month": "july",
+                "day": 32
+              }
+            }
+          ]
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32"
+        }
+      },
+      {
+        "name": "day_0_until",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "august",
+              "day": 0
+            }
+          },
+          "starting": "2026-01-01"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 0"
+        }
+      },
+      {
+        "name": "day_31_month_repeat_builds",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "single": 31
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the 31st at 09:00"
+      },
+      {
+        "name": "day_31_of_apr_year_date",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "april",
+                  "day": 31
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-30 for apr, got 31"
+        }
+      },
+      {
+        "name": "day_31_of_apr_year_day_of_month",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "day_of_month": {
+                  "day": 31,
+                  "month": "april"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-30 for apr, got 31st"
+        }
+      },
+      {
+        "name": "day_30_of_feb_single_date",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "named": {
+                  "month": "february",
+                  "day": 30
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-29 for feb, got 30"
+        }
+      },
+      {
+        "name": "day_30_of_feb_except",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "named": {
+                "month": "february",
+                "day": 30
+              }
+            }
+          ]
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-29 for feb, got 30"
+        }
+      },
+      {
+        "name": "day_31_of_jun_until",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "june",
+              "day": 31
+            }
+          },
+          "starting": "2026-01-01"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-30 for jun, got 31"
+        }
+      },
+      {
+        "name": "feb_29_single_date_builds",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "named": {
+                  "month": "february",
+                  "day": 29
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "on feb 29 at 09:00"
+      },
+      {
+        "name": "feb_29_year_date_builds",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "february",
+                  "day": 29
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every year on feb 29 at 09:00"
+      },
+      {
+        "name": "feb_29_year_day_of_month_builds",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "day_of_month": {
+                  "day": 29,
+                  "month": "february"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every year on the 29th of feb at 09:00"
+      },
+      {
+        "name": "feb_29_except_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "named": {
+                "month": "february",
+                "day": 29
+              }
+            }
+          ]
+        },
+        "canonical": "every day at 09:00 except feb 29"
+      },
+      {
+        "name": "feb_29_until_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "february",
+              "day": 29
+            }
+          },
+          "starting": "2026-01-01"
+        },
+        "canonical": "every day at 09:00 until feb 29 starting 2026-01-01"
+      },
+      {
+        "name": "apr_30_year_date_builds",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "april",
+                  "day": 30
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every year on apr 30 at 09:00"
+      },
+      {
+        "name": "day_range_backwards",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      20,
+                      10
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day range must not run backwards: 20th to 10th"
+        }
+      },
+      {
+        "name": "day_range_backwards_after_a_day",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "single": 1
+                  },
+                  {
+                    "range": [
+                      9,
+                      5
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day range must not run backwards: 9th to 5th"
+        }
+      },
+      {
+        "name": "day_range_with_equal_ends_builds",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      5,
+                      5
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the 5th to 5th at 09:00"
+      },
+      {
+        "name": "day_ranges_build",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      1,
+                      5
+                    ]
+                  },
+                  {
+                    "range": [
+                      21,
+                      23
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the 1st to 5th, 21st to 23rd at 09:00"
+      },
+      {
+        "name": "date_not_in_the_calendar",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "2026-02-30"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-02-30"
+        }
+      },
+      {
+        "name": "date_without_dashes",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "20260206"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 20260206"
+        }
+      },
+      {
+        "name": "date_with_a_signed_six_digit_year",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "+002026-02-06"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got +002026-02-06"
+        }
+      },
+      {
+        "name": "date_with_a_time",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "2026-02-06T10:00"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-02-06T10:00"
+        }
+      },
+      {
+        "name": "date_without_leading_zeros",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "2026-2-6"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-2-6"
+        }
+      },
+      {
+        "name": "date_in_year_0",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "0000-01-01"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 0000-01-01"
+        }
+      },
+      {
+        "name": "date_feb_29_of_a_proleptic_common_year",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "1500-02-29"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 1500-02-29"
+        }
+      },
+      {
+        "name": "date_with_non_ascii_digits",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "\uff12\uff10\uff12\uff16-02-06"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got \uff12\uff10\uff12\uff16-02-06"
+        }
+      },
+      {
+        "name": "date_0001_01_01_builds",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "0001-01-01"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "on 0001-01-01 at 09:00"
+      },
+      {
+        "name": "date_9999_12_31_builds",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "9999-12-31"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "on 9999-12-31 at 09:00"
+      },
+      {
+        "name": "date_in_the_1582_calendar_change_builds",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "1582-10-10"
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "on 1582-10-10 at 09:00"
+      },
+      {
+        "name": "except_date_month_13",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "iso": "2026-13-01"
+            }
+          ]
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-13-01"
+        }
+      },
+      {
+        "name": "except_date_without_dashes",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "iso": "20261225"
+            }
+          ]
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 20261225"
+        }
+      },
+      {
+        "name": "except_date_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "iso": "2026-12-25"
+            }
+          ]
+        },
+        "canonical": "every day at 09:00 except 2026-12-25"
+      },
+      {
+        "name": "until_date_apr_31",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "iso": "2026-04-31"
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-04-31"
+        }
+      },
+      {
+        "name": "until_date_with_a_time",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "iso": "2026-12-31T00:00"
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-12-31T00:00"
+        }
+      },
+      {
+        "name": "until_date_empty",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "iso": ""
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got "
+        }
+      },
+      {
+        "name": "until_date_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "iso": "2026-12-31"
+          }
+        },
+        "canonical": "every day at 09:00 until 2026-12-31"
+      },
+      {
+        "name": "starting_in_year_0",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "starting": "0000-12-31"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 0000-12-31"
+        }
+      },
+      {
+        "name": "starting_0001_01_01_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "starting": "0001-01-01"
+        },
+        "canonical": "every day at 09:00 starting 0001-01-01"
+      },
+      {
+        "name": "starting_9999_12_31_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "starting": "9999-12-31"
+        },
+        "canonical": "every day at 09:00 starting 9999-12-31"
+      },
+      {
+        "name": "timezone_abbreviation",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "EST"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got EST"
+        }
+      },
+      {
+        "name": "timezone_empty",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": ""
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got "
+        }
+      },
+      {
+        "name": "timezone_z",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "Z"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got Z"
+        }
+      },
+      {
+        "name": "timezone_offset",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "+05:30"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got +05:30"
+        }
+      },
+      {
+        "name": "timezone_gmt",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "GMT"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got GMT"
+        }
+      },
+      {
+        "name": "timezone_systemv",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "SystemV/EST5"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got SystemV/EST5"
+        }
+      },
+      {
+        "name": "timezone_posix",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "posix/America/New_York"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got posix/America/New_York"
+        }
+      },
+      {
+        "name": "timezone_unknown",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "Mars/Olympus_Mons"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got Mars/Olympus_Mons"
+        }
+      },
+      {
+        "name": "timezone_etc_unknown",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "Etc/Unknown"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got Etc/Unknown"
+        }
+      },
+      {
+        "name": "timezone_with_a_kelvin_sign",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "Europe/\u212aiev"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got Europe/\u212aiev"
+        }
+      },
+      {
+        "name": "timezone_in_lowercase_builds_canonical",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "america/new_york"
+        },
+        "canonical": "every day at 09:00 in America/New_York"
+      },
+      {
+        "name": "timezone_utc_in_lowercase_builds_canonical",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "utc"
+        },
+        "canonical": "every day at 09:00 in UTC"
+      },
+      {
+        "name": "timezone_link_keeps_its_name",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "us/eastern"
+        },
+        "canonical": "every day at 09:00 in US/Eastern"
+      },
+      {
+        "name": "timezone_etc_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "timezone": "Etc/GMT+5"
+        },
+        "canonical": "every day at 09:00 in Etc/GMT+5"
+      },
+      {
+        "name": "named_until_without_starting",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "december",
+              "day": 31
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "until dec 31 has no year: add a starting date, or use an ISO date"
+        }
+      },
+      {
+        "name": "named_until_feb_29_without_starting",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "february",
+              "day": 29
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "until feb 29 has no year: add a starting date, or use an ISO date"
+        }
+      },
+      {
+        "name": "named_until_with_starting_builds",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "december",
+              "day": 31
+            }
+          },
+          "starting": "2026-01-01"
+        },
+        "canonical": "every day at 09:00 until dec 31 starting 2026-01-01"
+      }
+    ]
+  },
+  "order": {
+    "description": "Parts that break more than one rule: the first part fails, with the first row that applies to it.",
+    "tests": [
+      {
+        "name": "interval_before_days",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 0,
+              "days": {
+                "days": []
+              },
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 0"
+        }
+      },
+      {
+        "name": "interval_before_window",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 0,
+              "unit": "minutes",
+              "from": "17:00",
+              "to": "09:00"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "interval must be 1-2147483647, got 0"
+        }
+      },
+      {
+        "name": "interval_rule_before_days",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 2,
+              "days": {
+                "days": []
+              },
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must be every day when the interval is above 1"
+        }
+      },
+      {
+        "name": "day_filter_before_times",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": {
+                "days": []
+              },
+              "times": [
+                "24:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must not be empty"
+        }
+      },
+      {
+        "name": "week_days_before_times",
+        "parts": {
+          "expression": {
+            "week_repeat": {
+              "interval": 1,
+              "days": [],
+              "times": [
+                "24:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "days must not be empty"
+        }
+      },
+      {
+        "name": "month_target_before_times",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "single": 32
+                  }
+                ]
+              },
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32nd"
+        }
+      },
+      {
+        "name": "year_target_before_times",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "february",
+                  "day": 30
+                }
+              },
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-29 for feb, got 30"
+        }
+      },
+      {
+        "name": "single_date_before_times",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "2026-02-30"
+              },
+              "times": []
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-02-30"
+        }
+      },
+      {
+        "name": "from_before_to",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "24:00",
+              "to": "25:00"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 24:00"
+        }
+      },
+      {
+        "name": "window_before_day_filter",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "17:00",
+              "to": "09:00",
+              "day_filter": {
+                "days": []
+              }
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time window must not run backwards: 17:00 to 09:00 (a window cannot cross midnight)"
+        }
+      },
+      {
+        "name": "times_first_to_last",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "24:00",
+                "25:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 24:00"
+        }
+      },
+      {
+        "name": "month_days_first_to_last",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "single": 32
+                  },
+                  {
+                    "single": 0
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32nd"
+        }
+      },
+      {
+        "name": "day_range_before_a_later_day",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      9,
+                      5
+                    ]
+                  },
+                  {
+                    "single": 40
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day range must not run backwards: 9th to 5th"
+        }
+      },
+      {
+        "name": "a_time_out_of_range_before_a_backwards_window",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "23:00",
+              "to": "22:60"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 22:60"
+        }
+      },
+      {
+        "name": "a_from_out_of_range_before_a_backwards_window",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "24:00",
+              "to": "09:00"
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 24:00"
+        }
+      },
+      {
+        "name": "day_range_start_out_of_range_before_backwards",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      40,
+                      2
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 40th"
+        }
+      },
+      {
+        "name": "day_range_end_out_of_range_before_backwards",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "range": [
+                      5,
+                      0
+                    ]
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 0th"
+        }
+      },
+      {
+        "name": "day_out_of_range_before_the_month_rule_day_of_month",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "day_of_month": {
+                  "day": 32,
+                  "month": "april"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32nd"
+        }
+      },
+      {
+        "name": "day_out_of_range_before_the_month_rule_date",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "april",
+                  "day": 32
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-31, got 32"
+        }
+      },
+      {
+        "name": "expression_before_except",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "24:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "iso": "2026-02-30"
+            }
+          ]
+        },
+        "error": {
+          "kind": "eval",
+          "message": "time must be 00:00-23:59, got 24:00"
+        }
+      },
+      {
+        "name": "except_first_to_last",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "named": {
+                "month": "february",
+                "day": 30
+              }
+            },
+            {
+              "iso": "2026-02-30"
+            }
+          ]
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-29 for feb, got 30"
+        }
+      },
+      {
+        "name": "except_iso_first_to_last",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "iso": "2026-12-25"
+            },
+            {
+              "iso": "2026-02-31"
+            },
+            {
+              "iso": "2026-02-30"
+            }
+          ]
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-02-31"
+        }
+      },
+      {
+        "name": "except_before_until",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "iso": "2026-02-30"
+            }
+          ],
+          "until": {
+            "iso": "2026-02-31"
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-02-30"
+        }
+      },
+      {
+        "name": "until_before_starting",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "iso": "2026-02-31"
+          },
+          "starting": "0000-01-01"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-02-31"
+        }
+      },
+      {
+        "name": "starting_before_timezone",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "starting": "0000-01-01",
+          "timezone": "EST"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 0000-01-01"
+        }
+      },
+      {
+        "name": "except_before_timezone",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "iso": "2026-02-30"
+            }
+          ],
+          "timezone": "EST"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "date must be a calendar date from 0001-01-01 to 9999-12-31, got 2026-02-30"
+        }
+      },
+      {
+        "name": "timezone_before_named_until",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "december",
+              "day": 31
+            }
+          },
+          "timezone": "EST"
+        },
+        "error": {
+          "kind": "eval",
+          "message": "timezone must be UTC or an Area/Location name such as America/New_York, got EST"
+        }
+      },
+      {
+        "name": "until_day_before_named_until",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "until": {
+            "named": {
+              "month": "february",
+              "day": 30
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "day must be 1-29 for feb, got 30"
+        }
+      },
+      {
+        "name": "expression_before_named_until",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": []
+            }
+          },
+          "until": {
+            "named": {
+              "month": "december",
+              "day": 31
+            }
+          }
+        },
+        "error": {
+          "kind": "eval",
+          "message": "times must not be empty"
+        }
+      }
+    ]
+  },
+  "canonical": {
+    "description": "Each kind of expression and every clause builds, and toString gives the canonical text.",
+    "tests": [
+      {
+        "name": "interval_repeat_on_weekdays",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 30,
+              "unit": "minutes",
+              "from": "09:00",
+              "to": "17:00",
+              "day_filter": "weekday"
+            }
+          }
+        },
+        "canonical": "every 30 min from 09:00 to 17:00 on weekday"
+      },
+      {
+        "name": "interval_repeat_hours_on_listed_days",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 2,
+              "unit": "hours",
+              "from": "08:00",
+              "to": "20:00",
+              "day_filter": {
+                "days": [
+                  "monday",
+                  "friday"
+                ]
+              }
+            }
+          }
+        },
+        "canonical": "every 2 hours from 08:00 to 20:00 on monday, friday"
+      },
+      {
+        "name": "interval_repeat_every_day_filter",
+        "parts": {
+          "expression": {
+            "interval_repeat": {
+              "interval": 1,
+              "unit": "hours",
+              "from": "09:00",
+              "to": "17:00",
+              "day_filter": "every"
+            }
+          }
+        },
+        "canonical": "every 1 hour from 09:00 to 17:00 on day"
+      },
+      {
+        "name": "day_repeat_every_day",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00",
+                "17:30"
+              ]
+            }
+          }
+        },
+        "canonical": "every day at 09:00, 17:30"
+      },
+      {
+        "name": "day_repeat_weekend",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "weekend",
+              "times": [
+                "10:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every weekend at 10:00"
+      },
+      {
+        "name": "day_repeat_listed_days",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": {
+                "days": [
+                  "monday",
+                  "wednesday"
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every monday, wednesday at 09:00"
+      },
+      {
+        "name": "week_repeat",
+        "parts": {
+          "expression": {
+            "week_repeat": {
+              "interval": 1,
+              "days": [
+                "monday",
+                "friday"
+              ],
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every week on monday, friday at 09:00"
+      },
+      {
+        "name": "week_repeat_interval_2",
+        "parts": {
+          "expression": {
+            "week_repeat": {
+              "interval": 2,
+              "days": [
+                "tuesday"
+              ],
+              "times": [
+                "08:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every 2 weeks on tuesday at 08:00"
+      },
+      {
+        "name": "month_repeat_days",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "days": [
+                  {
+                    "single": 1
+                  },
+                  {
+                    "single": 15
+                  }
+                ]
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the 1st, 15th at 09:00"
+      },
+      {
+        "name": "month_repeat_last_day",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": "last_day",
+              "times": [
+                "17:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the last day at 17:00"
+      },
+      {
+        "name": "month_repeat_last_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": "last_weekday",
+              "times": [
+                "17:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the last weekday at 17:00"
+      },
+      {
+        "name": "month_repeat_nearest_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "nearest_weekday": {
+                  "day": 15,
+                  "direction": null
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the nearest weekday to 15th at 09:00"
+      },
+      {
+        "name": "month_repeat_next_nearest_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "nearest_weekday": {
+                  "day": 1,
+                  "direction": "next"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the next nearest weekday to 1st at 09:00"
+      },
+      {
+        "name": "month_repeat_previous_nearest_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 3,
+              "target": {
+                "nearest_weekday": {
+                  "day": 31,
+                  "direction": "previous"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every 3 months on the previous nearest weekday to 31st at 09:00"
+      },
+      {
+        "name": "month_repeat_ordinal_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "ordinal_weekday": {
+                  "ordinal": "first",
+                  "weekday": "monday"
+                }
+              },
+              "times": [
+                "10:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the first monday at 10:00"
+      },
+      {
+        "name": "month_repeat_last_named_weekday",
+        "parts": {
+          "expression": {
+            "month_repeat": {
+              "interval": 1,
+              "target": {
+                "ordinal_weekday": {
+                  "ordinal": "last",
+                  "weekday": "friday"
+                }
+              },
+              "times": [
+                "16:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every month on the last friday at 16:00"
+      },
+      {
+        "name": "single_date_named",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "named": {
+                  "month": "december",
+                  "day": 25
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "on dec 25 at 09:00"
+      },
+      {
+        "name": "single_date_iso",
+        "parts": {
+          "expression": {
+            "single_date": {
+              "date": {
+                "iso": "2026-03-15"
+              },
+              "times": [
+                "14:30"
+              ]
+            }
+          }
+        },
+        "canonical": "on 2026-03-15 at 14:30"
+      },
+      {
+        "name": "year_repeat_date",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "date": {
+                  "month": "december",
+                  "day": 25
+                }
+              },
+              "times": [
+                "00:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every year on dec 25 at 00:00"
+      },
+      {
+        "name": "year_repeat_ordinal_weekday",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "ordinal_weekday": {
+                  "ordinal": "fifth",
+                  "weekday": "thursday",
+                  "month": "november"
+                }
+              },
+              "times": [
+                "12:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every year on the fifth thursday of nov at 12:00"
+      },
+      {
+        "name": "year_repeat_day_of_month",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 2,
+              "target": {
+                "day_of_month": {
+                  "day": 15,
+                  "month": "march"
+                }
+              },
+              "times": [
+                "09:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every 2 years on the 15th of mar at 09:00"
+      },
+      {
+        "name": "year_repeat_last_weekday",
+        "parts": {
+          "expression": {
+            "year_repeat": {
+              "interval": 1,
+              "target": {
+                "last_weekday": {
+                  "month": "december"
+                }
+              },
+              "times": [
+                "17:00"
+              ]
+            }
+          }
+        },
+        "canonical": "every year on the last weekday of dec at 17:00"
+      },
+      {
+        "name": "every_clause",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "weekday",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [
+            {
+              "named": {
+                "month": "december",
+                "day": 25
+              }
+            },
+            {
+              "iso": "2026-12-31"
+            }
+          ],
+          "until": {
+            "iso": "2027-12-31"
+          },
+          "starting": "2026-01-05",
+          "during": [
+            "january",
+            "december"
+          ],
+          "timezone": "europe/london"
+        },
+        "canonical": "every weekday at 09:00 except dec 25, 2026-12-31 until 2027-12-31 starting 2026-01-05 during jan, dec in Europe/London"
+      },
+      {
+        "name": "empty_except_and_during_are_no_clause",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 1,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "except": [],
+          "during": []
+        },
+        "canonical": "every day at 09:00"
+      },
+      {
+        "name": "starting_with_a_day_interval",
+        "parts": {
+          "expression": {
+            "day_repeat": {
+              "interval": 2,
+              "days": "every",
+              "times": [
+                "09:00"
+              ]
+            }
+          },
+          "starting": "2026-02-01"
+        },
+        "canonical": "every 2 days at 09:00 starting 2026-02-01"
+      }
+    ]
+  }
+}

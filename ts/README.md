@@ -36,6 +36,8 @@ const fromCron = Schedule.fromCron("0 9 * * 1-5"); // every weekday at 09:00
 console.log(schedule.toString());
 ```
 
+A `Schedule` comes only from `Schedule.parse` or `Schedule.fromCron`, and it cannot change afterwards. `schedule.expression` is frozen and typed read-only, so writing to it is a type error and, at runtime, a `TypeError` in strict mode.
+
 ## Timestamps
 
 Every method takes a `Temporal.ZonedDateTime` or a `Temporal.Instant`, either the polyfill's (exported as `Temporal`) or the engine's native one, and returns `Temporal.ZonedDateTime`. Only the instant counts, not the zone it is written in, and every result is in the schedule's timezone, or UTC when it has none:

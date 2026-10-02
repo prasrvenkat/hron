@@ -168,11 +168,11 @@ export function fromCron(input: string): ScheduleData {
       expr = { type: "monthRepeat", interval: 1, target: days.target, times };
     }
   }
-  const schedule = newScheduleData(expr);
-  if (expr.type !== "yearRepeat" && months.length < MONTHS.length) {
-    schedule.during = months.map((m) => MONTHS[m - 1]);
-  }
-  return schedule;
+  const during =
+    expr.type !== "yearRepeat" && months.length < MONTHS.length
+      ? months.map((m) => MONTHS[m - 1])
+      : [];
+  return { ...newScheduleData(expr), during };
 }
 
 // Exactly the characters the spec trims; String.prototype.trim also strips
@@ -537,10 +537,6 @@ export function toCron(schedule: ScheduleData): string {
     throw notExpressible("starting clauses not supported");
   }
   const [dayOfMonth, dayOfWeek] = dayFields(schedule.expr);
-  // ScheduleData built in code can hold an empty day list, which writes an empty field.
-  if (dayOfMonth === "" || dayOfWeek === "") {
-    throw notExpressible("schedule has no days");
-  }
   const month = monthField(schedule);
   const [minute, hour] = timeFields(schedule.expr);
   return `${minute} ${hour} ${dayOfMonth} ${month} ${dayOfWeek}`;
@@ -639,10 +635,6 @@ function timeFields(expr: ScheduleExpr): [string, string] {
   const hours = sortedUnique(
     times.map((t) => Math.floor(t / MINUTES_PER_HOUR)),
   );
-  // ScheduleData built in code can hold no times, which no cron writes.
-  if (times.length === 0) {
-    throw notExpressible("schedule has no times");
-  }
   if (minutes.length * hours.length !== times.length) {
     throw notExpressible(
       "times are not every combination of their minutes and hours",
@@ -671,7 +663,7 @@ function filterField(filter: DayFilter): string {
   }
 }
 
-function weekdaysField(days: Weekday[]): string {
+function weekdaysField(days: readonly Weekday[]): string {
   return listField(sortedUnique(days.map(cronDowNumber)), 7);
 }
 

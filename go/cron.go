@@ -147,8 +147,7 @@ type cronDays struct {
 	target  MonthTarget
 }
 
-// FromCron is FromCronExpr, returning the ScheduleData instead of a Schedule.
-func FromCron(input string) (*ScheduleData, error) {
+func fromCron(input string) (*ScheduleData, error) {
 	input = strings.Trim(input, " \t\r\n")
 	text := input
 	if strings.HasPrefix(input, "@") {
@@ -289,7 +288,7 @@ func parseDayOfWeek(text string) (weekDays, error) {
 	return weekDays{kind: listedWeekDays, days: days}, nil
 }
 
-// Keeps the order of first appearance, in which FromCron lists days of the week.
+// Keeps the order of first appearance, in which fromCron lists days of the week.
 func values(text string, field cronField) ([]int, error) {
 	items, ok := parseItems(text, field)
 	if !ok {
@@ -548,8 +547,7 @@ func maxDay(month MonthName) int {
 	}
 }
 
-// ToCron is Schedule.ToCron for a ScheduleData.
-func ToCron(schedule *ScheduleData) (string, error) {
+func toCron(schedule *ScheduleData) (string, error) {
 	if len(schedule.Except) > 0 {
 		return "", notExpressible("except clauses not supported")
 	}
@@ -562,10 +560,6 @@ func ToCron(schedule *ScheduleData) (string, error) {
 	dayOfMonth, dayOfWeek, err := dayFields(&schedule.Expr)
 	if err != nil {
 		return "", err
-	}
-	// A schedule built in code can have an empty day list, which writes an empty field.
-	if dayOfMonth == "" || dayOfWeek == "" {
-		return "", notExpressible("schedule has no days")
 	}
 	month, err := monthFieldOf(schedule)
 	if err != nil {
@@ -645,7 +639,7 @@ func dayFields(expr *ScheduleExpr) (string, string, error) {
 		}
 		return strconv.Itoa(expr.DateSpec.Day), "*", nil
 	}
-	return "", "", CronError("invalid schedule: unknown expression or target kind")
+	panic(fmt.Sprintf("unknown expression or target kind: %+v", *expr))
 }
 
 func monthFieldOf(schedule *ScheduleData) (string, error) {
@@ -684,10 +678,6 @@ func timeFields(expr *ScheduleExpr) (string, string, error) {
 		minutes[i], hours[i] = t%60, t/60
 	}
 	minutes, hours = sortedUnique(minutes), sortedUnique(hours)
-	// A schedule built in code can have no times, which no cron writes.
-	if len(times) == 0 {
-		return "", "", notExpressible("schedule has no times")
-	}
 	if len(minutes)*len(hours) != len(times) {
 		return "", "", notExpressible("times are not every combination of their minutes and hours")
 	}

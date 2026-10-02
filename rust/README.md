@@ -19,6 +19,7 @@ Pipeline: `lexer.rs` → `parser.rs` → `eval/`
 | `ast.rs` | `Schedule` wrapping `ScheduleExpr` (6 variants) + shared modifiers |
 | `lexer.rs` | Tokenizer |
 | `parser.rs` | Hand-rolled recursive descent, follows `spec/grammar.ebnf` |
+| `parts.rs` | The checks `Schedule::from_parts` runs (spec/README.md, "Schedules built in code") |
 | `eval/` | Search for the nearest occurrence, with `calendar.rs` (date arithmetic) and `wall_clock.rs` (time zones); the reference for every implementation's evaluator |
 | `cron.rs` | Exact cron conversion in both directions (spec/README.md, "Cron Conversion") |
 | `display.rs` | Canonical `Display` impl that roundtrips with parse |
@@ -47,4 +48,4 @@ hron = { version = "0.1", default-features = false }
 cargo test --workspace --all-features
 ```
 
-`hron/tests/conformance.rs` drives all cases from `spec/tests.json`. `hron/tests/cron.rs` checks cron conversion against an independent cron matcher. Unit tests live in each module. CLI tests in `hron-cli/tests/cli.rs`.
+`hron/tests/conformance.rs` drives all cases from `spec/tests.json` and `spec/build.json`. `hron/tests/cron.rs` checks cron conversion against an independent cron matcher. Unit tests live in each module. CLI tests in `hron-cli/tests/cli.rs`.

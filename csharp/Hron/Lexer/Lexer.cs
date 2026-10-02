@@ -3,7 +3,7 @@ using Hron.Ast;
 
 namespace Hron.Lexer;
 
-public sealed class Lexer
+internal sealed class Lexer
 {
     private const int MaxNumber = int.MaxValue;
 

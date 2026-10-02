@@ -2,6 +2,7 @@ package hron
 
 import (
 	"slices"
+	"strconv"
 	"time"
 )
 
@@ -40,6 +41,23 @@ func dateOf(t time.Time) time.Time {
 		days--
 	}
 	return time.Unix(days*secondsPerDay, 0).UTC()
+}
+
+// Checked by ASCII bytes and the calendar, not left to time.Parse, whose
+// documentation does not promise to reject every other spelling of a date.
+func isCalendarDate(s string) bool {
+	if len(s) != 10 || s[4] != '-' || s[7] != '-' {
+		return false
+	}
+	for i := range len(s) {
+		if i != 4 && i != 7 && !isDigit(s[i]) {
+			return false
+		}
+	}
+	year, _ := strconv.Atoi(s[:4])
+	month, _ := strconv.Atoi(s[5:7])
+	day, _ := strconv.Atoi(s[8:])
+	return year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(year, time.Month(month))
 }
 
 func parseISODate(s string) (time.Time, error) {

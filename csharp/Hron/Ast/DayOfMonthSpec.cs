@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start, int End)
+internal sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start, int End)
 {
     public static DayOfMonthSpec Single(int day) => new(DayOfMonthSpecKind.Single, day, 0, 0);
 
@@ -22,7 +22,7 @@ public sealed record DayOfMonthSpec(DayOfMonthSpecKind Kind, int Day, int Start,
     }
 }
 
-public enum DayOfMonthSpecKind
+internal enum DayOfMonthSpecKind
 {
     Single,
     Range

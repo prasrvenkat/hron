@@ -18,11 +18,11 @@ func resolveTimezone(tzName string) (*time.Location, string, error) {
 	}
 	canonical, ok := canonicalTimezone(tzName)
 	if !ok {
-		return nil, "", &HronError{Kind: ErrorKindParse, Message: invalidTimezoneMessage(tzName)}
+		return nil, "", EvalError(invalidTimezoneMessage(tzName))
 	}
 	loc, err := time.LoadLocation(canonical)
 	if err != nil {
-		return nil, "", &HronError{Kind: ErrorKindParse, Message: invalidTimezoneMessage(tzName)}
+		return nil, "", EvalError(invalidTimezoneMessage(tzName))
 	}
 	return loc, canonical, nil
 }

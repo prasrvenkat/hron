@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public sealed record UntilSpec(UntilSpecKind Kind, string? Date, MonthName? Month, int Day)
+internal sealed record UntilSpec(UntilSpecKind Kind, string? Date, MonthName? Month, int Day)
 {
     public static UntilSpec Iso(string date)
         => new(UntilSpecKind.Iso, date, null, 0);
@@ -9,7 +9,7 @@ public sealed record UntilSpec(UntilSpecKind Kind, string? Date, MonthName? Mont
         => new(UntilSpecKind.Named, null, month, day);
 }
 
-public enum UntilSpecKind
+internal enum UntilSpecKind
 {
     Iso,
     Named

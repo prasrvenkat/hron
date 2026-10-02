@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public sealed record DayFilter(DayFilterKind Kind, IReadOnlyList<Weekday> Days)
+internal sealed record DayFilter(DayFilterKind Kind, IReadOnlyList<Weekday> Days)
 {
     public static DayFilter Every() => new(DayFilterKind.Every, []);
 
@@ -11,7 +11,7 @@ public sealed record DayFilter(DayFilterKind Kind, IReadOnlyList<Weekday> Days)
     public static DayFilter SpecificDays(IReadOnlyList<Weekday> days) => new(DayFilterKind.Days, days);
 }
 
-public enum DayFilterKind
+internal enum DayFilterKind
 {
     Every,
     Weekday,

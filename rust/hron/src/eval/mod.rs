@@ -10,7 +10,6 @@ use jiff::tz::TimeZone;
 use jiff::{Span, Timestamp, Zoned};
 
 use crate::ast::*;
-use crate::error::ScheduleError;
 use calendar::{
     add_days, days_between, first_of_month_index, matches_day_filter, monday_of_week, month_index,
     month_target_dates, months_between, year_target_date,
@@ -41,33 +40,29 @@ const MAX_OVERLAP_DAYS: i64 = 1;
 /// Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 const NAMED_UNTIL_MAX_YEARS: i16 = 8;
 
-pub fn next_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+pub fn next_from(schedule: &Schedule, now: &Zoned) -> Option<Zoned> {
     search(schedule, now, Direction::Forward)
 }
 
-pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Result<Option<Zoned>, ScheduleError> {
+pub fn previous_from(schedule: &Schedule, now: &Zoned) -> Option<Zoned> {
     search(schedule, now, Direction::Backward)
 }
 
-fn search(
-    schedule: &Schedule,
-    now: &Zoned,
-    direction: Direction,
-) -> Result<Option<Zoned>, ScheduleError> {
+fn search(schedule: &Schedule, now: &Zoned, direction: Direction) -> Option<Zoned> {
     if !in_supported_range(now) {
-        return Ok(None);
+        return None;
     }
-    Ok(Search::new(schedule)?.nearest(now, direction))
+    Search::new(schedule).nearest(now, direction)
 }
 
 /// Defined through the forward search, so the two can never disagree about what
 /// an occurrence is (spec/README.md, "matches is true exactly when the minute
 /// containing t is an occurrence").
-pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleError> {
+pub fn matches(schedule: &Schedule, datetime: &Zoned) -> bool {
     if !in_supported_range(datetime) {
-        return Ok(false);
+        return false;
     }
-    let mut search = Search::new(schedule)?;
+    let mut search = Search::new(schedule);
     let local = datetime.with_time_zone(search.zone.clone());
     let time = local.time();
     let minute = local
@@ -76,21 +71,17 @@ pub fn matches(schedule: &Schedule, datetime: &Zoned) -> Result<bool, ScheduleEr
                 .seconds(time.second())
                 .nanoseconds(time.subsec_nanosecond()),
         )
-        .map_err(eval_error)?;
+        .expect("a supported instant has a day of margin");
     let just_before = minute
         .checked_sub(Span::new().nanoseconds(1))
-        .map_err(eval_error)?;
+        .expect("a supported instant has a day of margin");
     // An occurrence never lands before the date it is scheduled on, so one at
     // this minute is scheduled on or before the minute's wall date.
     search.clauses.end_on(minute.date());
-    Ok(search.nearest(&just_before, Direction::Forward) == Some(minute))
+    search.nearest(&just_before, Direction::Forward) == Some(minute)
 }
 
-pub fn next_n_from(
-    schedule: &Schedule,
-    now: &Zoned,
-    n: usize,
-) -> Result<Vec<Zoned>, ScheduleError> {
+pub fn next_n_from(schedule: &Schedule, now: &Zoned, n: usize) -> Vec<Zoned> {
     Occurrences::new(schedule, now.clone()).take(n).collect()
 }
 
@@ -100,7 +91,7 @@ pub fn between<'a>(schedule: &'a Schedule, from: &Zoned, to: &Zoned) -> BoundedO
 
 /// Lazy iterator over schedule occurrences strictly after a given datetime.
 pub struct Occurrences<'a> {
-    search: Result<Search<'a>, ScheduleError>,
+    search: Search<'a>,
     current: Option<Zoned>,
 }
 
@@ -114,17 +105,13 @@ impl<'a> Occurrences<'a> {
 }
 
 impl Iterator for Occurrences<'_> {
-    type Item = Result<Zoned, ScheduleError>;
+    type Item = Zoned;
 
     fn next(&mut self) -> Option<Self::Item> {
         let now = self.current.take().filter(in_supported_range)?;
-        let search = match &self.search {
-            Ok(search) => search,
-            Err(error) => return Some(Err(error.clone())),
-        };
-        let next = search.nearest(&now, Direction::Forward)?;
+        let next = self.search.nearest(&now, Direction::Forward)?;
         self.current = Some(next.clone());
-        Some(Ok(next))
+        Some(next)
     }
 }
 
@@ -144,16 +131,13 @@ impl<'a> BoundedOccurrences<'a> {
 }
 
 impl Iterator for BoundedOccurrences<'_> {
-    type Item = Result<Zoned, ScheduleError>;
+    type Item = Zoned;
 
     fn next(&mut self) -> Option<Self::Item> {
         if !in_supported_range(&self.to) {
             return None;
         }
-        match self.inner.next()? {
-            Ok(t) if t > self.to => None,
-            item => Some(item),
-        }
+        self.inner.next().filter(|t| *t <= self.to)
     }
 }
 
@@ -193,14 +177,14 @@ struct Occurrence {
 }
 
 impl<'a> Search<'a> {
-    fn new(schedule: &'a Schedule) -> Result<Search<'a>, ScheduleError> {
-        Ok(Search {
+    fn new(schedule: &'a Schedule) -> Search<'a> {
+        Search {
             expr: &schedule.expr,
-            zone: resolve_zone(&schedule.timezone)?,
-            cadence: Cadence::of(schedule)?,
+            zone: resolve_zone(&schedule.timezone),
+            cadence: Cadence::of(schedule),
             times: DailyTimes::of(&schedule.expr),
-            clauses: Clauses::of(schedule)?,
-        })
+            clauses: Clauses::of(schedule),
+        }
     }
 
     fn nearest(&self, now: &Zoned, direction: Direction) -> Option<Zoned> {
@@ -364,7 +348,8 @@ pub(crate) fn interval_slots(
     from: &TimeOfDay,
     to: &TimeOfDay,
 ) -> Vec<i64> {
-    let interval = interval.max(1) as i64;
+    debug_assert!(interval >= 1);
+    let interval = interval as i64;
     let step = match unit {
         IntervalUnit::Minutes => interval,
         IntervalUnit::Hours => interval * MINUTES_PER_HOUR,
@@ -388,7 +373,7 @@ struct Clauses {
 }
 
 impl Clauses {
-    fn of(schedule: &Schedule) -> Result<Clauses, ScheduleError> {
+    fn of(schedule: &Schedule) -> Clauses {
         let mut except_month_days = Vec::new();
         let mut except_dates = Vec::new();
         for exception in &schedule.except {
@@ -396,14 +381,14 @@ impl Clauses {
                 Exception::Named { month, day } => {
                     except_month_days.push((month.number() as i8, *day as i8))
                 }
-                Exception::Iso(s) => except_dates.extend(s.parse::<Date>().ok()),
+                Exception::Iso(s) => except_dates.push(iso_date(s)),
             }
         }
-        let until = match &schedule.until {
-            Some(until) => resolve_until(until, schedule.anchor)?,
-            None => None,
-        };
-        Ok(Clauses {
+        let until = schedule
+            .until
+            .as_ref()
+            .and_then(|until| resolve_until(until, schedule.anchor));
+        Clauses {
             during: schedule
                 .during
                 .iter()
@@ -413,7 +398,7 @@ impl Clauses {
             except_dates,
             until,
             starting: schedule.anchor,
-        })
+        }
     }
 
     fn allows(&self, candidate: &Candidate) -> bool {
@@ -458,25 +443,25 @@ impl Clauses {
 }
 
 /// A named until date is the first such date on or after the starting date
-/// (spec/README.md, "Named `until`"). Parse requires `starting`; a schedule built
-/// without one resolves from the default anchor, the epoch. None when no such date
-/// exists before the calendar ends, so nothing bounds the schedule.
-fn resolve_until(until: &UntilSpec, starting: Option<Date>) -> Result<Option<Date>, ScheduleError> {
+/// (spec/README.md, "Named `until`"). None when no such date exists before the
+/// calendar ends, so nothing bounds the schedule.
+fn resolve_until(until: &UntilSpec, starting: Option<Date>) -> Option<Date> {
     match until {
-        UntilSpec::Iso(s) => s
-            .parse()
-            .map(Some)
-            .map_err(|e| ScheduleError::eval(format!("invalid until date '{s}': {e}"))),
+        UntilSpec::Iso(s) => Some(iso_date(s)),
         UntilSpec::Named { month, day } => {
-            let from = starting.unwrap_or(EPOCH_DATE);
-            Ok((0..=NAMED_UNTIL_MAX_YEARS)
+            let from = starting.expect("a named until always has a starting date");
+            (0..=NAMED_UNTIL_MAX_YEARS)
                 .filter_map(|k| {
                     let year = from.year().checked_add(k)?;
                     Date::new(year, month.number() as i8, *day as i8).ok()
                 })
-                .find(|date| *date >= from))
+                .find(|date| *date >= from)
         }
     }
+}
+
+fn iso_date(s: &str) -> Date {
+    s.parse().expect("an ISO date is always a calendar date")
 }
 
 #[derive(Clone, Copy)]
@@ -507,21 +492,18 @@ struct Cadence {
 }
 
 impl Cadence {
-    fn of(schedule: &Schedule) -> Result<Cadence, ScheduleError> {
+    fn of(schedule: &Schedule) -> Cadence {
         let (unit, interval, default_origin) = match &schedule.expr {
             ScheduleExpr::SingleDate {
                 date: DateSpec::Iso(s),
                 ..
             } => {
-                let date: Date = s
-                    .parse()
-                    .map_err(|e| ScheduleError::eval(format!("invalid date '{s}': {e}")))?;
-                return Ok(Cadence {
+                return Cadence {
                     unit: Unit::Day,
-                    origin: date,
+                    origin: iso_date(s),
                     interval: 1,
                     single: true,
-                });
+                };
             }
             ScheduleExpr::SingleDate { .. } => (Unit::Year, 1, EPOCH_DATE),
             ScheduleExpr::IntervalRepeat { .. } => (Unit::Day, 1, EPOCH_DATE),
@@ -537,12 +519,12 @@ impl Cadence {
             Unit::Month => anchor.first_of_month(),
             Unit::Year => anchor.first_of_year(),
         };
-        Ok(Cadence {
+        Cadence {
             unit,
             origin,
-            interval: (interval as i64).max(1),
+            interval: interval as i64,
             single: false,
-        })
+        }
     }
 
     fn period_of(&self, date: Date) -> i64 {
@@ -674,14 +656,9 @@ fn gcd(a: i64, b: i64) -> i64 {
     }
 }
 
-fn resolve_zone(name: &Option<String>) -> Result<TimeZone, ScheduleError> {
+fn resolve_zone(name: &Option<String>) -> TimeZone {
     match name {
-        Some(name) => TimeZone::get(name)
-            .map_err(|e| ScheduleError::eval(format!("invalid timezone '{name}': {e}"))),
-        None => Ok(TimeZone::UTC),
+        Some(name) => TimeZone::get(name).expect("a schedule's timezone is always in the database"),
+        None => TimeZone::UTC,
     }
-}
-
-fn eval_error(e: jiff::Error) -> ScheduleError {
-    ScheduleError::eval(format!("cannot create zoned datetime: {e}"))
 }

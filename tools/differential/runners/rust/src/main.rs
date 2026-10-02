@@ -48,21 +48,12 @@ fn evaluate(case: &Value) -> Result<Value, ScheduleError> {
     Ok(match case["op"].as_str().expect("op") {
         "parse" => json!(schedule.to_string()),
         "toCron" => json!(schedule.to_cron()?),
-        "next" => json!(schedule.next_from(&time("now"))?.as_ref().map(format)),
-        "nextN" => strings(schedule.next_n_from(&time("now"), n())?),
-        "prev" => json!(schedule.previous_from(&time("now"))?.as_ref().map(format)),
-        "matches" => json!(schedule.matches(&time("datetime"))?),
-        "between" => strings(
-            schedule
-                .between(&time("from"), &time("to"))
-                .collect::<Result<_, _>>()?,
-        ),
-        "occurrences" => strings(
-            schedule
-                .occurrences(&time("from"))
-                .take(n())
-                .collect::<Result<_, _>>()?,
-        ),
+        "next" => json!(schedule.next_from(&time("now")).as_ref().map(format)),
+        "nextN" => strings(schedule.next_n_from(&time("now"), n())),
+        "prev" => json!(schedule.previous_from(&time("now")).as_ref().map(format)),
+        "matches" => json!(schedule.matches(&time("datetime"))),
+        "between" => strings(schedule.between(&time("from"), &time("to")).collect()),
+        "occurrences" => strings(schedule.occurrences(&time("from")).take(n()).collect()),
         op => panic!("unknown op {op}"),
     })
 }

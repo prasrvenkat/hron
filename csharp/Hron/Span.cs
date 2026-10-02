@@ -3,7 +3,6 @@ namespace Hron;
 /// <summary>
 /// A part of the input. <see cref="HronException.Span"/> counts Unicode code points, not UTF-16
 /// chars: a surrogate pair is one code point, and so is a lone surrogate.
-/// <see cref="Lexer.Token.Span"/> counts UTF-16 chars.
 /// </summary>
 /// <param name="Start">The start position (inclusive)</param>
 /// <param name="End">The end position (exclusive)</param>

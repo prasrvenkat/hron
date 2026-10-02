@@ -8,6 +8,14 @@ const fromInstant: Temporal.ZonedDateTime | null = schedule.nextFrom(
   Temporal.Now.instant(),
 );
 const expr: ScheduleExpr = schedule.expression;
+if (expr.type === "dayRepeat") {
+  // @ts-expect-error: a schedule's expression is read-only
+  expr.times[0].hour = 25;
+  // @ts-expect-error: a schedule's expression is read-only
+  expr.times.push({ hour: 10, minute: 0 });
+  // @ts-expect-error: a schedule's expression is read-only
+  expr.interval = 2;
+}
 const valid: boolean = Schedule.validate("every day at 09:00");
 
 try {

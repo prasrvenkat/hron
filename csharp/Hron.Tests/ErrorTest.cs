@@ -61,12 +61,4 @@ public class ErrorTest
         Assert.Equal("error: no zone", HronException.Eval("no zone").DisplayRich());
         Assert.Equal("error: bad cron", HronException.Cron("bad cron").DisplayRich());
     }
-
-    [Fact]
-    public void TokenSpansCountUtf16Chars()
-    {
-        var tokens = Hron.Lexer.Lexer.Tokenize("in \U0001F600 every");
-        Assert.Equal(new Span(3, 5), tokens[1].Span);
-        Assert.Equal(new Span(6, 11), tokens[2].Span);
-    }
 }

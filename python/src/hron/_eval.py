@@ -85,20 +85,15 @@ _T = TypeVar("_T")
 
 
 class PreparedSchedule:
-    """ScheduleData is mutable, so the search is prepared again whenever its fields change."""
-
-    __slots__ = ("data", "_key", "_search")
+    __slots__ = ("_data", "_search")
 
     def __init__(self, data: ScheduleData) -> None:
-        self.data = data
-        self._key: tuple[object, ...] | None = None
+        self._data = data
         self._search: Search | None = None
 
     def search(self) -> Search:
-        data = self.data
-        key = (data.expr, data.timezone, data.except_, data.until, data.anchor, data.during)
-        if self._search is None or key != self._key:
-            self._search, self._key = Search.of(data), key
+        if self._search is None:
+            self._search = Search.of(self._data)
         return self._search
 
 
@@ -392,7 +387,7 @@ def _daily_times(expr: ScheduleExpr) -> _DailyTimes:
 def interval_slots(
     interval: int, unit: IntervalUnit, start: TimeOfDay, end: TimeOfDay
 ) -> tuple[int, ...]:
-    step = max(interval, 1) * (1 if unit == IntervalUnit.MIN else MINUTES_PER_HOUR)
+    step = interval * (1 if unit == IntervalUnit.MIN else MINUTES_PER_HOUR)
     first = minute_of_day(civil_time(start))
     return tuple(range(first, minute_of_day(civil_time(end)) + 1, step))
 
@@ -459,18 +454,19 @@ class _Clauses:
 
 
 def _resolve_until(until: UntilSpec, starting: date | None) -> date | None:
-    """spec/README.md, "Named `until`". Parse requires `starting`; a schedule built without
-    one resolves from the epoch. None when no such date exists before the calendar ends."""
+    """spec/README.md, "Named `until`". None when no such date exists before the calendar
+    ends."""
     match until:
         case IsoUntil(date=iso):
             return date.fromisoformat(iso)
         case NamedUntil(month=month, day=day):
-            start = starting or _EPOCH_DATE
-            last_year = min(start.year + _NAMED_UNTIL_MAX_YEARS, MAXYEAR)
+            assert starting is not None, "a named until always has a starting date"
+            last_year = min(starting.year + _NAMED_UNTIL_MAX_YEARS, MAXYEAR)
             dates = (
-                date_if_valid(year, month.number, day) for year in range(start.year, last_year + 1)
+                date_if_valid(year, month.number, day)
+                for year in range(starting.year, last_year + 1)
             )
-            return next((d for d in dates if d is not None and d >= start), None)
+            return next((d for d in dates if d is not None and d >= starting), None)
 
 
 class _Unit(Enum):
@@ -529,7 +525,6 @@ class _Cadence:
                 origin = anchor.replace(day=1)
             case _Unit.YEAR:
                 origin = anchor.replace(month=1, day=1)
-        interval = max(interval, 1)
         return cls(
             unit=unit,
             origin=origin,

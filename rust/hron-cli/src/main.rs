@@ -131,26 +131,10 @@ fn main() {
         let results: Vec<Zoned> = if let Some(ref to_str) = cli.to {
             let to = timestamp_option("--to", to_str);
 
-            match schedule.between(&from, &to).collect::<Result<Vec<_>, _>>() {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("{}", e.display_rich());
-                    process::exit(1);
-                }
-            }
+            schedule.between(&from, &to).collect()
         } else {
             let limit = 100;
-            match schedule
-                .occurrences(&from)
-                .take(limit)
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("{}", e.display_rich());
-                    process::exit(1);
-                }
-            }
+            schedule.occurrences(&from).take(limit).collect()
         };
 
         if results.is_empty() {
@@ -169,13 +153,7 @@ fn main() {
     }
 
     let now = Zoned::now();
-    let results = match schedule.next_n_from(&now, n as usize) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("{}", e.display_rich());
-            process::exit(1);
-        }
-    };
+    let results = schedule.next_n_from(&now, n as usize);
 
     if results.is_empty() {
         eprintln!("no upcoming occurrences");

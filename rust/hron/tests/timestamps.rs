@@ -38,10 +38,10 @@ fn jiffs_own_limits_find_nothing_and_raise_nothing() {
             for instant in limits {
                 let limit = in_zone(instant, zone);
                 let label = format!("'{expression}' at {limit}");
-                assert_eq!(schedule.next_from(&limit).unwrap(), None, "{label}");
-                assert_eq!(schedule.previous_from(&limit).unwrap(), None, "{label}");
-                assert!(!schedule.matches(&limit).unwrap(), "{label}");
-                assert_eq!(schedule.next_n_from(&limit, 3).unwrap(), vec![], "{label}");
+                assert_eq!(schedule.next_from(&limit), None, "{label}");
+                assert_eq!(schedule.previous_from(&limit), None, "{label}");
+                assert!(!schedule.matches(&limit), "{label}");
+                assert_eq!(schedule.next_n_from(&limit, 3), vec![], "{label}");
                 assert!(schedule.occurrences(&limit).next().is_none(), "{label}");
                 assert!(schedule.between(&limit, &limit).next().is_none(), "{label}");
                 let (from, to) = if instant < inside.timestamp() {
@@ -63,25 +63,16 @@ fn results_come_back_in_the_schedule_zone() {
     let first = "2026-02-06T09:00:00-05:00[America/New_York]";
     let second = "2026-02-07T09:00:00-05:00[America/New_York]";
 
+    assert_eq!(schedule.next_from(&tokyo).unwrap().to_string(), first);
     assert_eq!(
-        schedule.next_from(&tokyo).unwrap().unwrap().to_string(),
-        first
-    );
-    assert_eq!(
-        schedule.previous_from(&tokyo).unwrap().unwrap().to_string(),
+        schedule.previous_from(&tokyo).unwrap().to_string(),
         "2026-02-05T09:00:00-05:00[America/New_York]"
     );
-    assert_eq!(
-        strings(schedule.next_n_from(&tokyo, 2).unwrap()),
-        [first, second]
-    );
-    let occurrences = schedule
-        .occurrences(&tokyo)
-        .take(2)
-        .collect::<Result<_, _>>();
-    assert_eq!(strings(occurrences.unwrap()), [first, second]);
-    let between = schedule.between(&tokyo, &berlin).collect::<Result<_, _>>();
-    assert_eq!(strings(between.unwrap()), [first, second]);
+    assert_eq!(strings(schedule.next_n_from(&tokyo, 2)), [first, second]);
+    let occurrences = schedule.occurrences(&tokyo).take(2).collect();
+    assert_eq!(strings(occurrences), [first, second]);
+    let between = schedule.between(&tokyo, &berlin).collect();
+    assert_eq!(strings(between), [first, second]);
 }
 
 #[test]
@@ -91,20 +82,14 @@ fn results_come_back_in_utc_without_a_schedule_zone() {
     let berlin = at("2026-02-07T15:00:00+01:00[Europe/Berlin]");
     let first = "2026-02-07T09:00:00+00:00[UTC]";
 
+    assert_eq!(schedule.next_from(&tokyo).unwrap().to_string(), first);
     assert_eq!(
-        schedule.next_from(&tokyo).unwrap().unwrap().to_string(),
-        first
-    );
-    assert_eq!(
-        schedule.previous_from(&tokyo).unwrap().unwrap().to_string(),
+        schedule.previous_from(&tokyo).unwrap().to_string(),
         "2026-02-06T09:00:00+00:00[UTC]"
     );
-    assert_eq!(strings(schedule.next_n_from(&tokyo, 1).unwrap()), [first]);
-    let occurrences = schedule
-        .occurrences(&tokyo)
-        .take(1)
-        .collect::<Result<_, _>>();
-    assert_eq!(strings(occurrences.unwrap()), [first]);
-    let between = schedule.between(&tokyo, &berlin).collect::<Result<_, _>>();
-    assert_eq!(strings(between.unwrap()), [first]);
+    assert_eq!(strings(schedule.next_n_from(&tokyo, 1)), [first]);
+    let occurrences = schedule.occurrences(&tokyo).take(1).collect();
+    assert_eq!(strings(occurrences), [first]);
+    let between = schedule.between(&tokyo, &berlin).collect();
+    assert_eq!(strings(between), [first]);
 }

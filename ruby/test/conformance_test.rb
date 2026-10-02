@@ -77,6 +77,13 @@ class ConformanceTest < Minitest::Test
     assert_equal expected, error.message, "error message"
   end
 
+  # spec/README.md, "Schedules built in code": building from a schedule's parts gives it back.
+  def assert_rebuilds(schedule)
+    rebuilt = Hron::Schedule.new(schedule.data)
+    assert_equal schedule, rebuilt, "Schedule.new(#{schedule}.data)"
+    assert_equal schedule.to_s, rebuilt.to_s
+  end
+
   def require_assertion(tc, fields)
     flunk "no assertion field this runner understands (expected one of #{fields.join(", ")})" if (tc.keys & fields).empty?
   end
@@ -94,6 +101,7 @@ class ConformanceTest < Minitest::Test
 
         s2 = Hron::Schedule.parse(canonical)
         assert_equal canonical, s2.to_s, "Idempotency failed for: #{canonical}"
+        assert_rebuilds schedule
       end
     end
   end
@@ -275,6 +283,7 @@ class ConformanceTest < Minitest::Test
     define_case("test_from_cron_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[cron hron]) do
       schedule = Hron::Schedule.from_cron(tc["cron"])
       assert_equal tc["hron"], schedule.to_s
+      assert_rebuilds schedule
     end
   end
 

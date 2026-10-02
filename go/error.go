@@ -15,8 +15,7 @@ const (
 )
 
 // Span is the part of the input an error points at, [Start, End), counted in
-// Unicode code points: each invalid UTF-8 byte counts as one. The spans of
-// the tokens Tokenize returns count bytes instead.
+// Unicode code points: each invalid UTF-8 byte counts as one.
 type Span struct {
 	Start int
 	End   int

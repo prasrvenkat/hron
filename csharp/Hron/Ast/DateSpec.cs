@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public sealed record DateSpec(DateSpecKind Kind, MonthName? Month, int Day, string? Date)
+internal sealed record DateSpec(DateSpecKind Kind, MonthName? Month, int Day, string? Date)
 {
     public static DateSpec Named(MonthName month, int day)
         => new(DateSpecKind.Named, month, day, null);
@@ -9,7 +9,7 @@ public sealed record DateSpec(DateSpecKind Kind, MonthName? Month, int Day, stri
         => new(DateSpecKind.Iso, null, 0, date);
 }
 
-public enum DateSpecKind
+internal enum DateSpecKind
 {
     Named,
     Iso

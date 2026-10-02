@@ -2,7 +2,7 @@ package io.hron;
 
 import java.util.Optional;
 
-/** Exception thrown for errors in hron parsing, evaluation, or cron conversion. */
+/** Exception thrown for errors in hron parsing or cron conversion. */
 public final class HronException extends Exception {
   private final ErrorKind kind;
 

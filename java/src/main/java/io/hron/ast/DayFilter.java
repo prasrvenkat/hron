@@ -3,6 +3,9 @@ package io.hron.ast;
 import java.util.List;
 
 public record DayFilter(Kind kind, List<Weekday> days) {
+  public DayFilter {
+    days = List.copyOf(days);
+  }
 
   public enum Kind {
     EVERY,
@@ -24,6 +27,6 @@ public record DayFilter(Kind kind, List<Weekday> days) {
   }
 
   public static DayFilter days(List<Weekday> days) {
-    return new DayFilter(Kind.DAYS, List.copyOf(days));
+    return new DayFilter(Kind.DAYS, days);
   }
 }

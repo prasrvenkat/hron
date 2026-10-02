@@ -1,3 +1,3 @@
 namespace Hron.Ast;
 
-public interface IScheduleExpr;
+internal interface IScheduleExpr;

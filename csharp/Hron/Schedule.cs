@@ -35,9 +35,11 @@ public sealed class Schedule
     /// <summary>
     /// Converts a 5-field cron expression to a Schedule that fires at the same times.
     /// </summary>
+    /// <exception cref="ArgumentNullException">If cronExpr is null</exception>
     /// <exception cref="HronException">A cron error when the input is not valid cron or has no exact hron equivalent</exception>
     public static Schedule FromCron(string cronExpr)
     {
+        ArgumentNullException.ThrowIfNull(cronExpr);
         var data = CronConverter.FromCron(cronExpr);
         var zoneInfo = ResolveTimezone(data.Timezone);
         return new Schedule(data, zoneInfo);
@@ -129,8 +131,6 @@ public sealed class Schedule
     /// Returns the canonical string representation of this schedule.
     /// </summary>
     public override string ToString() => HronDisplay.Render(_data);
-
-    public ScheduleData Data => _data;
 
     /// <summary>
     /// UTC when unset, so results never depend on the host zone.

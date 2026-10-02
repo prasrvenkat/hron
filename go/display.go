@@ -5,8 +5,7 @@ import (
 	"strings"
 )
 
-// Display renders the schedule as a canonical string.
-func Display(schedule *ScheduleData) string {
+func display(schedule *ScheduleData) string {
 	var sb strings.Builder
 
 	sb.WriteString(displayExpr(schedule.Expr))

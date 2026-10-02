@@ -1,6 +1,6 @@
 namespace Hron.Lexer;
 
-public enum TokenKind
+internal enum TokenKind
 {
     Every,
     On,

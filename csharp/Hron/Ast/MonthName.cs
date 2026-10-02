@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public enum MonthName
+internal enum MonthName
 {
     January = 1,
     February = 2,
@@ -16,7 +16,7 @@ public enum MonthName
     December = 12
 }
 
-public static class MonthNameExtensions
+internal static class MonthNameExtensions
 {
     private static readonly Dictionary<string, MonthName> ParseMap = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -51,22 +51,10 @@ public static class MonthNameExtensions
         "jul", "aug", "sep", "oct", "nov", "dec"
     ];
 
-    /// <summary>
-    /// Returns the month number (January=1, December=12).
-    /// </summary>
     public static int Number(this MonthName month) => (int)month;
 
-    /// <summary>
-    /// Returns the lowercase three-letter name.
-    /// </summary>
     public static string ToDisplayString(this MonthName month) => DisplayNames[(int)month];
 
-    /// <summary>
-    /// Parses a month name (case insensitive).
-    /// </summary>
     public static MonthName? Parse(string s)
         => ParseMap.TryGetValue(s, out var month) ? month : null;
-
-    public static MonthName? FromNumber(int n)
-        => n is >= 1 and <= 12 ? (MonthName)n : null;
 }

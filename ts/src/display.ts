@@ -150,15 +150,15 @@ function formatTime(t: TimeOfDay): string {
   return `${String(t.hour).padStart(2, "0")}:${String(t.minute).padStart(2, "0")}`;
 }
 
-function formatTimeList(times: TimeOfDay[]): string {
+function formatTimeList(times: readonly TimeOfDay[]): string {
   return times.map(formatTime).join(", ");
 }
 
-function formatDayList(days: Weekday[]): string {
+function formatDayList(days: readonly Weekday[]): string {
   return days.join(", ");
 }
 
-function formatOrdinalDaySpecs(specs: DayOfMonthSpec[]): string {
+function formatOrdinalDaySpecs(specs: readonly DayOfMonthSpec[]): string {
   return specs
     .map((spec) => {
       if (spec.type === "single") {

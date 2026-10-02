@@ -130,10 +130,6 @@ class CronPropertyTest < Minitest::Test
     Hron::Schedule.from_cron(cron).to_s
   end
 
-  def built(expr, during: [])
-    Hron::Schedule.new(Hron::ScheduleData.new(expr: expr, during: during))
-  end
-
   def window_days
     (WINDOW_START...WINDOW_END).to_a
   end
@@ -477,49 +473,5 @@ class CronPropertyTest < Minitest::Test
     assert fires.call("0 9 LW * *", Date.new(2044, 4, 29))
     assert fires.call("0 9 * * 5L", Date.new(2044, 4, 29))
     refute fires.call("0 9 * * 5L", Date.new(2044, 4, 22))
-  end
-
-  def test_to_cron_of_a_built_schedule_with_interval_0_steps_by_1_of_its_unit_as_evaluation_does
-    minutes = built(Hron::IntervalRepeat.new(0, Hron::IntervalUnit::MIN, Hron::TimeOfDay.new(9, 0), Hron::TimeOfDay.new(9, 2), nil))
-    assert_equal "0-2 9 * * *", minutes.to_cron
-    fires = minutes.next_n_from(utc(WINDOW_START, 9, 0), 2).map { |t| wall(t) }
-    assert_equal [[WINDOW_START, [9, 1]], [WINDOW_START, [9, 2]]], fires
-
-    hours = built(Hron::IntervalRepeat.new(0, Hron::IntervalUnit::HOURS, Hron::TimeOfDay.new(9, 0), Hron::TimeOfDay.new(10, 0), nil))
-    assert_equal "0 9-10 * * *", hours.to_cron
-    fires = hours.next_n_from(utc(WINDOW_START, 8, 0), 3).map { |t| wall(t) }
-    assert_equal [[WINDOW_START, [9, 0]], [WINDOW_START, [10, 0]], [WINDOW_START + 1, [9, 0]]], fires
-  end
-
-  def test_to_cron_of_a_built_schedule_without_times_fails
-    no_times = built(Hron::DayRepeat.new(1, Hron::DayFilterEvery.new, []))
-    assert_equal "not expressible as cron: schedule has no times", cron_message { no_times.to_cron }
-    reversed = built(Hron::IntervalRepeat.new(1, Hron::IntervalUnit::HOURS, Hron::TimeOfDay.new(9, 0), Hron::TimeOfDay.new(8, 0), nil))
-    assert_equal "not expressible as cron: schedule has no times", cron_message { reversed.to_cron }
-  end
-
-  def test_to_cron_of_a_built_schedule_without_days_fails
-    nine = [Hron::TimeOfDay.new(9, 0)]
-    [
-      Hron::DayRepeat.new(1, Hron::DayFilterDays.new([]), nine),
-      Hron::WeekRepeat.new(1, [], nine),
-      Hron::MonthRepeat.new(1, Hron::DaysTarget.new([]), nine),
-      Hron::MonthRepeat.new(1, Hron::DaysTarget.new([Hron::DayRange.new(9, 5)]), nine),
-      Hron::IntervalRepeat.new(1, Hron::IntervalUnit::HOURS, Hron::TimeOfDay.new(9, 0), Hron::TimeOfDay.new(17, 0), Hron::DayFilterDays.new([]))
-    ].each do |expr|
-      assert_equal "not expressible as cron: schedule has no days", cron_message { built(expr).to_cron }, expr.inspect
-    end
-  end
-
-  def test_to_cron_reasons_around_no_days_and_no_times_follow_the_order
-    empty_week = ->(interval) { Hron::WeekRepeat.new(interval, [], []) }
-    assert_equal "not expressible as cron: multi-week repeats not supported", cron_message { built(empty_week.call(2)).to_cron }
-    directional = Hron::MonthRepeat.new(1, Hron::NearestWeekdayTarget.new(1, Hron::NearestDirection::NEXT), [])
-    assert_equal "not expressible as cron: directional nearest weekday not supported", cron_message { built(directional).to_cron }
-    no_days_excluded_month = built(empty_week.call(1), during: [Hron::MonthName::MAR])
-    assert_equal "not expressible as cron: schedule has no days", cron_message { no_days_excluded_month.to_cron }
-    yearly_without_times = ->(during) { built(Hron::YearRepeat.new(1, Hron::YearDateTarget.new(Hron::MonthName::DEC, 25), []), during: during) }
-    assert_equal "not expressible as cron: during excludes the schedule's month", cron_message { yearly_without_times.call([Hron::MonthName::JAN]).to_cron }
-    assert_equal "not expressible as cron: schedule has no times", cron_message { yearly_without_times.call([]).to_cron }
   end
 end

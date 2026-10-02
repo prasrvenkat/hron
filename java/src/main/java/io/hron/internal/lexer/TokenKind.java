@@ -1,0 +1,37 @@
+package io.hron.internal.lexer;
+
+public enum TokenKind {
+  EVERY,
+  ON,
+  AT,
+  FROM,
+  TO,
+  IN,
+  OF,
+  THE,
+  LAST,
+  EXCEPT,
+  UNTIL,
+  STARTING,
+  DURING,
+  YEAR,
+  DAY,
+  WEEKDAY,
+  WEEKEND,
+  WEEKS,
+  MONTH,
+  NEAREST,
+  NEXT,
+  PREVIOUS,
+
+  DAY_NAME,
+  MONTH_NAME,
+  ORDINAL,
+  INTERVAL_UNIT,
+  NUMBER,
+  ORDINAL_NUMBER,
+  TIME,
+  ISO_DATE,
+  COMMA,
+  TIMEZONE
+}

@@ -15,7 +15,7 @@ internal sealed class Cadence
     /// </summary>
     private static readonly DateOnly EpochMonday = new(1970, 1, 5);
 
-    public static readonly DateOnly EpochDate = new(1970, 1, 1);
+    private static readonly DateOnly EpochDate = new(1970, 1, 1);
 
     private enum Unit
     {
@@ -73,7 +73,7 @@ internal sealed class Cadence
             Unit.Year => new DateOnly(anchor.Year, 1, 1),
             _ => anchor
         };
-        return new Cadence(unit, origin, Math.Max(interval, 1), single: false);
+        return new Cadence(unit, origin, interval, single: false);
     }
 
     public long PeriodOf(DateOnly date) => _unit switch

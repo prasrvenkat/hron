@@ -195,11 +195,19 @@ pub fn from_cron(input: &str) -> Result<Schedule, ScheduleError> {
         }
     };
     let yearly = matches!(expr, ScheduleExpr::YearRepeat { .. });
-    let mut schedule = Schedule::new(expr);
-    if !yearly && months.len() < MONTHS.len() {
-        schedule.during = months.iter().map(|&m| MONTHS[m as usize - 1]).collect();
-    }
-    Ok(schedule)
+    let during = if !yearly && months.len() < MONTHS.len() {
+        months.iter().map(|&m| MONTHS[m as usize - 1]).collect()
+    } else {
+        Vec::new()
+    };
+    Ok(Schedule::from_valid_parts(ScheduleParts {
+        expression: expr,
+        timezone: None,
+        except: Vec::new(),
+        until: None,
+        starting: None,
+        during,
+    }))
 }
 
 fn shortcut(input: &str) -> Result<&'static str, ScheduleError> {
@@ -461,7 +469,7 @@ fn year_target(days: &Days, months: &[u8]) -> Option<YearTarget> {
     let month = MONTHS[month as usize - 1];
     match target {
         MonthTarget::Days(specs) => match specs.as_slice() {
-            [DayOfMonthSpec::Single(day)] if *day <= max_day(month) => {
+            [DayOfMonthSpec::Single(day)] if *day <= month.max_day() => {
                 Some(YearTarget::Date { month, day: *day })
             }
             _ => None,
@@ -476,14 +484,6 @@ fn year_target(days: &Days, months: &[u8]) -> Option<YearTarget> {
     }
 }
 
-fn max_day(month: MonthName) -> u8 {
-    match month {
-        MonthName::February => 29,
-        MonthName::April | MonthName::June | MonthName::September | MonthName::November => 30,
-        _ => 31,
-    }
-}
-
 pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
     if !schedule.except.is_empty() {
         return Err(not_expressible("except clauses not supported"));
@@ -495,10 +495,6 @@ pub fn to_cron(schedule: &Schedule) -> Result<String, ScheduleError> {
         return Err(not_expressible("starting clauses not supported"));
     }
     let (day_of_month, day_of_week) = day_fields(&schedule.expr)?;
-    // Schedule::new can build a schedule with an empty day list, which writes an empty field.
-    if day_of_month.is_empty() || day_of_week.is_empty() {
-        return Err(not_expressible("schedule has no days"));
-    }
     let month = month_field(schedule)?;
     let (minute, hour) = time_fields(&schedule.expr)?;
     Ok(format!(
@@ -616,10 +612,6 @@ fn time_fields(expr: &ScheduleExpr) -> Result<(String, String), ScheduleError> {
     let times = daily_times(expr);
     let minutes = sorted_unique(times.iter().map(|t| (t % 60) as u8));
     let hours = sorted_unique(times.iter().map(|t| (t / 60) as u8));
-    // Schedule::new can build a schedule with no times, which no cron writes.
-    if times.is_empty() {
-        return Err(not_expressible("schedule has no times"));
-    }
     if minutes.len() * hours.len() != times.len() {
         return Err(not_expressible(
             "times are not every combination of their minutes and hours",

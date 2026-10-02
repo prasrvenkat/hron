@@ -35,8 +35,6 @@ module Hron
 
     # Shared with Cron.to_cron, so conversion never disagrees with evaluation.
     def self.interval_slots(interval, unit, from, to)
-      # A schedule built in code can carry an interval below 1, which counts as 1 of its unit.
-      interval = [interval, 1].max
       step = (unit == IntervalUnit::MIN) ? interval : interval * WallClock::MINUTES_PER_HOUR
       (WallClock.minute_of_day(from)..WallClock.minute_of_day(to)).step(step).to_a
     end
@@ -147,9 +145,8 @@ module Hron
 
       def initialize(schedule)
         name = schedule.timezone
-        zoned = !(name.nil? || name.empty?)
-        @zone = TZInfo::Timezone.get(zoned ? name : "UTC")
-        @result_zone = zoned ? @zone : "UTC"
+        @zone = TZInfo::Timezone.get(name || "UTC")
+        @result_zone = name ? @zone : "UTC"
         @clauses = Clauses.new(schedule)
         @cadence = Cadence.of(schedule.expr, @clauses.starting)
         @times = DailyTimes.of(schedule.expr)
@@ -365,19 +362,17 @@ module Hron
 
       private
 
-      # A named until date is the first such date on or after the starting date
-      # (spec/README.md, "Named `until`"). Parse requires starting; a schedule built without
-      # one resolves from the default anchor, the epoch. nil when the date never occurs, so
-      # nothing bounds the schedule.
+      # A named until date is the first such date on or after the starting date, which a
+      # named until always has (spec/README.md, "Named `until`"). nil when the date never
+      # occurs, so nothing bounds the schedule.
       def resolve_until(until_spec, starting)
         case until_spec
         when IsoUntil then Calendar.parse_date(until_spec.date)
         when NamedUntil
-          from = starting || EPOCH_DATE
           month = MonthName.number(until_spec.month)
           (0..NAMED_UNTIL_MAX_YEARS)
-            .filter_map { |k| Calendar.date(from.year + k, month, until_spec.day) }
-            .find { |date| date >= from }
+            .filter_map { |k| Calendar.date(starting.year + k, month, until_spec.day) }
+            .find { |date| date >= starting }
         end
       end
     end
@@ -446,10 +441,9 @@ module Hron
         first = align(first_period, direction)
         beyond = direction.sign * (align(reach, direction) - first)
         count = horizon_periods + HORIZON_MARGIN_PERIODS + ([beyond, 0].max / @interval)
-        # Steps outside the calendar are skipped: those leading up to it, as from a hand-built
-        # starting date before it, and all past it.
-        near, far = direction.in_order([@earliest, @latest]).map { |edge| direction.sign * (edge - first) }
-        inside = [ceil_div(near, @interval), 0].max...[(far / @interval) + 1, count].min
+        # A walk starts inside the calendar, at now or a starting date, and ends at its edge.
+        far = direction.sign * ((direction.forward? ? @latest : @earliest) - first)
+        inside = 0...[(far / @interval) + 1, count].min
         step = direction.sign * @interval
         inside.each { |i| yield start_of(first + (i * step)) }
       end
@@ -458,10 +452,6 @@ module Hron
 
       def align(k, direction)
         direction.forward? ? k + (-k % @interval) : k - (k % @interval)
-      end
-
-      def ceil_div(a, b)
-        -(-a / b)
       end
 
       # Aligned periods in lcm(400 years, interval units), after which both the calendar and

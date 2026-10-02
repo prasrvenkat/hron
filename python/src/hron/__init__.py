@@ -28,6 +28,8 @@ from ._ast import (
     NamedDate,
     NamedException,
     NamedUntil,
+    NearestDirection,
+    NearestWeekdayTarget,
     OrdinalPosition,
     OrdinalWeekdayTarget,
     ScheduleData,
@@ -45,17 +47,19 @@ from ._ast import (
     YearRepeat,
     YearTarget,
 )
-from ._cron import from_cron, to_cron
-from ._display import display
+from ._cron import from_cron as _from_cron
+from ._cron import to_cron as _to_cron
+from ._display import display as _display
 from ._error import HronError, HronErrorKind, Span
-from ._eval import PreparedSchedule
+from ._eval import PreparedSchedule as _PreparedSchedule
 from ._eval import between as _between
 from ._eval import matches as _matches
 from ._eval import next_from as _next_from
 from ._eval import next_n_from as _next_n_from
 from ._eval import occurrences as _occurrences
 from ._eval import previous_from as _previous_from
-from ._parser import parse
+from ._parser import parse as _parse
+from ._parts import checked as _checked
 
 
 class Schedule:
@@ -64,29 +68,43 @@ class Schedule:
     none. They raise TypeError for a timestamp that is not a `datetime`."""
 
     _data: ScheduleData
-    _prepared: PreparedSchedule
+    _prepared: _PreparedSchedule
 
     def __init__(self, data: ScheduleData) -> None:
+        """Build a schedule from its parts, checked with the rules `parse` applies, and copied:
+        changing them afterwards does not change the schedule. Raises HronError of kind "eval"
+        for a part that breaks a rule, and TypeError for a value of the wrong type, such as a
+        str, float or bool for an int or None for a list."""
+        self._set(_checked(data))
+
+    def _set(self, data: ScheduleData) -> None:
         self._data = data
-        self._prepared = PreparedSchedule(data)
+        self._prepared = _PreparedSchedule(data)
+
+    @classmethod
+    def _of_valid(cls, data: ScheduleData) -> Schedule:
+        """For `parse` and `from_cron`, whose parts already keep every rule."""
+        schedule = cls.__new__(cls)
+        schedule._set(data)
+        return schedule
 
     @classmethod
     def parse(cls, input_text: str) -> Schedule:
         """Raises HronError if `input_text` is not a valid expression."""
-        return cls(parse(input_text))
+        return cls._of_valid(_parse(input_text))
 
     @classmethod
     def from_cron(cls, cron_expr: str) -> Schedule:
         """Convert a 5-field cron expression or @ shortcut to a Schedule that fires at the same
         times. Raises HronError of kind "cron" when the input is not valid cron or has no exact
         hron equivalent."""
-        return cls(from_cron(cron_expr))
+        return cls._of_valid(_from_cron(cron_expr))
 
     @classmethod
     def validate(cls, input_text: str) -> bool:
         """False, rather than throwing, for anything `parse` rejects."""
         try:
-            parse(input_text)
+            _parse(input_text)
             return True
         except HronError:
             return False
@@ -122,13 +140,20 @@ class Schedule:
     def to_cron(self) -> str:
         """Convert to a 5-field cron expression that fires at the same times. Raises HronError of
         kind "cron" when no cron does. The schedule's timezone is not part of the cron."""
-        return to_cron(self._data)
+        return _to_cron(self._data)
 
     def __str__(self) -> str:
-        return display(self._data)
+        return _display(self._data)
 
     def __repr__(self) -> str:
-        return f"Schedule({display(self._data)!r})"
+        return f"Schedule({_display(self._data)!r})"
+
+    def __eq__(self, other: object) -> bool:
+        """Equal when built from equal parts."""
+        return isinstance(other, Schedule) and self._data == other._data
+
+    def __hash__(self) -> int:
+        return hash(self._data)
 
     @property
     def timezone(self) -> str | None:
@@ -138,6 +163,12 @@ class Schedule:
     @property
     def expression(self) -> ScheduleExpr:
         return self._data.expr
+
+    @property
+    def data(self) -> ScheduleData:
+        """The parts this schedule was built from, to change with `dataclasses.replace` and
+        build again."""
+        return self._data
 
 
 __all__ = [
@@ -178,6 +209,8 @@ __all__ = [
     "UntilSpec",
     "IsoUntil",
     "NamedUntil",
+    "NearestDirection",
+    "NearestWeekdayTarget",
     "IntervalRepeat",
     "DayRepeat",
     "WeekRepeat",

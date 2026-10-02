@@ -46,15 +46,30 @@ module Hron
       [TokenKind::IN, "in"]
     ].freeze
 
-    MONTH_LENGTHS = Hash.new(31).merge(
-      MonthName::FEB => 29, MonthName::APR => 30, MonthName::JUN => 30, MonthName::SEP => 30, MonthName::NOV => 30
-    ).freeze
-    private_constant :Expected, :CLAUSE_ORDER, :MONTH_LENGTHS
+    private_constant :Expected, :CLAUSE_ORDER
 
-    # Timezone names match in any case (spec/README.md, "Parse-time validation").
+    def self.parse(input)
+      tokens = Hron.tokenize(input)
+      raise HronError.parse("empty expression", Span.new(0, 0), input) if tokens.empty?
+
+      new(tokens, input).parse
+    end
+
+    def self.iana_timezone(name)
+      return unless name.ascii_only?
+
+      lower = name.downcase(:ascii)
+      # System zoneinfo directories that are not IANA names of their own.
+      return if lower.start_with?("systemv/", "posix/", "right/")
+      return "UTC" if lower == "utc"
+
+      iana_names[lower] if name.include?("/")
+    end
+
     def self.iana_names
       @iana_names ||= TZInfo::Timezone.all_identifiers.to_h { |id| [id.downcase(:ascii), id] }
     end
+    private_class_method :iana_names
 
     def initialize(tokens, input)
       @tokens = tokens
@@ -220,20 +235,10 @@ module Hron
       raise token_error("date must be a calendar date from 0001-01-01 to 9999-12-31, got #{written}", token)
     end
 
-    # spec/README.md, "Parse-time validation": `UTC` or an IANA Area/Location name in any case,
-    # stored with the database's capitalization.
     def timezone(token)
       name = text(token)
-      lower = name.downcase(:ascii)
-      # System zoneinfo directories that are not IANA names of their own.
-      legacy = lower.start_with?("systemv/", "posix/", "right/")
-      if name.ascii_only? && !legacy
-        return "UTC" if lower == "utc"
-
-        canonical = name.include?("/") && Parser.iana_names[lower]
-        return canonical if canonical
-      end
-      raise token_error("timezone must be UTC or an Area/Location name such as America/New_York, got #{name}", token)
+      Parser.iana_timezone(name) or
+        raise token_error("timezone must be UTC or an Area/Location name such as America/New_York, got #{name}", token)
     end
 
     def parse_every
@@ -418,7 +423,7 @@ module Hron
     end
 
     def check_day_in_month(day, token, month)
-      max = MONTH_LENGTHS[month]
+      max = MonthName.max_day(month)
       raise token_error("day must be 1-#{max} for #{month}, got #{text(token)}", token) if day > max
     end
 
@@ -542,12 +547,5 @@ module Hron
       advance
       TimeOfDay.new(kind.hour, kind.minute)
     end
-  end
-
-  def self.parse(input)
-    tokens = tokenize(input)
-    raise HronError.parse("empty expression", Span.new(0, 0), input) if tokens.empty?
-
-    Parser.new(tokens, input).parse
   end
 end

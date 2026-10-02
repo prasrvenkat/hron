@@ -18,6 +18,9 @@ public record MonthTarget(
     NearestDirection nearestDirection,
     OrdinalPosition ordinal,
     Weekday weekday) {
+  public MonthTarget {
+    specs = List.copyOf(specs);
+  }
 
   public enum Kind {
     DAYS,
@@ -28,7 +31,7 @@ public record MonthTarget(
   }
 
   public static MonthTarget days(List<DayOfMonthSpec> specs) {
-    return new MonthTarget(Kind.DAYS, List.copyOf(specs), 0, null, null, null);
+    return new MonthTarget(Kind.DAYS, specs, 0, null, null, null);
   }
 
   public static MonthTarget lastDay() {

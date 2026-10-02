@@ -167,11 +167,10 @@ ScheduleData fromCron(String cron) {
       _DaysOfMonth(:final target) => MonthRepeat(1, target, times),
     };
   }
-  final schedule = ScheduleData(expr);
-  if (expr is! YearRepeat && months.length < MonthName.values.length) {
-    schedule.during = [for (final m in months) MonthName.fromNumber(m)];
-  }
-  return schedule;
+  final during = expr is! YearRepeat && months.length < MonthName.values.length
+      ? [for (final m in months) MonthName.fromNumber(m)]
+      : const <MonthName>[];
+  return ScheduleData(expr, during: during);
 }
 
 final _fieldSeparator = RegExp('[ \t]');
@@ -440,11 +439,6 @@ String toCron(ScheduleData schedule) {
     throw _notExpressible('starting clauses not supported');
   }
   final (dayOfMonth, dayOfWeek) = _dayFields(schedule.expr);
-  // A ScheduleData built in code can have an empty day list, which writes an
-  // empty field.
-  if (dayOfMonth.isEmpty || dayOfWeek.isEmpty) {
-    throw _notExpressible('schedule has no days');
-  }
   final month = _monthField(schedule);
   final (minute, hour) = _timeFields(schedule.expr);
   return '$minute $hour $dayOfMonth $month $dayOfWeek';
@@ -531,10 +525,6 @@ MonthName? _ownMonth(ScheduleExpr expr) => switch (expr) {
   final times = _dailyTimes(expr);
   final minutes = _sortedUnique([for (final t in times) t % 60]);
   final hours = _sortedUnique([for (final t in times) t ~/ 60]);
-  // A ScheduleData built in code can have no times, which no cron writes.
-  if (times.isEmpty) {
-    throw _notExpressible('schedule has no times');
-  }
   if (minutes.length * hours.length != times.length) {
     throw _notExpressible(
       'times are not every combination of their minutes and hours',

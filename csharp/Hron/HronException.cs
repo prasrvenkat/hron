@@ -1,7 +1,7 @@
 namespace Hron;
 
 /// <summary>
-/// Exception thrown for errors in hron parsing, evaluation, or cron conversion.
+/// Exception thrown for errors in hron parsing or cron conversion.
 /// </summary>
 public sealed class HronException : Exception
 {

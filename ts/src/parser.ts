@@ -10,10 +10,10 @@ import type {
   ScheduleData,
   ScheduleExpr,
   TimeOfDay,
+  UntilSpec,
   Weekday,
   YearTarget,
 } from "./ast.js";
-import { newScheduleData } from "./ast.js";
 import { codePointSpan, HronError } from "./error.js";
 import {
   asciiLowercase,
@@ -144,33 +144,30 @@ class Parser {
   }
 
   parseClauses(expr: ScheduleExpr): ScheduleData {
-    const schedule = newScheduleData(expr);
+    const except = this.eat("except") ? this.parseDateList() : [];
 
-    if (this.eat("except")) {
-      schedule.except = this.parseDateList();
-    }
-
+    let until: UntilSpec | null = null;
     if (this.peekIs("until")) {
-      const until = this.advance();
-      schedule.until = this.parseDate();
-      this.untilRange = [until.start, this.previous().end];
+      const token = this.advance();
+      until = this.parseDate();
+      this.untilRange = [token.start, this.previous().end];
     }
 
+    let anchor: string | null = null;
     if (this.eat("starting")) {
       if (!this.peekIs("isoDate")) throw this.expected(EXPECTED.isoDate);
-      schedule.anchor = this.isoDate(this.advance());
+      anchor = this.isoDate(this.advance());
     }
 
-    if (this.eat("during")) {
-      schedule.during = this.parseMonthList();
-    }
+    const during = this.eat("during") ? this.parseMonthList() : [];
 
+    let timezone: string | null = null;
     if (this.eat("in")) {
       if (!this.peekIs("timezone")) throw this.expected(EXPECTED.timezone);
-      schedule.timezone = this.timezone(this.advance());
+      timezone = this.timezone(this.advance());
     }
 
-    return schedule;
+    return { expr, timezone, except, until, anchor, during };
   }
 
   leftover(schedule: ScheduleData): HronError {

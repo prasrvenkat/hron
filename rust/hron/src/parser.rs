@@ -123,16 +123,23 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_clauses(&mut self, expr: ScheduleExpr) -> Result<Schedule, ScheduleError> {
-        let mut schedule = Schedule::new(expr);
+    fn parse_clauses(&mut self, expression: ScheduleExpr) -> Result<ScheduleParts, ScheduleError> {
+        let mut parts = ScheduleParts {
+            expression,
+            timezone: None,
+            except: Vec::new(),
+            until: None,
+            starting: None,
+            during: Vec::new(),
+        };
 
         if self.eat(&TokenKind::Except) {
-            schedule.except = self.parse_exception_list()?;
+            parts.except = self.parse_exception_list()?;
         }
 
         if self.peek_kind() == Some(&TokenKind::Until) {
             let until = self.advance();
-            schedule.until = Some(match self.parse_date()? {
+            parts.until = Some(match self.parse_date()? {
                 DateSpec::Iso(date) => UntilSpec::Iso(date),
                 DateSpec::Named { month, day } => UntilSpec::Named { month, day },
             });
@@ -144,11 +151,11 @@ impl<'a> Parser<'a> {
                 return Err(self.expected(expected::ISO_DATE));
             }
             let token = self.advance();
-            schedule.anchor = Some(self.iso_date(token)?);
+            parts.starting = Some(self.iso_date(token)?);
         }
 
         if self.eat(&TokenKind::During) {
-            schedule.during = self.parse_month_list()?;
+            parts.during = self.parse_month_list()?;
         }
 
         if self.eat(&TokenKind::In) {
@@ -156,21 +163,21 @@ impl<'a> Parser<'a> {
                 return Err(self.expected(expected::TIMEZONE));
             }
             let token = self.advance();
-            schedule.timezone = Some(self.timezone(token)?);
+            parts.timezone = Some(self.timezone(token)?);
         }
 
-        Ok(schedule)
+        Ok(parts)
     }
 
-    fn leftover(&self, schedule: &Schedule) -> ScheduleError {
+    fn leftover(&self, parts: &ScheduleParts) -> ScheduleError {
         let token = &self.tokens[self.pos];
         // Every clause holds at least one item, so a clause was read exactly when its field is set.
         let read = [
-            !schedule.except.is_empty(),
-            schedule.until.is_some(),
-            schedule.anchor.is_some(),
-            !schedule.during.is_empty(),
-            schedule.timezone.is_some(),
+            !parts.except.is_empty(),
+            parts.until.is_some(),
+            parts.starting.is_some(),
+            !parts.during.is_empty(),
+            parts.timezone.is_some(),
         ];
         let clause = CLAUSE_ORDER
             .iter()
@@ -187,9 +194,9 @@ impl<'a> Parser<'a> {
         self.error(message, token.start, token.end)
     }
 
-    fn check_named_until(&self, schedule: &Schedule) -> Result<(), ScheduleError> {
+    fn check_named_until(&self, parts: &ScheduleParts) -> Result<(), ScheduleError> {
         if let (Some(UntilSpec::Named { month, day }), None, Some((start, end))) =
-            (&schedule.until, schedule.anchor, self.until_bytes)
+            (&parts.until, parts.starting, self.until_bytes)
         {
             let month = month.as_str();
             return Err(ScheduleError::parse(
@@ -247,23 +254,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// spec/README.md, "Parse-time validation": `UTC` or an IANA Area/Location
-    /// name in any case, stored with the database's capitalization.
     fn timezone(&self, token: &Token) -> Result<String, ScheduleError> {
         let name = self.text(token);
-        let lower = name.to_ascii_lowercase();
-        // System zoneinfo directories that are not IANA names of their own.
-        let legacy = ["systemv/", "posix/", "right/"]
-            .iter()
-            .any(|prefix| lower.starts_with(prefix));
-        let shaped = name.is_ascii() && !legacy && (lower == "utc" || name.contains('/'));
-        // jiff answers `Etc/Unknown` with its placeholder zone rather than an error.
-        let canonical = shaped
-            .then(|| jiff::tz::TimeZone::get(name).ok())
-            .flatten()
-            .filter(|tz| !tz.is_unknown())
-            .and_then(|tz| tz.iana_name().map(str::to_string));
-        canonical.ok_or_else(|| {
+        iana_timezone(name).ok_or_else(|| {
             self.error(
                 format!("timezone must be UTC or an Area/Location name such as America/New_York, got {name}"),
                 token.start,
@@ -525,11 +518,7 @@ impl<'a> Parser<'a> {
         token: &Token,
         month: MonthName,
     ) -> Result<(), ScheduleError> {
-        let max = match month {
-            MonthName::February => 29,
-            MonthName::April | MonthName::June | MonthName::September | MonthName::November => 30,
-            _ => 31,
-        };
+        let max = month.max_day();
         if day > max {
             return Err(self.error(
                 format!(
@@ -707,14 +696,31 @@ pub fn parse(input: &str) -> Result<Schedule, ScheduleError> {
         input,
         until_bytes: None,
     };
-    let expr = parser.parse_expression()?;
-    let schedule = parser.parse_clauses(expr)?;
+    let expression = parser.parse_expression()?;
+    let parts = parser.parse_clauses(expression)?;
     if parser.peek().is_some() {
-        return Err(parser.leftover(&schedule));
+        return Err(parser.leftover(&parts));
     }
     // spec/README.md, "Parse errors": every other error wins over a named until without starting.
-    parser.check_named_until(&schedule)?;
-    Ok(schedule)
+    parser.check_named_until(&parts)?;
+    Ok(Schedule::from_valid_parts(parts))
+}
+
+// spec/README.md, "Parse-time validation": jiff matches the name in any case, and iana_name()
+// gives the database's capitalization.
+pub(crate) fn iana_timezone(name: &str) -> Option<String> {
+    let lower = name.to_ascii_lowercase();
+    // System zoneinfo directories that are not IANA names of their own.
+    let legacy = ["systemv/", "posix/", "right/"]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix));
+    let shaped = name.is_ascii() && !legacy && (lower == "utc" || name.contains('/'));
+    // jiff answers `Etc/Unknown` with its placeholder zone rather than an error.
+    shaped
+        .then(|| jiff::tz::TimeZone::get(name).ok())
+        .flatten()
+        .filter(|tz| !tz.is_unknown())
+        .and_then(|tz| tz.iana_name().map(str::to_string))
 }
 
 #[cfg(test)]

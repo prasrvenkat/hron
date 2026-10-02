@@ -11,7 +11,6 @@ import 'src/error.dart';
 import 'src/eval.dart' as eval_impl;
 import 'src/parser.dart' as parser_impl;
 
-export 'src/ast.dart';
 export 'src/error.dart';
 
 /// Built only by [Schedule.parse] or [Schedule.fromCron].
@@ -90,6 +89,4 @@ class Schedule {
   /// The IANA timezone name, in its canonical capitalization, or `null` if not
   /// specified.
   String? get timezone => _data.timezone;
-
-  ScheduleExpr get expression => _data.expr;
 }

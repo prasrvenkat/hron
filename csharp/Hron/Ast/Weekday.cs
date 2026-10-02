@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public enum Weekday
+internal enum Weekday
 {
     Monday = 1,
     Tuesday = 2,
@@ -11,7 +11,7 @@ public enum Weekday
     Sunday = 7
 }
 
-public static class WeekdayExtensions
+internal static class WeekdayExtensions
 {
     private static readonly Dictionary<string, Weekday> ParseMap = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,14 +31,8 @@ public static class WeekdayExtensions
         ["sun"] = Weekday.Sunday
     };
 
-    /// <summary>
-    /// Returns the ISO 8601 day number (Monday=1, Sunday=7).
-    /// </summary>
     public static int Number(this Weekday weekday) => (int)weekday;
 
-    /// <summary>
-    /// Returns the cron day of week number (Sunday=0, Monday=1, ..., Saturday=6).
-    /// </summary>
     public static int CronDOW(this Weekday weekday) => weekday switch
     {
         Weekday.Sunday => 0,
@@ -53,17 +47,8 @@ public static class WeekdayExtensions
 
     public static string ToDisplayString(this Weekday weekday) => weekday.ToString().ToLowerInvariant();
 
-    /// <summary>
-    /// Parses a weekday name (case insensitive).
-    /// </summary>
     public static Weekday? Parse(string s)
         => ParseMap.TryGetValue(s, out var weekday) ? weekday : null;
-
-    /// <summary>
-    /// Returns a Weekday from an ISO 8601 day number.
-    /// </summary>
-    public static Weekday? FromNumber(int n)
-        => n is >= 1 and <= 7 ? (Weekday)n : null;
 
     public static Weekday FromDayOfWeek(DayOfWeek dow) => dow switch
     {

@@ -91,8 +91,7 @@ impl Schedule {
         #[wasm_bindgen(unchecked_param_type = "string")] now: JsValue,
     ) -> Result<Option<String>, JsValue> {
         let now = timestamp_argument("now", &now)?;
-        let result = self.inner.next_from(&now).map_err(hron_error)?;
-        Ok(result.map(|z| z.to_string()))
+        Ok(self.inner.next_from(&now).map(|z| z.to_string()))
     }
 
     /// Compute up to `n` occurrences strictly after `now`, none when `n <= 0`.
@@ -106,7 +105,7 @@ impl Schedule {
     ) -> Result<Vec<String>, JsValue> {
         let now = timestamp_argument("now", &now)?;
         let n = count_argument("n", &n)?;
-        let results = self.inner.next_n_from(&now, n).map_err(hron_error)?;
+        let results = self.inner.next_n_from(&now, n);
         Ok(results.iter().map(|z| z.to_string()).collect())
     }
 
@@ -118,8 +117,7 @@ impl Schedule {
         #[wasm_bindgen(unchecked_param_type = "string")] now: JsValue,
     ) -> Result<Option<String>, JsValue> {
         let now = timestamp_argument("now", &now)?;
-        let result = self.inner.previous_from(&now).map_err(hron_error)?;
-        Ok(result.map(|z| z.to_string()))
+        Ok(self.inner.previous_from(&now).map(|z| z.to_string()))
     }
 
     /// Check whether the minute containing `datetime` is an occurrence (seconds are ignored).
@@ -129,7 +127,7 @@ impl Schedule {
         #[wasm_bindgen(unchecked_param_type = "string")] datetime: JsValue,
     ) -> Result<bool, JsValue> {
         let dt = timestamp_argument("datetime", &datetime)?;
-        self.inner.matches(&dt).map_err(hron_error)
+        Ok(self.inner.matches(&dt))
     }
 
     /// Get the structured JSON representation as a plain object, which `JSON.stringify` uses.
@@ -172,12 +170,12 @@ impl Schedule {
     ) -> Result<Vec<String>, JsValue> {
         let from = timestamp_argument("from", &from)?;
         let limit = count_argument("limit", &limit)?;
-        self.inner
+        Ok(self
+            .inner
             .occurrences(&from)
             .take(limit)
-            .map(|r| r.map(|z| z.to_string()))
-            .collect::<Result<_, _>>()
-            .map_err(hron_error)
+            .map(|z| z.to_string())
+            .collect())
     }
 
     /// Returns occurrences in the range (from, to], where from is exclusive and to is inclusive.
@@ -189,11 +187,11 @@ impl Schedule {
     ) -> Result<Vec<String>, JsValue> {
         let from = timestamp_argument("from", &from)?;
         let to = timestamp_argument("to", &to)?;
-        self.inner
+        Ok(self
+            .inner
             .between(&from, &to)
-            .map(|r| r.map(|z| z.to_string()))
-            .collect::<Result<_, _>>()
-            .map_err(hron_error)
+            .map(|z| z.to_string())
+            .collect())
     }
 }
 

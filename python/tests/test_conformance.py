@@ -8,7 +8,52 @@ from typing import Any
 
 import pytest
 
-from hron import HronError, Schedule
+from hron import (
+    DateSpec,
+    DayFilter,
+    DayFilterDays,
+    DayFilterEvery,
+    DayFilterWeekday,
+    DayFilterWeekend,
+    DayOfMonthSpec,
+    DayRange,
+    DayRepeat,
+    DaysTarget,
+    ExceptionSpec,
+    HronError,
+    IntervalRepeat,
+    IntervalUnit,
+    IsoDate,
+    IsoException,
+    IsoUntil,
+    LastDayTarget,
+    LastWeekdayTarget,
+    MonthName,
+    MonthRepeat,
+    MonthTarget,
+    NamedDate,
+    NamedException,
+    NamedUntil,
+    NearestDirection,
+    NearestWeekdayTarget,
+    OrdinalPosition,
+    OrdinalWeekdayTarget,
+    Schedule,
+    ScheduleData,
+    ScheduleExpr,
+    SingleDateExpr,
+    SingleDay,
+    TimeOfDay,
+    UntilSpec,
+    Weekday,
+    WeekRepeat,
+    YearDateTarget,
+    YearDayOfMonthTarget,
+    YearLastWeekdayTarget,
+    YearOrdinalWeekdayTarget,
+    YearRepeat,
+    YearTarget,
+)
 from tests.conftest import format_zoned, parse_zoned
 
 _spec_path = Path(__file__).parent.parent.parent / "spec" / "tests.json"
@@ -127,6 +172,13 @@ def test_parse_roundtrip(name: str, input_text: str, canonical: str) -> None:
 
     s2 = Schedule.parse(canonical)
     assert str(s2) == canonical
+    _assert_rebuilds(schedule)
+
+
+def _assert_rebuilds(schedule: Schedule) -> None:
+    rebuilt = Schedule(schedule.data)
+    assert rebuilt == schedule
+    assert str(rebuilt) == str(schedule)
 
 
 _PARSE_ERROR_TESTS = [(tc.get("name", tc["input"]), tc) for tc in _spec["parse_errors"]["tests"]]
@@ -326,6 +378,7 @@ _FROM_CRON_IDS = [t[0] for t in _FROM_CRON_TESTS]
 def test_from_cron(name: str, cron: str, hron: str) -> None:
     schedule = Schedule.from_cron(cron)
     assert str(schedule) == hron
+    _assert_rebuilds(schedule)
 
 
 _FROM_CRON_ERROR_TESTS = [
@@ -462,3 +515,204 @@ def test_invariant(rule: str, name: str, tc: dict[str, Any]) -> None:
     check = _INVARIANT_RULES.get(rule)
     assert check is not None, f"invariant rule {rule!r} is not implemented by this runner"
     check(name, Schedule.parse(tc["expression"]), parse_zoned(tc["now"]))
+
+
+_build = json.loads((_spec_path.parent / "build.json").read_text())
+
+
+def test_build_groups_are_known() -> None:
+    assert set(_build) == {"description", "rules", "order", "canonical"}, set(_build)
+    for group in ("rules", "order", "canonical"):
+        assert set(_build[group]) == {"description", "tests"}, group
+
+
+_BUILD_TESTS = [
+    (f"{group}/{tc['name']}", tc)
+    for group in ("rules", "order", "canonical")
+    for tc in _build[group]["tests"]
+]
+
+
+@pytest.mark.parametrize("name,tc", _BUILD_TESTS, ids=[t[0] for t in _BUILD_TESTS])
+def test_build(name: str, tc: dict[str, Any]) -> None:
+    assert tc.keys() - _LABELS in ({"parts", "error"}, {"parts", "canonical"}), sorted(tc)
+    data = _parts(tc["parts"])
+    if "error" in tc:
+        expected = tc["error"]
+        assert set(expected) == {"kind", "message"}, sorted(expected)
+        assert expected["kind"] == "eval"
+        with pytest.raises(HronError) as raised:
+            Schedule(data)
+        error = raised.value
+        assert error.kind == "eval"
+        assert str(error) == expected["message"]
+        assert (error.span, error.input_text, error.suggestion) == (None, None, None)
+        assert error.display_rich() == f"error: {expected['message']}"
+    else:
+        schedule = Schedule(data)
+        assert str(schedule) == tc["canonical"]
+        assert Schedule.parse(tc["canonical"]) == schedule
+
+
+def _fields(
+    value: object, required: set[str], optional: frozenset[str] = frozenset()
+) -> dict[str, Any]:
+    assert isinstance(value, dict), value
+    assert required <= value.keys() <= required | optional, f"fields {sorted(value)}"
+    return value
+
+
+def _parts(value: object) -> ScheduleData:
+    clauses = frozenset({"except", "until", "starting", "during", "timezone"})
+    parts = _fields(value, {"expression"}, clauses)
+    until = parts.get("until")
+    return ScheduleData(
+        expr=_expression(parts["expression"]),
+        timezone=parts.get("timezone"),
+        except_=tuple(_exception(d) for d in parts.get("except", [])),
+        until=None if until is None else _until(until),
+        anchor=parts.get("starting"),
+        during=tuple(_month(m) for m in parts.get("during", [])),
+    )
+
+
+def _expression(value: object) -> ScheduleExpr:
+    assert isinstance(value, dict) and len(value) == 1, value
+    [(kind, fields)] = value.items()
+    match kind:
+        case "interval_repeat":
+            f = _fields(fields, {"interval", "unit", "from", "to"}, frozenset({"day_filter"}))
+            day_filter = f.get("day_filter")
+            return IntervalRepeat(
+                f["interval"],
+                {"minutes": IntervalUnit.MIN, "hours": IntervalUnit.HOURS}[f["unit"]],
+                _time(f["from"]),
+                _time(f["to"]),
+                None if day_filter is None else _day_filter(day_filter),
+            )
+        case "day_repeat":
+            f = _fields(fields, {"interval", "days", "times"})
+            return DayRepeat(f["interval"], _day_filter(f["days"]), _times(f["times"]))
+        case "week_repeat":
+            f = _fields(fields, {"interval", "days", "times"})
+            return WeekRepeat(f["interval"], tuple(map(Weekday, f["days"])), _times(f["times"]))
+        case "month_repeat":
+            f = _fields(fields, {"interval", "target", "times"})
+            return MonthRepeat(f["interval"], _month_target(f["target"]), _times(f["times"]))
+        case "single_date":
+            f = _fields(fields, {"date", "times"})
+            return SingleDateExpr(_date(f["date"]), _times(f["times"]))
+        case "year_repeat":
+            f = _fields(fields, {"interval", "target", "times"})
+            return YearRepeat(f["interval"], _year_target(f["target"]), _times(f["times"]))
+    raise AssertionError(f"expression kind {kind!r} is not known to this runner")
+
+
+def _time(value: str) -> TimeOfDay:
+    hour, minute = value.split(":")
+    return TimeOfDay(int(hour), int(minute))
+
+
+def _times(values: list[str]) -> tuple[TimeOfDay, ...]:
+    return tuple(_time(t) for t in values)
+
+
+def _month(name: str) -> MonthName:
+    month = MonthName.try_parse(name)
+    assert month is not None, name
+    return month
+
+
+def _day_filter(value: object) -> DayFilter:
+    match value:
+        case "every":
+            return DayFilterEvery()
+        case "weekday":
+            return DayFilterWeekday()
+        case "weekend":
+            return DayFilterWeekend()
+    days = _fields(value, {"days"})["days"]
+    return DayFilterDays(tuple(map(Weekday, days)))
+
+
+def _date_parts(value: object) -> str | tuple[MonthName, int]:
+    assert isinstance(value, dict) and len(value) == 1, value
+    if "iso" in value:
+        return value["iso"]
+    f = _fields(value["named"], {"month", "day"})
+    return _month(f["month"]), f["day"]
+
+
+def _exception(value: object) -> ExceptionSpec:
+    match _date_parts(value):
+        case str(iso):
+            return IsoException(iso)
+        case (month, day):
+            return NamedException(month, day)
+
+
+def _until(value: object) -> UntilSpec:
+    match _date_parts(value):
+        case str(iso):
+            return IsoUntil(iso)
+        case (month, day):
+            return NamedUntil(month, day)
+
+
+def _date(value: object) -> DateSpec:
+    match _date_parts(value):
+        case str(iso):
+            return IsoDate(iso)
+        case (month, day):
+            return NamedDate(month, day)
+
+
+def _day_spec(value: object) -> DayOfMonthSpec:
+    assert isinstance(value, dict) and len(value) == 1, value
+    if "single" in value:
+        return SingleDay(value["single"])
+    start, end = value["range"]
+    return DayRange(start, end)
+
+
+def _month_target(value: object) -> MonthTarget:
+    match value:
+        case "last_day":
+            return LastDayTarget()
+        case "last_weekday":
+            return LastWeekdayTarget()
+    assert isinstance(value, dict) and len(value) == 1, value
+    [(kind, fields)] = value.items()
+    match kind:
+        case "days":
+            return DaysTarget(tuple(_day_spec(s) for s in fields))
+        case "nearest_weekday":
+            f = _fields(fields, {"day", "direction"})
+            direction = f["direction"]
+            return NearestWeekdayTarget(
+                f["day"], None if direction is None else NearestDirection(direction)
+            )
+        case "ordinal_weekday":
+            f = _fields(fields, {"ordinal", "weekday"})
+            return OrdinalWeekdayTarget(OrdinalPosition(f["ordinal"]), Weekday(f["weekday"]))
+    raise AssertionError(f"month target {kind!r} is not known to this runner")
+
+
+def _year_target(value: object) -> YearTarget:
+    assert isinstance(value, dict) and len(value) == 1, value
+    [(kind, fields)] = value.items()
+    match kind:
+        case "date":
+            f = _fields(fields, {"month", "day"})
+            return YearDateTarget(_month(f["month"]), f["day"])
+        case "ordinal_weekday":
+            f = _fields(fields, {"ordinal", "weekday", "month"})
+            return YearOrdinalWeekdayTarget(
+                OrdinalPosition(f["ordinal"]), Weekday(f["weekday"]), _month(f["month"])
+            )
+        case "day_of_month":
+            f = _fields(fields, {"day", "month"})
+            return YearDayOfMonthTarget(f["day"], _month(f["month"]))
+        case "last_weekday":
+            return YearLastWeekdayTarget(_month(_fields(fields, {"month"})["month"]))
+    raise AssertionError(f"year target {kind!r} is not known to this runner")

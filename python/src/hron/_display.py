@@ -107,7 +107,7 @@ def _display_expr(expr: ScheduleExpr) -> str:
                         prefix = "next "
                     elif direction == NearestDirection.PREVIOUS:
                         prefix = "previous "
-                    target_str = f"{prefix}nearest weekday to {day}{_ordinal_suffix(day)}"
+                    target_str = f"{prefix}nearest weekday to {day}{ordinal_suffix(day)}"
                 case OrdinalWeekdayTarget(ordinal=ordinal, weekday=weekday):
                     target_str = f"{ordinal} {weekday}"
                 case _:
@@ -133,7 +133,7 @@ def _display_expr(expr: ScheduleExpr) -> str:
                 case YearOrdinalWeekdayTarget(ordinal=o, weekday=w, month=m):
                     target_str = f"the {o} {w} of {m}"
                 case YearDayOfMonthTarget(day=d, month=m):
-                    target_str = f"the {d}{_ordinal_suffix(d)} of {m}"
+                    target_str = f"the {d}{ordinal_suffix(d)} of {m}"
                 case YearLastWeekdayTarget(month=m):
                     target_str = f"the last weekday of {m}"
                 case _:
@@ -168,13 +168,16 @@ def _format_ordinal_day_specs(specs: tuple[SingleDay | DayRange, ...]) -> str:
     for spec in specs:
         match spec:
             case SingleDay(day=d):
-                parts.append(f"{d}{_ordinal_suffix(d)}")
+                parts.append(f"{d}{ordinal_suffix(d)}")
             case DayRange(start=s, end=e):
-                parts.append(f"{s}{_ordinal_suffix(s)} to {e}{_ordinal_suffix(e)}")
+                parts.append(f"{s}{ordinal_suffix(s)} to {e}{ordinal_suffix(e)}")
     return ", ".join(parts)
 
 
-def _ordinal_suffix(n: int) -> str:
+def ordinal_suffix(n: int) -> str:
+    # Python's % floors, so -9 % 10 is 1; spec/README.md writes a day below 1 with th.
+    if n < 1:
+        return "th"
     mod100 = n % 100
     if 11 <= mod100 <= 13:
         return "th"
