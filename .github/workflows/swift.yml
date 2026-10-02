@@ -96,20 +96,27 @@ jobs:
       - uses: actions/checkout@v7
       - name: Test (macOS)
         run: swift test
+      # Xcode names a SwiftPM package's schemes itself, so read them rather than assume: the
+      # library builds with its product's scheme, and the tests run in hron-Package when it exists.
+      - name: Find schemes
+        run: |
+          xcodebuild -list -json | tee schemes.json
+          {
+            echo "BUILD_SCHEME=$(jq -r '.workspace.schemes | if index("Hron") then "Hron" elif index("hron") then "hron" else "hron-Package" end' schemes.json)"
+            echo "TEST_SCHEME=$(jq -r '.workspace.schemes | if index("hron-Package") then "hron-Package" elif index("Hron") then "Hron" else "hron" end' schemes.json)"
+          } >> "$GITHUB_ENV"
       - name: Build (iOS)
-        run: xcodebuild build -scheme Hron -destination 'generic/platform=iOS Simulator'
+        run: xcodebuild build -scheme "$BUILD_SCHEME" -destination 'generic/platform=iOS Simulator'
       - name: Test (iOS Simulator)
         run: |
           device=$(xcrun simctl list devices available --json \
             | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')
-          # The tests are in hron-Package when Xcode generates that scheme, and otherwise in Hron.
-          scheme=$(xcodebuild -list -json | jq -r '.workspace.schemes | if index("hron-Package") then "hron-Package" else "Hron" end')
-          xcodebuild test -scheme "$scheme" -destination "id=$device"
+          xcodebuild test -scheme "$TEST_SCHEME" -destination "id=$device"
       - name: Build (watchOS)
-        run: xcodebuild build -scheme Hron -destination 'generic/platform=watchOS Simulator'
+        run: xcodebuild build -scheme "$BUILD_SCHEME" -destination 'generic/platform=watchOS Simulator'
       - name: Build (watchOS devices)
-        run: xcodebuild build -scheme Hron -destination 'generic/platform=watchOS'
+        run: xcodebuild build -scheme "$BUILD_SCHEME" -destination 'generic/platform=watchOS'
       - name: Build (tvOS)
-        run: xcodebuild build -scheme Hron -destination 'generic/platform=tvOS Simulator'
+        run: xcodebuild build -scheme "$BUILD_SCHEME" -destination 'generic/platform=tvOS Simulator'
       - name: Build (visionOS)
-        run: xcodebuild build -scheme Hron -destination 'generic/platform=visionOS Simulator'
+        run: xcodebuild build -scheme "$BUILD_SCHEME" -destination 'generic/platform=visionOS Simulator'
