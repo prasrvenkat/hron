@@ -132,7 +132,7 @@ lint-csharp:
 
 lint-java:
     cd java && mvn fmt:check
-    cd java && mvn javadoc:jar -q
+    cd java && mvn compile javadoc:jar -q
 
 # List the comment lines this branch adds, so each gets a reason or goes (AGENTS.md, "Comments")
 comments base="main":
