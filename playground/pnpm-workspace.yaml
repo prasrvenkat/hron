@@ -1,3 +1,5 @@
 allowBuilds:
   esbuild: false
   workerd: false
+minimumReleaseAgeExclude:
+  - hron-wasm@2.0.0
