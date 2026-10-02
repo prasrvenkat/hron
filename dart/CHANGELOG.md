@@ -1,8 +1,8 @@
 # Changelog
 
-Current version: 1.0.0
+Current version: 2.0.0
 
-## Unreleased
+## 2.0.0
 
 - Breaking: `package:hron/hron.dart` no longer exports `ScheduleData` or the helpers `expandDaySpec`, `expandMonthTarget` and `ordinalSuffix`, and `Weekday.tryParse`, `Weekday.fromNumber` and `MonthName.tryParse` are removed. No public method accepted them; build a schedule with `Schedule.parse` or `Schedule.fromCron`.
 - Breaking: the lists in a schedule's parts are unmodifiable, so changing one throws `UnsupportedError`, and a schedule cannot change after it is built.

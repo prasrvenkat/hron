@@ -1,6 +1,6 @@
 name: hron
 description: Human-readable cron — scheduling expressions that read like English and convert to and from cron.
-version: 1.0.0
+version: 2.0.0
 repository: https://github.com/simpllyf/hron
 homepage: https://github.com/simpllyf/hron
 topics:
