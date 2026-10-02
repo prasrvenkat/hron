@@ -50,7 +50,7 @@ See [`hron-cli`](rust/hron-cli/) for all options.
 | Java | [`hron`](java/) | [![Maven Central](https://img.shields.io/maven-central/v/io.hron/hron)](https://central.sonatype.com/artifact/io.hron/hron) |
 | C# | [`Hron`](csharp/Hron/) | [![NuGet](https://img.shields.io/nuget/v/Hron)](https://www.nuget.org/packages/Hron) |
 | Ruby | [`hron`](ruby/) | [![Gem Version](https://img.shields.io/gem/v/hron)](https://rubygems.org/gems/hron) |
-| Swift | [`Hron`](swift/) | [![SwiftPM](https://img.shields.io/github/v/tag/simpllyf/hron?filter=v*&sort=semver&label=SwiftPM)](https://github.com/simpllyf/hron/tags) |
+| Swift | [`Hron`](swift/) | [![Swift Package Index](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fsimpllyf%2Fhron%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/simpllyf/hron) |
 
 > **Note:** The JS/TS native package (`hron-ts`) uses the [Temporal API](https://tc39.es/proposal-temporal/) via polyfill. Once Temporal ships natively in runtimes, performance improves automatically. For performance-critical JS/TS use cases, consider the WASM package (`hron-wasm`).
 
