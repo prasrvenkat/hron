@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "hron-wasm": "^1.0.0"
+    "hron-wasm": "^2.0.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
