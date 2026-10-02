@@ -51,16 +51,18 @@ These are the serde shapes of Rust's types. Every value fits them: intervals are
 
 ### `api.json`
 
-The API contract specification defining:
+The public API every implementation exposes:
 
 - **schedule.staticMethods** - `parse`, `fromCron`, `validate`
-- **schedule.instanceMethods** - `nextFrom`, `nextNFrom`, `previousFrom`, `matches`, `occurrences`, `between`, `toCron`, `toString`
-- **schedule.getters** - `timezone`
+- **schedule.instanceMethods** - `nextFrom`, `nextNFrom`, `previousFrom`, `matches`, `occurrences`, `between`, `toCron`, `toString`, `equals`
+- **schedule.getters** - `timezone`, `expression`, `except`, `until`, `starting`, `during`
+- **parts** - the types of the getters' values
 - **error.kinds** - `lex`, `parse`, `eval`, `cron`
-- **error.constructors** - Factory methods for each error kind
-- **error.methods** - `displayRich`
+- **error.properties** and **error.methods** - `kind`, `message`, `span`, `input`, `suggestion`, `displayRich`
+- **error.constructors** - a factory for each kind
+- **notes** - each language's names for all of the above
 
-Language implementations validate their APIs against this specification in their API conformance tests.
+Each implementation checks its public API against this file in its API conformance tests: every method, getter, error property, error method and constructor is present under the name its note gives, so an addition to `api.json` fails every implementation that lacks it.
 
 ## Adding New Tests
 
@@ -319,7 +321,8 @@ Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:
 - No method modifies its arguments.
 - Only Python (a naive `datetime`) and .NET (a `DateTime`, which C# converts to `DateTimeOffset` before hron sees it) accept a value without an offset; both read it as the host's local time, by the platform's own rule for a time the host's DST skips or repeats.
 - `nextNFrom(now, n)` returns no more than `n` occurrences, and none when `n <= 0`. `n` only caps the count: no implementation reserves room for it, so `n = 2147483647` returns at once, with every occurrence through the end of the supported range. Where a caller can pass a non-integer `n` (JavaScript, Python, Ruby, WebAssembly), that is a usage error; an integer is what `Number.isInteger` accepts in JavaScript, `operator.index` in Python and `is_a?(Integer)` in Ruby. WebAssembly's `occurrences(from, limit)` treats `limit` the same way.
-- A usage error is the platform's own error for a bad argument, never a hron error: in JavaScript a `TypeError` for a value of the wrong type (null and `undefined` included) and a `RangeError` for a bad value; in Python and Ruby a `TypeError`; in Java a `NullPointerException` for null. The CLI prints it and exits with status 2. The static types in Rust, Go, C# and Dart rule the others out.
+- A null (`null`, `undefined`, `None`, `nil`) or a value of the wrong type where an argument goes, the input of `parse`, `validate` and `fromCron` included, is a usage error. Equality is the exception: a schedule equals nothing but a schedule, so comparing it with null or anything else is false.
+- A usage error is the platform's own error for a bad argument, never a hron error: in JavaScript a `TypeError` for a value of the wrong type (null and `undefined` included) and a `RangeError` for a bad value; in Python and Ruby a `TypeError`; in Java a `NullPointerException` and in C# an `ArgumentNullException` for null. The CLI prints it and exits with status 2. In Go a nil `*Schedule` or `*ScheduleData` panics, as any nil pointer does. The static types in Rust, Go, C# and Dart rule out the other cases.
 - WebAssembly and the CLI take a timestamp as an RFC 9557 or RFC 3339 string with an offset or `Z`, in either case (`2026-02-06T12:00:00+09:00[Asia/Tokyo]`, `2026-02-06T03:00:00Z`, `2026-02-06t03:00:00.000z`). The offset decides the instant: a zone in brackets that disagrees with it is ignored, unless it is marked critical (`[!Asia/Tokyo]`), which is a usage error. `Z` names the instant without claiming a local offset, so it never disagrees with a zone. Other bracketed tags such as `[u-ca=hebrew]` are ignored unless critical. A string without an offset (`2026-02-06T12:00:00[Asia/Tokyo]`) names no instant, or two at a DST change, so it is a usage error, as is an unknown zone. Six-digit years (`+010000-01-01T00:00:00Z`, as `Date.prototype.toISOString` writes them) are read and lie outside the supported range.
 - WebAssembly and the CLI write every timestamp as `2026-02-06T09:00:00-05:00[America/New_York]`: seconds always, the offset as `±HH:MM` (`+00:00`, never `Z`), and the schedule's zone or `UTC` in brackets.
 
@@ -353,6 +356,10 @@ The table and the order above are frozen: a new row needs a bug it prevents, not
 Java, C#, TypeScript and Dart build a schedule only through `parse` and `fromCron`. In every implementation a schedule cannot change after it is built, what its getters return cannot change it, and no public function other than the builders above takes a schedule's parts to build, evaluate, display or convert one.
 
 Where an implementation exposes `OrdinalPosition` with a numeric form, `first` to `fifth` are 1 to 5 and `last` is -1.
+
+### Equality
+
+Two schedules are equal when their parts are equal (spec/api.json, "parts"): lists compare in order, duplicates included, as `toString` writes them. Where the language has a hash protocol, equal schedules have equal hashes. `every day at 9:00` and `every day at 09:00` are equal, a schedule equals the schedule `parse` reads from its `toString`, and the schedule `fromCron` gives equals the one `parse` reads from that schedule's `toString`.
 
 ### Timezone data
 
