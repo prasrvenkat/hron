@@ -1,5 +1,8 @@
 # hron (Swift)
 
+[![Swift Package Index](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fsimpllyf%2Fhron%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/simpllyf/hron)
+[![Platforms](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fsimpllyf%2Fhron%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/simpllyf/hron)
+
 Native Swift implementation of [hron](https://github.com/simpllyf/hron) — human-readable cron expressions for iOS, macOS and server-side Swift.
 
 ## Install
