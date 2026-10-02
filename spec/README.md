@@ -74,7 +74,7 @@ When adding new test cases to `tests.json`:
 
 ### Writing a runner
 
-A conformance runner must fail any case it cannot check: a section it does not know, a case with no assertion field it understands, or an invariant rule it does not implement. Silently skipping is a pass that checked nothing. A field that is present with the value `null` or `[]` is an assertion (no occurrence, empty list), not an absent field. A runner compares each returned timestamp with the expected string in full, offset and zone included, so a result in the wrong zone fails (C# compares the offset, as `DateTimeOffset` has no zone name). `next_n_count` may be 0, negative or larger than the list; a runner whose `n` cannot be negative (Rust's `usize`) checks a negative count as 0. The assertion fields per `eval` section are:
+A conformance runner must fail any case it cannot check: a section it does not know, a case with no assertion field it understands, or an invariant rule it does not implement. Silently skipping is a pass that checked nothing. A field that is present with the value `null` or `[]` is an assertion (no occurrence, empty list), not an absent field. A runner compares each returned timestamp with the expected string in full, offset and zone included, so a result in the wrong zone fails (C# compares the offset, as `DateTimeOffset` has no zone name, and Swift compares the instant, as `Date` has neither). `next_n_count` may be 0, negative or larger than the list; a runner whose `n` cannot be negative (Rust's `usize`) checks a negative count as 0. The assertion fields per `eval` section are:
 
 - **`matches`** - `datetime`; asserts `expected` (boolean) for `matches(datetime)`.
 - **`previous_from`** - `now`; asserts `expected` (timestamp or null) for `previousFrom(now)`.
@@ -299,7 +299,7 @@ Implementations must find any occurrence that exists. The (proleptic) Gregorian 
 
 ### Supported range
 
-Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z` (proleptic Gregorian calendar). The day of margin at each end lets every platform represent the local time of any supported instant in any timezone. An occurrence outside the range does not exist, so the result is null: `every 9000 years on jan 1 at 09:00` has no next occurrence after 1970 (the next aligned year would be 10970), while `every 8000 years on jan 1 at 09:00` next fires in 9970. A `now`, `from`, `to` or `datetime` outside the range is not an error, even at the platform's own limits: `nextFrom` and `previousFrom` return null, `matches` returns false, and `nextNFrom`, `occurrences` and `between` return nothing.
+Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:00Z` (proleptic Gregorian calendar). The day of margin at each end lets every platform represent the local time of any supported instant in any timezone. An occurrence outside the range does not exist, so the result is null: `every 9000 years on jan 1 at 09:00` has no next occurrence after 1970 (the next aligned year would be 10970), while `every 8000 years on jan 1 at 09:00` next fires in 9970. A `now`, `from`, `to` or `datetime` outside the range is not an error, even at the platform's own limits: `nextFrom` and `previousFrom` return null, `matches` returns false, and `nextNFrom`, `occurrences` and `between` return nothing. A Swift `Date` that is NaN or infinite is outside the range.
 
 ### Timestamps and counts
 
