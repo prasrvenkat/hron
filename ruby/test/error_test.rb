@@ -80,4 +80,33 @@ class ErrorTest < Minitest::Test
     assert_equal "error: no zone", Hron::HronError.eval("no zone").display_rich
     assert_equal "error: bad cron", Hron::HronError.cron("bad cron").display_rich
   end
+
+  # spec/README.md, "Timestamps and counts": a usage error, never a HronError.
+  def test_factories_raise_type_error_for_a_message_or_input_that_is_not_a_string
+    span = Hron::Span.new(0, 1)
+    [nil, :message, 1].each do |bad|
+      assert_raises(TypeError) { Hron::HronError.lex(bad, span, "x") }
+      assert_raises(TypeError) { Hron::HronError.lex("m", span, bad) }
+      assert_raises(TypeError) { Hron::HronError.parse(bad, span, "x") }
+      assert_raises(TypeError) { Hron::HronError.parse("m", span, bad) }
+      assert_raises(TypeError) { Hron::HronError.eval(bad) }
+      assert_raises(TypeError) { Hron::HronError.cron(bad) }
+    end
+  end
+
+  def test_lex_and_parse_factories_raise_type_error_for_a_span_that_is_not_a_hron_span
+    [nil, [0, 1], 0..1, {start: 0, end_pos: 1}].each do |bad|
+      assert_raises(TypeError) { Hron::HronError.lex("m", bad, "x") }
+      assert_raises(TypeError) { Hron::HronError.parse("m", bad, "x") }
+    end
+  end
+
+  def test_parse_factory_raises_type_error_for_a_suggestion_that_is_not_a_string_or_nil
+    span = Hron::Span.new(0, 1)
+    [:suggestion, 1, ["try"]].each do |bad|
+      assert_raises(TypeError) { Hron::HronError.parse("m", span, "x", suggestion: bad) }
+    end
+    assert_nil Hron::HronError.parse("m", span, "x", suggestion: nil).suggestion
+    assert_equal "try", Hron::HronError.parse("m", span, "x", suggestion: "try").suggestion
+  end
 end

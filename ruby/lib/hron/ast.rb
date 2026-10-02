@@ -207,31 +207,11 @@ module Hron
   SingleDateExpr = Data.define(:date, :times)
   YearRepeat = Data.define(:interval, :target, :times)
 
-  # The parts of a schedule, for Schedule.new to check. anchor is the starting date, a
-  # YYYY-MM-DD String; an empty except or during list is no clause.
-  ScheduleData = Data.define(:expr, :timezone, :except, :until, :anchor, :during) do
-    def initialize(expr:, timezone: nil, except: [], until: nil, anchor: nil, during: [])
+  # The parts of a schedule, for Schedule.new to check. starting is a YYYY-MM-DD String; an
+  # empty except or during list is no clause.
+  ScheduleData = Data.define(:expression, :timezone, :except, :until, :starting, :during) do
+    def initialize(expression:, timezone: nil, except: [], until: nil, starting: nil, during: [])
       super
-    end
-  end
-
-  def self.expand_day_spec(spec)
-    case spec
-    when SingleDay
-      [spec.day]
-    when DayRange
-      (spec.start..spec.end_day).to_a
-    else
-      []
-    end
-  end
-
-  def self.expand_month_target(target)
-    case target
-    when DaysTarget
-      target.specs.flat_map { |spec| expand_day_spec(spec) }
-    else
-      []
     end
   end
 end

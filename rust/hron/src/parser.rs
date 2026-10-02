@@ -730,7 +730,7 @@ mod tests {
     #[test]
     fn test_parse_every_day() {
         let s = parse("every day at 09:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::DayRepeat { days, times, .. } => {
                 assert_eq!(*days, DayFilter::Every);
                 assert_eq!(*times, vec![TimeOfDay { hour: 9, minute: 0 }]);
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn test_parse_every_weekday() {
         let s = parse("every weekday at 9:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::DayRepeat { days, .. } => assert_eq!(*days, DayFilter::Weekday),
             _ => panic!("expected DayRepeat"),
         }
@@ -752,7 +752,7 @@ mod tests {
     #[test]
     fn test_parse_every_weekend() {
         let s = parse("every weekend at 10:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::DayRepeat { days, .. } => assert_eq!(*days, DayFilter::Weekend),
             _ => panic!("expected DayRepeat"),
         }
@@ -761,7 +761,7 @@ mod tests {
     #[test]
     fn test_parse_specific_days() {
         let s = parse("every mon, wed, fri at 9:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::DayRepeat {
                 days: DayFilter::Days(days),
                 ..
@@ -778,7 +778,7 @@ mod tests {
     #[test]
     fn test_parse_interval() {
         let s = parse("every 30 min from 09:00 to 17:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::IntervalRepeat {
                 interval,
                 unit,
@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn test_parse_interval_with_day_filter() {
         let s = parse("every 45 min from 09:00 to 17:00 on weekdays").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::IntervalRepeat { day_filter, .. } => {
                 assert_eq!(*day_filter, Some(DayFilter::Weekday));
             }
@@ -816,7 +816,7 @@ mod tests {
     #[test]
     fn test_parse_week_repeat() {
         let s = parse("every 2 weeks on monday at 9:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::WeekRepeat { interval, days, .. } => {
                 assert_eq!(*interval, 2);
                 assert_eq!(*days, vec![Weekday::Monday]);
@@ -828,7 +828,7 @@ mod tests {
     #[test]
     fn test_parse_month_repeat() {
         let s = parse("every month on the 1st at 9:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::MonthRepeat { target, .. } => {
                 assert_eq!(*target, MonthTarget::Days(vec![DayOfMonthSpec::Single(1)]));
             }
@@ -839,7 +839,7 @@ mod tests {
     #[test]
     fn test_parse_month_repeat_multiple() {
         let s = parse("every month on the 1st, 15th at 9:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::MonthRepeat { target, .. } => {
                 assert_eq!(
                     *target,
@@ -853,7 +853,7 @@ mod tests {
     #[test]
     fn test_parse_month_last_day() {
         let s = parse("every month on the last day at 17:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::MonthRepeat { target, .. } => {
                 assert_eq!(*target, MonthTarget::LastDay);
             }
@@ -864,7 +864,7 @@ mod tests {
     #[test]
     fn test_parse_month_last_weekday() {
         let s = parse("every month on the last weekday at 15:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::MonthRepeat { target, .. } => {
                 assert_eq!(*target, MonthTarget::LastWeekday);
             }
@@ -875,7 +875,7 @@ mod tests {
     #[test]
     fn test_parse_ordinal_weekday() {
         let s = parse("every month on the first monday at 10:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::MonthRepeat { target, times, .. } => {
                 assert_eq!(
                     *target,
@@ -899,7 +899,7 @@ mod tests {
     #[test]
     fn test_parse_last_weekday_name() {
         let s = parse("every month on the last friday at 16:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::MonthRepeat { target, .. } => {
                 assert_eq!(
                     *target,
@@ -916,7 +916,7 @@ mod tests {
     #[test]
     fn test_parse_single_date_named() {
         let s = parse("on feb 14 at 9:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::SingleDate { date, .. } => {
                 assert_eq!(
                     *date,
@@ -933,7 +933,7 @@ mod tests {
     #[test]
     fn test_parse_single_date_iso() {
         let s = parse("on 2026-03-15 at 14:30").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::SingleDate { date, times } => {
                 assert_eq!(*date, DateSpec::Iso("2026-03-15".into()));
                 assert_eq!(
@@ -1002,13 +1002,16 @@ mod tests {
     #[test]
     fn test_parse_starting() {
         let s = parse("every 2 weeks on monday at 9:00 starting 2026-01-05").unwrap();
-        assert_eq!(s.anchor, Some(jiff::civil::Date::new(2026, 1, 5).unwrap()));
+        assert_eq!(
+            s.starting,
+            Some(jiff::civil::Date::new(2026, 1, 5).unwrap())
+        );
     }
 
     #[test]
     fn test_parse_year_repeat_date() {
         let s = parse("every year on dec 25 at 00:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::YearRepeat { target, times, .. } => {
                 assert_eq!(
                     *target,
@@ -1026,7 +1029,7 @@ mod tests {
     #[test]
     fn test_parse_year_repeat_ordinal_weekday() {
         let s = parse("every year on the first monday of march at 10:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::YearRepeat { target, .. } => {
                 assert_eq!(
                     *target,
@@ -1044,7 +1047,7 @@ mod tests {
     #[test]
     fn test_parse_year_repeat_day_of_month() {
         let s = parse("every year on the 15th of march at 09:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::YearRepeat { target, .. } => {
                 assert_eq!(
                     *target,
@@ -1061,7 +1064,7 @@ mod tests {
     #[test]
     fn test_parse_year_repeat_last_weekday() {
         let s = parse("every year on the last weekday of december at 17:00").unwrap();
-        match &s.expr {
+        match &s.expression {
             ScheduleExpr::YearRepeat { target, .. } => {
                 assert_eq!(
                     *target,
@@ -1082,7 +1085,10 @@ mod tests {
         .unwrap();
         assert_eq!(s.except.len(), 1);
         assert_eq!(s.until, Some(UntilSpec::Iso("2027-12-31".into())));
-        assert_eq!(s.anchor, Some(jiff::civil::Date::new(2026, 1, 1).unwrap()));
+        assert_eq!(
+            s.starting,
+            Some(jiff::civil::Date::new(2026, 1, 1).unwrap())
+        );
         assert_eq!(s.timezone, Some("UTC".into()));
     }
 

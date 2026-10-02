@@ -62,7 +62,6 @@ internal sealed class Parser
 
     public static ScheduleData Parse(string input)
     {
-        input ??= "";
         var tokens = Lexer.Lexer.Tokenize(input);
         if (tokens.Count == 0)
         {
@@ -118,7 +117,7 @@ internal sealed class Parser
         {
             var token = Peek() is { Kind: TokenKind.IsoDate } iso ? iso : throw ExpectedError(Expected.IsoDate);
             _pos++;
-            schedule = schedule.WithAnchor(CheckIsoDate(token));
+            schedule = schedule.WithStarting(CheckIsoDate(token));
         }
 
         if (Eat(TokenKind.During))
@@ -144,7 +143,7 @@ internal sealed class Parser
         [
             schedule.Except.Count > 0,
             schedule.Until is not null,
-            schedule.Anchor is not null,
+            schedule.Starting is not null,
             schedule.During.Count > 0,
             schedule.Timezone is not null,
         ];
@@ -158,7 +157,7 @@ internal sealed class Parser
 
     private void CheckNamedUntil(ScheduleData schedule, Span? untilOffsets)
     {
-        if (schedule.Until is { Kind: UntilSpecKind.Named } until && schedule.Anchor is null && untilOffsets is { } span)
+        if (schedule.Until is { Kind: UntilSpecKind.Named } until && schedule.Starting is null && untilOffsets is { } span)
         {
             var month = until.Month!.Value.ToDisplayString();
             throw HronException.Parse(

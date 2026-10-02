@@ -147,10 +147,10 @@ ScheduleData fromCron(String cron) {
   final months = _sorted(_values(month, _Field.month));
   final weekDays = _parseDayOfWeek(dayOfWeek);
   final days = _dayExpression(monthDays, weekDays);
-  final times = [
+  final times = List<TimeOfDay>.unmodifiable([
     for (final hour in hours)
       for (final minute in minutes) TimeOfDay(hour, minute),
-  ];
+  ]);
 
   final gap = _equalGap(times);
   final yearTarget = _yearTarget(days, months);
@@ -168,7 +168,9 @@ ScheduleData fromCron(String cron) {
     };
   }
   final during = expr is! YearRepeat && months.length < MonthName.values.length
-      ? [for (final m in months) MonthName.fromNumber(m)]
+      ? List<MonthName>.unmodifiable([
+          for (final m in months) MonthName.fromNumber(m),
+        ])
       : const <MonthName>[];
   return ScheduleData(expr, during: during);
 }
@@ -355,10 +357,12 @@ _Days _dayExpression(_MonthDays monthDays, _WeekDays weekDays) => switch ((
   (_MonthDayList(:final days), _AnyWeekDay()) when days.length == 31 =>
     _DaysOfWeek(EveryDay()),
   (_MonthDayList(:final days), _AnyWeekDay()) => _DaysOfMonth(
-    DaysTarget([
-      for (final (first, last) in _runs(_sorted(days)))
-        first == last ? SingleDay(first) : DayRange(first, last),
-    ]),
+    DaysTarget(
+      List.unmodifiable([
+        for (final (first, last) in _runs(_sorted(days)))
+          first == last ? SingleDay(first) : DayRange(first, last),
+      ]),
+    ),
   ),
   (_LastMonthDay(), _AnyWeekDay()) => _DaysOfMonth(LastDayTarget()),
   (_LastWeekdayOfMonth(), _AnyWeekDay()) => _DaysOfMonth(LastWeekdayTarget()),
@@ -372,7 +376,9 @@ DayFilter _weekdayFilter(List<int> days) => switch (_sorted(days)) {
   [0, 1, 2, 3, 4, 5, 6] => EveryDay(),
   [1, 2, 3, 4, 5] => WeekdayFilter(),
   [0, 6] => WeekendFilter(),
-  _ => SpecificDays([for (final d in days) Weekday.fromCronDow(d)]),
+  _ => SpecificDays(
+    List.unmodifiable([for (final d in days) Weekday.fromCronDow(d)]),
+  ),
 };
 
 int? _equalGap(List<TimeOfDay> times) {
@@ -435,12 +441,12 @@ String toCron(ScheduleData schedule) {
   if (schedule.until != null) {
     throw _notExpressible('until clauses not supported');
   }
-  if (schedule.anchor != null) {
+  if (schedule.starting != null) {
     throw _notExpressible('starting clauses not supported');
   }
-  final (dayOfMonth, dayOfWeek) = _dayFields(schedule.expr);
+  final (dayOfMonth, dayOfWeek) = _dayFields(schedule.expression);
   final month = _monthField(schedule);
-  final (minute, hour) = _timeFields(schedule.expr);
+  final (minute, hour) = _timeFields(schedule.expression);
   return '$minute $hour $dayOfMonth $month $dayOfWeek';
 }
 
@@ -499,7 +505,7 @@ void _repeatsOnce(int interval, String unit) {
 
 String _monthField(ScheduleData schedule) {
   final during = schedule.during;
-  final month = _ownMonth(schedule.expr);
+  final month = _ownMonth(schedule.expression);
   if (month != null) {
     if (during.isNotEmpty && !during.contains(month)) {
       throw _notExpressible("during excludes the schedule's month");

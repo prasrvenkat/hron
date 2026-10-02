@@ -1,6 +1,10 @@
 package io.hron;
 
-import io.hron.ast.ScheduleData;
+import io.hron.ast.ExceptionSpec;
+import io.hron.ast.MonthName;
+import io.hron.ast.ScheduleExpr;
+import io.hron.ast.UntilSpec;
+import io.hron.internal.ScheduleData;
 import io.hron.internal.cron.CronConverter;
 import io.hron.internal.display.Display;
 import io.hron.internal.eval.Evaluator;
@@ -26,9 +30,10 @@ public final class Schedule {
    * Parses an hron expression into a Schedule.
    *
    * @throws HronException if the input is invalid
+   * @throws NullPointerException if input is null
    */
   public static Schedule parse(String input) throws HronException {
-    return new Schedule(Parser.parse(input));
+    return new Schedule(Parser.parse(Objects.requireNonNull(input, "input")));
   }
 
   /**
@@ -37,13 +42,19 @@ public final class Schedule {
    *
    * @throws HronException of kind {@code CRON} if the cron is invalid or no hron schedule fires as
    *     it does
+   * @throws NullPointerException if cronExpr is null
    */
   public static Schedule fromCron(String cronExpr) throws HronException {
-    return new Schedule(CronConverter.fromCron(cronExpr));
+    return new Schedule(CronConverter.fromCron(Objects.requireNonNull(cronExpr, "cronExpr")));
   }
 
-  /** Validates an hron expression without throwing. */
+  /**
+   * Returns whether {@link #parse} accepts the input.
+   *
+   * @throws NullPointerException if input is null
+   */
   public static boolean validate(String input) {
+    Objects.requireNonNull(input, "input");
     try {
       Parser.parse(input);
       return true;
@@ -131,14 +142,47 @@ public final class Schedule {
     return Optional.ofNullable(data.timezone()).filter(s -> !s.isEmpty());
   }
 
+  public ScheduleExpr expression() {
+    return data.expression();
+  }
+
+  /** Returns the except dates, an unmodifiable list, empty without an except clause. */
+  public List<ExceptionSpec> except() {
+    return data.except();
+  }
+
+  /** Returns the until date, or empty if not specified. */
+  public Optional<UntilSpec> until() {
+    return Optional.ofNullable(data.until());
+  }
+
+  /** Returns the starting date as YYYY-MM-DD, or empty if not specified. */
+  public Optional<String> starting() {
+    return Optional.ofNullable(data.starting());
+  }
+
+  /** Returns the during months, an unmodifiable list, empty without a during clause. */
+  public List<MonthName> during() {
+    return data.during();
+  }
+
   /** Returns the canonical string representation of this schedule. */
   @Override
   public String toString() {
     return Display.render(this);
   }
 
-  /** Returns this schedule's parts, which cannot change and cannot be built back into one. */
-  public ScheduleData data() {
-    return data;
+  /**
+   * Returns whether other is a schedule with equal parts, comparing lists in order (spec/README.md,
+   * "Equality").
+   */
+  @Override
+  public boolean equals(Object other) {
+    return other instanceof Schedule schedule && data.equals(schedule.data);
+  }
+
+  @Override
+  public int hashCode() {
+    return data.hashCode();
   }
 }

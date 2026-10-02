@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-internal enum IntervalUnit
+public enum IntervalUnit
 {
     Minutes,
     Hours

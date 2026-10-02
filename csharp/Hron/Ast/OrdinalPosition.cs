@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-internal enum OrdinalPosition
+public enum OrdinalPosition
 {
     First = 1,
     Second = 2,

@@ -554,10 +554,10 @@ func toCron(schedule *ScheduleData) (string, error) {
 	if schedule.Until != nil {
 		return "", notExpressible("until clauses not supported")
 	}
-	if schedule.Anchor != "" {
+	if schedule.Starting != "" {
 		return "", notExpressible("starting clauses not supported")
 	}
-	dayOfMonth, dayOfWeek, err := dayFields(&schedule.Expr)
+	dayOfMonth, dayOfWeek, err := dayFields(&schedule.Expression)
 	if err != nil {
 		return "", err
 	}
@@ -565,7 +565,7 @@ func toCron(schedule *ScheduleData) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	minute, hour, err := timeFields(&schedule.Expr)
+	minute, hour, err := timeFields(&schedule.Expression)
 	if err != nil {
 		return "", err
 	}
@@ -644,7 +644,7 @@ func dayFields(expr *ScheduleExpr) (string, string, error) {
 
 func monthFieldOf(schedule *ScheduleData) (string, error) {
 	during := schedule.During
-	month, ok := ownMonth(&schedule.Expr)
+	month, ok := ownMonth(&schedule.Expression)
 	switch {
 	case ok && len(during) > 0 && !slices.Contains(during, month):
 		return "", notExpressible("during excludes the schedule's month")

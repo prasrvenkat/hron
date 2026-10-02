@@ -15,7 +15,7 @@ const maxInterval = math.MaxInt32
 // list of checks is evaluated in full and cmp.Or returns the first failure, so
 // no check may depend on an earlier one passing.
 func checkParts(parts *ScheduleData) (*time.Location, error) {
-	if err := checkExpr(&parts.Expr); err != nil {
+	if err := checkExpr(&parts.Expression); err != nil {
 		return nil, err
 	}
 	for _, exception := range parts.Except {
@@ -28,8 +28,8 @@ func checkParts(parts *ScheduleData) (*time.Location, error) {
 			return nil, err
 		}
 	}
-	if parts.Anchor != "" {
-		if err := checkISODate(parts.Anchor); err != nil {
+	if parts.Starting != "" {
+		if err := checkISODate(parts.Starting); err != nil {
 			return nil, err
 		}
 	}
@@ -43,7 +43,7 @@ func checkParts(parts *ScheduleData) (*time.Location, error) {
 		return nil, err
 	}
 	parts.Timezone = canonical
-	if parts.Until != nil && parts.Until.Kind == UntilSpecKindNamed && parts.Anchor == "" {
+	if parts.Until != nil && parts.Until.Kind == UntilSpecKindNamed && parts.Starting == "" {
 		return nil, EvalError(noYearMessage(*parts.Until))
 	}
 	return location, nil
@@ -296,9 +296,9 @@ func unknown[T ~int](kind string, value T) error {
 // equal parts, and shares no slice or pointer with the original.
 func copyParts(parts *ScheduleData) *ScheduleData {
 	out := &ScheduleData{
-		Expr:     copyExpr(parts.Expr),
-		Timezone: parts.Timezone,
-		Anchor:   parts.Anchor,
+		Expression: copyExpr(parts.Expression),
+		Timezone:   parts.Timezone,
+		Starting:   parts.Starting,
 	}
 	for _, exception := range parts.Except {
 		out.Except = append(out.Except, copyException(exception))

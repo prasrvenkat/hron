@@ -64,11 +64,11 @@ class BuildConformanceTest < Minitest::Test
   def parts(json)
     fields(json, %w[expression except until starting during timezone])
     Hron::ScheduleData.new(
-      expr: expression(json.fetch("expression")),
+      expression: expression(json.fetch("expression")),
       timezone: json["timezone"],
       except: json.fetch("except", []).map { |date| dated(date, Hron::NamedException, Hron::IsoException) },
       until: json.key?("until") ? dated(json["until"], Hron::NamedUntil, Hron::IsoUntil) : nil,
-      anchor: json["starting"],
+      starting: json["starting"],
       during: json.fetch("during", []).map { |month| MONTHS.fetch(month) }
     )
   end

@@ -46,21 +46,45 @@ module Hron
       @suggestion = suggestion
     end
 
+    # Each factory raises TypeError for a message or input that is not a String, a span that is
+    # not a Hron::Span, and a suggestion that is neither a String nor nil.
     def self.lex(message, span, input)
+      require_strings(message: message, input: input)
+      require_span(span)
       new(ErrorKind::LEX, message, span: span, input: input)
     end
 
     def self.parse(message, span, input, suggestion: nil)
+      require_strings(message: message, input: input)
+      require_span(span)
+      unless suggestion.nil? || suggestion.is_a?(String)
+        raise TypeError, "suggestion must be a String or nil, not #{suggestion.class}"
+      end
+
       new(ErrorKind::PARSE, message, span: span, input: input, suggestion: suggestion)
     end
 
     def self.eval(message)
+      require_strings(message: message)
       new(ErrorKind::EVAL, message)
     end
 
     def self.cron(message)
+      require_strings(message: message)
       new(ErrorKind::CRON, message)
     end
+
+    def self.require_strings(**values)
+      values.each do |name, value|
+        raise TypeError, "#{name} must be a String, not #{value.class}" unless value.is_a?(String)
+      end
+    end
+    private_class_method :require_strings
+
+    def self.require_span(span)
+      raise TypeError, "span must be a Hron::Span, not #{span.class}" unless span.is_a?(Span)
+    end
+    private_class_method :require_span
 
     # The message, then for lex and parse errors the input and a line of carets under the span,
     # and any suggestion as ` try: "..."`. Lines are joined by "\n", with no trailing newline.

@@ -3,6 +3,8 @@ package hron
 
 import (
 	"iter"
+	"reflect"
+	"slices"
 	"time"
 )
 
@@ -110,12 +112,12 @@ func (s *Schedule) Matches(dt time.Time) bool {
 // Occurrences returns a lazy iterator of occurrences strictly after from.
 // Unbounded for repeating schedules unless an until clause ends them.
 func (s *Schedule) Occurrences(from time.Time) iter.Seq[time.Time] {
-	return Occurrences(s, from)
+	return occurrences(s, from)
 }
 
 // Between returns a bounded iterator of occurrences where `from < occurrence <= to`.
 func (s *Schedule) Between(from, to time.Time) iter.Seq[time.Time] {
-	return Between(s, from, to)
+	return between(s, from, to)
 }
 
 // ToCron converts this schedule to the 5-field cron expression that fires at
@@ -131,7 +133,42 @@ func (s *Schedule) Timezone() string {
 	return s.data.Timezone
 }
 
+// Expression returns a copy of the schedule's repeat.
+func (s *Schedule) Expression() ScheduleExpr {
+	return copyExpr(s.data.Expression)
+}
+
+// Except returns a copy of the except dates, or nil without an except clause.
+func (s *Schedule) Except() []ExceptionSpec {
+	return slices.Clone(s.data.Except)
+}
+
+// Until returns a copy of the until date, or nil without an until clause.
+func (s *Schedule) Until() *UntilSpec {
+	if s.data.Until == nil {
+		return nil
+	}
+	until := *s.data.Until
+	return &until
+}
+
+// Starting returns the starting date as YYYY-MM-DD, or "" without a starting clause.
+func (s *Schedule) Starting() string {
+	return s.data.Starting
+}
+
+// During returns a copy of the during months, or nil without a during clause.
+func (s *Schedule) During() []MonthName {
+	return slices.Clone(s.data.During)
+}
+
 // Data returns a copy of the schedule's parts, to change and pass to NewSchedule.
 func (s *Schedule) Data() *ScheduleData {
 	return copyParts(s.data)
+}
+
+// Equal reports whether other has the same parts, lists compared in order;
+// false when other is nil. == on schedules compares identity instead.
+func (s *Schedule) Equal(other *Schedule) bool {
+	return other != nil && reflect.DeepEqual(s.data, other.data)
 }

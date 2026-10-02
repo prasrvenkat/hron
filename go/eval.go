@@ -77,9 +77,7 @@ func matches(data *ScheduleData, zone *time.Location, t time.Time) bool {
 	return ok && next.Equal(minute)
 }
 
-// Occurrences returns a lazy iterator of occurrences strictly after from.
-// Unbounded for repeating schedules unless an until clause ends them.
-func Occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
+func occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
 	return func(yield func(time.Time) bool) {
 		s := newSearch(schedule.data, schedule.location)
 		current := from
@@ -93,13 +91,12 @@ func Occurrences(schedule *Schedule, from time.Time) iter.Seq[time.Time] {
 	}
 }
 
-// Between returns a bounded iterator of occurrences where `from < occurrence <= to`.
-func Between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
+func between(schedule *Schedule, from, to time.Time) iter.Seq[time.Time] {
 	return func(yield func(time.Time) bool) {
 		if !inSupportedRange(to) {
 			return
 		}
-		for t := range Occurrences(schedule, from) {
+		for t := range occurrences(schedule, from) {
 			if t.After(to) || !yield(t) {
 				return
 			}
@@ -136,10 +133,10 @@ type search struct {
 func newSearch(data *ScheduleData, zone *time.Location) search {
 	clauses := clausesOf(data)
 	return search{
-		expr:    &data.Expr,
+		expr:    &data.Expression,
 		zone:    zone,
-		cadence: cadenceOf(&data.Expr, clauses.starting),
-		times:   dailyTimesOf(&data.Expr),
+		cadence: cadenceOf(&data.Expression, clauses.starting),
+		times:   dailyTimesOf(&data.Expression),
 		clauses: clauses,
 	}
 }
@@ -362,8 +359,8 @@ func clausesOf(data *ScheduleData) clauses {
 		}
 	}
 	slices.SortFunc(c.exceptDates, time.Time.Compare)
-	if data.Anchor != "" {
-		starting, _ := parseISODate(data.Anchor)
+	if data.Starting != "" {
+		starting, _ := parseISODate(data.Starting)
 		c.starting = &starting
 	}
 	if data.Until != nil {

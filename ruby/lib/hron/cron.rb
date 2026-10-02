@@ -85,17 +85,17 @@ module Hron
         end
         yearly = expr.is_a?(YearRepeat)
         during = (!yearly && months.length < MonthName::ALL.length) ? months.map { |m| MonthName::ALL[m - 1] } : []
-        ScheduleData.new(expr: expr, during: during)
+        ScheduleData.new(expression: expr, during: during)
       end
 
       def to_cron(schedule)
         raise not_expressible("except clauses not supported") unless schedule.except.empty?
         raise not_expressible("until clauses not supported") if schedule.until
-        raise not_expressible("starting clauses not supported") if schedule.anchor
+        raise not_expressible("starting clauses not supported") if schedule.starting
 
-        day_of_month, day_of_week = day_fields(schedule.expr)
+        day_of_month, day_of_week = day_fields(schedule.expression)
         month = month_field(schedule)
-        minute, hour = time_fields(schedule.expr)
+        minute, hour = time_fields(schedule.expression)
         "#{minute} #{hour} #{day_of_month} #{month} #{day_of_week}"
       end
 
@@ -342,7 +342,7 @@ module Hron
       def month_target_fields(target)
         case target
         when DaysTarget
-          [list_field(Hron.expand_month_target(target).sort.uniq, 31), "*"]
+          [list_field(Evaluator.days_of(target).sort.uniq, 31), "*"]
         when LastDayTarget
           ["L", "*"]
         when LastWeekdayTarget
@@ -369,7 +369,7 @@ module Hron
 
       def month_field(schedule)
         during = schedule.during
-        month = own_month(schedule.expr)
+        month = own_month(schedule.expression)
         if month
           raise not_expressible("during excludes the schedule's month") unless during.empty? || during.include?(month)
 

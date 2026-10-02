@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.hron.internal.ScheduleData;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
@@ -11,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /** spec/README.md, "Schedules built in code": a schedule cannot change after it is built. */
@@ -29,8 +31,10 @@ class ImmutabilityTest {
           "YearRepeat.times");
 
   static List<Class<?>> partTypes() throws Exception {
-    return PublicSurfaceTest.exportedTypes().stream()
-        .filter(t -> t.getPackageName().equals("io.hron.ast"))
+    return Stream.concat(
+            PublicSurfaceTest.exportedTypes().stream()
+                .filter(t -> t.getPackageName().equals("io.hron.ast")),
+            Stream.of(ScheduleData.class))
         .toList();
   }
 
@@ -115,10 +119,16 @@ class ImmutabilityTest {
     for (String input : inputs) {
       Schedule schedule = Schedule.parse(input);
       String before = schedule.toString();
-      checkLists(schedule.data(), seen);
+      checkList("Schedule.except", schedule.except(), seen);
+      checkList("Schedule.during", schedule.during(), seen);
+      checkLists(schedule.expression(), seen);
+      checkLists(schedule.until().orElse(null), seen);
       assertEquals(before, schedule.toString());
     }
-    assertEquals(new TreeSet<>(LIST_COMPONENTS), seen);
+    Set<String> expected = new TreeSet<>(LIST_COMPONENTS);
+    expected.removeAll(Set.of("ScheduleData.except", "ScheduleData.during"));
+    expected.addAll(Set.of("Schedule.except", "Schedule.during"));
+    assertEquals(expected, seen);
   }
 
   private static void checkLists(Object part, Set<String> seen) throws Exception {
@@ -128,16 +138,19 @@ class ImmutabilityTest {
     for (RecordComponent component : part.getClass().getRecordComponents()) {
       Object value = component.getAccessor().invoke(part);
       if (value instanceof List<?> list) {
-        String name = part.getClass().getSimpleName() + "." + component.getName();
-        seen.add(name);
-        assertThrows(UnsupportedOperationException.class, () -> list.add(null), name);
-        assertThrows(UnsupportedOperationException.class, list::clear, name);
-        for (Object item : list) {
-          checkLists(item, seen);
-        }
+        checkList(part.getClass().getSimpleName() + "." + component.getName(), list, seen);
       } else {
         checkLists(value, seen);
       }
+    }
+  }
+
+  private static void checkList(String name, List<?> list, Set<String> seen) throws Exception {
+    seen.add(name);
+    assertThrows(UnsupportedOperationException.class, () -> list.add(null), name);
+    assertThrows(UnsupportedOperationException.class, list::clear, name);
+    for (Object item : list) {
+      checkLists(item, seen);
     }
   }
 }

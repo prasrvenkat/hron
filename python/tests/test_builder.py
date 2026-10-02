@@ -111,7 +111,7 @@ def on(day: object) -> ScheduleData:
         pytest.param(lambda: on(NamedDate(MonthName.JAN, untyped(True))), id="bool named day"),
         pytest.param(lambda: ScheduleData(DAILY, except_=untyped(None)), id="None for except_"),
         pytest.param(lambda: ScheduleData(DAILY, during=untyped(None)), id="None for during"),
-        pytest.param(lambda: ScheduleData(DAILY, anchor=untyped(date(2026, 2, 6))), id="date"),
+        pytest.param(lambda: ScheduleData(DAILY, starting=untyped(date(2026, 2, 6))), id="date"),
         pytest.param(lambda: ScheduleData(DAILY, timezone=untyped(0)), id="int for timezone"),
     ],
 )
@@ -290,7 +290,7 @@ def test_a_built_schedule_keeps_no_list_it_was_given() -> None:
         )
     )
     data = schedule.data
-    expr = data.expr
+    expr = data.expression
     assert isinstance(expr, MonthRepeat) and isinstance(expr.target, DaysTarget)
     for value in (expr.times, expr.target.specs, data.except_, data.during):
         assert isinstance(value, tuple)
@@ -461,7 +461,7 @@ def _random_parts(rng: random.Random) -> ScheduleData:
         timezone=rng.choice([None, _pick(rng, ["utc", "america/new_york"], ["EST"])]),
         except_=rng.choice(exceptions),
         until=rng.choice(until),
-        anchor=rng.choice([None, _pick(rng, ["2026-02-06"], ["0000-01-01"])]),
+        starting=rng.choice([None, _pick(rng, ["2026-02-06"], ["0000-01-01"])]),
         during=rng.choice([(), (_random_month(rng),)]),
     )
 

@@ -115,13 +115,13 @@ typedef _Occurrence = ({TZDateTime instant, DateTime landing});
 
 final class _Search {
   factory _Search(ScheduleData schedule) {
-    final anchor = schedule.anchor;
-    final starting = anchor == null ? null : parseIsoDate(anchor);
+    final iso = schedule.starting;
+    final starting = iso == null ? null : parseIsoDate(iso);
     return _Search._(
-      schedule.expr,
+      schedule.expression,
       _zoneNamed(schedule.timezone),
-      _Cadence.of(schedule.expr, starting),
-      _DailyTimes.of(schedule.expr),
+      _Cadence.of(schedule.expression, starting),
+      _DailyTimes.of(schedule.expression),
       _Clauses.of(schedule, starting),
     );
   }

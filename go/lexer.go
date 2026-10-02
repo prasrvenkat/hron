@@ -7,45 +7,45 @@ import (
 	"unicode/utf8"
 )
 
-type TokenKind int
+type tokenKind int
 
 const (
-	TokenEvery TokenKind = iota
-	TokenOn
-	TokenAt
-	TokenFrom
-	TokenTo
-	TokenIn
-	TokenOf
-	TokenThe
-	TokenLast
-	TokenExcept
-	TokenUntil
-	TokenStarting
-	TokenDuring
-	TokenYear
-	TokenDay
-	TokenWeekday
-	TokenWeekend
-	TokenWeeks
-	TokenMonth
-	TokenDayName
-	TokenMonthName
-	TokenOrdinal
-	TokenIntervalUnit
-	TokenNumber
-	TokenOrdinalNumber
-	TokenTime
-	TokenISODate
-	TokenComma
-	TokenTimezone
-	TokenNearest
-	TokenNext
-	TokenPrevious
+	tokenEvery tokenKind = iota
+	tokenOn
+	tokenAt
+	tokenFrom
+	tokenTo
+	tokenIn
+	tokenOf
+	tokenThe
+	tokenLast
+	tokenExcept
+	tokenUntil
+	tokenStarting
+	tokenDuring
+	tokenYear
+	tokenDay
+	tokenWeekday
+	tokenWeekend
+	tokenWeeks
+	tokenMonth
+	tokenDayName
+	tokenMonthName
+	tokenOrdinal
+	tokenIntervalUnit
+	tokenNumber
+	tokenOrdinalNumber
+	tokenTime
+	tokenISODate
+	tokenComma
+	tokenTimezone
+	tokenNearest
+	tokenNext
+	tokenPrevious
 )
 
-type Token struct {
-	Kind TokenKind
+type token struct {
+	Kind tokenKind
 	Span Span
 
 	DayNameVal   Weekday
@@ -65,13 +65,13 @@ type lexer struct {
 }
 
 // Token spans count bytes, unlike the code points of an error's Span.
-func tokenize(input string) ([]Token, error) {
+func tokenize(input string) ([]token, error) {
 	l := &lexer{input: input}
 	return l.tokenize()
 }
 
-func (l *lexer) tokenize() ([]Token, error) {
-	var tokens []Token
+func (l *lexer) tokenize() ([]token, error) {
+	var tokens []token
 	for {
 		l.advanceWhile(isWhitespace)
 		if l.pos >= len(l.input) {
@@ -79,15 +79,15 @@ func (l *lexer) tokenize() ([]Token, error) {
 		}
 		start := l.pos
 		c := l.input[l.pos]
-		var tok Token
+		var tok token
 		var err error
 		switch {
-		case len(tokens) > 0 && tokens[len(tokens)-1].Kind == TokenIn:
+		case len(tokens) > 0 && tokens[len(tokens)-1].Kind == tokenIn:
 			l.advanceWhile(func(b byte) bool { return !isWhitespace(b) })
-			tok = Token{Kind: TokenTimezone, TimezoneVal: l.input[start:l.pos]}
+			tok = token{Kind: tokenTimezone, TimezoneVal: l.input[start:l.pos]}
 		case c == ',':
 			l.pos++
-			tok = Token{Kind: TokenComma}
+			tok = token{Kind: tokenComma}
 		case isAlpha(c):
 			tok, err = l.word(start)
 		case isDigit(c):
@@ -113,51 +113,51 @@ func (l *lexer) error(message string, start int) error {
 	return LexError(message, codePointSpan(l.input, start, l.pos), l.input)
 }
 
-func (l *lexer) word(start int) (Token, error) {
+func (l *lexer) word(start int) (token, error) {
 	l.advanceWhile(func(b byte) bool { return isAlphanumeric(b) || b == '_' })
 	text := l.input[start:l.pos]
 	tok, ok := keywordMap[asciiLower(text)]
 	if !ok {
-		return Token{}, l.error("unknown keyword '"+text+"'", start)
+		return token{}, l.error("unknown keyword '"+text+"'", start)
 	}
 	return tok, nil
 }
 
-func (l *lexer) digits(start int) (Token, error) {
+func (l *lexer) digits(start int) (token, error) {
 	l.advanceWhile(isDigit)
 	digits := l.input[start:l.pos]
 	rest := l.input[l.pos:]
 	if len(digits) == 4 && isISODateTail(rest) {
 		l.pos += len("-MM-DD")
-		return Token{Kind: TokenISODate, ISODateVal: l.input[start:l.pos]}, nil
+		return token{Kind: tokenISODate, ISODateVal: l.input[start:l.pos]}, nil
 	}
 	if strings.HasPrefix(rest, ":") {
 		return l.time(start)
 	}
 	value, ok := numberValue(digits)
 	if !ok {
-		return Token{}, l.error("number must be at most 2147483647", start)
+		return token{}, l.error("number must be at most 2147483647", start)
 	}
 	if isOrdinalSuffix(rest) {
 		l.pos += 2
-		return Token{Kind: TokenOrdinalNumber, NumberVal: value}, nil
+		return token{Kind: tokenOrdinalNumber, NumberVal: value}, nil
 	}
-	return Token{Kind: TokenNumber, NumberVal: value}, nil
+	return token{Kind: tokenNumber, NumberVal: value}, nil
 }
 
-func (l *lexer) time(start int) (Token, error) {
+func (l *lexer) time(start int) (token, error) {
 	colon := l.pos
 	l.pos++
 	l.advanceWhile(isDigit)
 	hour, minute, text := l.input[start:colon], l.input[colon+1:l.pos], l.input[start:l.pos]
 	if len(hour) > 2 || len(minute) != 2 {
-		return Token{}, l.error("time must be H:MM or HH:MM, got "+text, start)
+		return token{}, l.error("time must be H:MM or HH:MM, got "+text, start)
 	}
 	h, m := twoDigitValue(hour), twoDigitValue(minute)
 	if h > 23 || m > 59 {
-		return Token{}, l.error("time must be 00:00-23:59, got "+text, start)
+		return token{}, l.error("time must be 00:00-23:59, got "+text, start)
 	}
-	return Token{Kind: TokenTime, TimeHour: h, TimeMinute: m}, nil
+	return token{Kind: tokenTime, TimeHour: h, TimeMinute: m}, nil
 }
 
 func (l *lexer) unexpectedCharacter(start int) error {
@@ -208,90 +208,90 @@ func isOrdinalSuffix(rest string) bool {
 	return false
 }
 
-var keywordMap = map[string]Token{
-	"every":    {Kind: TokenEvery},
-	"on":       {Kind: TokenOn},
-	"at":       {Kind: TokenAt},
-	"from":     {Kind: TokenFrom},
-	"to":       {Kind: TokenTo},
-	"in":       {Kind: TokenIn},
-	"of":       {Kind: TokenOf},
-	"the":      {Kind: TokenThe},
-	"last":     {Kind: TokenLast},
-	"except":   {Kind: TokenExcept},
-	"until":    {Kind: TokenUntil},
-	"starting": {Kind: TokenStarting},
-	"during":   {Kind: TokenDuring},
-	"year":     {Kind: TokenYear},
-	"years":    {Kind: TokenYear},
-	"day":      {Kind: TokenDay},
-	"days":     {Kind: TokenDay},
-	"weekday":  {Kind: TokenWeekday},
-	"weekdays": {Kind: TokenWeekday},
-	"weekend":  {Kind: TokenWeekend},
-	"weekends": {Kind: TokenWeekend},
-	"weeks":    {Kind: TokenWeeks},
-	"week":     {Kind: TokenWeeks},
-	"month":    {Kind: TokenMonth},
-	"months":   {Kind: TokenMonth},
+var keywordMap = map[string]token{
+	"every":    {Kind: tokenEvery},
+	"on":       {Kind: tokenOn},
+	"at":       {Kind: tokenAt},
+	"from":     {Kind: tokenFrom},
+	"to":       {Kind: tokenTo},
+	"in":       {Kind: tokenIn},
+	"of":       {Kind: tokenOf},
+	"the":      {Kind: tokenThe},
+	"last":     {Kind: tokenLast},
+	"except":   {Kind: tokenExcept},
+	"until":    {Kind: tokenUntil},
+	"starting": {Kind: tokenStarting},
+	"during":   {Kind: tokenDuring},
+	"year":     {Kind: tokenYear},
+	"years":    {Kind: tokenYear},
+	"day":      {Kind: tokenDay},
+	"days":     {Kind: tokenDay},
+	"weekday":  {Kind: tokenWeekday},
+	"weekdays": {Kind: tokenWeekday},
+	"weekend":  {Kind: tokenWeekend},
+	"weekends": {Kind: tokenWeekend},
+	"weeks":    {Kind: tokenWeeks},
+	"week":     {Kind: tokenWeeks},
+	"month":    {Kind: tokenMonth},
+	"months":   {Kind: tokenMonth},
 
-	"monday":    {Kind: TokenDayName, DayNameVal: Monday},
-	"mon":       {Kind: TokenDayName, DayNameVal: Monday},
-	"tuesday":   {Kind: TokenDayName, DayNameVal: Tuesday},
-	"tue":       {Kind: TokenDayName, DayNameVal: Tuesday},
-	"wednesday": {Kind: TokenDayName, DayNameVal: Wednesday},
-	"wed":       {Kind: TokenDayName, DayNameVal: Wednesday},
-	"thursday":  {Kind: TokenDayName, DayNameVal: Thursday},
-	"thu":       {Kind: TokenDayName, DayNameVal: Thursday},
-	"friday":    {Kind: TokenDayName, DayNameVal: Friday},
-	"fri":       {Kind: TokenDayName, DayNameVal: Friday},
-	"saturday":  {Kind: TokenDayName, DayNameVal: Saturday},
-	"sat":       {Kind: TokenDayName, DayNameVal: Saturday},
-	"sunday":    {Kind: TokenDayName, DayNameVal: Sunday},
-	"sun":       {Kind: TokenDayName, DayNameVal: Sunday},
+	"monday":    {Kind: tokenDayName, DayNameVal: Monday},
+	"mon":       {Kind: tokenDayName, DayNameVal: Monday},
+	"tuesday":   {Kind: tokenDayName, DayNameVal: Tuesday},
+	"tue":       {Kind: tokenDayName, DayNameVal: Tuesday},
+	"wednesday": {Kind: tokenDayName, DayNameVal: Wednesday},
+	"wed":       {Kind: tokenDayName, DayNameVal: Wednesday},
+	"thursday":  {Kind: tokenDayName, DayNameVal: Thursday},
+	"thu":       {Kind: tokenDayName, DayNameVal: Thursday},
+	"friday":    {Kind: tokenDayName, DayNameVal: Friday},
+	"fri":       {Kind: tokenDayName, DayNameVal: Friday},
+	"saturday":  {Kind: tokenDayName, DayNameVal: Saturday},
+	"sat":       {Kind: tokenDayName, DayNameVal: Saturday},
+	"sunday":    {Kind: tokenDayName, DayNameVal: Sunday},
+	"sun":       {Kind: tokenDayName, DayNameVal: Sunday},
 
-	"january":   {Kind: TokenMonthName, MonthNameVal: Jan},
-	"jan":       {Kind: TokenMonthName, MonthNameVal: Jan},
-	"february":  {Kind: TokenMonthName, MonthNameVal: Feb},
-	"feb":       {Kind: TokenMonthName, MonthNameVal: Feb},
-	"march":     {Kind: TokenMonthName, MonthNameVal: Mar},
-	"mar":       {Kind: TokenMonthName, MonthNameVal: Mar},
-	"april":     {Kind: TokenMonthName, MonthNameVal: Apr},
-	"apr":       {Kind: TokenMonthName, MonthNameVal: Apr},
-	"may":       {Kind: TokenMonthName, MonthNameVal: May},
-	"june":      {Kind: TokenMonthName, MonthNameVal: Jun},
-	"jun":       {Kind: TokenMonthName, MonthNameVal: Jun},
-	"july":      {Kind: TokenMonthName, MonthNameVal: Jul},
-	"jul":       {Kind: TokenMonthName, MonthNameVal: Jul},
-	"august":    {Kind: TokenMonthName, MonthNameVal: Aug},
-	"aug":       {Kind: TokenMonthName, MonthNameVal: Aug},
-	"september": {Kind: TokenMonthName, MonthNameVal: Sep},
-	"sep":       {Kind: TokenMonthName, MonthNameVal: Sep},
-	"october":   {Kind: TokenMonthName, MonthNameVal: Oct},
-	"oct":       {Kind: TokenMonthName, MonthNameVal: Oct},
-	"november":  {Kind: TokenMonthName, MonthNameVal: Nov},
-	"nov":       {Kind: TokenMonthName, MonthNameVal: Nov},
-	"december":  {Kind: TokenMonthName, MonthNameVal: Dec},
-	"dec":       {Kind: TokenMonthName, MonthNameVal: Dec},
+	"january":   {Kind: tokenMonthName, MonthNameVal: Jan},
+	"jan":       {Kind: tokenMonthName, MonthNameVal: Jan},
+	"february":  {Kind: tokenMonthName, MonthNameVal: Feb},
+	"feb":       {Kind: tokenMonthName, MonthNameVal: Feb},
+	"march":     {Kind: tokenMonthName, MonthNameVal: Mar},
+	"mar":       {Kind: tokenMonthName, MonthNameVal: Mar},
+	"april":     {Kind: tokenMonthName, MonthNameVal: Apr},
+	"apr":       {Kind: tokenMonthName, MonthNameVal: Apr},
+	"may":       {Kind: tokenMonthName, MonthNameVal: May},
+	"june":      {Kind: tokenMonthName, MonthNameVal: Jun},
+	"jun":       {Kind: tokenMonthName, MonthNameVal: Jun},
+	"july":      {Kind: tokenMonthName, MonthNameVal: Jul},
+	"jul":       {Kind: tokenMonthName, MonthNameVal: Jul},
+	"august":    {Kind: tokenMonthName, MonthNameVal: Aug},
+	"aug":       {Kind: tokenMonthName, MonthNameVal: Aug},
+	"september": {Kind: tokenMonthName, MonthNameVal: Sep},
+	"sep":       {Kind: tokenMonthName, MonthNameVal: Sep},
+	"october":   {Kind: tokenMonthName, MonthNameVal: Oct},
+	"oct":       {Kind: tokenMonthName, MonthNameVal: Oct},
+	"november":  {Kind: tokenMonthName, MonthNameVal: Nov},
+	"nov":       {Kind: tokenMonthName, MonthNameVal: Nov},
+	"december":  {Kind: tokenMonthName, MonthNameVal: Dec},
+	"dec":       {Kind: tokenMonthName, MonthNameVal: Dec},
 
-	"first":  {Kind: TokenOrdinal, OrdinalVal: First},
-	"second": {Kind: TokenOrdinal, OrdinalVal: Second},
-	"third":  {Kind: TokenOrdinal, OrdinalVal: Third},
-	"fourth": {Kind: TokenOrdinal, OrdinalVal: Fourth},
-	"fifth":  {Kind: TokenOrdinal, OrdinalVal: Fifth},
+	"first":  {Kind: tokenOrdinal, OrdinalVal: First},
+	"second": {Kind: tokenOrdinal, OrdinalVal: Second},
+	"third":  {Kind: tokenOrdinal, OrdinalVal: Third},
+	"fourth": {Kind: tokenOrdinal, OrdinalVal: Fourth},
+	"fifth":  {Kind: tokenOrdinal, OrdinalVal: Fifth},
 
-	"nearest":  {Kind: TokenNearest},
-	"next":     {Kind: TokenNext},
-	"previous": {Kind: TokenPrevious},
+	"nearest":  {Kind: tokenNearest},
+	"next":     {Kind: tokenNext},
+	"previous": {Kind: tokenPrevious},
 
-	"min":     {Kind: TokenIntervalUnit, UnitVal: IntervalMin},
-	"mins":    {Kind: TokenIntervalUnit, UnitVal: IntervalMin},
-	"minute":  {Kind: TokenIntervalUnit, UnitVal: IntervalMin},
-	"minutes": {Kind: TokenIntervalUnit, UnitVal: IntervalMin},
-	"hour":    {Kind: TokenIntervalUnit, UnitVal: IntervalHours},
-	"hours":   {Kind: TokenIntervalUnit, UnitVal: IntervalHours},
-	"hr":      {Kind: TokenIntervalUnit, UnitVal: IntervalHours},
-	"hrs":     {Kind: TokenIntervalUnit, UnitVal: IntervalHours},
+	"min":     {Kind: tokenIntervalUnit, UnitVal: IntervalMin},
+	"mins":    {Kind: tokenIntervalUnit, UnitVal: IntervalMin},
+	"minute":  {Kind: tokenIntervalUnit, UnitVal: IntervalMin},
+	"minutes": {Kind: tokenIntervalUnit, UnitVal: IntervalMin},
+	"hour":    {Kind: tokenIntervalUnit, UnitVal: IntervalHours},
+	"hours":   {Kind: tokenIntervalUnit, UnitVal: IntervalHours},
+	"hr":      {Kind: tokenIntervalUnit, UnitVal: IntervalHours},
+	"hrs":     {Kind: tokenIntervalUnit, UnitVal: IntervalHours},
 }
 
 func isDigit(b byte) bool {

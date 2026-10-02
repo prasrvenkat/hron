@@ -153,10 +153,10 @@ class Parser {
       this.untilRange = [token.start, this.previous().end];
     }
 
-    let anchor: string | null = null;
+    let starting: string | null = null;
     if (this.eat("starting")) {
       if (!this.peekIs("isoDate")) throw this.expected(EXPECTED.isoDate);
-      anchor = this.isoDate(this.advance());
+      starting = this.isoDate(this.advance());
     }
 
     const during = this.eat("during") ? this.parseMonthList() : [];
@@ -167,7 +167,7 @@ class Parser {
       timezone = this.timezone(this.advance());
     }
 
-    return { expr, timezone, except, until, anchor, during };
+    return { expression: expr, timezone, except, until, starting, during };
   }
 
   leftover(schedule: ScheduleData): HronError {
@@ -176,7 +176,7 @@ class Parser {
     const read = [
       schedule.except.length > 0,
       schedule.until !== null,
-      schedule.anchor !== null,
+      schedule.starting !== null,
       schedule.during.length > 0,
       schedule.timezone !== null,
     ];
@@ -199,7 +199,7 @@ class Parser {
     const until = schedule.until;
     if (
       until?.type !== "named" ||
-      schedule.anchor !== null ||
+      schedule.starting !== null ||
       this.untilRange === null
     ) {
       return;

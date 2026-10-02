@@ -46,6 +46,109 @@ var timezone = schedule.Timezone; // "America/New_York" or null
 `Schedule.Parse` and `Schedule.FromCron` are the only ways to make a `Schedule`, and a schedule never
 changes once made.
 
+## API
+
+### `Schedule.Parse(string input)`: `Schedule`
+Parses an hron expression. Throws a `HronException` whose `Kind` is `ErrorKind.Lex` or
+`ErrorKind.Parse` on an invalid expression (see [Error Handling](#error-handling)), and an
+`ArgumentNullException` for null.
+
+### `Schedule.FromCron(string cronExpr)`: `Schedule`
+Converts a 5-field cron expression to a schedule that fires at the same times (see
+[Cron Conversion](#cron-conversion)). Throws a `HronException` whose `Kind` is `ErrorKind.Cron` when
+the input is not valid cron or has no exact hron equivalent, and an `ArgumentNullException` for null.
+
+### `Schedule.Validate(string input)`: `bool`
+`false` for anything `Parse` rejects, unknown timezones included. Throws an `ArgumentNullException`
+for null rather than returning `false`.
+
+### `schedule.NextFrom(DateTimeOffset now)`: `DateTimeOffset?`
+The next occurrence strictly after `now`, or null if there is none.
+
+### `schedule.NextNFrom(DateTimeOffset now, int n)`: `IReadOnlyList<DateTimeOffset>`
+Up to `n` occurrences strictly after `now`: fewer if the schedule ends, none if `n <= 0`.
+
+### `schedule.PreviousFrom(DateTimeOffset now)`: `DateTimeOffset?`
+The most recent occurrence strictly before `now`, or null if there is none, such as before a
+`starting` date.
+
+### `schedule.Matches(DateTimeOffset dateTime)`: `bool`
+True when the minute containing `dateTime`, on the schedule's wall clock, is an occurrence.
+
+### `schedule.Occurrences(DateTimeOffset from)`: `IEnumerable<DateTimeOffset>`
+Lazily yields the occurrences strictly after `from`, unbounded unless an `until` ends the schedule.
+
+### `schedule.Between(DateTimeOffset from, DateTimeOffset to)`: `IEnumerable<DateTimeOffset>`
+Lazily yields the occurrences where `from < occurrence <= to`.
+
+### `schedule.ToCron()`: `string`
+A 5-field cron expression that fires at the same times. Throws a `HronException` whose `Kind` is
+`ErrorKind.Cron` when there is none (see [Cron Conversion](#cron-conversion)).
+
+### `schedule.ToString()`: `string`
+The canonical expression, which parses back to an equal schedule.
+
+```csharp
+var schedule = Schedule.Parse("every weekday at 09:00 in America/New_York");
+var now = new DateTimeOffset(2026, 2, 6, 12, 0, 0, TimeSpan.Zero); // a Friday, 07:00 in New York
+
+Console.WriteLine(schedule.PreviousFrom(now)?.ToString("o")); // 2026-02-05T09:00:00.0000000-05:00
+foreach (var occurrence in schedule.Occurrences(now).Take(2))
+{
+    Console.WriteLine(occurrence.ToString("o")); // 2026-02-06T09:00:00.0000000-05:00, then 2026-02-09T09:00:00.0000000-05:00
+}
+Console.WriteLine(schedule.Between(now, now.AddDays(7)).Count()); // 5
+```
+
+### Getters
+
+Read-only properties, one per part. Every part is an immutable record or enum from `Hron.Ast`, and
+every list an `IReadOnlyList<T>` that no cast can change, so nothing a getter returns can change the
+schedule. Constructing a part makes a value no method takes:
+`Parse` and `FromCron` remain the only ways to make a schedule.
+
+| Property | Type | |
+|---|---|---|
+| `schedule.Expression` | `IScheduleExpr` | The repeat: a `DayRepeat`, `IntervalRepeat`, `WeekRepeat`, `MonthRepeat`, `YearRepeat` or `SingleDate`. |
+| `schedule.Timezone` | `string?` | The IANA timezone name with its canonical capitalization; null without an `in` clause. |
+| `schedule.Except` | `IReadOnlyList<ExceptionSpec>` | The except dates; empty without an except clause. |
+| `schedule.Until` | `UntilSpec?` | The until date; null without an until clause. |
+| `schedule.Starting` | `string?` | The starting date as `YYYY-MM-DD`; null without a starting clause. |
+| `schedule.During` | `IReadOnlyList<MonthName>` | The during months; empty without a during clause. |
+
+```csharp
+using Hron.Ast;
+
+var schedule = Schedule.Parse(
+    "every weekday at 9:00 except dec 25 starting 2026-01-05 during jan, dec in america/new_york");
+
+if (schedule.Expression is DayRepeat { Days.Kind: DayFilterKind.Weekday } repeat)
+{
+    Console.WriteLine(string.Join(", ", repeat.Times)); // 09:00
+}
+Console.WriteLine(schedule.Except[0]);                // ExceptionSpec { Kind = Named, Month = December, Day = 25, Date =  }
+Console.WriteLine(schedule.Until is null);            // True
+Console.WriteLine(schedule.Starting);                 // 2026-01-05
+Console.WriteLine(string.Join(", ", schedule.During)); // January, December
+Console.WriteLine(schedule.Timezone);                 // America/New_York
+```
+
+### Equality
+
+`schedule.Equals(other)`, `==` and `!=` compare parts: two schedules are equal when every getter is,
+however they were made. `every day at 9:00` equals `every day at 09:00`, and a schedule from
+`FromCron` equals the parse of its `ToString()`. Lists compare in order, duplicates included, as
+`ToString()` writes them. Equal schedules have equal `GetHashCode()`s, so a schedule works as a
+dictionary key. Comparing with null or anything that is not a `Schedule` is `false`, never an
+exception.
+
+```csharp
+Console.WriteLine(Schedule.Parse("every day at 9:00") == Schedule.Parse("every day at 09:00"));              // True
+Console.WriteLine(Schedule.FromCron("0 9 * * 1-5").Equals(Schedule.Parse("every weekday at 09:00")));         // True
+Console.WriteLine(Schedule.Parse("every day at 09:00, 17:00") == Schedule.Parse("every day at 17:00, 09:00")); // False
+Console.WriteLine(Schedule.Parse("every day at 09:00").Equals(null));                                         // False
+```
+
 ## Expression Syntax
 
 ```
@@ -100,9 +203,9 @@ A `DateTime` converts to `DateTimeOffset` implicitly, as the host's local time u
 `Utc`. Pass a `DateTimeOffset`, or a `DateTime` whose `Kind` is `Utc`, when the host's timezone
 should not matter.
 
-`NextNFrom(now, count)` returns at most `count` occurrences, and none when `count <= 0`. `count`
-only caps the list, so `int.MaxValue` returns at once, with every occurrence through the end of the
-supported range.
+`NextNFrom(now, n)` returns at most `n` occurrences, and none when `n <= 0`. `n` only caps the
+list, so `int.MaxValue` returns at once, with every occurrence through the end of the supported
+range.
 
 The supported range is `0001-01-02T00:00:00Z` up to but not including `9999-12-30T00:00:00Z`. An
 argument outside it, `DateTimeOffset.MinValue` and `MaxValue` included, is not an error: `NextFrom`
@@ -171,6 +274,36 @@ A surrogate pair is one code point, and so is a lone surrogate. To turn a span i
 walk the input and step over two `char`s wherever `char.IsSurrogatePair(input, i)` is true.
 `StringInfo` counts graphemes and `EnumerateRunes` turns a lone surrogate into U+FFFD, so neither
 gives the same count.
+
+### `HronException`
+
+`HronException` extends `Exception`.
+
+| Member | |
+|---|---|
+| `Kind` | An `ErrorKind`: `Lex`, `Parse`, `Eval` or `Cron`. `ToValue()` gives `"lex"`, `"parse"`, `"eval"` or `"cron"`. This package never throws `Eval`, which is for schedules built in code. |
+| `Message` | The message alone. |
+| `Span` | A `Span?`, `Start` and `End` in code points, for lex and parse errors, else null. |
+| `Input` | The expression as given for lex and parse errors, else null. |
+| `Suggestion` | Text to put in place of the span, when a parse error has one, else null. |
+| `DisplayRich()` | The message, then for lex and parse errors the input with carets under the span and any suggestion. |
+| `HronException.Lex(message, span, input)`, `HronException.Parse(message, span, input, suggestion)`, `HronException.Eval(message)`, `HronException.Cron(message)` | Build an error of each kind. A null message or input throws an `ArgumentNullException`; a null suggestion is allowed. |
+
+### Usage errors
+
+`Parse`, `Validate` and `FromCron` throw an `ArgumentNullException` for a null input, never a
+`HronException` or `false`.
+
+```csharp
+try
+{
+    Schedule.Validate(null!);
+}
+catch (ArgumentNullException ex)
+{
+    Console.WriteLine(ex.ParamName); // input
+}
+```
 
 ## Validation
 

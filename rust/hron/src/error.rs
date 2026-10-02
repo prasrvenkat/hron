@@ -19,6 +19,15 @@ impl Span {
     }
 }
 
+/// What failed: spec/README.md, "Error Types".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorKind {
+    Lex,
+    Parse,
+    Eval,
+    Cron,
+}
+
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum ScheduleError {
@@ -46,12 +55,7 @@ pub enum ScheduleError {
 
 impl fmt::Display for ScheduleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Lex { message, .. } => write!(f, "{message}"),
-            Self::Parse { message, .. } => write!(f, "{message}"),
-            Self::Eval { message } => write!(f, "{message}"),
-            Self::Cron { message } => write!(f, "{message}"),
-        }
+        f.write_str(self.message())
     }
 }
 
@@ -89,6 +93,49 @@ impl ScheduleError {
     pub fn cron(message: impl Into<String>) -> Self {
         Self::Cron {
             message: message.into(),
+        }
+    }
+
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::Lex { .. } => ErrorKind::Lex,
+            Self::Parse { .. } => ErrorKind::Parse,
+            Self::Eval { .. } => ErrorKind::Eval,
+            Self::Cron { .. } => ErrorKind::Cron,
+        }
+    }
+
+    /// The same text as `to_string()`.
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Lex { message, .. }
+            | Self::Parse { message, .. }
+            | Self::Eval { message }
+            | Self::Cron { message } => message,
+        }
+    }
+
+    /// `Some` for `lex` and `parse` errors only.
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Self::Lex { span, .. } | Self::Parse { span, .. } => Some(*span),
+            Self::Eval { .. } | Self::Cron { .. } => None,
+        }
+    }
+
+    /// The expression as given; `Some` for `lex` and `parse` errors only.
+    pub fn input(&self) -> Option<&str> {
+        match self {
+            Self::Lex { input, .. } | Self::Parse { input, .. } => Some(input),
+            Self::Eval { .. } | Self::Cron { .. } => None,
+        }
+    }
+
+    /// Text to put in place of the span; only a `parse` error may have one.
+    pub fn suggestion(&self) -> Option<&str> {
+        match self {
+            Self::Parse { suggestion, .. } => suggestion.as_deref(),
+            Self::Lex { .. } | Self::Eval { .. } | Self::Cron { .. } => None,
         }
     }
 

@@ -4,7 +4,7 @@ use crate::ast::*;
 
 impl fmt::Display for Schedule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.expr)?;
+        write!(f, "{}", self.expression)?;
 
         // Trailing clauses in the grammar's fixed order, so the output parses back.
         if !self.except.is_empty() {
@@ -27,8 +27,8 @@ impl fmt::Display for Schedule {
             }
         }
 
-        if let Some(anchor) = &self.anchor {
-            write!(f, " starting {anchor}")?;
+        if let Some(starting) = &self.starting {
+            write!(f, " starting {starting}")?;
         }
 
         if !self.during.is_empty() {

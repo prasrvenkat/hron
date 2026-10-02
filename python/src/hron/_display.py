@@ -38,7 +38,7 @@ from ._ast import (
 
 
 def display(schedule: ScheduleData) -> str:
-    out = _display_expr(schedule.expr)
+    out = _display_expr(schedule.expression)
 
     if schedule.except_:
         parts: list[str] = []
@@ -61,8 +61,8 @@ def display(schedule: ScheduleData) -> str:
             case _:
                 raise ValueError(f"unknown until type: {type(schedule.until)}")
 
-    if schedule.anchor:
-        out += f" starting {schedule.anchor}"
+    if schedule.starting:
+        out += f" starting {schedule.starting}"
 
     if schedule.during:
         out += " during " + ", ".join(str(m) for m in schedule.during)

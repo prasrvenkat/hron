@@ -34,7 +34,7 @@ public final class Evaluator {
     if (!inSupportedRange(from)) {
       return Stream.empty();
     }
-    Search search = Search.of(schedule.data());
+    Search search = Search.of(schedule);
     return Stream.iterate(
             search.nearest(from, Direction.FORWARD),
             Optional::isPresent,
@@ -58,7 +58,7 @@ public final class Evaluator {
     if (!inSupportedRange(datetime)) {
       return false;
     }
-    Search search = Search.of(schedule.data());
+    Search search = Search.of(schedule);
     ZonedDateTime minute =
         datetime.withZoneSameInstant(search.zone()).truncatedTo(ChronoUnit.MINUTES);
     // An occurrence never lands before the date it is scheduled on, so one at this minute is
@@ -75,7 +75,7 @@ public final class Evaluator {
    * Schedule, not its IntervalRepeat, as only a Schedule's parts are checked.
    */
   public static int[] intervalSlots(Schedule schedule) {
-    if (!(schedule.data().expr() instanceof IntervalRepeat ir)) {
+    if (!(schedule.expression() instanceof IntervalRepeat ir)) {
       throw new IllegalArgumentException("not an interval repeat: " + schedule);
     }
     return intervalSlots(ir);
@@ -104,6 +104,6 @@ public final class Evaluator {
     if (!inSupportedRange(now)) {
       return Optional.empty();
     }
-    return Search.of(schedule.data()).nearest(now, direction);
+    return Search.of(schedule).nearest(now, direction);
   }
 }

@@ -8,9 +8,9 @@ import (
 
 func ExampleNewSchedule() {
 	schedule, err := hron.NewSchedule(&hron.ScheduleData{
-		Expr:     hron.NewDayRepeat(1, hron.NewDayFilterWeekday(), []hron.TimeOfDay{{Hour: 9, Minute: 0}}),
-		Timezone: "america/new_york",
-		Anchor:   "2026-01-05",
+		Expression: hron.NewDayRepeat(1, hron.NewDayFilterWeekday(), []hron.TimeOfDay{{Hour: 9, Minute: 0}}),
+		Timezone:   "america/new_york",
+		Starting:   "2026-01-05",
 	})
 	if err != nil {
 		panic(err)
@@ -18,7 +18,7 @@ func ExampleNewSchedule() {
 	fmt.Println(schedule)
 
 	data := schedule.Data()
-	data.Expr.Interval = 2
+	data.Expression.Interval = 2
 	_, err = hron.NewSchedule(data)
 	fmt.Println(err.(*hron.HronError).DisplayRich())
 	// Output:

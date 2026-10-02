@@ -120,8 +120,8 @@ describe("timestamps outside the supported range", () => {
     "9999-12-30T12:00:00+05:00[America/New_York]",
   ])("finds nothing for %s and throws nothing", (outside) => {
     const inside = "2026-01-01T00:00:00+00:00[UTC]";
-    expect(schedule.nextFrom(outside)).toBeUndefined();
-    expect(schedule.previousFrom(outside)).toBeUndefined();
+    expect(schedule.nextFrom(outside)).toBeNull();
+    expect(schedule.previousFrom(outside)).toBeNull();
     expect(schedule.matches(outside)).toBe(false);
     expect(schedule.nextNFrom(outside, 3)).toEqual([]);
     expect(schedule.occurrences(outside, 3)).toEqual([]);

@@ -209,8 +209,13 @@ describe("parse roundtrip", () => {
       for (const tc of spec.parse[section].tests) {
         it(tc.name ?? tc.input, () => {
           checkFields(tc, ["input", "canonical"]);
-          expect(Schedule.parse(tc.input).toString()).toBe(tc.canonical);
+          const schedule = Schedule.parse(tc.input);
+          expect(schedule.toString()).toBe(tc.canonical);
           expect(Schedule.parse(tc.canonical).toString()).toBe(tc.canonical);
+          expect(
+            schedule.equals(Schedule.parse(schedule.toString())),
+            "equals the parse of its toString",
+          ).toBe(true);
         });
       }
     });
@@ -412,6 +417,10 @@ describe("cron", () => {
         checkFields(tc, ["cron", "hron"]);
         const schedule = Schedule.fromCron(tc.cron);
         expect(schedule.toString()).toBe(tc.hron);
+        expect(
+          schedule.equals(Schedule.parse(schedule.toString())),
+          "equals the parse of its toString",
+        ).toBe(true);
       });
     }
   });

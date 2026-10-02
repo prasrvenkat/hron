@@ -101,6 +101,8 @@ class ConformanceTest < Minitest::Test
 
         s2 = Hron::Schedule.parse(canonical)
         assert_equal canonical, s2.to_s, "Idempotency failed for: #{canonical}"
+        assert_equal schedule, s2, "parse(to_s) of #{input}"
+        assert_equal schedule.hash, s2.hash, "hash of parse(to_s) of #{input}"
         assert_rebuilds schedule
       end
     end
@@ -283,6 +285,9 @@ class ConformanceTest < Minitest::Test
     define_case("test_from_cron_#{test_name.gsub(/[^a-zA-Z0-9_]/, "_")}", tc, %w[cron hron]) do
       schedule = Hron::Schedule.from_cron(tc["cron"])
       assert_equal tc["hron"], schedule.to_s
+      parsed = Hron::Schedule.parse(schedule.to_s)
+      assert_equal parsed, schedule, "parse(to_s)"
+      assert_equal parsed.hash, schedule.hash, "hash of parse(to_s)"
       assert_rebuilds schedule
     end
   end

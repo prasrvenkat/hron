@@ -33,10 +33,20 @@ module Hron
     # Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
     NAMED_UNTIL_MAX_YEARS = 8
 
-    # Shared with Cron.to_cron, so conversion never disagrees with evaluation.
+    # interval_slots and days_of are shared with Cron.to_cron, so conversion never disagrees with
+    # evaluation.
     def self.interval_slots(interval, unit, from, to)
       step = (unit == IntervalUnit::MIN) ? interval : interval * WallClock::MINUTES_PER_HOUR
       (WallClock.minute_of_day(from)..WallClock.minute_of_day(to)).step(step).to_a
+    end
+
+    def self.days_of(target)
+      target.specs.flat_map do |spec|
+        case spec
+        when SingleDay then [spec.day]
+        when DayRange then (spec.start..spec.end_day).to_a
+        end
+      end
     end
 
     def self.next_from(schedule, now)
@@ -148,9 +158,9 @@ module Hron
         @zone = TZInfo::Timezone.get(name || "UTC")
         @result_zone = name ? @zone : "UTC"
         @clauses = Clauses.new(schedule)
-        @cadence = Cadence.of(schedule.expr, @clauses.starting)
-        @times = DailyTimes.of(schedule.expr)
-        @expr = schedule.expr
+        @cadence = Cadence.of(schedule.expression, @clauses.starting)
+        @times = DailyTimes.of(schedule.expression)
+        @expr = schedule.expression
       end
 
       def nearest(now, direction)
@@ -313,7 +323,7 @@ module Hron
       attr_reader :starting
 
       def initialize(schedule)
-        @starting = schedule.anchor && Calendar.parse_date(schedule.anchor)
+        @starting = schedule.starting && Calendar.parse_date(schedule.starting)
         @until = schedule.until && resolve_until(schedule.until, @starting)
         named, iso = schedule.except.partition { |exception| exception.is_a?(NamedException) }
         @except_month_days = named.map { |exception| [MonthName.number(exception.month), exception.day] }

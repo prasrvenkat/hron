@@ -203,7 +203,7 @@ class _Parser:
     def parse_clauses(self, expr: ScheduleExpr) -> ScheduleData:
         except_: tuple[ExceptionSpec, ...] = ()
         until: UntilSpec | None = None
-        anchor: str | None = None
+        starting: str | None = None
         during: tuple[MonthName, ...] = ()
         timezone: str | None = None
 
@@ -222,7 +222,7 @@ class _Parser:
         if self._eat(TStarting):
             if not isinstance(self._peek_kind(), TIsoDate):
                 raise self._expected(_Expected.ISO_DATE)
-            anchor = self._iso_date(self._advance())
+            starting = self._iso_date(self._advance())
 
         if self._eat(TDuring):
             during = tuple(self._parse_month_list())
@@ -232,7 +232,7 @@ class _Parser:
                 raise self._expected(_Expected.TIMEZONE)
             timezone = self._timezone(self._advance())
 
-        return ScheduleData(expr, timezone, except_, until, anchor, during)
+        return ScheduleData(expr, timezone, except_, until, starting, during)
 
     def leftover(self, schedule: ScheduleData) -> HronError:
         token = self._tokens[self._pos]
@@ -240,7 +240,7 @@ class _Parser:
         read = [
             bool(schedule.except_),
             schedule.until is not None,
-            schedule.anchor is not None,
+            schedule.starting is not None,
             bool(schedule.during),
             schedule.timezone is not None,
         ]
@@ -259,7 +259,7 @@ class _Parser:
 
     def check_named_until(self, schedule: ScheduleData) -> None:
         until = schedule.until
-        if isinstance(until, NamedUntil) and schedule.anchor is None and self._until_span:
+        if isinstance(until, NamedUntil) and schedule.starting is None and self._until_span:
             month, day = until.month.value, until.day
             raise HronError.parse(
                 f"until {month} {day} has no year: add a starting date, or use an ISO date",

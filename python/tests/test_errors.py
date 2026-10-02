@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from hron import HronError, Schedule, Span
@@ -43,3 +45,47 @@ def test_unicode_digit_is_never_read_as_a_digit(text: str, message: str, span: S
 def test_eval_and_cron_errors_render_their_message_alone() -> None:
     assert HronError.eval("no zone").display_rich() == "error: no zone"
     assert HronError.cron("bad cron").display_rich() == "error: bad cron"
+
+
+_SPAN = Span(0, 5)
+_BAD_ARGUMENTS: dict[str, tuple[Callable[..., HronError], tuple[object, ...], str]] = {
+    "lex_message": (HronError.lex, (None, _SPAN, "every"), "message must be a str, got NoneType"),
+    "lex_input": (HronError.lex, ("m", _SPAN, None), "input must be a str, got NoneType"),
+    "lex_span": (HronError.lex, ("m", None, "every"), "span must be a Span, got NoneType"),
+    "parse_message": (HronError.parse, (b"m", _SPAN, "every"), "message must be a str, got bytes"),
+    "parse_input": (HronError.parse, ("m", _SPAN, 0), "input must be a str, got int"),
+    "parse_span": (HronError.parse, ("m", None, "every"), "span must be a Span, got NoneType"),
+    "parse_suggestion": (
+        HronError.parse,
+        ("m", _SPAN, "every", 0),
+        "suggestion must be a str or None, got int",
+    ),
+    "eval_message": (HronError.eval, (None,), "message must be a str, got NoneType"),
+    "cron_message": (HronError.cron, (0,), "message must be a str, got int"),
+    "init_message": (HronError, ("eval", None), "message must be a str, got NoneType"),
+    "init_span": (
+        HronError,
+        ("lex", "m", (0, 5), "every"),
+        "span must be a Span or None, got tuple",
+    ),
+    "init_input": (
+        HronError,
+        ("lex", "m", _SPAN, b"every"),
+        "input must be a str or None, got bytes",
+    ),
+    "init_suggestion": (
+        HronError,
+        ("parse", "m", _SPAN, "every", b"day"),
+        "suggestion must be a str or None, got bytes",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "build,arguments,message", _BAD_ARGUMENTS.values(), ids=_BAD_ARGUMENTS.keys()
+)
+def test_an_error_built_with_an_argument_of_the_wrong_type_is_a_type_error(
+    build: Callable[..., HronError], arguments: tuple[object, ...], message: str
+) -> None:
+    with pytest.raises(TypeError, match=f"^{message}$"):
+        build(*arguments)

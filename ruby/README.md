@@ -54,7 +54,7 @@ Hron::Schedule.validate("invalid")  # false
 
 # Build from parts, checked as parse checks text
 data = Hron::ScheduleData.new(
-  expr: Hron::DayRepeat.new(1, Hron::DayFilterWeekday.new, [Hron::TimeOfDay.new(9, 0)]),
+  expression: Hron::DayRepeat.new(1, Hron::DayFilterWeekday.new, [Hron::TimeOfDay.new(9, 0)]),
   timezone: "america/new_york"
 )
 puts Hron::Schedule.new(data)  # every weekday at 09:00 in America/New_York
@@ -72,13 +72,13 @@ See the full [expression reference](https://github.com/simpllyf/hron#expression-
 ## API
 
 ### `Hron::Schedule.parse(input) -> Schedule`
-Parse an hron expression string. Raises `Hron::HronError` with `kind` `:lex` or `:parse` when it is invalid (see [Errors](#errors)).
+Parse an hron expression string. Raises `Hron::HronError` with `kind` `:lex` or `:parse` when it is invalid (see [Errors](#errors)), and `TypeError` unless `input` is a `String`.
 
 ### `Hron::Schedule.from_cron(cron_expr) -> Schedule`
-Convert a 5-field cron expression to a Schedule that fires at the same times. This ignores the timezone and DST transitions, where cron schedulers differ. Raises `Hron::HronError` with `kind` `:cron` for invalid cron, for crons that restrict both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps).
+Convert a 5-field cron expression to a Schedule that fires at the same times. This ignores the timezone and DST transitions, where cron schedulers differ. Raises `Hron::HronError` with `kind` `:cron` for invalid cron, for crons that restrict both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps). Raises `TypeError` unless `cron_expr` is a `String`.
 
 ### `Hron::Schedule.validate(input) -> Boolean`
-Check if an input string is a valid hron expression.
+`true` when `parse` accepts `input`, `false` when it raises `Hron::HronError`. Raises `TypeError` unless `input` is a `String`.
 
 ### `Hron::Schedule.new(data) -> Schedule`
 Build a schedule from a `Hron::ScheduleData` (see [Building a schedule](#building-a-schedule)), checked by the rules `parse` applies, so it evaluates, displays and converts as a parsed one does. Raises `Hron::HronError` with `kind` `:eval` and no `span`, `input` or `suggestion` for the first part that breaks a rule, with the message and in the order of the [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#schedules-built-in-code), and `TypeError` for a part of the wrong type. The schedule keeps a frozen copy of `data`, so changing `data`'s lists or strings afterwards does not change it.
@@ -111,29 +111,50 @@ Convert to a 5-field cron expression that fires at the same times. Yearly schedu
 ### `schedule.to_s -> String`
 Render as the canonical string form (roundtrip-safe).
 
-### `schedule.timezone -> String | nil`
-The IANA timezone name with its canonical capitalization (`in utc` gives `"UTC"`), if specified.
+### Getters
 
-### `schedule.expression`
-The schedule's expression, one of the classes under [Building a schedule](#building-a-schedule).
+Each getter returns one part of the schedule, with the classes under [Building a schedule](#building-a-schedule). What they return is frozen, so it cannot change the schedule.
+
+| Getter | Returns |
+|---|---|
+| `schedule.expression` | The expression: an `IntervalRepeat`, `DayRepeat`, `WeekRepeat`, `MonthRepeat`, `SingleDateExpr` or `YearRepeat`. |
+| `schedule.timezone` | The IANA timezone name with its canonical capitalization (`in utc` gives `"UTC"`), or `nil`. |
+| `schedule.except` | An `Array` of `NamedException` and `IsoException` in the order written; empty without an `except` clause. |
+| `schedule.until` | An `IsoUntil` or `NamedUntil`, or `nil`. |
+| `schedule.starting` | The `starting` date as a `"YYYY-MM-DD"` `String`, or `nil`. |
+| `schedule.during` | An `Array` of month `Symbol`s in the order written; empty without a `during` clause. |
+
+```ruby
+schedule = Hron::Schedule.parse("every weekday at 9:00 except dec 25 starting 2026-01-05 during jan, feb")
+schedule.expression  # #<data Hron::DayRepeat interval=1, days=#<data Hron::DayFilterWeekday>, times=[#<data Hron::TimeOfDay hour=9, minute=0>]>
+schedule.except      # [#<data Hron::NamedException month=:dec, day=25>]
+schedule.until       # nil
+schedule.starting    # "2026-01-05"
+schedule.during      # [:jan, :feb]
+schedule.timezone    # nil
+```
 
 ### `schedule.data -> ScheduleData`
-The parts the schedule was built from, frozen, with the timezone in its IANA capitalization. `Hron::Schedule.new(schedule.data.with(timezone: "UTC"))` builds a changed copy.
+All the parts at once, frozen, with the timezone in its IANA capitalization. `Hron::Schedule.new(schedule.data.with(timezone: "UTC"))` builds a changed copy.
 
-### `schedule == other -> Boolean`
-Schedules are equal when their parts are: `Hron::Schedule.parse("every day at 9:00")` equals the schedule built from the same parts.
+### `schedule == other`, `schedule.eql?(other)` and `schedule.hash`
+Schedules are equal when their parts are, with lists compared in order and duplicates included, and equal schedules have equal hashes, so a schedule works as a `Hash` key. `Hron::Schedule.parse("every day at 9:00")` equals `Hron::Schedule.parse("every day at 09:00")` and the schedule built from the same parts. Comparing a schedule with `nil` or anything but a schedule gives `false`.
+
+### Usage errors
+
+A value of the wrong type where an argument goes raises `TypeError`, never `Hron::HronError`, and `validate` never returns `false` for it: an input to `parse`, `validate` or `from_cron` that is not a `String` (`nil` included), a time that is not a `Time`, an `n` that is not an `Integer`, a part of the wrong type in `Hron::Schedule.new`, and a message, span, input or suggestion of the wrong type in the [`Hron::HronError` factories](#errors).
 
 ## Building a schedule
 
-`Hron::ScheduleData.new(expr:, timezone: nil, except: [], until: nil, anchor: nil, during: [])` holds a schedule's parts; every class here is a `Data` and takes its fields in this order, positionally or by name. `Hron::Schedule.new` checks them.
+`Hron::ScheduleData.new(expression:, timezone: nil, except: [], until: nil, starting: nil, during: [])` holds a schedule's parts; every class here is a `Data` and takes its fields in this order, positionally or by name. `Hron::Schedule.new` checks them.
 
 | Field | Value |
 |---|---|
-| `expr` | One expression below. |
+| `expression` | One expression below. |
 | `timezone` | `"UTC"` or an IANA `Area/Location` name in any case, or `nil` for UTC. |
 | `except` | An `Array` of `NamedException(month, day)` and `IsoException(date)`; empty means no `except` clause. |
-| `until` | `NamedUntil(month, day)`, which needs `anchor`, `IsoUntil(date)`, or `nil`. |
-| `anchor` | The `starting` date, or `nil`. |
+| `until` | `NamedUntil(month, day)`, which needs `starting`, `IsoUntil(date)`, or `nil`. |
+| `starting` | The `starting` date, or `nil`. |
 | `during` | An `Array` of months; empty means no `during` clause. |
 
 | Expression | Fields |
@@ -152,7 +173,17 @@ Schedules are equal when their parts are: `Hron::Schedule.parse("every day at 9:
 
 ## Errors
 
-`Hron::Schedule.new` raises `Hron::HronError` with `kind` `:eval` and only a message (see [above](#hronschedulenewdata---schedule)); `display_rich` gives `error: {message}`. `Hron::Schedule.parse` raises `Hron::HronError` with `kind` `:lex` or `:parse`, the exact `message` of the [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#error-message-format), the `input` as given, a `span`, and for some parse errors a `suggestion` (otherwise `nil`). `display_rich` renders the error with carets under the span:
+Every hron error is a `Hron::HronError`, a `StandardError` with:
+
+| Member | Value |
+|---|---|
+| `kind` | `:lex` or `:parse` from `parse`, `:eval` from `Hron::Schedule.new` (see [above](#hronschedulenewdata---schedule)), `:cron` from `from_cron` and `to_cron`; the values of `Hron::ErrorKind`. |
+| `message` | The exact message of the [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#error-message-format). |
+| `span` | A `Hron::Span` with `start` and `end_pos` for `:lex` and `:parse`, otherwise `nil`. |
+| `input` | The input as given for `:lex` and `:parse`, otherwise `nil`. |
+| `suggestion` | A suggested fix for some `:parse` errors, otherwise `nil`. |
+| `display_rich` | `error: {message}`, and for `:lex` and `:parse` the input with carets under the span and any suggestion. |
+| `Hron::HronError.lex(message, span, input)`, `.parse(message, span, input, suggestion: nil)`, `.eval(message)`, `.cron(message)` | Build an error of each kind. Each raises `TypeError` for a `message` or `input` that is not a `String`, a `span` that is not a `Hron::Span`, and a `suggestion` that is neither a `String` nor `nil`. |
 
 ```text
 error: until dec 31 has no year: add a starting date, or use an ISO date

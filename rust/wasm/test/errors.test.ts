@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Schedule, fromCron } from "../pkg/hron_wasm.js";
+import { Schedule, explainCron, fromCron } from "../pkg/hron_wasm.js";
 
 function thrown(action: () => unknown): any {
   try {
@@ -35,6 +35,23 @@ describe("errors", () => {
     expect("suggestion" in error).toBe(true);
     expect(error.suggestion).toBeUndefined();
   });
+
+  // spec/README.md, "Timestamps and counts": a usage error, not a hron error.
+  it.each([42, null, undefined, {}, new String("every day at 09:00"), ["0 9 * * *"]])(
+    "throws a TypeError with no kind for the input %s",
+    (value: any) => {
+      for (const action of [
+        () => Schedule.parse(value),
+        () => Schedule.validate(value),
+        () => fromCron(value),
+        () => explainCron(value),
+      ]) {
+        const error = thrown(action);
+        expect(error).toBeInstanceOf(TypeError);
+        expect("kind" in error).toBe(false);
+      }
+    },
+  );
 
   it("renders a cron error as its message alone, with no span", () => {
     const error = thrown(() => fromCron("0 9 15 * 1"));

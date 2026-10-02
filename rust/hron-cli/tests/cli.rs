@@ -405,7 +405,7 @@ fn finds_nothing_for_a_timestamp_outside_the_supported_range() {
             .assert()
             .success()
             .stdout("")
-            .stderr("no occurrences in range\n");
+            .stderr("no occurrences after --from\n");
     }
     occurrences_between(
         "2026-02-06T03:00:00Z",
@@ -415,6 +415,115 @@ fn finds_nothing_for_a_timestamp_outside_the_supported_range() {
     .success()
     .stdout("")
     .stderr("no occurrences in range\n");
+}
+
+#[test]
+fn shows_count_occurrences_after_from() {
+    for count in ["-n", "--count"] {
+        hron()
+            .args([count, "3", "--from", "2026-02-06T03:00:00Z", "every day at 09:00"])
+            .assert()
+            .success()
+            .stdout("2026-02-06T09:00:00+00:00[UTC]\n2026-02-07T09:00:00+00:00[UTC]\n2026-02-08T09:00:00+00:00[UTC]\n")
+            .stderr("");
+    }
+}
+
+#[test]
+fn shows_one_occurrence_after_from_without_a_count() {
+    hron()
+        .args(["--from", "2026-02-06T03:00:00Z", "every day at 09:00"])
+        .assert()
+        .success()
+        .stdout("2026-02-06T09:00:00+00:00[UTC]\n");
+}
+
+#[test]
+fn says_when_it_caps_the_count_after_from() {
+    let output = hron()
+        .args([
+            "-n",
+            "1001",
+            "--from",
+            "2026-02-06T03:00:00Z",
+            "every 1 min from 00:00 to 23:59",
+        ])
+        .assert()
+        .success()
+        .stderr("warning: capped at 1000 occurrences\n")
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(String::from_utf8(output).unwrap().lines().count(), 1000);
+}
+
+#[test]
+fn has_no_long_option_named_n() {
+    hron()
+        .args(["--n", "2", "every day at 09:00"])
+        .assert()
+        .code(2)
+        .stdout("");
+}
+
+#[test]
+fn exits_with_status_2_for_a_count_with_to() {
+    hron()
+        .args([
+            "-n",
+            "2",
+            "--from",
+            "2026-02-06T03:00:00Z",
+            "--to",
+            "2026-02-08T03:00:00Z",
+            "every day at 09:00",
+        ])
+        .assert()
+        .code(2)
+        .stdout("");
+}
+
+#[test]
+fn prints_an_empty_json_list_when_nothing_is_found() {
+    hron()
+        .args([
+            "--json",
+            "--from",
+            "+010000-01-01T00:00:00Z",
+            "every day at 09:00",
+        ])
+        .assert()
+        .success()
+        .stdout("[]\n")
+        .stderr("");
+    hron()
+        .args([
+            "--json",
+            "--from",
+            "2026-02-06T03:00:00Z",
+            "--to",
+            "2026-02-06T04:00:00Z",
+            "every day at 09:00",
+        ])
+        .assert()
+        .success()
+        .stdout("[]\n")
+        .stderr("");
+}
+
+#[test]
+fn exits_with_status_2_for_an_expression_beside_explain_or_from_cron() {
+    for args in [
+        ["--explain", "0 9 * * *", "every day at 10:00"],
+        ["--from-cron", "0 9 * * *", "every day at 10:00"],
+    ] {
+        hron().args(args).assert().code(2).stdout("");
+    }
+    hron()
+        .args(["--from-cron", "0 9 * * *", "--explain", "0 10 * * *"])
+        .assert()
+        .code(2)
+        .stdout("");
 }
 
 #[test]

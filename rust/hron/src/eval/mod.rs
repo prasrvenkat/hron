@@ -179,10 +179,10 @@ struct Occurrence {
 impl<'a> Search<'a> {
     fn new(schedule: &'a Schedule) -> Search<'a> {
         Search {
-            expr: &schedule.expr,
+            expr: &schedule.expression,
             zone: resolve_zone(&schedule.timezone),
             cadence: Cadence::of(schedule),
-            times: DailyTimes::of(&schedule.expr),
+            times: DailyTimes::of(&schedule.expression),
             clauses: Clauses::of(schedule),
         }
     }
@@ -387,7 +387,7 @@ impl Clauses {
         let until = schedule
             .until
             .as_ref()
-            .and_then(|until| resolve_until(until, schedule.anchor));
+            .and_then(|until| resolve_until(until, schedule.starting));
         Clauses {
             during: schedule
                 .during
@@ -397,7 +397,7 @@ impl Clauses {
             except_month_days,
             except_dates,
             until,
-            starting: schedule.anchor,
+            starting: schedule.starting,
         }
     }
 
@@ -493,7 +493,7 @@ struct Cadence {
 
 impl Cadence {
     fn of(schedule: &Schedule) -> Cadence {
-        let (unit, interval, default_origin) = match &schedule.expr {
+        let (unit, interval, default_origin) = match &schedule.expression {
             ScheduleExpr::SingleDate {
                 date: DateSpec::Iso(s),
                 ..
@@ -512,7 +512,7 @@ impl Cadence {
             ScheduleExpr::MonthRepeat { interval, .. } => (Unit::Month, *interval, EPOCH_DATE),
             ScheduleExpr::YearRepeat { interval, .. } => (Unit::Year, *interval, EPOCH_DATE),
         };
-        let anchor = schedule.anchor.unwrap_or(default_origin);
+        let anchor = schedule.starting.unwrap_or(default_origin);
         let origin = match unit {
             Unit::Day => anchor,
             Unit::Week => monday_of_week(anchor).unwrap_or(anchor),

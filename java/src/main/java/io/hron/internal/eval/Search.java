@@ -1,6 +1,6 @@
 package io.hron.internal.eval;
 
-import io.hron.ast.ScheduleData;
+import io.hron.Schedule;
 import io.hron.ast.ScheduleExpr;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -11,14 +11,15 @@ import java.util.List;
 import java.util.Optional;
 
 record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times, Clauses clauses) {
-  static Search of(ScheduleData data) {
-    LocalDate starting = data.anchor() == null ? null : LocalDate.parse(data.anchor());
+  static Search of(Schedule schedule) {
+    LocalDate starting = schedule.starting().map(LocalDate::parse).orElse(null);
+    ScheduleExpr expr = schedule.expression();
     return new Search(
-        data.expr(),
-        data.timezone() == null ? ZoneId.of("UTC") : ZoneId.of(data.timezone()),
-        Cadence.of(data.expr(), starting),
-        DailyTimes.of(data.expr()),
-        Clauses.of(data, starting));
+        expr,
+        ZoneId.of(schedule.timezone().orElse("UTC")),
+        Cadence.of(expr, starting),
+        DailyTimes.of(expr),
+        Clauses.of(schedule, starting));
   }
 
   Search endOn(LocalDate date) {

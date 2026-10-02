@@ -10,6 +10,10 @@ PARSE_KINDS = ["lex", "parse"]
 # warm-up can add tens of milliseconds to any one case.
 SLOWER_RATIO = 3
 SLOWER_FLOOR_MICROS = 20_000
+# Splits that are no hron bug, by case family: the one language that may answer alone, and why.
+EXPECTED_SPLITS = {
+    "subminute": ("csharp", "C# keeps offsets in whole minutes, spec/README.md Timezone data"),
+}
 
 
 def describe(case: dict) -> str:
@@ -45,9 +49,29 @@ def split(case_id: str, outcomes: dict[str, dict]) -> list[list[str]]:
     return sorted(groups.values(), key=len, reverse=True)
 
 
+def expected_reason(case: dict, groups: list[list[str]], outcomes: dict[str, dict]) -> str | None:
+    family = case["id"].rsplit("-", 1)[0]
+    if family not in EXPECTED_SPLITS:
+        return None
+    alone, reason = EXPECTED_SPLITS[family]
+    if len(groups) != 2 or groups[1] != [alone] or len(groups[0]) < 2:
+        return None
+    return reason if outcomes[alone][case["id"]]["ok"] else None
+
+
 def report(cases: list[dict], outcomes: dict[str, dict], examples: int) -> int:
-    divergent = [(case, groups) for case in cases if len(groups := split(case["id"], outcomes)) > 1]
-    print(f"{len(cases) - len(divergent)} cases agree, {len(divergent)} diverge\n")
+    divergent, expected = [], defaultdict(list)
+    for case in cases:
+        groups = split(case["id"], outcomes)
+        if len(groups) == 1:
+            continue
+        if reason := expected_reason(case, groups, outcomes):
+            expected[reason].append((case, groups))
+        else:
+            divergent.append((case, groups))
+    split_as_expected = sum(len(items) for items in expected.values())
+    agree = len(cases) - len(divergent) - split_as_expected
+    print(f"{agree} cases agree, {len(divergent)} diverge, {split_as_expected} split as expected\n")
     print_table(cases, outcomes, divergent)
 
     by_split = defaultdict(list)
@@ -55,11 +79,18 @@ def report(cases: list[dict], outcomes: dict[str, dict], examples: int) -> int:
         by_split[case["op"], " | ".join(" ".join(group) for group in groups)].append((case, groups))
     for (op, languages), items in sorted(by_split.items(), key=lambda entry: -len(entry[1])):
         print(f"\n{op}, {len(items)} cases: {languages}")
-        for case, groups in items[:examples]:
-            print(f"  {describe(case)}")
-            for group in groups:
-                print(f"    {' '.join(group)}: {show(outcomes[group[0]][case['id']])}")
+        print_examples(items[:examples], outcomes)
+    for reason, items in expected.items():
+        print(f"\nexpected: {reason}, {len(items)} cases")
+        print_examples(items[:examples], outcomes)
     return len(divergent)
+
+
+def print_examples(items: list[tuple[dict, list[list[str]]]], outcomes: dict[str, dict]) -> None:
+    for case, groups in items:
+        print(f"  {describe(case)}")
+        for group in groups:
+            print(f"    {' '.join(group)}: {show(outcomes[group[0]][case['id']])}")
 
 
 def print_table(cases: list[dict], outcomes: dict[str, dict], divergent: list) -> None:

@@ -9,7 +9,7 @@ internal static class Display
     {
         var sb = new StringBuilder();
 
-        sb.Append(RenderExpr(data.Expr));
+        sb.Append(RenderExpr(data.Expression));
 
         if (data.Except.Count > 0)
         {
@@ -23,10 +23,10 @@ internal static class Display
             sb.Append(RenderUntil(data.Until));
         }
 
-        if (!string.IsNullOrEmpty(data.Anchor))
+        if (!string.IsNullOrEmpty(data.Starting))
         {
             sb.Append(" starting ");
-            sb.Append(data.Anchor);
+            sb.Append(data.Starting);
         }
 
         if (data.During.Count > 0)

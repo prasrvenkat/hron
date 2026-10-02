@@ -1,5 +1,6 @@
 use hron::{Schedule, ScheduleError, ScheduleParts};
 use serde_json::Value;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::LazyLock;
 
 static SPEC: LazyLock<Value> = LazyLock::new(|| {
@@ -63,6 +64,24 @@ fn run_parse_roundtrip(section: &str, index: usize) {
         "canonical not idempotent for '{canonical}'"
     );
     assert_rebuilds(&schedule);
+    assert_equals_parse_of_display(&schedule);
+}
+
+/// spec/README.md, "Equality".
+fn assert_equals_parse_of_display(schedule: &Schedule) {
+    let reparsed = Schedule::parse(&schedule.to_string()).unwrap();
+    assert_eq!(&reparsed, schedule, "parse of '{schedule}'");
+    assert_eq!(
+        hash_of(&reparsed),
+        hash_of(schedule),
+        "hash of '{schedule}'"
+    );
+}
+
+fn hash_of(schedule: &Schedule) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    schedule.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn assert_rebuilds(schedule: &Schedule) {
@@ -469,6 +488,7 @@ fn run_cron_from_cron(section: &str, index: usize) {
     let got = schedule.to_string();
     assert_eq!(got, expected_hron, "from_cron mismatch for '{cron_expr}'");
     assert_rebuilds(&schedule);
+    assert_equals_parse_of_display(&schedule);
 }
 
 fn run_cron_from_cron_error(section: &str, index: usize) {

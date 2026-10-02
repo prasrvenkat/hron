@@ -1,5 +1,6 @@
 package io.hron;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /** Exception thrown for errors in hron parsing or cron conversion. */
@@ -21,25 +22,47 @@ public final class HronException extends Exception {
     this.suggestion = suggestion;
   }
 
+  /**
+   * @throws NullPointerException if message, span or input is null
+   */
   public static HronException lex(String message, Span span, String input) {
-    return new HronException(ErrorKind.LEX, message, span, input, null);
+    return new HronException(
+        ErrorKind.LEX,
+        Objects.requireNonNull(message, "message"),
+        Objects.requireNonNull(span, "span"),
+        Objects.requireNonNull(input, "input"),
+        null);
   }
 
   /**
    * Creates a new parser error.
    *
    * @param suggestion a fix to show the user, or null
+   * @throws NullPointerException if message, span or input is null
    */
   public static HronException parse(String message, Span span, String input, String suggestion) {
-    return new HronException(ErrorKind.PARSE, message, span, input, suggestion);
+    return new HronException(
+        ErrorKind.PARSE,
+        Objects.requireNonNull(message, "message"),
+        Objects.requireNonNull(span, "span"),
+        Objects.requireNonNull(input, "input"),
+        suggestion);
   }
 
+  /**
+   * @throws NullPointerException if message is null
+   */
   public static HronException eval(String message) {
-    return new HronException(ErrorKind.EVAL, message, null, null, null);
+    return new HronException(
+        ErrorKind.EVAL, Objects.requireNonNull(message, "message"), null, null, null);
   }
 
+  /**
+   * @throws NullPointerException if message is null
+   */
   public static HronException cron(String message) {
-    return new HronException(ErrorKind.CRON, message, null, null, null);
+    return new HronException(
+        ErrorKind.CRON, Objects.requireNonNull(message, "message"), null, null, null);
   }
 
   public ErrorKind kind() {

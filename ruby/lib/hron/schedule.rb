@@ -29,24 +29,35 @@ module Hron
     end
     private_class_method :from_valid
 
-    # Raises HronError if the expression is invalid.
+    # Raises HronError if the expression is invalid, and TypeError unless input is a String.
     def self.parse(input)
+      require_string(input, "input")
       from_valid(Parser.parse(input))
     end
 
     # Converts a 5-field cron expression to a Schedule that fires at the same times. Raises
-    # HronError of kind :cron when it is not valid cron or has no exact hron equivalent.
+    # HronError of kind :cron when it is not valid cron or has no exact hron equivalent, and
+    # TypeError unless cron_expr is a String.
     def self.from_cron(cron_expr)
+      require_string(cron_expr, "cron_expr")
       from_valid(Cron.from_cron(cron_expr))
     end
 
-    # Validate a hron expression without raising an error
+    # True when parse accepts input, false when it raises HronError. Raises TypeError unless
+    # input is a String.
     def self.validate(input)
+      require_string(input, "input")
       Parser.parse(input)
       true
     rescue HronError
       false
     end
+
+    # A usage error, never a HronError or false (spec/README.md, "Timestamps and counts").
+    def self.require_string(value, name)
+      raise TypeError, "#{name} must be a String, not #{value.class}" unless value.is_a?(String)
+    end
+    private_class_method :require_string
 
     # Returns the next occurrence strictly after now, or nil if there is none.
     def next_from(now)
@@ -115,7 +126,27 @@ module Hron
     end
 
     def expression
-      @data.expr
+      @data.expression
+    end
+
+    # The except dates, in the order written; empty without an except clause.
+    def except
+      @data.except
+    end
+
+    # An IsoUntil or NamedUntil, or nil without an until clause.
+    def until
+      @data.until
+    end
+
+    # The starting date as a YYYY-MM-DD String, or nil without a starting clause.
+    def starting
+      @data.starting
+    end
+
+    # The during months as Symbols, in the order written; empty without a during clause.
+    def during
+      @data.during
     end
   end
 end

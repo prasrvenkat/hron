@@ -10,15 +10,15 @@ import (
 var nine = []TimeOfDay{{9, 0}}
 
 func daily(expr ScheduleExpr) *ScheduleData {
-	return &ScheduleData{Expr: expr}
+	return &ScheduleData{Expression: expr}
 }
 
 func withExcept(exceptions ...ExceptionSpec) *ScheduleData {
-	return &ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), Except: exceptions}
+	return &ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), Except: exceptions}
 }
 
 func withUntil(until UntilSpec) *ScheduleData {
-	return &ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), Until: &until, Anchor: "2026-01-01"}
+	return &ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), Until: &until, Starting: "2026-01-01"}
 }
 
 func evalMessage(t *testing.T, err error) string {
@@ -71,7 +71,7 @@ func TestNewScheduleRejectsUnknownValues(t *testing.T) {
 		{withExcept(NewNamedException(0, 1)), "unknown month 0"},
 		{withUntil(UntilSpec{Kind: 2}), "unknown until 2"},
 		{withUntil(NewNamedUntil(13, 1)), "unknown month 13"},
-		{&ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), During: []MonthName{Jan, 13}}, "unknown month 13"},
+		{&ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), During: []MonthName{Jan, 13}}, "unknown month 13"},
 	}
 	for _, c := range cases {
 		_, err := NewSchedule(c.data)
@@ -96,7 +96,7 @@ func TestNewScheduleChecksUnknownValuesInOrder(t *testing.T) {
 		{daily(NewDayRepeat(2, DayFilter{Kind: 9}, nine)), "days must be every day when the interval is above 1"},
 		{daily(NewDayRepeat(1, DayFilter{Kind: 9}, nil)), "unknown day filter 9"},
 		{daily(NewMonthRepeat(1, NewDaysTarget([]DayOfMonthSpec{NewSingleDay(40), {Kind: 2}}), nine)), "day must be 1-31, got 40th"},
-		{&ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), During: []MonthName{13}, Timezone: "EST"}, "unknown month 13"},
+		{&ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), During: []MonthName{13}, Timezone: "EST"}, "unknown month 13"},
 	}
 	for _, c := range cases {
 		_, err := NewSchedule(c.data)
@@ -141,7 +141,7 @@ func TestNewScheduleRejectsNegativeValues(t *testing.T) {
 }
 
 func TestNewScheduleTakesTheEmptyTimezoneAsNone(t *testing.T) {
-	s, err := NewSchedule(&ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), Timezone: ""})
+	s, err := NewSchedule(&ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), Timezone: ""})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestNewScheduleTakesTheEmptyTimezoneAsNone(t *testing.T) {
 }
 
 func TestNewScheduleTakesTheEmptyStartingAsNone(t *testing.T) {
-	s, err := NewSchedule(&ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), Anchor: ""})
+	s, err := NewSchedule(&ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), Starting: ""})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestNewScheduleTakesTheEmptyStartingAsNone(t *testing.T) {
 		t.Errorf("String() = %q", s.String())
 	}
 	until := NewNamedUntil(Dec, 31)
-	_, err = NewSchedule(&ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), Until: &until, Anchor: ""})
+	_, err = NewSchedule(&ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), Until: &until, Starting: ""})
 	if got, want := evalMessage(t, err), "until dec 31 has no year: add a starting date, or use an ISO date"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -206,16 +206,16 @@ func TestNewScheduleKeepsOnlyTheFieldsItsKindsUse(t *testing.T) {
 		{daily(with(func(e *ScheduleExpr) { e.Kind = ScheduleExprKindYear })), "every 7 years on the last weekday of jun at 09:00"},
 		{daily(with(func(e *ScheduleExpr) { e.Kind, e.YearTarget.Kind = ScheduleExprKindYear, YearTargetKindDayOfMonth })), "every 7 years on the 9th of jun at 09:00"},
 		{&ScheduleData{
-			Expr:   NewDayRepeat(1, NewDayFilterEvery(), nine),
-			Except: []ExceptionSpec{{Kind: ExceptionSpecKindNamed, Month: Jan, Day: 2, Date: "2026-01-02"}, {Kind: ExceptionSpecKindISO, Month: Jan, Day: 2, Date: "2026-01-03"}},
-			Until:  &UntilSpec{Kind: UntilSpecKindISO, Date: "2026-12-31", Month: Dec, Day: 31},
+			Expression: NewDayRepeat(1, NewDayFilterEvery(), nine),
+			Except:     []ExceptionSpec{{Kind: ExceptionSpecKindNamed, Month: Jan, Day: 2, Date: "2026-01-02"}, {Kind: ExceptionSpecKindISO, Month: Jan, Day: 2, Date: "2026-01-03"}},
+			Until:      &UntilSpec{Kind: UntilSpecKindISO, Date: "2026-12-31", Month: Dec, Day: 31},
 		}, "every day at 09:00 except jan 2, 2026-01-03 until 2026-12-31"},
 		{&ScheduleData{
-			Expr:   NewDayRepeat(1, NewDayFilterEvery(), nine),
-			Until:  &UntilSpec{Kind: UntilSpecKindNamed, Date: "2026-12-31", Month: Dec, Day: 31},
-			Anchor: "2026-01-01",
+			Expression: NewDayRepeat(1, NewDayFilterEvery(), nine),
+			Until:      &UntilSpec{Kind: UntilSpecKindNamed, Date: "2026-12-31", Month: Dec, Day: 31},
+			Starting:   "2026-01-01",
 		}, "every day at 09:00 until dec 31 starting 2026-01-01"},
-		{&ScheduleData{Expr: NewDayRepeat(1, NewDayFilterEvery(), nine), Except: []ExceptionSpec{}, During: []MonthName{}}, "every day at 09:00"},
+		{&ScheduleData{Expression: NewDayRepeat(1, NewDayFilterEvery(), nine), Except: []ExceptionSpec{}, During: []MonthName{}}, "every day at 09:00"},
 	}
 	for _, c := range cases {
 		built, err := NewSchedule(c.data)
@@ -231,32 +231,32 @@ func TestNewScheduleKeepsOnlyTheFieldsItsKindsUse(t *testing.T) {
 
 func everyKindOfList() *ScheduleData {
 	return &ScheduleData{
-		Expr:   NewIntervalRepeat(30, IntervalMin, TimeOfDay{9, 0}, TimeOfDay{17, 0}, &DayFilter{Kind: DayFilterKindDays, Days: []Weekday{Monday}}),
-		Except: []ExceptionSpec{NewISOException("2026-12-25")},
-		Until:  &UntilSpec{Kind: UntilSpecKindISO, Date: "2027-01-01"},
-		During: []MonthName{Jan},
+		Expression: NewIntervalRepeat(30, IntervalMin, TimeOfDay{9, 0}, TimeOfDay{17, 0}, &DayFilter{Kind: DayFilterKindDays, Days: []Weekday{Monday}}),
+		Except:     []ExceptionSpec{NewISOException("2026-12-25")},
+		Until:      &UntilSpec{Kind: UntilSpecKindISO, Date: "2027-01-01"},
+		During:     []MonthName{Jan},
 	}
 }
 
 func mutateEveryList(data *ScheduleData) {
-	data.Expr.DayFilter.Days[0] = Friday
-	data.Expr.DayFilter.Kind = DayFilterKindWeekend
-	data.Expr.Times = append(data.Expr.Times, TimeOfDay{1, 0})
-	data.Expr.Days.Days = append(data.Expr.Days.Days, Friday)
+	data.Expression.DayFilter.Days[0] = Friday
+	data.Expression.DayFilter.Kind = DayFilterKindWeekend
+	data.Expression.Times = append(data.Expression.Times, TimeOfDay{1, 0})
+	data.Expression.Days.Days = append(data.Expression.Days.Days, Friday)
 	data.Except[0].Date = "2026-12-26"
 	data.Until.Date = "2028-01-01"
 	data.During[0] = Feb
-	data.Expr.Interval = 0
+	data.Expression.Interval = 0
 }
 
 func mutateEveryDayList(data *ScheduleData) {
-	data.Expr.Days.Days[0] = Friday
-	data.Expr.Times[0] = TimeOfDay{10, 0}
+	data.Expression.Days.Days[0] = Friday
+	data.Expression.Times[0] = TimeOfDay{10, 0}
 }
 
 func mutateEveryTargetList(data *ScheduleData) {
-	data.Expr.MonthTarget.Specs[0] = NewSingleDay(2)
-	data.Expr.Times[0] = TimeOfDay{10, 0}
+	data.Expression.MonthTarget.Specs[0] = NewSingleDay(2)
+	data.Expression.Times[0] = TimeOfDay{10, 0}
 }
 
 func TestNewScheduleCopiesThePartsDeeply(t *testing.T) {
@@ -266,7 +266,7 @@ func TestNewScheduleCopiesThePartsDeeply(t *testing.T) {
 	}{
 		{everyKindOfList(), mutateEveryList},
 		{daily(NewDayRepeat(1, NewDayFilterDays([]Weekday{Monday}), []TimeOfDay{{9, 0}})), mutateEveryDayList},
-		{daily(NewWeekRepeat(1, []Weekday{Monday}, []TimeOfDay{{9, 0}})), func(d *ScheduleData) { d.Expr.WeekDays[0], d.Expr.Times[0] = Friday, TimeOfDay{10, 0} }},
+		{daily(NewWeekRepeat(1, []Weekday{Monday}, []TimeOfDay{{9, 0}})), func(d *ScheduleData) { d.Expression.WeekDays[0], d.Expression.Times[0] = Friday, TimeOfDay{10, 0} }},
 		{daily(NewMonthRepeat(1, NewDaysTarget([]DayOfMonthSpec{NewSingleDay(1)}), []TimeOfDay{{9, 0}})), mutateEveryTargetList},
 	}
 	for _, c := range cases {
@@ -289,7 +289,7 @@ func TestDataReturnsACopyThatCannotChangeTheSchedule(t *testing.T) {
 	}{
 		{"every 30 min from 09:00 to 17:00 on monday except 2026-12-25 until 2027-01-01 during jan", mutateEveryList},
 		{"every monday at 09:00", mutateEveryDayList},
-		{"every week on monday at 09:00", func(d *ScheduleData) { d.Expr.WeekDays[0], d.Expr.Times[0] = Friday, TimeOfDay{10, 0} }},
+		{"every week on monday at 09:00", func(d *ScheduleData) { d.Expression.WeekDays[0], d.Expression.Times[0] = Friday, TimeOfDay{10, 0} }},
 		{"every month on the 1st at 09:00", mutateEveryTargetList},
 	}
 	for _, c := range cases {
@@ -382,9 +382,9 @@ func randomParts(r *rand.Rand) *ScheduleData {
 		expr = NewYearRepeat(interval(), target, times())
 	}
 	data := &ScheduleData{
-		Expr:     expr,
-		Timezone: mostly(r, pick(r, "", "utc", "america/new_york"), "EST"),
-		Anchor:   mostly(r, pick(r, "", "2026-02-06"), "0000-01-01"),
+		Expression: expr,
+		Timezone:   mostly(r, pick(r, "", "utc", "america/new_york"), "EST"),
+		Starting:   mostly(r, pick(r, "", "2026-02-06"), "0000-01-01"),
 	}
 	for range r.IntN(3) {
 		data.Except = append(data.Except, pick(r, NewNamedException(month(), day()), NewISOException(iso())))

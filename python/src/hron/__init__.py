@@ -90,19 +90,27 @@ class Schedule:
 
     @classmethod
     def parse(cls, input_text: str) -> Schedule:
-        """Raises HronError if `input_text` is not a valid expression."""
+        """Raises HronError if `input_text` is not a valid expression, and TypeError if it is not
+        a str."""
+        if not isinstance(input_text, str):
+            raise TypeError(f"input_text must be a str, got {type(input_text).__name__}")
         return cls._of_valid(_parse(input_text))
 
     @classmethod
     def from_cron(cls, cron_expr: str) -> Schedule:
         """Convert a 5-field cron expression or @ shortcut to a Schedule that fires at the same
         times. Raises HronError of kind "cron" when the input is not valid cron or has no exact
-        hron equivalent."""
+        hron equivalent, and TypeError if it is not a str."""
+        if not isinstance(cron_expr, str):
+            raise TypeError(f"cron_expr must be a str, got {type(cron_expr).__name__}")
         return cls._of_valid(_from_cron(cron_expr))
 
     @classmethod
     def validate(cls, input_text: str) -> bool:
-        """False, rather than throwing, for anything `parse` rejects."""
+        """False, rather than throwing, for anything `parse` rejects. Raises TypeError if
+        `input_text` is not a str."""
+        if not isinstance(input_text, str):
+            raise TypeError(f"input_text must be a str, got {type(input_text).__name__}")
         try:
             _parse(input_text)
             return True
@@ -162,7 +170,26 @@ class Schedule:
 
     @property
     def expression(self) -> ScheduleExpr:
-        return self._data.expr
+        return self._data.expression
+
+    @property
+    def except_(self) -> tuple[ExceptionSpec, ...]:
+        """Empty without an except clause."""
+        return self._data.except_
+
+    @property
+    def until(self) -> UntilSpec | None:
+        return self._data.until
+
+    @property
+    def starting(self) -> str | None:
+        """The starting date as `YYYY-MM-DD`, or None if unset."""
+        return self._data.starting
+
+    @property
+    def during(self) -> tuple[MonthName, ...]:
+        """Empty without a during clause."""
+        return self._data.during
 
     @property
     def data(self) -> ScheduleData:

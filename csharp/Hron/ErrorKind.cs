@@ -10,6 +10,9 @@ public enum ErrorKind
 
 public static class ErrorKindExtensions
 {
+    /// <summary>
+    /// The kind as every hron implementation names it: <c>lex</c>, <c>parse</c>, <c>eval</c> or <c>cron</c>.
+    /// </summary>
     public static string ToValue(this ErrorKind kind) => kind switch
     {
         ErrorKind.Lex => "lex",
