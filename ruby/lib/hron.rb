@@ -8,9 +8,15 @@ require_relative "hron/parser"
 require_relative "hron/evaluator"
 require_relative "hron/display"
 require_relative "hron/cron"
+require_relative "hron/parts"
 require_relative "hron/schedule"
 
 module Hron
+  # Parser, Evaluator, Display and Cron take or return a schedule's parts without the checks
+  # of Schedule.new, and Parts is those checks, so only code inside Hron uses them (spec/README.md,
+  # "Schedules built in code").
+  private_constant :Parser, :Evaluator, :Display, :Cron, :Parts
+
   class << self
     # Parses a hron expression into a Schedule. Raises HronError if it is invalid.
     def parse_schedule(input)

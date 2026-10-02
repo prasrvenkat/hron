@@ -508,12 +508,13 @@ func NewYearRepeat(interval int, target YearTarget, times []TimeOfDay) ScheduleE
 	}
 }
 
+// ScheduleData holds the parts of a schedule, for NewSchedule to check and build.
 type ScheduleData struct {
 	Expr     ScheduleExpr
-	Timezone string
+	Timezone string // "UTC" or an IANA Area/Location name in any case; "" for none
 	Except   []ExceptionSpec
 	Until    *UntilSpec
-	Anchor   string // ISO date string for starting clause
+	Anchor   string // the starting date, YYYY-MM-DD; "" for none
 	During   []MonthName
 }
 

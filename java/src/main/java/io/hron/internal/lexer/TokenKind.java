@@ -1,4 +1,4 @@
-package io.hron.lexer;
+package io.hron.internal.lexer;
 
 public enum TokenKind {
   EVERY,

@@ -9,25 +9,9 @@ from itertools import pairwise
 import pytest
 
 from hron import (
-    DayFilterDays,
-    DayFilterEvery,
-    DayRange,
-    DayRepeat,
-    DaysTarget,
     HronError,
-    IntervalRepeat,
-    IntervalUnit,
-    MonthName,
-    MonthRepeat,
     Schedule,
-    ScheduleData,
-    ScheduleExpr,
-    TimeOfDay,
-    WeekRepeat,
-    YearDateTarget,
-    YearRepeat,
 )
-from hron._ast import NearestDirection, NearestWeekdayTarget
 
 # Two years around 2044-02-29, a leap day in a February with five Mondays.
 WINDOW_START = date(2043, 6, 1)
@@ -565,71 +549,3 @@ def test_naive_matcher_agrees_with_known_dates() -> None:
     assert fires("0 9 LW * *", date(2044, 4, 29))
     assert fires("0 9 * * 5L", date(2044, 4, 29))
     assert not fires("0 9 * * 5L", date(2044, 4, 22))
-
-
-def built(expr: ScheduleExpr, during: tuple[MonthName, ...] = ()) -> Schedule:
-    return Schedule(ScheduleData(expr=expr, during=during))
-
-
-NINE = (TimeOfDay(9, 0),)
-
-
-def test_to_cron_of_a_built_interval_of_0_steps_by_1_of_its_unit_as_evaluation_does() -> None:
-    minutes = built(IntervalRepeat(0, IntervalUnit.MIN, TimeOfDay(9, 0), TimeOfDay(9, 2), None))
-    assert minutes.to_cron() == "0-2 9 * * *"
-    fires = [wall(t) for t in minutes.next_n_from(utc(WINDOW_START, 9, 0), 2)]
-    assert fires == [(WINDOW_START, (9, 1)), (WINDOW_START, (9, 2))]
-
-    hours = built(IntervalRepeat(0, IntervalUnit.HOURS, TimeOfDay(9, 0), TimeOfDay(10, 0), None))
-    assert hours.to_cron() == "0 9-10 * * *"
-    fires = [wall(t) for t in hours.next_n_from(utc(WINDOW_START, 8, 0), 3)]
-    next_day = WINDOW_START + timedelta(days=1)
-    assert fires == [(WINDOW_START, (9, 0)), (WINDOW_START, (10, 0)), (next_day, (9, 0))]
-
-
-def test_to_cron_of_a_built_schedule_without_times_fails() -> None:
-    no_times = built(DayRepeat(1, DayFilterEvery(), ()))
-    assert cron_message(no_times.to_cron) == "not expressible as cron: schedule has no times"
-    reversed_window = built(
-        IntervalRepeat(1, IntervalUnit.HOURS, TimeOfDay(9, 0), TimeOfDay(8, 0), None)
-    )
-    assert cron_message(reversed_window.to_cron) == "not expressible as cron: schedule has no times"
-
-
-@pytest.mark.parametrize(
-    "expr",
-    [
-        DayRepeat(1, DayFilterDays(()), NINE),
-        WeekRepeat(1, (), NINE),
-        MonthRepeat(1, DaysTarget(()), NINE),
-        MonthRepeat(1, DaysTarget((DayRange(9, 5),)), NINE),
-        IntervalRepeat(1, IntervalUnit.HOURS, TimeOfDay(9, 0), TimeOfDay(17, 0), DayFilterDays(())),
-    ],
-)
-def test_to_cron_of_a_built_schedule_without_days_fails(expr: ScheduleExpr) -> None:
-    assert cron_message(built(expr).to_cron) == "not expressible as cron: schedule has no days"
-
-
-def test_to_cron_reasons_around_no_days_and_no_times_follow_the_order() -> None:
-    assert (
-        cron_message(built(WeekRepeat(2, (), ())).to_cron)
-        == "not expressible as cron: multi-week repeats not supported"
-    )
-    directional = MonthRepeat(1, NearestWeekdayTarget(1, NearestDirection.NEXT), ())
-    assert (
-        cron_message(built(directional).to_cron)
-        == "not expressible as cron: directional nearest weekday not supported"
-    )
-    no_days_excluded_month = built(WeekRepeat(1, (), ()), (MonthName.MAR,))
-    assert (
-        cron_message(no_days_excluded_month.to_cron)
-        == "not expressible as cron: schedule has no days"
-    )
-    christmas = YearRepeat(1, YearDateTarget(MonthName.DEC, 25), ())
-    assert (
-        cron_message(built(christmas, (MonthName.JAN,)).to_cron)
-        == "not expressible as cron: during excludes the schedule's month"
-    )
-    assert (
-        cron_message(built(christmas).to_cron) == "not expressible as cron: schedule has no times"
-    )

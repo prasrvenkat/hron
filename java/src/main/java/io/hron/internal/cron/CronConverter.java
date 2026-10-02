@@ -1,6 +1,7 @@
-package io.hron.cron;
+package io.hron.internal.cron;
 
 import io.hron.HronException;
+import io.hron.Schedule;
 import io.hron.ast.DateSpec;
 import io.hron.ast.DayFilter;
 import io.hron.ast.DayOfMonthSpec;
@@ -19,7 +20,7 @@ import io.hron.ast.WeekRepeat;
 import io.hron.ast.Weekday;
 import io.hron.ast.YearRepeat;
 import io.hron.ast.YearTarget;
-import io.hron.eval.Evaluator;
+import io.hron.internal.eval.Evaluator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -519,7 +520,8 @@ public final class CronConverter {
     };
   }
 
-  public static String toCron(ScheduleData data) throws HronException {
+  public static String toCron(Schedule schedule) throws HronException {
+    ScheduleData data = schedule.data();
     if (!data.except().isEmpty()) {
       throw notExpressible("except clauses not supported");
     }
@@ -530,12 +532,8 @@ public final class CronConverter {
       throw notExpressible("starting clauses not supported");
     }
     DayFields days = dayFields(data.expr());
-    // A schedule built in code can have an empty day list, which writes an empty field.
-    if (days.dayOfMonth().isEmpty() || days.dayOfWeek().isEmpty()) {
-      throw notExpressible("schedule has no days");
-    }
     String month = monthField(data);
-    TimeFields times = timeFields(data.expr());
+    TimeFields times = timeFields(schedule);
     return times.minute()
         + " "
         + times.hour()
@@ -625,25 +623,21 @@ public final class CronConverter {
     };
   }
 
-  private static TimeFields timeFields(ScheduleExpr expr) throws HronException {
-    List<Integer> times = dailyTimes(expr);
+  private static TimeFields timeFields(Schedule schedule) throws HronException {
+    List<Integer> times = dailyTimes(schedule);
     List<Integer> minutes = sortedUnique(times.stream().map(t -> t % 60).toList());
     List<Integer> hours = sortedUnique(times.stream().map(t -> t / 60).toList());
-    // A schedule built in code can have no times, which no cron writes.
-    if (times.isEmpty()) {
-      throw notExpressible("schedule has no times");
-    }
     if (minutes.size() * hours.size() != times.size()) {
       throw notExpressible("times are not every combination of their minutes and hours");
     }
     return new TimeFields(stepField(minutes, 60), stepField(hours, 24));
   }
 
-  private static List<Integer> dailyTimes(ScheduleExpr expr) {
+  private static List<Integer> dailyTimes(Schedule schedule) {
     List<TimeOfDay> times;
-    switch (expr) {
-      case IntervalRepeat ir -> {
-        return Arrays.stream(Evaluator.intervalSlots(ir)).boxed().toList();
+    switch (schedule.data().expr()) {
+      case IntervalRepeat _ -> {
+        return Arrays.stream(Evaluator.intervalSlots(schedule)).boxed().toList();
       }
       case DayRepeat dr -> times = dr.times();
       case WeekRepeat wr -> times = wr.times();

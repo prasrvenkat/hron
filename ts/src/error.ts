@@ -7,6 +7,11 @@ export interface Span {
   end: number;
 }
 
+/**
+ * `eval` is for schedules built in code from their parts. This package builds
+ * them only by `Schedule.parse` and `Schedule.fromCron`, so it never throws one;
+ * the kind exists because spec/api.json lists it.
+ */
 export type HronErrorKind = "lex" | "parse" | "eval" | "cron";
 
 /** All errors produced by hron. */
@@ -44,6 +49,7 @@ export class HronError extends Error {
     return new HronError("parse", message, span, input, suggestion);
   }
 
+  /** Never thrown by this package; spec/api.json lists it with the other kinds. */
   static eval(message: string): HronError {
     return new HronError("eval", message);
   }

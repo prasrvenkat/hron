@@ -3,7 +3,7 @@ using Hron.Ast;
 
 namespace Hron.Display;
 
-public static class Display
+internal static class Display
 {
     public static string Render(ScheduleData data)
     {

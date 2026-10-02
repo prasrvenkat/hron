@@ -64,6 +64,12 @@ Convert a 5-field cron expression or `@` shortcut to a Schedule that fires at th
 ### `Schedule.validate(input: str) -> bool`
 Check if an input string is a valid hron expression.
 
+### `Schedule(data: ScheduleData) -> Schedule`
+Build a schedule from its parts: an expression (`IntervalRepeat`, `DayRepeat`, `WeekRepeat`, `MonthRepeat`, `SingleDateExpr` or `YearRepeat`) and the clauses `except_`, `until`, `anchor` (the `starting` date, as `YYYY-MM-DD`), `during` and `timezone`. The parts are checked with the rules `parse` applies, so a built schedule behaves as a parsed one: `str` of it parses back to an equal schedule, and evaluating it never fails. See [Building in code](#building-in-code).
+
+### `schedule.data -> ScheduleData`
+The parts the schedule was built from. Change one with `dataclasses.replace` and build again.
+
 ### `schedule.next_from(now: datetime) -> datetime | None`
 Compute the next occurrence after `now`.
 
@@ -74,7 +80,7 @@ Compute the next `n` occurrences after `now`: fewer if the schedule ends, none i
 Check if a datetime matches this schedule.
 
 ### `schedule.to_cron() -> str`
-Convert to a 5-field cron expression that fires at the same times. Raises `HronError` with `kind == "cron"` for `except`, `until`, `starting`, an ISO date, a repeat every `n > 1` days, weeks, months or years, a directional nearest weekday, a `during` that excludes a yearly or named date's month, a schedule built in code with no days or no times, and times that are not every combination of their minutes and hours (`at 09:00, 17:30`). The schedule's timezone is not part of the cron: run it in the schedule's timezone. The [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#cron-conversion) has the full rules and every error message.
+Convert to a 5-field cron expression that fires at the same times. Raises `HronError` with `kind == "cron"` for `except`, `until`, `starting`, an ISO date, a repeat every `n > 1` days, weeks, months or years, a directional nearest weekday, a `during` that excludes a yearly or named date's month, and times that are not every combination of their minutes and hours (`at 09:00, 17:30`). The schedule's timezone is not part of the cron: run it in the schedule's timezone. The [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#cron-conversion) has the full rules and every error message.
 
 ### `str(schedule) -> str`
 Render as the canonical string form (roundtrip-safe).
@@ -84,6 +90,35 @@ The IANA timezone name with its canonical capitalization, if specified.
 
 ### `schedule.expression -> ScheduleExpr`
 The underlying schedule expression AST.
+
+### `schedule == other`
+Schedules are equal, and hash alike, when their parts are equal, however they were built.
+
+## Building in code
+
+```python
+import dataclasses
+from hron import DayFilterWeekday, DayRepeat, HronError, Schedule, ScheduleData, TimeOfDay
+
+schedule = Schedule(
+    ScheduleData(DayRepeat(1, DayFilterWeekday(), (TimeOfDay(9, 0),)), timezone="america/new_york")
+)
+print(schedule)  # every weekday at 09:00 in America/New_York
+schedule == Schedule.parse("every weekday at 9:00 in America/New_York")  # True
+
+try:
+    Schedule(dataclasses.replace(schedule.data, timezone="EST"))
+except HronError as error:
+    error.kind  # "eval"
+    print(error.display_rich())
+    # error: timezone must be UTC or an Area/Location name such as America/New_York, got EST
+```
+
+A part that breaks a rule raises `HronError` with `kind == "eval"`, the exact message of the [spec](https://github.com/simpllyf/hron/blob/main/spec/README.md#schedules-built-in-code), and no `span`, `input_text` or `suggestion`. The first part in the spec's order decides the message; its table lists every rule: an interval outside 1-2147483647, a `DayRepeat` with an interval above 1 on days other than `DayFilterEvery()`, a time outside 00:00-23:59, a window that runs backwards, no times or no days, a day outside 1-31 or beyond its month, a day range that runs backwards, a date that is not a calendar `YYYY-MM-DD` from 0001-01-01 to 9999-12-31, a timezone other than `UTC` or an IANA `Area/Location` name, and a `NamedUntil` without `anchor`. Any value where an expression, day filter, day spec, month or year target, date, exception or until goes that is none of its classes, `None` included, raises `unknown {kind} {value!r}`: `unknown day filter None`.
+
+A value of the wrong type is a `TypeError`, not a `HronError`: anything but a member of the name's `Enum` where a `Weekday`, `MonthName`, `OrdinalPosition`, `IntervalUnit` or `NearestDirection` goes (`"monday"`, `1` and `None` included, though `None` is a `NearestWeekdayTarget`'s plain nearest direction), a `str`, `float` or `bool` where an `int` goes, anything but a `list` or `tuple` where a sequence goes (`None` included), anything but a `str` for a date, `anchor` or `timezone`, and anything but a `TimeOfDay` for a time.
+
+Building copies the parts, so changing a list afterwards does not change the schedule; lists are kept as tuples. `ScheduleData` and every part are frozen, so nothing a getter returns can change the schedule either. An empty `except_` or `during` is no clause, and the timezone is kept in its IANA capitalization, as `parse` keeps it.
 
 ## Timestamps
 
@@ -104,7 +139,7 @@ A timestamp outside the supported range, `0001-01-02T00:00:00Z <= t < 9999-12-30
 
 ## Errors
 
-`Schedule.parse` raises `HronError` with `kind` `"lex"` or `"parse"`, `str(error)` the exact message of the spec, `input_text` the expression as given, and `span` the part of it the error points at. A parse error may carry a `suggestion`, text to put in place of the span. `display_rich()` renders the error with carets under the span:
+`Schedule(ScheduleData(...))` raises `HronError` with `kind` `"eval"` (see [Building in code](#building-in-code)). `Schedule.parse` raises `HronError` with `kind` `"lex"` or `"parse"`, `str(error)` the exact message of the spec, `input_text` the expression as given, and `span` the part of it the error points at. A parse error may carry a `suggestion`, text to put in place of the span. `display_rich()` renders the error with carets under the span:
 
 ```python
 from hron import HronError, Schedule

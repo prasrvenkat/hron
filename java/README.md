@@ -82,7 +82,7 @@ Schedule.parse("every year on dec 25 at 00:00").toCron();               // "0 0 
 
 Both directions are exact: the result fires at the same times on the same dates, or the call throws a `HronException` of kind `CRON` whose message says why. This ignores the timezone and DST transitions, where cron schedulers differ.
 
-- `toCron()` fails for `except`, `until` and `starting`; an ISO date; a repeat every `n > 1` days, weeks, months or years; a directional nearest weekday; a `during` that excludes a yearly or named date's month; a schedule built in code with no days or no times; and times that are not every combination of their minutes and hours (`at 09:00, 17:30`).
+- `toCron()` fails for `except`, `until` and `starting`; an ISO date; a repeat every `n > 1` days, weeks, months or years; a directional nearest weekday; a `during` that excludes a yearly or named date's month; and times that are not every combination of their minutes and hours (`at 09:00, 17:30`).
 - `fromCron()` fails for a cron that restricts both the day of month and the day of week (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an interval can carry (`*/7 * * * *` fires 216 times at uneven gaps).
 - The timezone is not part of the cron: run the cron in the schedule's timezone.
 
@@ -156,6 +156,9 @@ String spanned =
 | `toCron()` | Convert to a 5-field cron expression |
 | `toString()` | Get the canonical string form |
 | `timezone()` | Get the IANA timezone name with its canonical capitalization (if specified) |
+| `data()` | Get the schedule's parts as read-only records from `io.hron.ast` |
+
+A schedule is built only by `parse` and `fromCron`, and cannot change afterwards. The records `data()` returns hold only unmodifiable lists, and nothing builds a schedule back from them. The module `io.hron` exports `io.hron` and `io.hron.ast`; `io.hron.internal` is not API.
 
 #### Timestamps
 
@@ -173,7 +176,7 @@ s.nextFrom(tokyo); // Optional[2026-02-06T09:00-05:00[America/New_York]]
 
 ### HronException
 
-Exception thrown for parsing, evaluation, and conversion errors.
+Exception thrown for parsing and cron conversion errors.
 
 #### Factory Methods
 
@@ -181,7 +184,7 @@ Exception thrown for parsing, evaluation, and conversion errors.
 |--------|-------------|
 | `lex(message, span, input)` | Create a lexer error |
 | `parse(message, span, input, suggestion)` | Create a parser error |
-| `eval(message)` | Create an evaluation error |
+| `eval(message)` | Create an eval error, the kind for a schedule built in code from parts that break a rule; Java never throws one |
 | `cron(message)` | Create a cron conversion error |
 
 #### Instance Methods

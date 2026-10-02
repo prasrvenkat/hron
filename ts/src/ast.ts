@@ -32,96 +32,113 @@ export type OrdinalPosition =
   | "last";
 
 export interface TimeOfDay {
-  hour: number;
-  minute: number;
+  readonly hour: number;
+  readonly minute: number;
 }
 
 export type DayFilter =
-  | { type: "every" }
-  | { type: "weekday" }
-  | { type: "weekend" }
-  | { type: "days"; days: Weekday[] };
+  | { readonly type: "every" }
+  | { readonly type: "weekday" }
+  | { readonly type: "weekend" }
+  | { readonly type: "days"; readonly days: readonly Weekday[] };
 
 export type DayOfMonthSpec =
-  | { type: "single"; day: number }
-  | { type: "range"; start: number; end: number };
+  | { readonly type: "single"; readonly day: number }
+  | { readonly type: "range"; readonly start: number; readonly end: number };
 
 export type NearestDirection = "next" | "previous";
 
 export type MonthTarget =
-  | { type: "days"; specs: DayOfMonthSpec[] }
-  | { type: "lastDay" }
-  | { type: "lastWeekday" }
+  | { readonly type: "days"; readonly specs: readonly DayOfMonthSpec[] }
+  | { readonly type: "lastDay" }
+  | { readonly type: "lastWeekday" }
   | {
-      type: "nearestWeekday";
-      day: number;
+      readonly type: "nearestWeekday";
+      readonly day: number;
       /** Null stays in the month, as cron `W` does; a direction can cross into the adjacent month. */
-      direction: NearestDirection | null;
+      readonly direction: NearestDirection | null;
     }
-  | { type: "ordinalWeekday"; ordinal: OrdinalPosition; weekday: Weekday };
+  | {
+      readonly type: "ordinalWeekday";
+      readonly ordinal: OrdinalPosition;
+      readonly weekday: Weekday;
+    };
 
 export type YearTarget =
-  | { type: "date"; month: MonthName; day: number }
+  | { readonly type: "date"; readonly month: MonthName; readonly day: number }
   | {
-      type: "ordinalWeekday";
-      ordinal: OrdinalPosition;
-      weekday: Weekday;
-      month: MonthName;
+      readonly type: "ordinalWeekday";
+      readonly ordinal: OrdinalPosition;
+      readonly weekday: Weekday;
+      readonly month: MonthName;
     }
-  | { type: "dayOfMonth"; day: number; month: MonthName }
-  | { type: "lastWeekday"; month: MonthName };
+  | {
+      readonly type: "dayOfMonth";
+      readonly day: number;
+      readonly month: MonthName;
+    }
+  | { readonly type: "lastWeekday"; readonly month: MonthName };
 
 export type DateSpec =
-  | { type: "named"; month: MonthName; day: number }
-  | { type: "iso"; date: string };
+  | { readonly type: "named"; readonly month: MonthName; readonly day: number }
+  | { readonly type: "iso"; readonly date: string };
 
 export type Exception =
-  | { type: "named"; month: MonthName; day: number }
-  | { type: "iso"; date: string };
+  | { readonly type: "named"; readonly month: MonthName; readonly day: number }
+  | { readonly type: "iso"; readonly date: string };
 
 export type UntilSpec =
-  | { type: "iso"; date: string }
-  | { type: "named"; month: MonthName; day: number };
+  | { readonly type: "iso"; readonly date: string }
+  | { readonly type: "named"; readonly month: MonthName; readonly day: number };
 
 export type ScheduleExpr =
   | {
-      type: "intervalRepeat";
-      interval: number;
-      unit: IntervalUnit;
-      from: TimeOfDay;
-      to: TimeOfDay;
-      dayFilter: DayFilter | null;
-    }
-  | { type: "dayRepeat"; interval: number; days: DayFilter; times: TimeOfDay[] }
-  | {
-      type: "weekRepeat";
-      interval: number;
-      days: Weekday[];
-      times: TimeOfDay[];
+      readonly type: "intervalRepeat";
+      readonly interval: number;
+      readonly unit: IntervalUnit;
+      readonly from: TimeOfDay;
+      readonly to: TimeOfDay;
+      readonly dayFilter: DayFilter | null;
     }
   | {
-      type: "monthRepeat";
-      interval: number;
-      target: MonthTarget;
-      times: TimeOfDay[];
+      readonly type: "dayRepeat";
+      readonly interval: number;
+      readonly days: DayFilter;
+      readonly times: readonly TimeOfDay[];
     }
-  | { type: "singleDate"; date: DateSpec; times: TimeOfDay[] }
   | {
-      type: "yearRepeat";
-      interval: number;
-      target: YearTarget;
-      times: TimeOfDay[];
+      readonly type: "weekRepeat";
+      readonly interval: number;
+      readonly days: readonly Weekday[];
+      readonly times: readonly TimeOfDay[];
+    }
+  | {
+      readonly type: "monthRepeat";
+      readonly interval: number;
+      readonly target: MonthTarget;
+      readonly times: readonly TimeOfDay[];
+    }
+  | {
+      readonly type: "singleDate";
+      readonly date: DateSpec;
+      readonly times: readonly TimeOfDay[];
+    }
+  | {
+      readonly type: "yearRepeat";
+      readonly interval: number;
+      readonly target: YearTarget;
+      readonly times: readonly TimeOfDay[];
     };
 
 export interface ScheduleData {
-  expr: ScheduleExpr;
+  readonly expr: ScheduleExpr;
   /** Null means UTC. */
-  timezone: string | null;
-  except: Exception[];
-  until: UntilSpec | null;
+  readonly timezone: string | null;
+  readonly except: readonly Exception[];
+  readonly until: UntilSpec | null;
   /** The `starting` date, as YYYY-MM-DD. */
-  anchor: string | null;
-  during: MonthName[];
+  readonly anchor: string | null;
+  readonly during: readonly MonthName[];
 }
 
 export function weekdayNumber(day: Weekday): number {
@@ -210,7 +227,7 @@ export function ordinalToN(ord: OrdinalPosition): number {
   return map[ord];
 }
 
-export const ALL_WEEKDAYS: Weekday[] = [
+export const ALL_WEEKDAYS: readonly Weekday[] = [
   "monday",
   "tuesday",
   "wednesday",
@@ -218,7 +235,7 @@ export const ALL_WEEKDAYS: Weekday[] = [
   "friday",
 ];
 
-export const ALL_WEEKEND: Weekday[] = ["saturday", "sunday"];
+export const ALL_WEEKEND: readonly Weekday[] = ["saturday", "sunday"];
 
 export function newScheduleData(expr: ScheduleExpr): ScheduleData {
   return {

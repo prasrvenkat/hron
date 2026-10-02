@@ -30,16 +30,16 @@ func cronMessage(t *testing.T, err error) string {
 
 func fromCronString(t *testing.T, cron string) string {
 	t.Helper()
-	data, err := FromCron(cron)
+	schedule, err := FromCronExpr(cron)
 	if err != nil {
-		t.Fatalf("FromCron(%q): %v", cron, err)
+		t.Fatalf("FromCronExpr(%q): %v", cron, err)
 	}
-	return Display(data)
+	return schedule.String()
 }
 
 func fromCronError(t *testing.T, cron string) string {
 	t.Helper()
-	_, err := FromCron(cron)
+	_, err := FromCronExpr(cron)
 	return cronMessage(t, err)
 }
 
@@ -411,7 +411,7 @@ func TestFromCronIsExact(t *testing.T) {
 			for _, cron := range generatedCrons(shard) {
 				naive := newNaiveCron(t, cron)
 				times := naive.times()
-				data, err := FromCron(cron)
+				schedule, err := FromCronExpr(cron)
 				if naive.bothDaysRestricted() {
 					if got := cronMessage(t, err); got != bothDaysRestricted {
 						t.Fatalf("%s: %q", cron, got)
@@ -426,9 +426,8 @@ func TestFromCronIsExact(t *testing.T) {
 					continue
 				}
 				if err != nil {
-					t.Fatalf("FromCron(%q): %v", cron, err)
+					t.Fatalf("FromCronExpr(%q): %v", cron, err)
 				}
-				schedule := mustSchedule(t, data)
 				assertFiresAs(t, schedule, naive, cron)
 
 				back, err := schedule.ToCron()
@@ -436,12 +435,12 @@ func TestFromCronIsExact(t *testing.T) {
 					t.Fatalf("ToCron of FromCron(%q) = %s: %v", cron, schedule, err)
 				}
 				label := fmt.Sprintf("%s -> %s -> %s", cron, schedule, back)
-				again, err := FromCron(back)
+				again, err := FromCronExpr(back)
 				if err != nil {
 					t.Fatalf("%s: %v", label, err)
 				}
-				if Display(again) != schedule.String() {
-					assertFiresAs(t, mustSchedule(t, again), naive, label)
+				if again.String() != schedule.String() {
+					assertFiresAs(t, again, naive, label)
 				}
 				naiveBack := newNaiveCron(t, back)
 				if !slices.Equal(naiveBack.times(), times) {
@@ -643,8 +642,8 @@ func TestToCronIsExact(t *testing.T) {
 		accepted++
 
 		times := naive.times()
-		label := hron + " -> " + cron + " -> FromCron"
-		back, err := FromCron(cron)
+		label := hron + " -> " + cron + " -> FromCronExpr"
+		back, err := FromCronExpr(cron)
 		if len(times) > 24 && !(naive.daysCarryAnInterval() && hasEqualGaps(times)) {
 			if got, want := cronMessage(t, err), expectedFromCronMessage(times); got != want {
 				t.Fatalf("%s: %q, want %q", label, got, want)
@@ -654,7 +653,7 @@ func TestToCronIsExact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", label, err)
 		}
-		assertFiresAs(t, mustSchedule(t, back), naive, label)
+		assertFiresAs(t, back, naive, label)
 	}
 	if accepted < 60 || rejected < 20 {
 		t.Fatalf("only %d generated schedules converted and %d were rejected", accepted, rejected)
@@ -731,104 +730,6 @@ func TestNaiveMatcherAgreesWithKnownDates(t *testing.T) {
 		date := time.Date(c.y, time.Month(c.m), c.d, 0, 0, 0, 0, time.UTC)
 		if got := newNaiveCron(t, c.cron).firesOn(date); got != c.fires {
 			t.Errorf("%s on %s: %v (%s)", c.cron, date.Format(time.DateOnly), got, c.because)
-		}
-	}
-}
-
-func TestToCronOfABuiltIntervalOf0StepsBy1OfItsUnitAsEvaluationDoes(t *testing.T) {
-	minutes := NewScheduleData(NewIntervalRepeat(0, IntervalMin, TimeOfDay{9, 0}, TimeOfDay{9, 2}, nil))
-	cron, err := ToCron(minutes)
-	if err != nil || cron != "0-2 9 * * *" {
-		t.Fatalf("minutes: ToCron = %q, %v", cron, err)
-	}
-	fires := mustSchedule(t, minutes).NextNFrom(windowStart.Add(9*time.Hour), 2)
-	want := []wallTime{wallAt(windowStart, [2]int{9, 1}), wallAt(windowStart, [2]int{9, 2})}
-	if len(fires) != 2 || wallOf(fires[0]) != want[0] || wallOf(fires[1]) != want[1] {
-		t.Fatalf("minutes: fires at %v, want %v", fires, want)
-	}
-
-	hours := NewScheduleData(NewIntervalRepeat(0, IntervalHours, TimeOfDay{9, 0}, TimeOfDay{10, 0}, nil))
-	cron, err = ToCron(hours)
-	if err != nil || cron != "0 9-10 * * *" {
-		t.Fatalf("hours: ToCron = %q, %v", cron, err)
-	}
-	fires = mustSchedule(t, hours).NextNFrom(windowStart.Add(8*time.Hour), 3)
-	want = []wallTime{
-		wallAt(windowStart, [2]int{9, 0}),
-		wallAt(windowStart, [2]int{10, 0}),
-		wallAt(windowStart.AddDate(0, 0, 1), [2]int{9, 0}),
-	}
-	if len(fires) != 3 || wallOf(fires[0]) != want[0] || wallOf(fires[1]) != want[1] || wallOf(fires[2]) != want[2] {
-		t.Fatalf("hours: fires at %v, want %v", fires, want)
-	}
-}
-
-func TestToCronOfABuiltScheduleWithoutTimesFails(t *testing.T) {
-	built := []ScheduleExpr{
-		NewDayRepeat(1, NewDayFilterEvery(), nil),
-		NewIntervalRepeat(1, IntervalHours, TimeOfDay{9, 0}, TimeOfDay{8, 0}, nil),
-	}
-	for _, expr := range built {
-		_, err := ToCron(NewScheduleData(expr))
-		if got := cronMessage(t, err); got != "not expressible as cron: schedule has no times" {
-			t.Errorf("%+v: %q", expr, got)
-		}
-	}
-}
-
-func TestToCronOfABuiltScheduleWithoutDaysFails(t *testing.T) {
-	nine := []TimeOfDay{{9, 0}}
-	noDays := NewDayFilterDays(nil)
-	built := []ScheduleExpr{
-		NewDayRepeat(1, noDays, nine),
-		NewWeekRepeat(1, nil, nine),
-		NewMonthRepeat(1, NewDaysTarget(nil), nine),
-		NewMonthRepeat(1, NewDaysTarget([]DayOfMonthSpec{NewDayRange(9, 5)}), nine),
-		NewIntervalRepeat(1, IntervalHours, TimeOfDay{9, 0}, TimeOfDay{17, 0}, &noDays),
-	}
-	for _, expr := range built {
-		_, err := ToCron(NewScheduleData(expr))
-		if got := cronMessage(t, err); got != "not expressible as cron: schedule has no days" {
-			t.Errorf("%+v: %q", expr, got)
-		}
-	}
-}
-
-func TestToCronReasonsAroundNoDaysAndNoTimesFollowTheOrder(t *testing.T) {
-	withDuring := func(expr ScheduleExpr, during ...MonthName) *ScheduleData {
-		data := NewScheduleData(expr)
-		data.During = during
-		return data
-	}
-	yearlyWithoutTimes := NewYearRepeat(1, NewYearDateTarget(Dec, 25), nil)
-	cases := []struct {
-		data *ScheduleData
-		want string
-	}{
-		{withDuring(NewWeekRepeat(2, nil, nil)), "multi-week repeats not supported"},
-		{withDuring(NewMonthRepeat(1, NewNearestWeekdayTarget(1, NearestNext), nil)), "directional nearest weekday not supported"},
-		{withDuring(NewWeekRepeat(1, nil, nil), Mar), "schedule has no days"},
-		{withDuring(yearlyWithoutTimes, Jan), "during excludes the schedule's month"},
-		{withDuring(yearlyWithoutTimes), "schedule has no times"},
-	}
-	for _, c := range cases {
-		_, err := ToCron(c.data)
-		if got := cronMessage(t, err); got != "not expressible as cron: "+c.want {
-			t.Errorf("%+v: %q, want %q", c.data.Expr, got, c.want)
-		}
-	}
-}
-
-func TestToCronOfAnUnknownKindFailsWithoutPanicking(t *testing.T) {
-	built := []ScheduleExpr{
-		{Kind: ScheduleExprKind(99)},
-		{Kind: ScheduleExprKindMonth, MonthTarget: MonthTarget{Kind: MonthTargetKind(99)}, Times: []TimeOfDay{{9, 0}}},
-		{Kind: ScheduleExprKindYear, YearTarget: YearTarget{Kind: YearTargetKind(99)}, Times: []TimeOfDay{{9, 0}}},
-	}
-	for _, expr := range built {
-		_, err := ToCron(NewScheduleData(expr))
-		if got := cronMessage(t, err); got != "invalid schedule: unknown expression or target kind" {
-			t.Errorf("%+v: %q", expr, got)
 		}
 	}
 }

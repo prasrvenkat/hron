@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public enum OrdinalPosition
+internal enum OrdinalPosition
 {
     First = 1,
     Second = 2,
@@ -10,7 +10,7 @@ public enum OrdinalPosition
     Last = -1
 }
 
-public static class OrdinalPositionExtensions
+internal static class OrdinalPositionExtensions
 {
     private static readonly Dictionary<string, OrdinalPosition> ParseMap = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -22,9 +22,6 @@ public static class OrdinalPositionExtensions
         ["last"] = OrdinalPosition.Last
     };
 
-    /// <summary>
-    /// Returns the ordinal as a number (1-5, or -1 for Last).
-    /// </summary>
     public static int ToN(this OrdinalPosition ordinal) => (int)ordinal;
 
     public static string ToDisplayString(this OrdinalPosition ordinal) => ordinal switch
@@ -38,9 +35,6 @@ public static class OrdinalPositionExtensions
         _ => throw new ArgumentOutOfRangeException(nameof(ordinal))
     };
 
-    /// <summary>
-    /// Parses an ordinal position name (case insensitive).
-    /// </summary>
     public static OrdinalPosition? Parse(string s)
         => ParseMap.TryGetValue(s, out var ordinal) ? ordinal : null;
 }

@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public enum NearestDirection
+internal enum NearestDirection
 {
     /// <summary>Always prefer following weekday (can cross to next month).</summary>
     Next,
@@ -8,7 +8,7 @@ public enum NearestDirection
     Previous
 }
 
-public sealed record MonthTarget(
+internal sealed record MonthTarget(
     MonthTargetKind Kind,
     IReadOnlyList<DayOfMonthSpec> Specs,
     int NearestWeekdayDay = 0,
@@ -25,7 +25,6 @@ public sealed record MonthTarget(
     public static MonthTarget LastWeekday() =>
         new(MonthTargetKind.LastWeekday, []);
 
-    /// <param name="day">The target day of month (1-31).</param>
     /// <param name="direction">Optional direction preference (null for standard cron W behavior).</param>
     public static MonthTarget NearestWeekday(int day, NearestDirection? direction = null) =>
         new(MonthTargetKind.NearestWeekday, [], day, direction);
@@ -33,9 +32,6 @@ public sealed record MonthTarget(
     public static MonthTarget OrdinalWeekday(OrdinalPosition ordinal, Weekday weekday) =>
         new(MonthTargetKind.OrdinalWeekday, [], OrdinalValue: ordinal, WeekdayValue: weekday);
 
-    /// <summary>
-    /// Returns all days specified by this target, or an empty list unless Kind is Days.
-    /// </summary>
     public IReadOnlyList<int> ExpandDays()
     {
         if (Kind != MonthTargetKind.Days)
@@ -52,7 +48,7 @@ public sealed record MonthTarget(
     }
 }
 
-public enum MonthTargetKind
+internal enum MonthTargetKind
 {
     Days,
     LastDay,

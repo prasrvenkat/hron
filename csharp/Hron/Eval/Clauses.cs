@@ -98,8 +98,7 @@ internal sealed class Clauses
 
     /// <summary>
     /// A named until date is the first such date on or after the starting date
-    /// (spec/README.md, "Named `until`"). Parse requires <c>starting</c>; a ScheduleData built
-    /// without one resolves from the default anchor, the epoch. Null when no such date exists
+    /// (spec/README.md, "Named `until`"), which parse requires. Null when no such date exists
     /// before the calendar ends, so nothing bounds the schedule.
     /// </summary>
     private static DateOnly? ResolveUntil(UntilSpec until, DateOnly? starting)
@@ -108,7 +107,7 @@ internal sealed class Clauses
         {
             return IsoDate.Parse(until.Date!);
         }
-        var from = starting ?? Cadence.EpochDate;
+        var from = starting!.Value;
         var lastYear = Math.Min(from.Year + NamedUntilMaxYears, DateOnly.MaxValue.Year);
         for (var year = from.Year; year <= lastYear; year++)
         {

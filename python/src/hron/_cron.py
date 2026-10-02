@@ -42,7 +42,7 @@ from ._ast import (
     YearRepeat,
     YearTarget,
     expand_month_target,
-    new_schedule_data,
+    max_day,
 )
 from ._error import HronError
 from ._eval import interval_slots
@@ -143,10 +143,10 @@ def from_cron(cron: str) -> ScheduleData:
         expr = DayRepeat(interval=1, days=days, times=tuple(times))
     else:
         expr = MonthRepeat(interval=1, target=days, times=tuple(times))
-    schedule = new_schedule_data(expr)
+    during: tuple[MonthName, ...] = ()
     if not isinstance(expr, YearRepeat) and len(months) < len(_MONTHS):
-        schedule.during = tuple(_MONTHS[m - 1] for m in months)
-    return schedule
+        during = tuple(_MONTHS[m - 1] for m in months)
+    return ScheduleData(expr, during=during)
 
 
 def _shortcut(text: str) -> str:
@@ -346,7 +346,7 @@ def _year_target(days: _Days, months: list[int]) -> YearTarget | None:
         return None
     month = _MONTHS[months[0] - 1]
     match days:
-        case DaysTarget(specs=(SingleDay(day=day),)) if day <= _max_day(month):
+        case DaysTarget(specs=(SingleDay(day=day),)) if day <= max_day(month):
             return YearDateTarget(month=month, day=day)
         case LastWeekdayTarget():
             return YearLastWeekdayTarget(month=month)
@@ -354,16 +354,6 @@ def _year_target(days: _Days, months: list[int]) -> YearTarget | None:
             return YearOrdinalWeekdayTarget(ordinal=ordinal, weekday=weekday, month=month)
         case _:
             return None
-
-
-def _max_day(month: MonthName) -> int:
-    match month:
-        case MonthName.FEB:
-            return 29
-        case MonthName.APR | MonthName.JUN | MonthName.SEP | MonthName.NOV:
-            return 30
-        case _:
-            return 31
 
 
 def to_cron(schedule: ScheduleData) -> str:
@@ -374,9 +364,6 @@ def to_cron(schedule: ScheduleData) -> str:
     if schedule.anchor is not None:
         raise _not_expressible("starting clauses not supported")
     day_of_month, day_of_week = _day_fields(schedule.expr)
-    # A schedule built in code can have an empty day list, which writes an empty field.
-    if not day_of_month or not day_of_week:
-        raise _not_expressible("schedule has no days")
     month = _month_field(schedule)
     minute, hour = _time_fields(schedule.expr)
     return f"{minute} {hour} {day_of_month} {month} {day_of_week}"
@@ -460,9 +447,6 @@ def _time_fields(expr: ScheduleExpr) -> tuple[str, str]:
     times = _daily_times(expr)
     minutes = _sorted_unique(t % 60 for t in times)
     hours = _sorted_unique(t // 60 for t in times)
-    # A schedule built in code can have no times, which no cron writes.
-    if not times:
-        raise _not_expressible("schedule has no times")
     if len(minutes) * len(hours) != len(times):
         raise _not_expressible("times are not every combination of their minutes and hours")
     return _step_field(minutes, 60), _step_field(hours, 24)

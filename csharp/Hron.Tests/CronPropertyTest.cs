@@ -1,7 +1,4 @@
 using System.Globalization;
-using Hron.Ast;
-using Hron.Cron;
-using Hron.Eval;
 using Xunit;
 
 namespace Hron.Tests;
@@ -656,74 +653,5 @@ public class CronPropertyTest
         Assert.True(Fires("0 9 LW * *", 2044, 4, 29));
         Assert.True(Fires("0 9 * * 5L", 2044, 4, 29));
         Assert.False(Fires("0 9 * * 5L", 2044, 4, 22));
-    }
-
-    private static readonly IReadOnlyList<TimeOfDay> Nine = [new TimeOfDay(9, 0)];
-
-    private static string ToCronError(ScheduleData data) => CronMessage(() => CronConverter.ToCron(data));
-
-    [Fact]
-    public void ToCronOfABuiltScheduleWithInterval0StepsBy1OfItsUnitAsEvaluationDoes()
-    {
-        var minutes = ScheduleData.Of(new IntervalRepeat(
-            0, IntervalUnit.Minutes, new TimeOfDay(9, 0), new TimeOfDay(9, 2), null));
-        Assert.Equal("0-2 9 * * *", CronConverter.ToCron(minutes));
-        Assert.Equal(
-            [Utc(WindowStart, 9, 1), Utc(WindowStart, 9, 2)],
-            Evaluator.NextNFrom(minutes, Utc(WindowStart, 9, 0), 2, TimeZoneInfo.Utc));
-
-        var hours = ScheduleData.Of(new IntervalRepeat(
-            0, IntervalUnit.Hours, new TimeOfDay(9, 0), new TimeOfDay(10, 0), null));
-        Assert.Equal("0 9-10 * * *", CronConverter.ToCron(hours));
-        Assert.Equal(
-            [Utc(WindowStart, 9, 0), Utc(WindowStart, 10, 0), Utc(WindowStart.AddDays(1), 9, 0)],
-            Evaluator.NextNFrom(hours, Utc(WindowStart, 8, 0), 3, TimeZoneInfo.Utc));
-    }
-
-    [Fact]
-    public void ToCronOfABuiltScheduleWithoutTimesFails()
-    {
-        Assert.Equal(
-            "not expressible as cron: schedule has no times",
-            ToCronError(ScheduleData.Of(new DayRepeat(1, DayFilter.Every(), []))));
-        var reversed = new IntervalRepeat(1, IntervalUnit.Hours, new TimeOfDay(9, 0), new TimeOfDay(8, 0), null);
-        Assert.Equal("not expressible as cron: schedule has no times", ToCronError(ScheduleData.Of(reversed)));
-    }
-
-    [Fact]
-    public void ToCronOfABuiltScheduleWithoutDaysFails()
-    {
-        IScheduleExpr[] noDays =
-        [
-            new DayRepeat(1, DayFilter.SpecificDays([]), Nine),
-            new WeekRepeat(1, [], Nine),
-            new MonthRepeat(1, MonthTarget.Days([]), Nine),
-            new MonthRepeat(1, MonthTarget.Days([DayOfMonthSpec.Range(9, 5)]), Nine),
-            new IntervalRepeat(1, IntervalUnit.Hours, new TimeOfDay(9, 0), new TimeOfDay(17, 0), DayFilter.SpecificDays([])),
-        ];
-        foreach (var expr in noDays)
-        {
-            Assert.Equal("not expressible as cron: schedule has no days", ToCronError(ScheduleData.Of(expr)));
-        }
-    }
-
-    [Fact]
-    public void ToCronReasonsAroundNoDaysAndNoTimesFollowTheOrder()
-    {
-        Assert.Equal(
-            "not expressible as cron: multi-week repeats not supported",
-            ToCronError(ScheduleData.Of(new WeekRepeat(2, [], []))));
-        var directional = new MonthRepeat(1, MonthTarget.NearestWeekday(1, NearestDirection.Next), []);
-        Assert.Equal(
-            "not expressible as cron: directional nearest weekday not supported",
-            ToCronError(ScheduleData.Of(directional)));
-        Assert.Equal(
-            "not expressible as cron: schedule has no days",
-            ToCronError(ScheduleData.Of(new WeekRepeat(1, [], [])).WithDuring([MonthName.March])));
-        var yearlyWithoutTimes = ScheduleData.Of(new YearRepeat(1, YearTarget.Date(MonthName.December, 25), []));
-        Assert.Equal(
-            "not expressible as cron: during excludes the schedule's month",
-            ToCronError(yearlyWithoutTimes.WithDuring([MonthName.January])));
-        Assert.Equal("not expressible as cron: schedule has no times", ToCronError(yearlyWithoutTimes));
     }
 }

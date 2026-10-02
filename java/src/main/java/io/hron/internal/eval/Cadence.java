@@ -1,4 +1,4 @@
-package io.hron.eval;
+package io.hron.internal.eval;
 
 import io.hron.ast.DateSpec;
 import io.hron.ast.DayRepeat;
@@ -77,7 +77,7 @@ record Cadence(Unit unit, LocalDate origin, long interval, boolean single) {
           case MONTH -> anchor.withDayOfMonth(1);
           case YEAR -> anchor.withDayOfYear(1);
         };
-    return new Cadence(unit, origin, Math.max(interval, 1), false);
+    return new Cadence(unit, origin, interval, false);
   }
 
   long periodOf(LocalDate date) {

@@ -706,8 +706,8 @@ pub fn parse(input: &str) -> Result<Schedule, ScheduleError> {
     Ok(Schedule::from_valid_parts(parts))
 }
 
-/// spec/README.md, "Parse-time validation": `UTC` or an IANA Area/Location
-/// name in any case, returned with the database's capitalization.
+// spec/README.md, "Parse-time validation": jiff matches the name in any case, and iana_name()
+// gives the database's capitalization.
 pub(crate) fn iana_timezone(name: &str) -> Option<String> {
     let lower = name.to_ascii_lowercase();
     // System zoneinfo directories that are not IANA names of their own.

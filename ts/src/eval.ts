@@ -369,8 +369,7 @@ export function intervalSlots({
   from,
   to,
 }: IntervalRepeat): number[] {
-  const atLeastOne = Math.max(1, interval);
-  const step = unit === "min" ? atLeastOne : atLeastOne * MINUTES_PER_HOUR;
+  const step = unit === "min" ? interval : interval * MINUTES_PER_HOUR;
   const last = minuteOfDay(to);
   const slots: number[] = [];
   for (let minute = minuteOfDay(from); minute <= last; minute += step) {
@@ -411,7 +410,7 @@ class Clauses {
     this.until =
       schedule.until === null
         ? null
-        : resolveUntil(schedule.until, this.starting ?? EPOCH_DATE);
+        : resolveUntil(schedule.until, this.starting);
   }
 
   allows({ date, targetMonth }: Candidate): boolean {
@@ -463,13 +462,15 @@ class Clauses {
   }
 }
 
-/**
- * spec/README.md, "Named `until`". The parser requires `starting` for a named
- * date; schedule data built otherwise counts from the epoch, as the reference
- * evaluator does.
- */
-function resolveUntil(until: UntilSpec, starting: number): number | null {
+/** spec/README.md, "Named `until`". */
+function resolveUntil(
+  until: UntilSpec,
+  starting: number | null,
+): number | null {
   if (until.type === "iso") return parseIsoDate(until.date);
+  if (starting === null) {
+    throw new Error("a named until always has a starting date");
+  }
   const month = monthNumber(until.month);
   const year = civil(starting).year;
   for (let k = 0; k <= NAMED_UNTIL_MAX_YEARS; k++) {

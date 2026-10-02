@@ -6,34 +6,30 @@ import (
 	"time"
 )
 
-// Schedule is a parsed hron expression. Its methods read only the instant of
-// each time.Time passed in, and return times in the schedule's timezone, or UTC
-// when it has none.
+// Schedule is an hron schedule, parsed or built, and cannot change. Its
+// methods read only the instant of each time.Time passed in, and return times
+// in the schedule's timezone, or UTC when it has none.
 type Schedule struct {
 	data     *ScheduleData
-	tzName   string
 	location *time.Location
 }
 
 // String returns the canonical hron expression for the schedule.
 func (s *Schedule) String() string {
-	return Display(s.data)
+	return display(s.data)
 }
 
-// NewSchedule creates a Schedule from parsed data. It returns an error if the
-// timezone cannot be resolved.
+// NewSchedule builds a Schedule from a copy of data, checked by the rules
+// ParseSchedule applies, with the timezone in its IANA capitalization. The
+// error is a *HronError of kind eval, with only a message, for the first part
+// that breaks a rule.
 func NewSchedule(data *ScheduleData) (*Schedule, error) {
-	loc, tzName, err := resolveTimezone(data.Timezone)
+	parts := copyParts(data)
+	location, err := checkParts(parts)
 	if err != nil {
 		return nil, err
 	}
-	canonical := *data
-	canonical.Timezone = tzName
-	return &Schedule{
-		data:     &canonical,
-		tzName:   tzName,
-		location: loc,
-	}, nil
+	return &Schedule{data: parts, location: location}, nil
 }
 
 // MustParse parses an hron expression string into a Schedule.
@@ -49,7 +45,7 @@ func MustParse(input string) *Schedule {
 // ParseSchedule parses an hron expression string into a Schedule.
 // The error is a *HronError.
 func ParseSchedule(input string) (*Schedule, error) {
-	data, err := Parse(input)
+	data, err := parse(input)
 	if err != nil {
 		return nil, err
 	}
@@ -61,16 +57,16 @@ func ParseSchedule(input string) (*Schedule, error) {
 // *HronError of kind cron when the syntax is invalid or no hron schedule fires
 // exactly as the cron does.
 func FromCronExpr(cronExpr string) (*Schedule, error) {
-	data, err := FromCron(cronExpr)
+	data, err := fromCron(cronExpr)
 	if err != nil {
 		return nil, err
 	}
 	return NewSchedule(data)
 }
 
-// Validate reports false, rather than returning an error, for anything Parse rejects.
+// Validate reports false, rather than returning an error, for anything ParseSchedule rejects.
 func Validate(input string) bool {
-	_, err := Parse(input)
+	_, err := ParseSchedule(input)
 	return err == nil
 }
 
@@ -126,15 +122,16 @@ func (s *Schedule) Between(from, to time.Time) iter.Seq[time.Time] {
 // the same times on the same dates, in the schedule's timezone. The error is a
 // *HronError of kind cron when no cron fires exactly as the schedule does.
 func (s *Schedule) ToCron() (string, error) {
-	return ToCron(s.data)
+	return toCron(s.data)
 }
 
 // Timezone returns the IANA timezone name with its canonical capitalization,
 // or empty string if not specified.
 func (s *Schedule) Timezone() string {
-	return s.tzName
+	return s.data.Timezone
 }
 
+// Data returns a copy of the schedule's parts, to change and pass to NewSchedule.
 func (s *Schedule) Data() *ScheduleData {
-	return s.data
+	return copyParts(s.data)
 }

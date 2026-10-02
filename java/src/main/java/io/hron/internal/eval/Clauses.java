@@ -1,4 +1,4 @@
-package io.hron.eval;
+package io.hron.internal.eval;
 
 import io.hron.ast.ExceptionSpec;
 import io.hron.ast.MonthName;
@@ -10,7 +10,6 @@ import java.time.MonthDay;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.NavigableSet;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -88,18 +87,16 @@ record Clauses(
 
   /**
    * A named until date is the first such date on or after the starting date (spec/README.md, "Named
-   * `until`"). Parse requires {@code starting}; a schedule built without one resolves from the
-   * default anchor, the epoch.
+   * `until`"), which a named until always has.
    */
   private static LocalDate resolveUntil(UntilSpec until, LocalDate starting) {
     return switch (until.kind()) {
       case ISO -> LocalDate.parse(until.date());
       case NAMED -> {
-        LocalDate from = Objects.requireNonNullElse(starting, Cadence.EPOCH_DATE);
         for (int k = 0; k <= NAMED_UNTIL_MAX_YEARS; k++) {
           Optional<LocalDate> date =
-              CalendarDates.dateOf(from.getYear() + k, until.month().number(), until.day());
-          if (date.isPresent() && !date.get().isBefore(from)) {
+              CalendarDates.dateOf(starting.getYear() + k, until.month().number(), until.day());
+          if (date.isPresent() && !date.get().isBefore(starting)) {
             yield date.get();
           }
         }

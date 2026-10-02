@@ -105,6 +105,8 @@ class TimestampsTest < Minitest::Test
       2026-02-10 09:00:00 -0500
       0 9 * * *
       every 30 min from 00:00 to 23:59
+      every weekday at 09:00 in America/New_York
+      timezone must be UTC or an Area/Location name such as America/New_York, got EST
     PRINTED
   end
 

@@ -4,7 +4,7 @@ using Hron.Eval;
 
 namespace Hron.Cron;
 
-public static class CronConverter
+internal static class CronConverter
 {
     private const int MaxListedTimes = 24;
     private const string BothDaysRestricted =
@@ -427,11 +427,6 @@ public static class CronConverter
             throw NotExpressible("starting clauses not supported");
         }
         var (dayOfMonth, dayOfWeek) = DayFields(data.Expr);
-        // ScheduleData can hold an empty day list, which writes an empty field.
-        if (dayOfMonth.Length == 0 || dayOfWeek.Length == 0)
-        {
-            throw NotExpressible("schedule has no days");
-        }
         var month = MonthField(data);
         var (minute, hour) = TimeFields(data.Expr);
         return $"{minute} {hour} {dayOfMonth} {month} {dayOfWeek}";
@@ -518,11 +513,6 @@ public static class CronConverter
         var times = DailyMinutes(expr);
         var minutes = SortedUnique(times.Select(t => (int)(t % 60)));
         var hours = SortedUnique(times.Select(t => (int)(t / 60)));
-        // ScheduleData can hold a schedule with no times, which no cron writes.
-        if (times.Count == 0)
-        {
-            throw NotExpressible("schedule has no times");
-        }
         if (minutes.Count * hours.Count != times.Count)
         {
             throw NotExpressible("times are not every combination of their minutes and hours");

@@ -67,6 +67,7 @@ func main() {
 - `MustParse(input string) *Schedule` - Parse an hron expression, panics on error
 - `FromCronExpr(cronExpr string) (*Schedule, error)` - Convert a 5-field cron expression, or an `@` shortcut, to the Schedule that fires at the same times on the same dates
 - `Validate(input string) bool` - Check if an input string is a valid hron expression
+- `NewSchedule(data *ScheduleData) (*Schedule, error)` - Build a schedule in code from its parts (see [Building in code](#building-in-code))
 
 ### Schedule Methods
 
@@ -76,6 +77,27 @@ func main() {
 - `ToCron() (string, error)` - Convert this schedule to the 5-field cron expression that fires at the same times on the same dates; run it in the schedule's timezone
 - `String() string` - Render as canonical string (roundtrip-safe)
 - `Timezone() string` - Get the IANA timezone name with its canonical capitalization, or empty string if not specified
+- `Data() *ScheduleData` - Get a copy of the schedule's parts, to change and pass to `NewSchedule`
+
+### Building in code
+
+`NewSchedule` builds a schedule from its parts and checks them by the rules `ParseSchedule` applies ([spec](../spec/README.md#schedules-built-in-code)), so a built schedule evaluates, displays and converts to cron like a parsed one. It copies the parts, so changing them afterwards does not change the schedule, and `Data()` returns a copy too. The empty `Timezone` and `Anchor` mean none, and an empty `Except` or `During` is no clause:
+
+```go
+schedule, err := hron.NewSchedule(&hron.ScheduleData{
+    Expr:     hron.NewDayRepeat(1, hron.NewDayFilterWeekday(), []hron.TimeOfDay{{Hour: 9, Minute: 0}}),
+    Timezone: "america/new_york",
+    Anchor:   "2026-01-05",
+})
+fmt.Println(schedule) // every weekday at 09:00 starting 2026-01-05 in America/New_York
+
+data := schedule.Data()
+data.Expr.Interval = 2
+_, err = hron.NewSchedule(data)
+fmt.Println(err) // days must be every day when the interval is above 1
+```
+
+The first part that breaks a rule fails the build with an `ErrorKindEval` error, which has only a message: no `Span`, `Input` or `Suggestion`.
 
 ### Timestamps
 
@@ -110,12 +132,12 @@ error: until dec 31 has no year: add a starting date, or use an ISO date
 Error kinds:
 - `ErrorKindLex` - Lexer error (invalid characters, unknown words, malformed times and numbers)
 - `ErrorKindParse` - Parser error (invalid syntax or values)
-- `ErrorKindEval` - Evaluation error
+- `ErrorKindEval` - `NewSchedule` error (parts that break a rule); evaluating a schedule never fails
 - `ErrorKindCron` - Cron conversion error
 
 A lex or parse error carries the exact message the [spec](../spec/README.md#error-message-format) gives, the `Input`, a `Span` and, for some parse errors, a `Suggestion`. `Span` is `[Start, End)` counted in Unicode code points, not bytes: each invalid UTF-8 byte counts as one. `string([]rune(input)[span.Start:span.End])` is the spanned text, with any invalid byte as U+FFFD.
 
-Cron conversion is exact or fails with an `ErrorKindCron` error that says why. This ignores the timezone and DST transitions, where cron schedulers differ. Yearly schedules, ordinal weekdays and partial-day intervals convert; `except`, `until`, `starting`, ISO dates, repeats every `n > 1` days, weeks, months or years, directional nearest weekdays, a `during` that excludes a yearly or named date's month, schedules built in code with no days or no times, and times that are not every combination of their minutes and hours do not. From cron, `*/7 * * * *` (216 unevenly spaced times a day, too many to list) and crons that restrict both the day of month and the day of week fail. The [spec](../spec/README.md#cron-conversion) has every rule and message.
+Cron conversion is exact or fails with an `ErrorKindCron` error that says why. This ignores the timezone and DST transitions, where cron schedulers differ. Yearly schedules, ordinal weekdays and partial-day intervals convert; `except`, `until`, `starting`, ISO dates, repeats every `n > 1` days, weeks, months or years, directional nearest weekdays, a `during` that excludes a yearly or named date's month, and times that are not every combination of their minutes and hours do not. From cron, `*/7 * * * *` (216 unevenly spaced times a day, too many to list) and crons that restrict both the day of month and the day of week fail. The [spec](../spec/README.md#cron-conversion) has every rule and message.
 
 ## Expression Syntax
 

@@ -190,7 +190,6 @@ hron converts to and from standard 5-field cron expressions exactly: the result 
 - a repeat every `n` days, weeks, months or years with `n > 1`, which cron cannot count;
 - a directional nearest weekday (`next nearest`, `previous nearest`);
 - a `during` that excludes a yearly or named date's month;
-- a schedule built in code with no days or no times;
 - times that are not every combination of their minutes and hours (`at 09:00, 17:30`, `every 45 min from 09:00 to 17:00`).
 
 A schedule's timezone is not part of the cron: run the cron in the schedule's timezone.

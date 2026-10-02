@@ -1,16 +1,13 @@
 namespace Hron.Ast;
 
-public enum IntervalUnit
+internal enum IntervalUnit
 {
     Minutes,
     Hours
 }
 
-public static class IntervalUnitExtensions
+internal static class IntervalUnitExtensions
 {
-    /// <summary>
-    /// Returns the unit as displayed after <paramref name="interval"/>, singular when it is 1.
-    /// </summary>
     public static string Display(this IntervalUnit unit, int interval) => unit switch
     {
         IntervalUnit.Minutes => interval == 1 ? "minute" : "min",

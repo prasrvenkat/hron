@@ -94,9 +94,6 @@ module Hron
         raise not_expressible("starting clauses not supported") if schedule.anchor
 
         day_of_month, day_of_week = day_fields(schedule.expr)
-        # A schedule built in code can have an empty day list, which writes an empty field.
-        raise not_expressible("schedule has no days") if day_of_month.empty? || day_of_week.empty?
-
         month = month_field(schedule)
         minute, hour = time_fields(schedule.expr)
         "#{minute} #{hour} #{day_of_month} #{month} #{day_of_week}"
@@ -300,7 +297,7 @@ module Hron
 
         month = MonthName::ALL[months[0] - 1]
         case target
-        in DaysTarget(specs: [SingleDay(day:)]) if day <= max_day(month)
+        in DaysTarget(specs: [SingleDay(day:)]) if day <= MonthName.max_day(month)
           YearDateTarget.new(month, day)
         in LastWeekdayTarget
           YearLastWeekdayTarget.new(month)
@@ -308,14 +305,6 @@ module Hron
           YearOrdinalWeekdayTarget.new(ordinal, weekday, month)
         else
           nil
-        end
-      end
-
-      def max_day(month)
-        case month
-        when MonthName::FEB then 29
-        when MonthName::APR, MonthName::JUN, MonthName::SEP, MonthName::NOV then 30
-        else 31
         end
       end
 
@@ -403,8 +392,6 @@ module Hron
         times = daily_times(expr)
         minutes = times.map { |t| t % 60 }.sort.uniq
         hours = times.map { |t| t / 60 }.sort.uniq
-        # A schedule built in code can have no times, which no cron writes.
-        raise not_expressible("schedule has no times") if times.empty?
         if minutes.length * hours.length != times.length
           raise not_expressible("times are not every combination of their minutes and hours")
         end
@@ -436,8 +423,7 @@ module Hron
 
       def ordinal_field(ordinal, weekday)
         day = Weekday.cron_dow(weekday)
-        n = OrdinalPosition.to_n(ordinal)
-        n ? "#{day}##{n}" : "#{day}L"
+        (ordinal == OrdinalPosition::LAST) ? "#{day}L" : "#{day}##{OrdinalPosition.to_n(ordinal)}"
       end
 
       def step_field(values, size)

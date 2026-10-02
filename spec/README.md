@@ -88,7 +88,7 @@ The other sections:
 - **`cron.from_cron`** - `cron`; asserts `toString(fromCron(cron))` equals `hron`. **`cron.from_cron_errors`** - `cron`, `error`; asserts `fromCron(cron)` fails with a `cron` error whose message equals `error`.
 - **`cron.roundtrip`** - `hron`; with `c = toCron(parse(hron))`, asserts `toCron(fromCron(c))` equals `c`.
 - **`invariants`** - entries carry `name`, `expression` and `now`; every rule in `invariants.rules` applies to every entry.
-- **`build.json`**, every group - `parts`; builds a schedule from `parts`, then asserts that it fails with an `eval` error whose message equals `error.message`, with no span, input or suggestion, or that its `toString` equals `canonical` and that parsing `canonical` gives an equal schedule. Go, where the empty timezone means none, expects `"timezone": ""` to build the same schedule as the parts without a timezone.
+- **`build.json`**, every group - `parts`; builds a schedule from `parts`, then asserts that it fails with an `eval` error whose message equals `error.message`, with no span, input or suggestion, or that its `toString` equals `canonical` and that parsing `canonical` gives an equal schedule. Go, where the empty timezone means none, expects `"timezone": ""` to build the same schedule as the parts without a timezone. A runner whose types cannot hold a case's value (an interval above 2147483647 where Go's `int` has 32 bits) checks that the value cannot be written there, and counts the case as checked.
 
 `name` and `description` are labels, not assertions.
 
@@ -239,7 +239,7 @@ These rules govern evaluation behavior across all implementations. Third-party i
 
 ### Parse-time validation
 
-These are parse errors, not evaluation errors:
+These are parse errors:
 
 - **Named `until` without `starting`**: `until dec 31` has no year, so it needs a `starting` date (or use an ISO date, `until 2026-12-31`); the error message says so and mentions `starting`.
 - **Reversed time range**: `from 17:00 to 09:00`. `from` equal to `to` is valid and gives one slot a day.
@@ -327,7 +327,7 @@ Supported instants are those with `0001-01-02T00:00:00Z <= t < 9999-12-30T00:00:
 
 Rust (`Schedule::from_parts`), Go (`NewSchedule`), Python (`Schedule(ScheduleData(...))`) and Ruby (`Schedule.new`) also build a schedule from its parts. Building checks the parts with the rules `parse` applies, so a built schedule keeps every promise a parsed one makes: evaluating it never fails, `toString` gives text that parses back to the same schedule, and `toCron` converts it exactly or fails with a `cron` error.
 
-A part that breaks a rule fails the build with an `eval` error, with no span, input or suggestion. The parts are checked in this order: the expression's kind, its interval, then its other parts in the order `toString` writes them; then `except`, `until`, `starting`, `during` and the timezone, each list from first to last; and last, a named `until` without `starting`. A day repeat's every-day rule is checked right after its interval. A window, a day range, a date and a month or year target are each one part: a window checks `from`, then `to`, then its direction; a day range checks its start, then its end, then its direction. The first part that breaks a rule fails, with the first row below that applies to it:
+A part that breaks a rule fails the build with an `eval` error, with no span, input or suggestion. The parts are checked in this order: the expression's kind, its interval, then its other parts in the order `toString` writes them; then `except`, `until`, `starting`, `during` and the timezone, each list from first to last; and last, a named `until` without `starting`. A day repeat's every-day rule is checked right after its interval. A window, a day range, a date and a month or year target are each one part, and so is each item of a list: a window checks `from`, then `to`, then its direction; a day range checks its start, then its end, then its direction. Within a part, a value that is not one of its kind is checked before its other rules. The first part that breaks a rule fails, with the first row below that applies to it:
 
 | Part | Message |
 |---|---|
@@ -344,9 +344,11 @@ A part that breaks a rule fails the build with an `eval` error, with no span, in
 | A timezone other than `UTC` or an `Area/Location` IANA name, the empty string included | `timezone must be UTC or an Area/Location name such as America/New_York, got {name}` |
 | A named `until` without `starting` | `until {mon} {day} has no year: add a starting date, or use an ISO date` |
 
-Each value is written as `toString` writes it: a day with its suffix where `toString` writes one (`32nd`, but `feb 30`), `{hh}` and `{mm}` with at least two digits, `{date}` as given or, for a date type, as `toString` writes it, and `{name}` as given. `{mon}` is the month's three-letter name in lowercase. `{kind}` is `expression`, `interval unit`, `weekday`, `month`, `ordinal`, `direction`, `day filter`, `day spec`, `month target`, `year target`, `date`, `exception` or `until`, and `{value}` is the value as the language writes a literal of it (the integer in Go, `repr` in Python, `inspect` in Ruby); the row arises only where the language's types let a value fall outside its kind. A value of a type its part cannot hold (a string or a float where an integer goes, `None` or `nil` for a list) is a usage error, as in "Timestamps and counts", not a hron error. In Go the empty timezone means none.
+Each value is written as `toString` writes it: a day with its suffix where `toString` writes one (`32nd`, but `feb 30`), and a day below 1 with `th` (`-9th`), `{hh}` and `{mm}` as `%02d` writes them (`07`, `-5`), `{date}` as given or, for a date type, as `toString` writes it, and `{name}` as given. `{mon}` is the month's three-letter name in lowercase. `{kind}` is `expression`, `interval unit`, `weekday`, `month`, `ordinal`, `direction`, `day filter`, `day spec`, `month target`, `year target`, `date`, `exception` or `until`, and `{value}` is the value as the language writes a literal of it (the integer in Go, `repr` in Python, `inspect` in Ruby); the row arises only where the language's types let a value fall outside its kind. A name is an `int` in Go, a `Symbol` in Ruby and an `Enum` member in Python, so in Ruby and Python a value of another type where a name goes is a usage error; a union (an expression, day filter, day spec, month or year target, date, exception or until) has no runtime type of its own there, so any other value in its place, `None` or `nil` included, is `unknown {kind} {value}`. A value of a type its part cannot hold (a string or a float where an integer goes, `None` or `nil` for a list) is a usage error, as in "Timestamps and counts", not a hron error. In Go the empty timezone and the empty `starting` mean none.
 
 Building copies the parts, so changing them afterwards does not change the schedule. A timezone that passes is kept in the IANA capitalization, as `parse` keeps it; an empty `except` or `during` list is no clause; a field the expression's kind does not use is not kept. The same schedule means equal parts. `spec/build.json` holds the shared cases for building, which only these four implementations run.
+
+The table and the order above are frozen: a new row needs a bug it prevents, not completeness for parts no one builds.
 
 Java, C#, TypeScript and Dart build a schedule only through `parse` and `fromCron`. In every implementation a schedule cannot change after it is built, what its getters return cannot change it, and no public function other than the builders above takes a schedule's parts to build, evaluate, display or convert one.
 

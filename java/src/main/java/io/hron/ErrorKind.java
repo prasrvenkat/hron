@@ -5,7 +5,10 @@ public enum ErrorKind {
   LEX("lex"),
   /** Parser error - invalid syntax. */
   PARSE("parse"),
-  /** Runtime evaluation error (spec/README.md, "Error Types"). */
+  /**
+   * A schedule built in code from parts that break a rule (spec/README.md, "Error Types"). Never
+   * thrown here, as Java builds schedules only through {@code parse} and {@code fromCron}.
+   */
   EVAL("eval"),
   /** A cron expression {@code fromCron} rejects, or a schedule {@code toCron} cannot express. */
   CRON("cron");

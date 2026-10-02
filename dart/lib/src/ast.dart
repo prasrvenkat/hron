@@ -18,10 +18,6 @@ enum Weekday {
     return map[index];
   }
 
-  static Weekday? tryParse(String s) => _weekdayMap[s.toLowerCase()];
-
-  static Weekday fromNumber(int n) => Weekday.values[n - 1];
-
   static Weekday fromCronDow(int n) {
     const map = {
       0: Weekday.sunday,
@@ -36,23 +32,6 @@ enum Weekday {
     return map[n]!;
   }
 }
-
-const _weekdayMap = {
-  'monday': Weekday.monday,
-  'mon': Weekday.monday,
-  'tuesday': Weekday.tuesday,
-  'tue': Weekday.tuesday,
-  'wednesday': Weekday.wednesday,
-  'wed': Weekday.wednesday,
-  'thursday': Weekday.thursday,
-  'thu': Weekday.thursday,
-  'friday': Weekday.friday,
-  'fri': Weekday.friday,
-  'saturday': Weekday.saturday,
-  'sat': Weekday.saturday,
-  'sunday': Weekday.sunday,
-  'sun': Weekday.sunday,
-};
 
 enum MonthName {
   jan,
@@ -70,36 +49,8 @@ enum MonthName {
 
   int get number => index + 1;
 
-  static MonthName? tryParse(String s) => _monthMap[s.toLowerCase()];
-
   static MonthName fromNumber(int n) => MonthName.values[n - 1];
 }
-
-const _monthMap = {
-  'january': MonthName.jan,
-  'jan': MonthName.jan,
-  'february': MonthName.feb,
-  'feb': MonthName.feb,
-  'march': MonthName.mar,
-  'mar': MonthName.mar,
-  'april': MonthName.apr,
-  'apr': MonthName.apr,
-  'may': MonthName.may,
-  'june': MonthName.jun,
-  'jun': MonthName.jun,
-  'july': MonthName.jul,
-  'jul': MonthName.jul,
-  'august': MonthName.aug,
-  'aug': MonthName.aug,
-  'september': MonthName.sep,
-  'sep': MonthName.sep,
-  'october': MonthName.oct,
-  'oct': MonthName.oct,
-  'november': MonthName.nov,
-  'nov': MonthName.nov,
-  'december': MonthName.dec,
-  'dec': MonthName.dec,
-};
 
 enum IntervalUnit { min, hours }
 
@@ -327,13 +278,20 @@ class YearRepeat extends ScheduleExpr {
 /// A parsed schedule: the main [expr] plus its trailing clauses.
 class ScheduleData {
   final ScheduleExpr expr;
-  String? timezone;
-  List<ExceptionSpec> except;
-  UntilSpec? until;
-  String? anchor;
-  List<MonthName> during;
+  final List<ExceptionSpec> except;
+  final UntilSpec? until;
+  final String? anchor;
+  final List<MonthName> during;
+  final String? timezone;
 
-  ScheduleData(this.expr) : except = [], during = [];
+  const ScheduleData(
+    this.expr, {
+    this.except = const [],
+    this.until,
+    this.anchor,
+    this.during = const [],
+    this.timezone,
+  });
 }
 
 List<int> expandDaySpec(DayOfMonthSpec spec) {

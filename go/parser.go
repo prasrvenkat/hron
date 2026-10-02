@@ -1,9 +1,6 @@
 package hron
 
-import (
-	"fmt"
-	"time"
-)
+import "fmt"
 
 // The {what} of each "expected {what}, got ..." error, one per phrase in the
 // position table of spec/README.md, "Parse errors".
@@ -53,9 +50,8 @@ type parser struct {
 	untilBytes Span
 }
 
-// Parse parses an hron expression into ScheduleData, or returns a *HronError.
-func Parse(input string) (*ScheduleData, error) {
-	tokens, err := Tokenize(input)
+func parse(input string) (*ScheduleData, error) {
+	tokens, err := tokenize(input)
 	if err != nil {
 		return nil, err
 	}
@@ -247,11 +243,15 @@ func (p *parser) checkNamedUntil(schedule *ScheduleData) error {
 		return nil
 	}
 	return ParseError(
-		fmt.Sprintf("until %s %d has no year: add a starting date, or use an ISO date", until.Month, until.Day),
+		noYearMessage(*until),
 		codePointSpan(p.input, p.untilBytes.Start, p.untilBytes.End),
 		p.input,
 		fmt.Sprintf("until %s %d starting YYYY-MM-DD", until.Month, until.Day),
 	)
+}
+
+func noYearMessage(until UntilSpec) string {
+	return fmt.Sprintf("until %s %d has no year: add a starting date, or use an ISO date", until.Month, until.Day)
 }
 
 func (p *parser) parseExceptionList() ([]ExceptionSpec, error) {
@@ -293,11 +293,14 @@ func (p *parser) parseDate() (DateSpec, error) {
 }
 
 func (p *parser) checkISODate(tok *Token) error {
-	date, err := time.Parse("2006-01-02", tok.ISODateVal)
-	if err != nil || date.Year() < 1 {
-		return p.error("date must be a calendar date from 0001-01-01 to 9999-12-31, got "+tok.ISODateVal, tok.Span.Start, tok.Span.End)
+	if !isCalendarDate(tok.ISODateVal) {
+		return p.error(invalidDateMessage(tok.ISODateVal), tok.Span.Start, tok.Span.End)
 	}
 	return nil
+}
+
+func invalidDateMessage(date string) string {
+	return "date must be a calendar date from 0001-01-01 to 9999-12-31, got " + date
 }
 
 func (p *parser) parseEvery() (ScheduleExpr, error) {

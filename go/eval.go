@@ -2,7 +2,6 @@ package hron
 
 import (
 	"iter"
-	"math"
 	"slices"
 	"sort"
 	"time"
@@ -29,12 +28,6 @@ const maxOverlapDays = 1
 
 // Feb 29 can be eight years away, as from 2096-03-01 to 2104-02-29.
 const namedUntilMaxYears = 8
-
-// The parser's limit on an interval. A schedule built in code can exceed it
-// where int is 64 bits; any larger interval fires as this one does in the
-// supported range. Periods are int64, so stepping by it cannot overflow on any
-// platform.
-const maxInterval = math.MaxInt32
 
 // Default anchors for day, month and year intervals, and for week intervals
 // (spec/README.md, "WeekRepeat epoch alignment").
@@ -298,7 +291,7 @@ type slots struct {
 func intervalSlots(expr *ScheduleExpr) slots {
 	// Any step longer than a day leaves only the from slot, and this cap keeps the hours
 	// conversion within a 32-bit int.
-	step := min(max(expr.Interval, 1), minutesPerDay+1)
+	step := min(expr.Interval, minutesPerDay+1)
 	if expr.Unit == IntervalHours {
 		step *= minutesPerHour
 	}
@@ -364,9 +357,8 @@ func clausesOf(data *ScheduleData) clauses {
 		case ExceptionSpecKindNamed:
 			c.exceptMonthDays = append(c.exceptMonthDays, monthDay{time.Month(exception.Month.Number()), exception.Day})
 		case ExceptionSpecKindISO:
-			if date, err := parseISODate(exception.Date); err == nil {
-				c.exceptDates = append(c.exceptDates, date)
-			}
+			date, _ := parseISODate(exception.Date)
+			c.exceptDates = append(c.exceptDates, date)
 		}
 	}
 	slices.SortFunc(c.exceptDates, time.Time.Compare)
@@ -428,18 +420,14 @@ func (c *clauses) endsSearch(date time.Time, d direction) bool {
 	return c.starting != nil && date.Before(*c.starting)
 }
 
-// A named until resolves to its first date on or after starting
-// (spec/README.md, "Named `until`"). Parse requires starting; a schedule built
-// without one resolves from the epoch.
+// A named until resolves to its first date on or after starting, which every
+// schedule with one has (spec/README.md, "Named `until`").
 func resolveUntilDate(until UntilSpec, starting *time.Time) *time.Time {
 	if until.Kind == UntilSpecKindISO {
 		date, _ := parseISODate(until.Date)
 		return &date
 	}
-	from := epochDate
-	if starting != nil {
-		from = *starting
-	}
+	from := *starting
 	for year := from.Year(); year <= from.Year()+namedUntilMaxYears; year++ {
 		if date, ok := validDate(year, time.Month(until.Month.Number()), until.Day); ok && !date.Before(from) {
 			return &date
@@ -509,7 +497,7 @@ func cadenceOf(expr *ScheduleExpr, starting *time.Time) cadence {
 	case unitYear:
 		origin = newDate(anchor.Year(), time.January, 1)
 	}
-	return cadence{unit: u, origin: origin, interval: int64(min(max(interval, 1), maxInterval))}
+	return cadence{unit: u, origin: origin, interval: int64(interval)}
 }
 
 func (c *cadence) periodOf(date time.Time) int64 {

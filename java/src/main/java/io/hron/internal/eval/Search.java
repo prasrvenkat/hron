@@ -1,4 +1,4 @@
-package io.hron.eval;
+package io.hron.internal.eval;
 
 import io.hron.ast.ScheduleData;
 import io.hron.ast.ScheduleExpr;
@@ -11,11 +11,11 @@ import java.util.List;
 import java.util.Optional;
 
 record Search(ScheduleExpr expr, ZoneId zone, Cadence cadence, DailyTimes times, Clauses clauses) {
-  static Search of(ScheduleData data, ZoneId zone) {
+  static Search of(ScheduleData data) {
     LocalDate starting = data.anchor() == null ? null : LocalDate.parse(data.anchor());
     return new Search(
         data.expr(),
-        zone,
+        data.timezone() == null ? ZoneId.of("UTC") : ZoneId.of(data.timezone()),
         Cadence.of(data.expr(), starting),
         DailyTimes.of(data.expr()),
         Clauses.of(data, starting));

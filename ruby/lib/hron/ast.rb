@@ -101,6 +101,15 @@ module Hron
       NUMBERS[month]
     end
 
+    # A named date has no year, so February has 29.
+    def self.max_day(month)
+      case month
+      when FEB then 29
+      when APR, JUN, SEP, NOV then 30
+      else 31
+      end
+    end
+
     def self.from_number(n)
       NUMBER_TO_MONTH[n]
     end
@@ -118,6 +127,8 @@ module Hron
     MIN = :min
     HOURS = :hours
 
+    ALL = [MIN, HOURS].freeze
+
     def self.to_s(unit)
       unit.to_s
     end
@@ -131,11 +142,13 @@ module Hron
     FIFTH = :fifth
     LAST = :last
 
+    ALL = [FIRST, SECOND, THIRD, FOURTH, FIFTH, LAST].freeze
+
     TO_N = {
-      FIRST => 1, SECOND => 2, THIRD => 3, FOURTH => 4, FIFTH => 5
+      FIRST => 1, SECOND => 2, THIRD => 3, FOURTH => 4, FIFTH => 5, LAST => -1
     }.freeze
 
-    # 1-5, or nil for last.
+    # 1-5 for first to fifth, and -1 for last.
     def self.to_n(ord)
       TO_N[ord]
     end
@@ -162,6 +175,8 @@ module Hron
   module NearestDirection
     NEXT = :next
     PREVIOUS = :previous
+
+    ALL = [NEXT, PREVIOUS].freeze
   end
 
   DaysTarget = Data.define(:specs)
@@ -192,6 +207,8 @@ module Hron
   SingleDateExpr = Data.define(:date, :times)
   YearRepeat = Data.define(:interval, :target, :times)
 
+  # The parts of a schedule, for Schedule.new to check. anchor is the starting date, a
+  # YYYY-MM-DD String; an empty except or during list is no clause.
   ScheduleData = Data.define(:expr, :timezone, :except, :until, :anchor, :during) do
     def initialize(expr:, timezone: nil, except: [], until: nil, anchor: nil, during: [])
       super

@@ -1,4 +1,4 @@
-package io.hron.eval;
+package io.hron.internal.eval;
 
 import io.hron.ast.DayRepeat;
 import io.hron.ast.IntervalRepeat;

@@ -1,4 +1,4 @@
-package io.hron.lexer;
+package io.hron.internal.lexer;
 
 import io.hron.HronException;
 import io.hron.Span;

@@ -1,5 +1,6 @@
-package io.hron.display;
+package io.hron.internal.display;
 
+import io.hron.Schedule;
 import io.hron.ast.*;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -7,7 +8,8 @@ import java.util.stream.Collectors;
 public final class Display {
   private Display() {}
 
-  public static String render(ScheduleData data) {
+  public static String render(Schedule schedule) {
+    ScheduleData data = schedule.data();
     StringBuilder sb = new StringBuilder();
 
     sb.append(renderExpr(data.expr()));

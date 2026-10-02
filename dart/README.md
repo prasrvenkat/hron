@@ -80,6 +80,8 @@ A span counts code points (`input.runes`), not the UTF-16 code units that `Strin
 
 One parse error message is not in the spec: `timezone '...' needs timezone data: call initializeTimeZones() from package:timezone/data/latest_all.dart before parsing`, thrown only when an `in` clause names an Area/Location zone and no timezone database has been loaded (see [Timezone Support](#timezone-support)).
 
+A schedule is built only by `Schedule.parse` or `Schedule.fromCron` and cannot change afterwards, so evaluating it never throws. `HronErrorKind.eval` is for schedules that other hron languages build from their parts in code; this package never throws it.
+
 ## Cron Conversion
 
 `toCron` and `Schedule.fromCron` convert exactly: the result fires at the same times on the same dates, or they throw a `HronError` of kind `HronErrorKind.cron` whose message says why. This ignores the timezone and DST transitions, where cron schedulers differ. Yearly dates, ordinal weekdays such as `5L` and `1#2`, and intervals over part of the day convert too: `every 15 min from 09:00 to 17:45` is `*/15 9-17 * * *`.

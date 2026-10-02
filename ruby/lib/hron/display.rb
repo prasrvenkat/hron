@@ -160,7 +160,10 @@ module Hron
       parts.join(", ")
     end
 
+    # Ruby's % floors, so -9 % 10 is 1; spec/README.md writes a day below 1 with th.
     def self.ordinal_suffix(n)
+      return "th" if n < 1
+
       mod100 = n % 100
       return "th" if mod100.between?(11, 13)
 

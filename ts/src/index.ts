@@ -14,22 +14,33 @@ import { parse } from "./parser.js";
 
 type Timestamp = Temporal.ZonedDateTime | Temporal.Instant;
 
+/** `private` binds only the compiler, so JavaScript could otherwise call `new Schedule(parts)`. */
+const BUILDER = Symbol("Schedule builder");
+
 /**
  * Every timestamp argument must be a `Temporal.ZonedDateTime` or a
  * `Temporal.Instant`, native or polyfill, or the method throws a `TypeError`
  * when called; only its instant matters. Every returned timestamp is a
  * `Temporal.ZonedDateTime` in the schedule's timezone, or UTC when it has none.
+ *
+ * Built only through `Schedule.parse` and `Schedule.fromCron`; a schedule
+ * cannot change afterwards.
  */
 export class Schedule {
-  private data: ScheduleData;
+  readonly #data: ScheduleData;
 
-  private constructor(data: ScheduleData) {
-    this.data = data;
+  private constructor(builder: symbol, data: ScheduleData) {
+    if (builder !== BUILDER) {
+      throw new TypeError(
+        "a Schedule is built only by Schedule.parse or Schedule.fromCron",
+      );
+    }
+    this.#data = deepFreeze(data);
   }
 
   /** Parse an hron expression string. Throws `HronError` if it is invalid. */
   static parse(input: string): Schedule {
-    return new Schedule(parse(input));
+    return new Schedule(BUILDER, parse(input));
   }
 
   /**
@@ -37,7 +48,7 @@ export class Schedule {
    * Throws a `cron` `HronError` when the input is not valid cron or has no exact hron equivalent.
    */
   static fromCron(cronExpr: string): Schedule {
-    return new Schedule(fromCron(cronExpr));
+    return new Schedule(BUILDER, fromCron(cronExpr));
   }
 
   /** False, rather than throwing, for anything `parse` rejects. */
@@ -52,7 +63,7 @@ export class Schedule {
 
   /** Compute the next occurrence strictly after `now`, or null if there is none. */
   nextFrom(now: Timestamp): Temporal.ZonedDateTime | null {
-    return nextFrom(this.data, timestamp(now, "now"));
+    return nextFrom(this.#data, timestamp(now, "now"));
   }
 
   /**
@@ -64,17 +75,17 @@ export class Schedule {
     const from = timestamp(now, "now");
     if (typeof n !== "number") throw new TypeError("n must be a number");
     if (!Number.isInteger(n)) throw new RangeError("n must be an integer");
-    return nextNFrom(this.data, from, n);
+    return nextNFrom(this.#data, from, n);
   }
 
   /** Compute the most recent occurrence strictly before `now`, or null if there is none. */
   previousFrom(now: Timestamp): Temporal.ZonedDateTime | null {
-    return previousFrom(this.data, timestamp(now, "now"));
+    return previousFrom(this.#data, timestamp(now, "now"));
   }
 
   /** True when the minute containing `datetime` is an occurrence (seconds are ignored). */
   matches(datetime: Timestamp): boolean {
-    return matches(this.data, timestamp(datetime, "datetime"));
+    return matches(this.#data, timestamp(datetime, "datetime"));
   }
 
   /**
@@ -84,7 +95,7 @@ export class Schedule {
   occurrences(
     from: Timestamp,
   ): Generator<Temporal.ZonedDateTime, void, unknown> {
-    return occurrences(this.data, timestamp(from, "from"));
+    return occurrences(this.#data, timestamp(from, "from"));
   }
 
   /** Yields occurrences where `from < occurrence <= to`. */
@@ -92,7 +103,7 @@ export class Schedule {
     from: Timestamp,
     to: Timestamp,
   ): Generator<Temporal.ZonedDateTime, void, unknown> {
-    return between(this.data, timestamp(from, "from"), timestamp(to, "to"));
+    return between(this.#data, timestamp(from, "from"), timestamp(to, "to"));
   }
 
   /**
@@ -100,22 +111,31 @@ export class Schedule {
    * Throws a `cron` `HronError` when no cron does. The schedule's timezone is not part of the cron.
    */
   toCron(): string {
-    return toCron(this.data);
+    return toCron(this.#data);
   }
 
   /** Render as canonical string (roundtrip-safe). */
   toString(): string {
-    return display(this.data);
+    return display(this.#data);
   }
 
   /** The IANA timezone name with its canonical capitalization, if specified. */
   get timezone(): string | null {
-    return this.data.timezone;
+    return this.#data.timezone;
   }
 
+  /** The schedule's expression, frozen: a write to it throws in strict mode. */
   get expression(): ScheduleExpr {
-    return this.data.expr;
+    return this.#data.expr;
   }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null) {
+    for (const field of Object.values(value)) deepFreeze(field);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 const TIMESTAMP_TAGS = [

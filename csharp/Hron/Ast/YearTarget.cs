@@ -1,6 +1,6 @@
 namespace Hron.Ast;
 
-public sealed record YearTarget(
+internal sealed record YearTarget(
     YearTargetKind Kind,
     MonthName Month,
     int Day,
@@ -20,7 +20,7 @@ public sealed record YearTarget(
         => new(YearTargetKind.LastWeekday, month, 0, null, null);
 }
 
-public enum YearTargetKind
+internal enum YearTargetKind
 {
     /// <summary>A specific month and day (e.g., dec 25).</summary>
     Date,

@@ -1,4 +1,4 @@
-package io.hron.cron;
+package io.hron.internal.cron;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -9,22 +9,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 import io.hron.ErrorKind;
 import io.hron.HronException;
 import io.hron.Schedule;
-import io.hron.ast.DayFilter;
-import io.hron.ast.DayOfMonthSpec;
-import io.hron.ast.DayRepeat;
-import io.hron.ast.IntervalRepeat;
-import io.hron.ast.IntervalUnit;
-import io.hron.ast.MonthName;
-import io.hron.ast.MonthRepeat;
-import io.hron.ast.MonthTarget;
-import io.hron.ast.NearestDirection;
-import io.hron.ast.ScheduleData;
-import io.hron.ast.ScheduleExpr;
-import io.hron.ast.TimeOfDay;
-import io.hron.ast.WeekRepeat;
-import io.hron.ast.YearRepeat;
-import io.hron.ast.YearTarget;
-import io.hron.eval.Evaluator;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -776,92 +760,5 @@ class CronConverterTest {
     assertTrue(NaiveCron.of("0 9 LW * *").firesOn(LocalDate.of(2044, 4, 29)));
     assertTrue(NaiveCron.of("0 9 * * 5L").firesOn(LocalDate.of(2044, 4, 29)));
     assertFalse(NaiveCron.of("0 9 * * 5L").firesOn(LocalDate.of(2044, 4, 22)));
-  }
-
-  private static final TimeOfDay NINE = new TimeOfDay(9, 0);
-
-  private static String builtToCronError(ScheduleData data) {
-    return cronMessage(() -> CronConverter.toCron(data));
-  }
-
-  @Test
-  void toCronOfABuiltScheduleWithInterval0StepsBy1OfItsUnitAsEvaluationDoes() throws HronException {
-    ScheduleData minutes =
-        ScheduleData.of(
-            new IntervalRepeat(0, IntervalUnit.MINUTES, NINE, new TimeOfDay(9, 2), null));
-    assertEquals("0-2 9 * * *", CronConverter.toCron(minutes));
-    List<LocalDateTime> minuteFires =
-        Evaluator.nextNFrom(minutes, utc(WINDOW_START, 9, 0), 2, ZoneOffset.UTC).stream()
-            .map(ZonedDateTime::toLocalDateTime)
-            .toList();
-    assertEquals(List.of(WINDOW_START.atTime(9, 1), WINDOW_START.atTime(9, 2)), minuteFires);
-
-    ScheduleData hours =
-        ScheduleData.of(
-            new IntervalRepeat(0, IntervalUnit.HOURS, NINE, new TimeOfDay(10, 0), null));
-    assertEquals("0 9-10 * * *", CronConverter.toCron(hours));
-    List<LocalDateTime> hourFires =
-        Evaluator.nextNFrom(hours, utc(WINDOW_START, 8, 0), 3, ZoneOffset.UTC).stream()
-            .map(ZonedDateTime::toLocalDateTime)
-            .toList();
-    assertEquals(
-        List.of(
-            WINDOW_START.atTime(9, 0),
-            WINDOW_START.atTime(10, 0),
-            WINDOW_START.plusDays(1).atTime(9, 0)),
-        hourFires);
-  }
-
-  @Test
-  void toCronOfABuiltScheduleWithoutTimesFails() {
-    assertEquals(
-        "not expressible as cron: schedule has no times",
-        builtToCronError(ScheduleData.of(new DayRepeat(1, DayFilter.every(), List.of()))));
-    ScheduleData reversed =
-        ScheduleData.of(new IntervalRepeat(1, IntervalUnit.HOURS, NINE, new TimeOfDay(8, 0), null));
-    assertEquals("not expressible as cron: schedule has no times", builtToCronError(reversed));
-  }
-
-  @Test
-  void toCronOfABuiltScheduleWithoutDaysFails() {
-    List<TimeOfDay> nine = List.of(NINE);
-    List<ScheduleExpr> noDays =
-        List.of(
-            new DayRepeat(1, DayFilter.days(List.of()), nine),
-            new WeekRepeat(1, List.of(), nine),
-            new MonthRepeat(1, MonthTarget.days(List.of()), nine),
-            new MonthRepeat(1, MonthTarget.days(List.of(DayOfMonthSpec.range(9, 5))), nine),
-            new IntervalRepeat(
-                1, IntervalUnit.HOURS, NINE, new TimeOfDay(17, 0), DayFilter.days(List.of())));
-    for (ScheduleExpr expr : noDays) {
-      assertEquals(
-          "not expressible as cron: schedule has no days",
-          builtToCronError(ScheduleData.of(expr)),
-          expr.toString());
-    }
-  }
-
-  @Test
-  void toCronReasonsAroundNoDaysAndNoTimesFollowTheOrder() {
-    assertEquals(
-        "not expressible as cron: multi-week repeats not supported",
-        builtToCronError(ScheduleData.of(new WeekRepeat(2, List.of(), List.of()))));
-    ScheduleExpr directional =
-        new MonthRepeat(1, MonthTarget.nearestWeekday(1, NearestDirection.NEXT), List.of());
-    assertEquals(
-        "not expressible as cron: directional nearest weekday not supported",
-        builtToCronError(ScheduleData.of(directional)));
-    ScheduleData noDaysExcludedMonth =
-        ScheduleData.of(new WeekRepeat(1, List.of(), List.of()))
-            .withDuring(List.of(MonthName.MARCH));
-    assertEquals(
-        "not expressible as cron: schedule has no days", builtToCronError(noDaysExcludedMonth));
-    ScheduleData yearlyWithoutTimes =
-        ScheduleData.of(new YearRepeat(1, YearTarget.date(MonthName.DECEMBER, 25), List.of()));
-    assertEquals(
-        "not expressible as cron: during excludes the schedule's month",
-        builtToCronError(yearlyWithoutTimes.withDuring(List.of(MonthName.JANUARY))));
-    assertEquals(
-        "not expressible as cron: schedule has no times", builtToCronError(yearlyWithoutTimes));
   }
 }

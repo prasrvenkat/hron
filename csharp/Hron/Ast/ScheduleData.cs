@@ -2,7 +2,7 @@ namespace Hron.Ast;
 
 /// <param name="Timezone">The IANA timezone name, or null for UTC</param>
 /// <param name="Anchor">The <c>starting</c> date as an ISO string, or null</param>
-public sealed record ScheduleData(
+internal sealed record ScheduleData(
     IScheduleExpr Expr,
     string? Timezone,
     IReadOnlyList<ExceptionSpec> Except,

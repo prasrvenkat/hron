@@ -92,39 +92,45 @@ class _Parser {
   }
 
   ScheduleData parseClauses(ScheduleExpr expr) {
-    final schedule = ScheduleData(expr);
+    final except = eat<ExceptToken>()
+        ? _parseExceptionList()
+        : const <ExceptionSpec>[];
 
-    if (eat<ExceptToken>()) {
-      schedule.except = _parseExceptionList();
-    }
-
+    UntilSpec? until;
     if (peekKind() is UntilToken) {
-      final until = advance();
-      schedule.until = switch (_parseDate()) {
+      final untilToken = advance();
+      until = switch (_parseDate()) {
         IsoDate(:final date) => IsoUntil(date),
         NamedDate(:final month, :final day) => NamedUntil(month, day),
       };
-      untilStart = until.start;
+      untilStart = untilToken.start;
       untilEnd = previous().end;
     }
 
+    String? anchor;
     if (eat<StartingToken>()) {
       final kind = peekKind();
       if (kind is! IsoDateToken) throw expected(_Expected.isoDate);
       _checkIsoDate(advance());
-      schedule.anchor = kind.date;
+      anchor = kind.date;
     }
 
-    if (eat<DuringToken>()) {
-      schedule.during = _parseMonthList();
-    }
+    final during = eat<DuringToken>() ? _parseMonthList() : const <MonthName>[];
 
+    String? timezone;
     if (eat<InToken>()) {
       if (peekKind() is! TimezoneToken) throw expected(_Expected.timezone);
-      schedule.timezone = _canonicalTimezone(advance());
+      timezone = _canonicalTimezone(advance());
     }
 
-    return schedule;
+    return ScheduleData(
+      expr,
+      except: except,
+      until: until,
+      anchor: anchor,
+      during: during,
+      timezone: timezone,
+    );
   }
 
   HronError leftover(ScheduleData schedule) {

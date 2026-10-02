@@ -1,11 +1,11 @@
-package io.hron.parser;
+package io.hron.internal.parser;
 
 import io.hron.HronException;
 import io.hron.Span;
 import io.hron.ast.*;
-import io.hron.lexer.Lexer;
-import io.hron.lexer.Token;
-import io.hron.lexer.TokenKind;
+import io.hron.internal.lexer.Lexer;
+import io.hron.internal.lexer.Token;
+import io.hron.internal.lexer.TokenKind;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;

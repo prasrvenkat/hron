@@ -43,6 +43,9 @@ var canonical = schedule.ToString();
 var timezone = schedule.Timezone; // "America/New_York" or null
 ```
 
+`Schedule.Parse` and `Schedule.FromCron` are the only ways to make a `Schedule`, and a schedule never
+changes once made.
+
 ## Expression Syntax
 
 ```
@@ -127,9 +130,9 @@ Console.WriteLine(Schedule.FromCron("0 16 * * 5L")); // "every month on the last
 
 `ToCron()` throws for `except`, `until` and `starting`; ISO dates; repeats every `n > 1` days,
 weeks, months or years; a directional nearest weekday; a `during` that excludes a yearly or named
-date's month; a schedule built in code with no days or no times; and times that are not every
-combination of their minutes and hours (`at 09:00, 17:30`). The schedule's timezone is not part of
-the cron: run the cron in the schedule's timezone.
+date's month; and times that are not every combination of their minutes and hours
+(`at 09:00, 17:30`). The schedule's timezone is not part of the cron: run the cron in the
+schedule's timezone.
 
 `FromCron()` throws for crons that restrict both the day of month and the day of week
 (`0 9 15 * 1`), and for more than 24 times a day, unless they are evenly spaced on days an

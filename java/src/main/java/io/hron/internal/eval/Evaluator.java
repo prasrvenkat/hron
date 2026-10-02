@@ -1,10 +1,9 @@
-package io.hron.eval;
+package io.hron.internal.eval;
 
+import io.hron.Schedule;
 import io.hron.ast.IntervalRepeat;
 import io.hron.ast.IntervalUnit;
-import io.hron.ast.ScheduleData;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -19,27 +18,23 @@ public final class Evaluator {
 
   private Evaluator() {}
 
-  public static Optional<ZonedDateTime> nextFrom(
-      ScheduleData data, ZonedDateTime now, ZoneId zone) {
-    return search(data, now, zone, Direction.FORWARD);
+  public static Optional<ZonedDateTime> nextFrom(Schedule schedule, ZonedDateTime now) {
+    return search(schedule, now, Direction.FORWARD);
   }
 
-  public static Optional<ZonedDateTime> previousFrom(
-      ScheduleData data, ZonedDateTime now, ZoneId zone) {
-    return search(data, now, zone, Direction.BACKWARD);
+  public static Optional<ZonedDateTime> previousFrom(Schedule schedule, ZonedDateTime now) {
+    return search(schedule, now, Direction.BACKWARD);
   }
 
-  public static List<ZonedDateTime> nextNFrom(
-      ScheduleData data, ZonedDateTime now, int n, ZoneId zone) {
-    return occurrences(data, now, zone).limit(Math.max(n, 0)).toList();
+  public static List<ZonedDateTime> nextNFrom(Schedule schedule, ZonedDateTime now, int n) {
+    return occurrences(schedule, now).limit(Math.max(n, 0)).toList();
   }
 
-  public static Stream<ZonedDateTime> occurrences(
-      ScheduleData data, ZonedDateTime from, ZoneId zone) {
+  public static Stream<ZonedDateTime> occurrences(Schedule schedule, ZonedDateTime from) {
     if (!inSupportedRange(from)) {
       return Stream.empty();
     }
-    Search search = Search.of(data, zone);
+    Search search = Search.of(schedule.data());
     return Stream.iterate(
             search.nearest(from, Direction.FORWARD),
             Optional::isPresent,
@@ -48,25 +43,27 @@ public final class Evaluator {
   }
 
   public static Stream<ZonedDateTime> between(
-      ScheduleData data, ZonedDateTime from, ZonedDateTime to, ZoneId zone) {
+      Schedule schedule, ZonedDateTime from, ZonedDateTime to) {
     if (!inSupportedRange(to)) {
       return Stream.empty();
     }
-    return occurrences(data, from, zone).takeWhile(t -> !t.isAfter(to));
+    return occurrences(schedule, from).takeWhile(t -> !t.isAfter(to));
   }
 
   /**
    * Defined through the forward search, so the two can never disagree about what an occurrence is
    * (spec/README.md, "matches is true exactly when the minute containing t is an occurrence").
    */
-  public static boolean matches(ScheduleData data, ZonedDateTime datetime, ZoneId zone) {
+  public static boolean matches(Schedule schedule, ZonedDateTime datetime) {
     if (!inSupportedRange(datetime)) {
       return false;
     }
-    ZonedDateTime minute = datetime.withZoneSameInstant(zone).truncatedTo(ChronoUnit.MINUTES);
+    Search search = Search.of(schedule.data());
+    ZonedDateTime minute =
+        datetime.withZoneSameInstant(search.zone()).truncatedTo(ChronoUnit.MINUTES);
     // An occurrence never lands before the date it is scheduled on, so one at this minute is
     // scheduled on or before the minute's wall date.
-    return Search.of(data, zone)
+    return search
         .endOn(minute.toLocalDate())
         .nearest(minute.minusNanos(1), Direction.FORWARD)
         .filter(minute::isEqual)
@@ -74,18 +71,22 @@ public final class Evaluator {
   }
 
   /**
-   * The minutes of the day an interval repeat fires at, ascending. toCron shares it so that it
-   * writes the slots evaluation steps through; the step is a long, as 2147483647 hours in minutes
-   * overflows an int.
+   * toCron shares the slots so that it writes those evaluation steps through. It takes the
+   * Schedule, not its IntervalRepeat, as only a Schedule's parts are checked.
    */
-  public static int[] intervalSlots(IntervalRepeat ir) {
+  public static int[] intervalSlots(Schedule schedule) {
+    if (!(schedule.data().expr() instanceof IntervalRepeat ir)) {
+      throw new IllegalArgumentException("not an interval repeat: " + schedule);
+    }
+    return intervalSlots(ir);
+  }
+
+  /** The step is a long, as 2147483647 hours in minutes overflows an int. */
+  static int[] intervalSlots(IntervalRepeat ir) {
     long minutesPerUnit = ir.unit() == IntervalUnit.HOURS ? WallClock.MINUTES_PER_HOUR : 1;
-    long step = Math.max(ir.interval(), 1) * minutesPerUnit;
+    long step = ir.interval() * minutesPerUnit;
     int from = ir.fromTime().totalMinutes();
     int to = ir.toTime().totalMinutes();
-    if (to < from) {
-      return new int[0];
-    }
     int[] minutes = new int[(int) ((to - from) / step) + 1];
     for (int k = 0; k < minutes.length; k++) {
       minutes[k] = (int) (from + k * step);
@@ -99,10 +100,10 @@ public final class Evaluator {
   }
 
   private static Optional<ZonedDateTime> search(
-      ScheduleData data, ZonedDateTime now, ZoneId zone, Direction direction) {
+      Schedule schedule, ZonedDateTime now, Direction direction) {
     if (!inSupportedRange(now)) {
       return Optional.empty();
     }
-    return Search.of(data, zone).nearest(now, direction);
+    return Search.of(schedule.data()).nearest(now, direction);
   }
 }

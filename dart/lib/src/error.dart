@@ -16,6 +16,8 @@ enum HronErrorKind {
   /// Parse error (invalid syntax).
   parse,
 
+  /// For schedules built in code from their parts. This package builds them
+  /// only by `Schedule.parse` and `Schedule.fromCron`, so it never throws one.
   eval,
 
   /// A cron expression `fromCron` rejects, or a schedule `toCron` cannot
@@ -23,7 +25,7 @@ enum HronErrorKind {
   cron,
 }
 
-/// An error thrown when parsing, evaluating, or converting hron expressions.
+/// An error thrown when parsing a hron expression or converting to or from cron.
 class HronError implements Exception {
   final HronErrorKind kind;
 

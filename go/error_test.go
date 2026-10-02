@@ -60,7 +60,7 @@ func TestEvalAndCronErrorsRenderTheirMessageAlone(t *testing.T) {
 }
 
 func TestTokenSpansCountBytes(t *testing.T) {
-	tokens, err := Tokenize("in é every")
+	tokens, err := tokenize("in é every")
 	if err != nil {
 		t.Fatal(err)
 	}

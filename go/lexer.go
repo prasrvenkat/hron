@@ -64,9 +64,8 @@ type lexer struct {
 	pos   int
 }
 
-// Tokenize splits input into tokens, or returns a lex *HronError. Token spans
-// are byte offsets into input.
-func Tokenize(input string) ([]Token, error) {
+// Token spans count bytes, unlike the code points of an error's Span.
+func tokenize(input string) ([]Token, error) {
 	l := &lexer{input: input}
 	return l.tokenize()
 }

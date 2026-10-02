@@ -173,6 +173,7 @@ _ORDINAL_TO_N: dict[OrdinalPosition, int] = {
     OrdinalPosition.THIRD: 3,
     OrdinalPosition.FOURTH: 4,
     OrdinalPosition.FIFTH: 5,
+    OrdinalPosition.LAST: -1,
 }
 
 
@@ -382,8 +383,11 @@ class YearRepeat:
 ScheduleExpr = IntervalRepeat | DayRepeat | WeekRepeat | MonthRepeat | SingleDateExpr | YearRepeat
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class ScheduleData:
+    """The parts of a schedule, for `Schedule(ScheduleData(...))` to check and build. An empty
+    `except_` or `during` is no clause."""
+
     expr: ScheduleExpr
     timezone: str | None = None
     except_: tuple[ExceptionSpec, ...] = ()
@@ -392,8 +396,18 @@ class ScheduleData:
     during: tuple[MonthName, ...] = ()
 
 
-def new_schedule_data(expr: ScheduleExpr) -> ScheduleData:
-    return ScheduleData(expr=expr)
+def max_day(month: MonthName) -> int:
+    """February has 29: a named date has no year."""
+    return _MAX_DAYS.get(month, 31)
+
+
+_MAX_DAYS = {
+    MonthName.FEB: 29,
+    MonthName.APR: 30,
+    MonthName.JUN: 30,
+    MonthName.SEP: 30,
+    MonthName.NOV: 30,
+}
 
 
 ALL_WEEKDAYS: tuple[Weekday, ...] = (
