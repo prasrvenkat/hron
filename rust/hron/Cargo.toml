@@ -1,6 +1,6 @@
 [package]
 name = "hron"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 description = "Human-readable cron — scheduling expressions that read like English and convert to and from cron"
 license = "MIT"
